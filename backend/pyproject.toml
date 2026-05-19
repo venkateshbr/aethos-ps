@@ -8,7 +8,7 @@ readme = { text = "Aethos PS backend service.", content-type = "text/plain" }
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
-  "pydantic>=2.7",
+  "pydantic[email]>=2.7",
   "pydantic-settings>=2.3",
   "supabase>=2.5",
   "python-jose[cryptography]>=3.3",
