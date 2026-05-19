@@ -14,6 +14,8 @@ from decimal import Decimal
 import pytest
 from hypothesis import given, strategies as st
 
+from tests.conftest import JournalEntry, JournalLine
+
 pytestmark = pytest.mark.property
 
 
@@ -69,18 +71,27 @@ def balanced_lines(draw):
 # ---------------------------------------------------------------------------
 
 
+def _build(lines):
+    """Build a JournalEntry directly — no pytest fixture dependency for Hypothesis."""
+    return JournalEntry(
+        lines=[
+            JournalLine(direction=d, account=acct, amount=Decimal(str(amt)))
+            for (d, acct, amt) in lines
+        ]
+    )
+
+
 @given(balanced_lines())
-def test_balanced_lines_produce_balanced_journal(make_journal_entry, lines):
+def test_balanced_lines_produce_balanced_journal(lines):
     """Generated balanced lines must build a balanced JournalEntry."""
-    je = make_journal_entry(lines)
+    je = _build(lines)
     assert je.is_balanced(), f"DR={je.debits} CR={je.credits} diff={je.debits - je.credits}"
 
 
 @given(balanced_lines(), money)
-def test_unbalancing_amount_breaks_balance(make_journal_entry, lines, extra_amount):
+def test_unbalancing_amount_breaks_balance(lines, extra_amount):
     """Adding an unmatched debit must break the balance."""
-    lines_with_extra = lines + [("DR", "acct_extra", extra_amount)]
-    je = make_journal_entry(lines_with_extra)
+    je = _build(lines + [("DR", "acct_extra", extra_amount)])
     assert not je.is_balanced(fx_tolerance=Decimal("0.00"))
 
 
