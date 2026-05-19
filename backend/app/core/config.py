@@ -30,6 +30,46 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
+    # Stripe Price IDs — one per plan × interval × currency.
+    # Placeholder values; founder creates real Prices in the Stripe dashboard and
+    # sets these in .env (test mode) / secrets manager (production).
+    # Naming: STRIPE_PRICE_{TIER}_{INTERVAL}_{CURRENCY}
+    stripe_price_starter_monthly_usd: str = "price_starter_monthly_usd"
+    stripe_price_starter_monthly_gbp: str = "price_starter_monthly_gbp"
+    stripe_price_starter_monthly_sgd: str = "price_starter_monthly_sgd"
+    stripe_price_starter_monthly_inr: str = "price_starter_monthly_inr"
+    stripe_price_starter_monthly_aud: str = "price_starter_monthly_aud"
+    stripe_price_starter_annual_usd: str = "price_starter_annual_usd"
+    stripe_price_starter_annual_gbp: str = "price_starter_annual_gbp"
+    stripe_price_starter_annual_sgd: str = "price_starter_annual_sgd"
+    stripe_price_starter_annual_inr: str = "price_starter_annual_inr"
+    stripe_price_starter_annual_aud: str = "price_starter_annual_aud"
+
+    stripe_price_growth_monthly_usd: str = "price_growth_monthly_usd"
+    stripe_price_growth_monthly_gbp: str = "price_growth_monthly_gbp"
+    stripe_price_growth_monthly_sgd: str = "price_growth_monthly_sgd"
+    stripe_price_growth_monthly_inr: str = "price_growth_monthly_inr"
+    stripe_price_growth_monthly_aud: str = "price_growth_monthly_aud"
+    stripe_price_growth_annual_usd: str = "price_growth_annual_usd"
+    stripe_price_growth_annual_gbp: str = "price_growth_annual_gbp"
+    stripe_price_growth_annual_sgd: str = "price_growth_annual_sgd"
+    stripe_price_growth_annual_inr: str = "price_growth_annual_inr"
+    stripe_price_growth_annual_aud: str = "price_growth_annual_aud"
+
+    stripe_price_pro_monthly_usd: str = "price_pro_monthly_usd"
+    stripe_price_pro_monthly_gbp: str = "price_pro_monthly_gbp"
+    stripe_price_pro_monthly_sgd: str = "price_pro_monthly_sgd"
+    stripe_price_pro_monthly_inr: str = "price_pro_monthly_inr"
+    stripe_price_pro_monthly_aud: str = "price_pro_monthly_aud"
+    stripe_price_pro_annual_usd: str = "price_pro_annual_usd"
+    stripe_price_pro_annual_gbp: str = "price_pro_annual_gbp"
+    stripe_price_pro_annual_sgd: str = "price_pro_annual_sgd"
+    stripe_price_pro_annual_inr: str = "price_pro_annual_inr"
+    stripe_price_pro_annual_aud: str = "price_pro_annual_aud"
+
+    # Frontend base URL — used to construct billing portal return URLs.
+    frontend_base_url: str = "http://localhost:4201"
+
     # ------------------------------------------------------------------
     # Anthropic
     # ------------------------------------------------------------------
