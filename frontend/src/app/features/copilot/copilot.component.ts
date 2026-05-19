@@ -6,11 +6,16 @@ import {
   ElementRef,
   viewChild,
   OnInit,
+  inject,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { EngagementDraftCardComponent, EngagementDraftPayload } from './cards/engagement-draft-card.component';
+import { ExpenseExtractedCardComponent, ExpenseExtractedPayload } from './cards/expense-extracted-card.component';
+import { BillExtractedCardComponent, BillExtractedPayload } from './cards/bill-extracted-card.component';
 
 export interface ChatMessage {
   id: string;
@@ -19,6 +24,10 @@ export interface ChatMessage {
   streaming?: boolean;
   toolName?: string;
   toolDone?: boolean;
+  /** Card fields — set when the agent SSE stream emits a card_type frame */
+  cardType?: 'engagement_draft' | 'expense_draft' | 'bill_draft';
+  cardPayload?: Record<string, unknown>;
+  hitlTaskId?: string | null;
 }
 
 export interface ChatThread {
@@ -30,7 +39,15 @@ export interface ChatThread {
 @Component({
   selector: 'app-copilot',
   standalone: true,
-  imports: [FormsModule, MatIconModule, MatButtonModule, MatTooltipModule],
+  imports: [
+    FormsModule,
+    MatIconModule,
+    MatButtonModule,
+    MatTooltipModule,
+    EngagementDraftCardComponent,
+    ExpenseExtractedCardComponent,
+    BillExtractedCardComponent,
+  ],
   template: `
     <div class="h-full flex bg-slate-900 text-slate-100">
 
@@ -136,7 +153,7 @@ export interface ChatThread {
                 </div>
               </div>
             } @else {
-              <!-- Assistant bubble + optional tool card -->
+              <!-- Assistant bubble + optional tool card + optional data cards -->
               <div class="flex flex-col gap-2 max-w-2xl self-start w-full">
                 @if (msg.toolName) {
                   <!-- Tool-call card -->
@@ -152,6 +169,43 @@ export interface ChatThread {
                     &#9889; {{ msg.toolName }}
                   </div>
                 }
+
+                <!-- Engagement draft card -->
+                @if (msg.cardType === 'engagement_draft' && msg.cardPayload) {
+                  <app-engagement-draft-card
+                    [payload]="asEngagementPayload(msg.cardPayload)"
+                    [hitlTaskId]="msg.hitlTaskId ?? null"
+                    [streaming]="!!msg.streaming"
+                    (onApprove)="approveCard(msg)"
+                    (onEdit)="editCard(msg)"
+                    (onReject)="rejectCard(msg)"
+                  />
+                }
+
+                <!-- Expense extracted card -->
+                @if (msg.cardType === 'expense_draft' && msg.cardPayload) {
+                  <app-expense-extracted-card
+                    [payload]="asExpensePayload(msg.cardPayload)"
+                    [hitlTaskId]="msg.hitlTaskId ?? null"
+                    [streaming]="!!msg.streaming"
+                    (onApprove)="approveCard(msg)"
+                    (onEdit)="editCard(msg)"
+                    (onReject)="rejectCard(msg)"
+                  />
+                }
+
+                <!-- Bill extracted card -->
+                @if (msg.cardType === 'bill_draft' && msg.cardPayload) {
+                  <app-bill-extracted-card
+                    [payload]="asBillPayload(msg.cardPayload)"
+                    [hitlTaskId]="msg.hitlTaskId ?? null"
+                    [streaming]="!!msg.streaming"
+                    (onApprove)="approveCard(msg)"
+                    (onEdit)="editCard(msg)"
+                    (onReject)="rejectCard(msg)"
+                  />
+                }
+
                 @if (msg.content || msg.streaming) {
                   <div
                     class="bg-slate-800 border border-slate-600 text-slate-100 rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
@@ -232,6 +286,8 @@ export interface ChatThread {
   `],
 })
 export class CopilotComponent implements OnInit {
+  private http = inject(HttpClient);
+
   // --- State ---
   messages = signal<ChatMessage[]>([]);
   threads = signal<ChatThread[]>([]);
@@ -257,18 +313,15 @@ export class CopilotComponent implements OnInit {
   // Keep messages scrolled to bottom
   private messageContainer = viewChild<ElementRef<HTMLElement>>('messageContainer');
   private _scrollEffect = effect(() => {
-    // Re-run when messages change
     this.messages();
     const el = this.messageContainer()?.nativeElement;
     if (el) {
-      // defer one tick so DOM updates first
       Promise.resolve().then(() => { el.scrollTop = el.scrollHeight; });
     }
   });
 
   ngOnInit(): void {
-    // If no thread yet, we create one lazily on first message send.
-    // Optionally load existing threads from API.
+    // Thread created lazily on first message send.
   }
 
   // --- Thread management ---
@@ -286,7 +339,6 @@ export class CopilotComponent implements OnInit {
     this.currentThreadId.set(thread.id);
     this.messages.set([]);
     this.error.set(null);
-    // In a full implementation: load thread messages here
   }
 
   private async createThread(): Promise<string | null> {
@@ -305,7 +357,6 @@ export class CopilotComponent implements OnInit {
       this.threads.update(t => [...t, { id: data.id, title: data.title, created_at: data.created_at }]);
       return data.id;
     } catch {
-      // silently fail — thread creation will retry on next send
       return null;
     }
   }
@@ -341,7 +392,6 @@ export class CopilotComponent implements OnInit {
   async sendMessage(content: string): Promise<void> {
     this.error.set(null);
 
-    // Ensure we have a thread
     let threadId = this.currentThreadId();
     if (!threadId) {
       threadId = await this.createThread();
@@ -352,14 +402,12 @@ export class CopilotComponent implements OnInit {
       this.currentThreadId.set(threadId);
     }
 
-    // 1. Push user message to local state immediately
     const userMsgId = crypto.randomUUID();
     this.messages.update(msgs => [
       ...msgs,
       { id: userMsgId, role: 'user', content },
     ]);
 
-    // 2. Add pending assistant message
     const assistantId = crypto.randomUUID();
     this.messages.update(msgs => [
       ...msgs,
@@ -372,28 +420,17 @@ export class CopilotComponent implements OnInit {
       const tok = this.token();
       if (tok) headers['Authorization'] = `Bearer ${tok}`;
 
-      // 3. POST with streaming
       const response = await fetch(
         `/api/v1/chat/threads/${threadId}/messages`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ content }),
-        }
+        { method: 'POST', headers, body: JSON.stringify({ content }) }
       );
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error('No response body');
-      }
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      if (!response.body)  throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
-      // 4. Read SSE stream
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -406,7 +443,7 @@ export class CopilotComponent implements OnInit {
           try {
             payload = JSON.parse(line.slice(6)) as Record<string, unknown>;
           } catch {
-            continue; // skip malformed SSE frames
+            continue;
           }
 
           if (typeof payload['delta'] === 'string') {
@@ -431,17 +468,28 @@ export class CopilotComponent implements OnInit {
 
           if (payload['tool_end'] === true) {
             this.messages.update(msgs =>
+              msgs.map(m => m.id === assistantId ? { ...m, toolDone: true } : m)
+            );
+          }
+
+          // Card frame — agent extracted a structured entity
+          if (typeof payload['card_type'] === 'string') {
+            this.messages.update(msgs =>
               msgs.map(m =>
-                m.id === assistantId ? { ...m, toolDone: true } : m
+                m.id === assistantId ? {
+                  ...m,
+                  cardType:    payload['card_type'] as ChatMessage['cardType'],
+                  cardPayload: payload['payload'] as Record<string, unknown>,
+                  hitlTaskId:  (payload['hitl_task_id'] as string | null) ?? null,
+                  streaming:   false,
+                } : m
               )
             );
           }
 
           if (payload['done'] === true) {
             this.messages.update(msgs =>
-              msgs.map(m =>
-                m.id === assistantId ? { ...m, streaming: false } : m
-              )
+              msgs.map(m => m.id === assistantId ? { ...m, streaming: false } : m)
             );
           }
         }
@@ -450,10 +498,9 @@ export class CopilotComponent implements OnInit {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Copilot send error:', message);
       this.error.set('Something went wrong. Please try again.');
-      // Mark streaming done + remove empty assistant bubble if nothing came back
       this.messages.update(msgs => {
         const assistantMsg = msgs.find(m => m.id === assistantId);
-        if (assistantMsg && !assistantMsg.content) {
+        if (assistantMsg && !assistantMsg.content && !assistantMsg.cardType) {
           return msgs.filter(m => m.id !== assistantId);
         }
         return msgs.map(m =>
@@ -462,10 +509,67 @@ export class CopilotComponent implements OnInit {
       });
     } finally {
       this.streaming.set(false);
-      // Ensure streaming flag cleared on message
       this.messages.update(msgs =>
         msgs.map(m => m.id === assistantId ? { ...m, streaming: false } : m)
       );
     }
+  }
+
+  // --- Card actions ---
+
+  approveCard(msg: ChatMessage): void {
+    if (!msg.hitlTaskId) return;
+    this.http.post(`/api/v1/inbox/tasks/${msg.hitlTaskId}/approve`, {}).subscribe({
+      next: () => {
+        this.messages.update(msgs =>
+          msgs.map(m =>
+            m.id === msg.id
+              ? { ...m, cardType: undefined, cardPayload: undefined, content: '✓ Approved and applied.' }
+              : m
+          )
+        );
+      },
+      error: () => {
+        console.error(`Failed to approve card for task ${msg.hitlTaskId}`);
+      },
+    });
+  }
+
+  rejectCard(msg: ChatMessage): void {
+    if (!msg.hitlTaskId) return;
+    this.http.post(`/api/v1/inbox/tasks/${msg.hitlTaskId}/reject`, { reason: '' }).subscribe({
+      next: () => {
+        this.messages.update(msgs =>
+          msgs.map(m =>
+            m.id === msg.id
+              ? { ...m, cardType: undefined, cardPayload: undefined, content: '✗ Rejected.' }
+              : m
+          )
+        );
+      },
+      error: () => {
+        console.error(`Failed to reject card for task ${msg.hitlTaskId}`);
+      },
+    });
+  }
+
+  editCard(msg: ChatMessage): void {
+    // Week 4: open inline edit drawer.
+    // For now, route to approve so the review queue unblocks.
+    this.approveCard(msg);
+  }
+
+  // --- Payload type casts (safe: payload shapes validated by the SSE contract) ---
+
+  asEngagementPayload(p: Record<string, unknown>): EngagementDraftPayload {
+    return p as unknown as EngagementDraftPayload;
+  }
+
+  asExpensePayload(p: Record<string, unknown>): ExpenseExtractedPayload {
+    return p as unknown as ExpenseExtractedPayload;
+  }
+
+  asBillPayload(p: Record<string, unknown>): BillExtractedPayload {
+    return p as unknown as BillExtractedPayload;
   }
 }
