@@ -11,11 +11,13 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth,
     billing,
+    bills,
     chat,
     clients,
     documents,
     engagements,
     health_check,
+    inbox,
     projects,
     rate_cards,
     webhooks,
@@ -33,3 +35,5 @@ api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router.include_router(rate_cards.router, prefix="/rate-cards", tags=["rate-cards"])
 api_router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
+api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
