@@ -32,7 +32,7 @@ Triggered on every PR that touches:
 
 | Date | PR | Subject | Outcome |
 | --- | --- | --- | --- |
-| | | | |
+| 2026-05-19 | [#17](https://github.com/venkateshbr/aethos-ps/pull/17) / [#19](https://github.com/venkateshbr/aethos-ps/pull/19) | Stripe SaaS signup — Setup Intent, trial subscription, webhook handler, billing portal | **PASS** — webhook sig on raw body ✅, idempotency via provider_event_id ✅, no secret hardcoding ✅, no payload logging ✅, tenant isolation via JWT-derived tenant_id ✅, no float money ✅. Minor: duplicate-email 503 message could be friendlier (UX only, not a security issue). |
 
 ## Changelog
 
