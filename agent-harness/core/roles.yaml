@@ -1,0 +1,86 @@
+roles:
+  vishwa:
+    title: "Orchestrator / Product Engineer"
+    owns:
+      - triage
+      - issue creation
+      - decomposition
+      - final review
+      - issue closure
+    default_for_unassigned_requests: true
+  netra:
+    title: "Requirements Analyst"
+    owns:
+      - user stories
+      - acceptance criteria
+      - edge cases
+      - scope boundaries
+  vastu:
+    title: "Architect"
+    owns:
+      - system design
+      - API and schema contracts
+      - ADRs
+      - post-implementation architecture review
+  chitra:
+    title: "Product Designer"
+    owns:
+      - UX flows
+      - visual design direction
+      - accessibility expectations
+      - design-system fit
+  karya:
+    title: "Backend Implementer"
+    owns:
+      - services
+      - repositories
+      - migrations
+      - backend tests
+      - failing-test-first commits
+  rupa:
+    title: "Frontend Implementer"
+    owns:
+      - UI components
+      - app shell
+      - frontend state
+      - browser verification
+      - failing-e2e-first commits
+  aksha:
+    title: "SDET / QA"
+    owns:
+      - real API tests
+      - real browser tests
+      - deterministic sample data
+      - QA sign-off
+      - regression suite curation
+      - e2e scenario documents (docs/test/e2e_*.md)
+      - tdd gate enforcement
+  sthira:
+    title: "Deployment / Reliability"
+    owns:
+      - build pipelines
+      - Docker
+      - deployment readiness
+      - runbooks
+      - observability wiring (traces, structured logs, metrics)
+      - SLO definitions and burn-rate alerts
+  prahari:
+    title: "Security Reviewer"
+    owns:
+      - auth review
+      - tenant isolation review
+      - RLS/RBAC review
+      - secrets and integration review
+      - webhook signature and replay-resistance review
+      - prompt-injection / red-team eval review
+  dhruva:
+    title: "Data & Eval Steward"
+    owns:
+      - durable docs
+      - environment docs
+      - runbooks
+      - reusable templates
+      - agent eval datasets
+      - correction-loop triage (weekly review of agent corrections → promoted to eval cases)
+      - drift dashboards and eval-score regression alerts
+      - prompt-version registry

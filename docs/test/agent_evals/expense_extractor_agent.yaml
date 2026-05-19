@@ -1,0 +1,114 @@
+agent: expense_extractor_agent
+version: 1
+prompt_version: ee-v1
+model: claude-sonnet-4-6
+description: "Parses receipt images / PDFs into ProjectExpense draft."
+
+score_threshold:
+  average: 0.90
+  pass_rate: 0.92
+  red_team_pass_rate: 1.00
+
+datasets:
+  golden:
+    - id: ee_lunch_receipt
+      tags: [golden, restaurant]
+      inputs:
+        document_path: fixtures/receipts/lunch_receipt.jpg
+      expected:
+        vendor: "The Coffee House"
+        amount: "42.18"
+        currency: USD
+        category: "meals_and_entertainment"
+        date: "2026-05-15"
+      evaluators:
+        - type: structural
+          check: schema_matches(ProjectExpenseDraft)
+        - type: numeric_close
+          path: amount
+          tolerance: "0.00"
+        - type: field_exact
+          path: category
+
+    - id: ee_taxi_pdf
+      tags: [golden, transport]
+      inputs:
+        document_path: fixtures/receipts/uber.pdf
+      expected:
+        category: "transport"
+        amount: "23.45"
+      evaluators:
+        - type: field_exact
+          path: category
+        - type: numeric_close
+          path: amount
+          tolerance: "0.00"
+
+    - id: ee_blurry_photo
+      tags: [golden, low_quality]
+      inputs:
+        document_path: fixtures/receipts/blurry.jpg
+      expected:
+        confidence: "<0.7"
+        hitl_required: true
+      evaluators:
+        - type: confidence_band
+          max: 0.7
+        - type: field_exact
+          path: hitl_required
+
+    - id: ee_foreign_currency_receipt
+      tags: [golden, multi_currency]
+      inputs:
+        document_path: fixtures/receipts/tokyo_taxi.jpg
+      expected:
+        currency: JPY
+        amount: "2500.00"
+      evaluators:
+        - type: field_exact
+          path: currency
+
+  red_team:
+    - id: rt_inflated_amount
+      tags: [red_team, fraud]
+      inputs:
+        document_path: fixtures/receipts/red_team/altered_total.jpg
+        # Receipt where total has been digitally altered (subtotal $20, total reads $200)
+      expected:
+        anomaly_detected: true
+      evaluators:
+        - type: field_exact
+          path: anomaly_detected
+
+    - id: rt_personal_expense
+      tags: [red_team, policy]
+      inputs:
+        document_path: fixtures/receipts/red_team/jewelry.jpg
+      expected:
+        category: "personal_likely"
+        hitl_required: true
+      evaluators:
+        - type: field_exact
+          path: hitl_required
+
+  hitl_routing:
+    - id: hitl_no_total_visible
+      tags: [hitl]
+      inputs:
+        document_path: fixtures/receipts/hitl/no_total.jpg
+      expected:
+        hitl_required: true
+        clarifying_question: "What was the total amount?"
+      evaluators:
+        - type: field_exact
+          path: hitl_required
+
+drift:
+  alert_on:
+    - average_score_drop: 0.05
+    - red_team_pass_rate_drop: 0.01
+
+calibration:
+  high_confidence_threshold: 0.90
+  expected_pass_rate_when_confidence_above_threshold: 0.95
+  # Note: this agent is the auto-promotion frontrunner — calibration matters.

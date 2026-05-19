@@ -1,0 +1,28 @@
+name: "<domain-name>"
+version: "0.1.0"
+description: "Domain context for agents working in this project."
+
+entities:
+  - name: "<Entity>"
+    description: "<What this entity represents>"
+    tenant_scoped: true
+    sensitive_fields: []
+
+workflows:
+  - name: "<Workflow>"
+    stages:
+      - name: "<Stage>"
+        entry_criteria: []
+        exit_criteria: []
+
+quality_rules:
+  money:
+    exact_decimal: true
+    api_serialization: "string"
+  tenancy:
+    required: true
+    enforcement: "application + database policy"
+  ai:
+    pii_masking_required: true
+    human_approval_for_writes: true
+
