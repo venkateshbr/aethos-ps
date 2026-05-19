@@ -1,0 +1,63 @@
+name: Feature Role Guard
+
+# Enforce role-gated issue creation per SDLC_PROTOCOL.md:
+# Only Vishwa (agent:vishwa), Vastu (agent:vastu), or Netra (agent:netra)
+# may open type:feature issues. All others are auto-closed.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  enforce-role-gate:
+    name: Enforce feature-issue role gate
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check labels and close if policy violated
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            // Only act when the issue carries type:feature
+            if (!labels.includes('type:feature')) {
+              core.info('Not a type:feature issue — nothing to enforce.');
+              return;
+            }
+
+            // Authorised agent labels
+            const authorisedAgents = ['agent:vishwa', 'agent:vastu', 'agent:netra'];
+            const hasAuthorisedAgent = authorisedAgents.some(a => labels.includes(a));
+
+            if (hasAuthorisedAgent) {
+              core.info('type:feature issue carries an authorised agent label — allowed.');
+              return;
+            }
+
+            // Policy violated — comment and close
+            const body = [
+              '❌ Feature issues may only be created by Vishwa, Vastu, or Netra.',
+              'This issue has been closed.',
+              '',
+              'Please ask one of those agents to re-open a feature issue with the correct label.',
+              'See [SDLC_PROTOCOL.md](../docs/team/SDLC_PROTOCOL.md).',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body,
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.issue.number,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });
+
+            core.info(`Issue #${context.payload.issue.number} closed — role gate enforced.`);

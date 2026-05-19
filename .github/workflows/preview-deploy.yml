@@ -1,0 +1,53 @@
+name: Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  vercel-preview:
+    name: Vercel preview deploy
+    runs-on: ubuntu-latest
+    # Skip entirely if VERCEL_TOKEN secret is not configured yet
+    if: ${{ env.VERCEL_TOKEN != '' }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment — preview deploy triggered
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "Preview deploy triggered. Vercel will post the URL once the build completes."
+
+      # ── Real Vercel deploy (wired when Vercel project is created) ──────────
+      # Uncomment the block below once VERCEL_TOKEN, VERCEL_ORG_ID, and
+      # VERCEL_PROJECT_ID are set in repo secrets.
+      #
+      # - name: Install Vercel CLI
+      #   run: npm install --global vercel@latest
+      #
+      # - name: Pull Vercel environment info
+      #   run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      #
+      # - name: Build project
+      #   run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+      #
+      # - name: Deploy to Vercel (preview)
+      #   id: deploy
+      #   run: |
+      #     url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+      #     echo "preview_url=$url" >> "$GITHUB_OUTPUT"
+      #
+      # - name: Comment preview URL on PR
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     gh pr comment ${{ github.event.pull_request.number }} \
+      #       --body "Preview: ${{ steps.deploy.outputs.preview_url }}"
