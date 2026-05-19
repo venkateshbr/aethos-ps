@@ -13,6 +13,9 @@
 
 BEGIN;
 
+-- Supabase cloud: pgcrypto lives in the extensions schema; include it in search path
+SET search_path TO public, extensions;
+
 -- ---------------------------------------------------------------------------
 -- Enum
 -- ---------------------------------------------------------------------------
@@ -50,7 +53,8 @@ CREATE TABLE invoices (
     stripe_payment_link_id      TEXT,
     stripe_payment_link_url     TEXT,
     -- Public-facing URL token (rotated on each send)
-    public_token                TEXT UNIQUE DEFAULT encode(gen_random_bytes(24), 'base64url'),
+    -- Uses standard base64 then makes it URL-safe by replacing + and / with - and _
+    public_token                TEXT UNIQUE DEFAULT replace(replace(encode(gen_random_bytes(24), 'base64'), '+', '-'), '/', '_'),
     sent_at                     TIMESTAMPTZ,
     notes                       TEXT,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
