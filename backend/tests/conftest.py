@@ -44,11 +44,11 @@ class JournalEntry:
 
     @property
     def debits(self) -> Decimal:
-        return sum((l.base_amount for l in self.lines if l.direction == "DR"), Decimal("0"))
+        return sum((ln.base_amount for ln in self.lines if ln.direction == "DR"), Decimal("0"))
 
     @property
     def credits(self) -> Decimal:
-        return sum((l.base_amount for l in self.lines if l.direction == "CR"), Decimal("0"))
+        return sum((ln.base_amount for ln in self.lines if ln.direction == "CR"), Decimal("0"))
 
     def is_balanced(self, fx_tolerance: Decimal = Decimal("0.01")) -> bool:
         return abs(self.debits - self.credits) <= fx_tolerance
