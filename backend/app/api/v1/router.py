@@ -8,7 +8,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, billing, chat, documents, health_check, webhooks
+from app.api.v1.endpoints import (
+    auth,
+    billing,
+    chat,
+    clients,
+    documents,
+    engagements,
+    health_check,
+    projects,
+    rate_cards,
+    webhooks,
+)
 
 api_router = APIRouter()
 
@@ -18,3 +29,7 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
+api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
+api_router.include_router(rate_cards.router, prefix="/rate-cards", tags=["rate-cards"])
+api_router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
+api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
