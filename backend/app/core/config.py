@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
 
     # ------------------------------------------------------------------
+    # FX Rates (Open Exchange Rates — free tier works without an app_id)
+    # ------------------------------------------------------------------
+    openexchangerates_app_id: str = ""
+
+    # ------------------------------------------------------------------
     # Upstash Redis (optional — disabled when empty)
     # ------------------------------------------------------------------
     upstash_redis_url: str = ""
