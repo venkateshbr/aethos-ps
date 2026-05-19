@@ -21,6 +21,21 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/inbox/inbox.component').then(m => m.InboxComponent),
       },
+      {
+        path: 'engagements',
+        loadComponent: () =>
+          import('./features/engagements/engagements-list.component').then(m => m.EngagementsListComponent),
+      },
+      {
+        path: 'engagements/:id',
+        loadComponent: () =>
+          import('./features/engagements/engagement-detail.component').then(m => m.EngagementDetailComponent),
+      },
+      {
+        path: 'projects',
+        loadComponent: () =>
+          import('./features/projects/projects-list.component').then(m => m.ProjectsListComponent),
+      },
       { path: '', redirectTo: 'copilot', pathMatch: 'full' },
     ],
   },
