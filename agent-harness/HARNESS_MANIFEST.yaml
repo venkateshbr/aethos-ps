@@ -1,0 +1,89 @@
+name: agent-harness
+version: 0.2.0
+description: "Reusable AI operating system for issue-first, role-based, TDD-disciplined, eval-gated software delivery."
+
+source_inspiration:
+  - "Transmuter AGENTS.md"
+  - "Transmuter SDLC protocol"
+  - "Transmuter architecture ADRs"
+  - "Transmuter security review gates"
+  - "Transmuter acceptance testing standard"
+  - "Transmuter frontend design skill"
+  - "Anthropic — Building Effective Agents (engineering blog)"
+  - "Anthropic — Tool use protocol"
+  - "PydanticAI — Evals"
+  - "Playwright — Best practices"
+  - "Pact — Consumer-driven contract testing"
+  - "Hypothesis — Property-based testing"
+  - "Langfuse — LLM evaluation and drift detection"
+
+core_protocols:
+  - path: core/operating-principles.md
+    purpose: "Default agent behavior and safety posture."
+  - path: core/sdlc-protocol.md
+    purpose: "Issue-first role lifecycle."
+  - path: core/roles.yaml
+    purpose: "Reusable team/role definitions."
+  - path: core/tdd-protocol.md
+    purpose: "Outside-in test-driven development discipline."
+  - path: core/testing-standard.md
+    purpose: "Acceptance evidence standard across layers."
+  - path: core/quality-gates.md
+    purpose: "Confidence, package, money, tenancy, AI, contract, e2e, RBAC, idempotency, observability gates."
+  - path: core/architecture-patterns.md
+    purpose: "Reusable architecture and code organization patterns."
+  - path: core/security-review.md
+    purpose: "Security review trigger and checklist."
+  - path: core/e2e-workflow-standard.md
+    purpose: "End-to-end business-workflow regression standard."
+  - path: core/agent-eval-standard.md
+    purpose: "Deterministic agent evaluation, drift detection, correction loop."
+  - path: core/contract-testing.md
+    purpose: "Inter-system and agent-tool contract testing."
+  - path: core/observability-standard.md
+    purpose: "Trace IDs, structured logs, LLM traces, metrics, SLOs."
+  - path: core/saas-onboarding-payments.md
+    purpose: "Customer onboarding, subscription, webhook, RBAC, and cleanup playbook."
+
+model_adapters:
+  codex: adapters/codex/AGENTS.md
+  claude_code: adapters/claude/CLAUDE.md
+  gemini: adapters/gemini/GEMINI.md
+  opencode: adapters/opencode/AGENTS.md
+
+skills:
+  tdd: skills/tdd-skill.md
+  agent_eval: skills/agent-eval-skill.md
+  e2e_workflow: skills/e2e-workflow-skill.md
+  frontend_design: skills/frontend-design-skill.md
+  package_verification: skills/package-verification-skill.md
+  skill_template: skills/SKILL_TEMPLATE.md
+
+templates:
+  project_context: templates/PROJECT_CONTEXT.md
+  domain_pack: templates/DOMAIN_PACK.yaml
+  issue_templates: templates/ISSUE_TEMPLATES.md
+  pr_template: templates/PR_TEMPLATE.md
+  environment_configuration: templates/ENVIRONMENT_CONFIGURATION.md
+  onboarding_regression: templates/E2E_ONBOARDING_REGRESSION.md
+  workflow_regression: templates/E2E_WORKFLOW_REGRESSION.md
+  agent_eval_pack: templates/AGENT_EVAL_PACK.yaml
+  tdd_feature_plan: templates/TDD_FEATURE_PLAN.md
+
+customization_points:
+  - "Repository URL and canonical issue tracker"
+  - "Stack-specific build/test commands"
+  - "Domain pack entities and workflows"
+  - "Security-sensitive files and trust boundaries"
+  - "Design-system rules"
+  - "Acceptance test data and commands"
+  - "Eval pack path and agent registry"
+  - "LLM observability backend (Langfuse / Pydantic Logfire / other)"
+  - "E2E tool defaults (Playwright by default)"
+
+forbidden_content:
+  - "Secrets"
+  - "Production credentials"
+  - "Temporary passwords"
+  - "Raw PII"
+  - "Project-specific hostnames unless kept in project context"

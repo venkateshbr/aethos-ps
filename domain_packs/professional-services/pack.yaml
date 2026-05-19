@@ -1,0 +1,308 @@
+name: "professional-services"
+version: "1.0.0"
+description: "Domain pack for Aethos PS — engagement-to-cash workflows for consulting, advisory, agency, dev-shop, accounting, and law firms."
+
+product: "aethos-ps"
+launch_markets: ["US", "UK", "SG", "IN", "AU"]
+base_currencies: ["USD", "GBP", "SGD", "INR", "AUD"]
+
+# ============================================================================
+# Entities (subset; full list in docs/PLAN.md §4)
+# ============================================================================
+entities:
+  - name: "Tenant"
+    description: "A firm. Owns Stripe Connect account, base currency, country, timezone, locale."
+    tenant_scoped: false
+    sensitive_fields: ["stripe_connect_account_id", "stripe_subscription_id"]
+
+  - name: "User / TenantUser"
+    description: "A human seat in a tenant. Has a role: owner, admin, manager, member, viewer."
+    tenant_scoped: true
+    sensitive_fields: ["email", "phone"]
+
+  - name: "Employee"
+    description: "Billable person (may or may not have a user seat). Has a default rate card."
+    tenant_scoped: true
+    sensitive_fields: ["national_id", "bank_account_id"]
+
+  - name: "Client"
+    description: "Customer or vendor. `kind in ('customer', 'vendor')`."
+    tenant_scoped: true
+    sensitive_fields: ["billing_address", "tax_id"]
+
+  - name: "Engagement"
+    description: "Contract with a client. Has billing arrangement: time_and_materials, fixed_fee, milestone, retainer, retainer_draw, capped_tm."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "Project"
+    description: "Execution shell under an engagement. Has phases, assignments, budgets, currency."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "RateCard / RateCardClientOverride"
+    description: "Roles × hourly rates. Per-engagement override allowed."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "TimeEntry"
+    description: "Hours by employee on a project/phase. Drives invoicing."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "ProjectExpense"
+    description: "Billable/non-billable expense booked to a project. May be agent-extracted from a receipt."
+    tenant_scoped: true
+    sensitive_fields: ["receipt_document_id"]
+
+  - name: "Invoice / InvoiceLine"
+    description: "AR document. Multi-currency. Per-line tax. Has Stripe Payment Link when sent."
+    tenant_scoped: true
+    sensitive_fields: ["stripe_payment_link_id", "public_token"]
+
+  - name: "BillingRun"
+    description: "Batch invoice creation (monthly typical). Propose → review → approve → materialise."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "Bill / BillLine"
+    description: "AP document from a vendor. Often agent-extracted."
+    tenant_scoped: true
+    sensitive_fields: ["vendor_tax_id"]
+
+  - name: "BillPayment"
+    description: "Outbound payment. NACHA / Universal CSV export in v1; Stripe Connect vendor in v1.1."
+    tenant_scoped: true
+    sensitive_fields: ["bank_account_id"]
+
+  - name: "Payment"
+    description: "Inbound payment, typically Stripe-driven via Payment Link."
+    tenant_scoped: true
+    sensitive_fields: ["stripe_payment_intent_id"]
+
+  - name: "JournalEntry / JournalLine"
+    description: "Immutable double-entry GL. Auto-generated from sub-ledger events via DB triggers."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "Document"
+    description: "Uploaded file. Engagement letter, receipt, vendor invoice, bank statement, etc."
+    tenant_scoped: true
+    sensitive_fields: ["storage_url"]
+
+  - name: "AgentSuggestion / HitlTask"
+    description: "Immutable AI output + human review queue entry. The HITL substrate."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "AgentAutonomySetting"
+    description: "Per-(agent_name, action_type) autonomy level and threshold. Default L2."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "TaxRate"
+    description: "Tenant-defined tax. Seeded per market."
+    tenant_scoped: true
+    sensitive_fields: []
+
+  - name: "FxRate"
+    description: "Daily FX rates. Refreshed by fx_refresh_worker. Stale > 3 days raises a warning."
+    tenant_scoped: false
+    sensitive_fields: []
+
+# ============================================================================
+# Workflows
+# ============================================================================
+workflows:
+
+  - name: "engagement-to-cash"
+    description: "From engagement creation through invoice payment and journal posting. The flagship workflow."
+    scenario_document: "docs/test/e2e_engagement_to_cash.md"
+    stages:
+      - name: "create-engagement"
+        entry_criteria: ["client exists OR is created from engagement letter"]
+        exit_criteria: ["engagement row exists with billing arrangement", "rate card resolved"]
+      - name: "log-effort"
+        entry_criteria: ["project exists", "employee assigned"]
+        exit_criteria: ["time entries or expenses recorded"]
+      - name: "draft-invoice"
+        entry_criteria: ["unbilled effort exists OR billing schedule reached"]
+        exit_criteria: ["invoice draft saved", "agent_suggestion or hitl_task if AI-drafted"]
+      - name: "approve-invoice"
+        entry_criteria: ["draft exists"]
+        exit_criteria: ["invoice in status=approved", "balanced journal posted (DR AR / CR Revenue)"]
+      - name: "send-invoice"
+        entry_criteria: ["invoice approved", "tenant has Stripe Connect OR PDF-only mode"]
+        exit_criteria: ["Stripe Payment Link created", "email sent", "public token rotated"]
+      - name: "receive-payment"
+        entry_criteria: ["customer pays via link OR manual mark-paid"]
+        exit_criteria: ["payment row created (idempotent on stripe_payment_intent_id)", "invoice marked paid", "balanced journal posted (DR Bank / CR AR), FX gain/loss to realized account if applicable"]
+
+  - name: "procure-to-pay"
+    description: "Vendor bill extracted → posted → paid via batch."
+    scenario_document: "docs/test/e2e_procure_to_pay.md"
+    stages:
+      - name: "ingest-bill"
+        entry_criteria: ["vendor invoice document uploaded"]
+        exit_criteria: ["vendor_invoice_agent extraction produced", "bill draft or hitl_task"]
+      - name: "approve-bill"
+        entry_criteria: ["draft exists", "approver role in {owner, admin, manager}"]
+        exit_criteria: ["bill in status=approved", "balanced journal (DR Expense/Asset / CR AP)"]
+      - name: "schedule-payment"
+        entry_criteria: ["one or more approved bills"]
+        exit_criteria: ["bill_payment batch with optimal pay date", "hitl_task (money-out is always reviewed)"]
+      - name: "export-and-execute"
+        entry_criteria: ["payment batch approved"]
+        exit_criteria: ["NACHA or Universal CSV file generated and validated", "bills marked sent_to_bank", "balanced journal on settlement"]
+
+  - name: "record-to-report"
+    description: "GL postings → period close → reports."
+    scenario_document: "docs/test/e2e_record_to_report.md"
+    stages:
+      - name: "post"
+        entry_criteria: ["sub-ledger event"]
+        exit_criteria: ["accounting_guardian validates: balanced, period open, accounts valid", "trigger writes journal_entries + journal_lines"]
+      - name: "close-period"
+        entry_criteria: ["all sub-ledgers reconciled"]
+        exit_criteria: ["period_lock row inserted", "subsequent transactions in that period rejected"]
+      - name: "report"
+        entry_criteria: ["data exists for requested range"]
+        exit_criteria: ["P&L / AR aging / AP aging / utilization / WIP rendered with multi-currency toggle"]
+
+  - name: "signup-to-first-invoice"
+    description: "Public marketing → signup → trial subscription → Stripe Connect → first invoice."
+    scenario_document: "docs/test/e2e_onboarding_signup.md"
+    stages:
+      - name: "signup"
+        entry_criteria: ["unauthenticated visitor on /"]
+        exit_criteria: ["Supabase Auth user exists", "tenant row exists", "Stripe subscription in trial"]
+      - name: "connect-stripe"
+        entry_criteria: ["admin in Settings → Connect"]
+        exit_criteria: ["stripe_connect_account_id stored", "account.updated webhook synced charges/payouts enabled"]
+      - name: "first-invoice"
+        entry_criteria: ["client + engagement exist"]
+        exit_criteria: ["invoice sent with Payment Link", "agent observed: invoice_drafter_agent log entry"]
+
+# ============================================================================
+# Agent registry (default autonomy from PLAN §6.2)
+# ============================================================================
+agents:
+  - name: "copilot_agent"
+    purpose: "Root chat orchestrator (Pydantic Graph router)."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/copilot_agent.yaml"
+  - name: "engagement_letter_agent"
+    purpose: "Parse uploaded engagement letter → engagement draft + billing terms + rate card hints."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/engagement_letter_agent.yaml"
+  - name: "vendor_invoice_agent"
+    purpose: "Parse vendor bill → AP entry + journal."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/vendor_invoice_agent.yaml"
+  - name: "expense_extractor_agent"
+    purpose: "Parse receipt → project_expense draft."
+    autonomy_default: "L2 (auto-eligible L3 above confidence 0.9)"
+    eval_pack: "docs/test/agent_evals/expense_extractor_agent.yaml"
+  - name: "invoice_drafter_agent"
+    purpose: "Build invoice from time + expenses across 5 billing models."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/invoice_drafter_agent.yaml"
+  - name: "billing_run_agent"
+    purpose: "Monthly pre-bill — proposes invoices for all active engagements."
+    autonomy_default: "L1 (humans approve the batch)"
+    eval_pack: "docs/test/agent_evals/billing_run_agent.yaml"
+  - name: "project_health_agent"
+    purpose: "Background; alerts on budget burn, scope risk, retainer balance."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/project_health_agent.yaml"
+  - name: "collections_agent"
+    purpose: "Drafts dunning emails for overdue invoices."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/collections_agent.yaml"
+  - name: "accounting_guardian"
+    purpose: "Validates every journal before post — balanced, period open, account valid."
+    autonomy_default: "L3 (always, cannot disable)"
+    eval_pack: "docs/test/agent_evals/accounting_guardian.yaml"
+  - name: "reporting_agent"
+    purpose: "Q&A over data — P&L by engagement, AR aging, utilization."
+    autonomy_default: "L3 (read-only)"
+    eval_pack: "docs/test/agent_evals/reporting_agent.yaml"
+  - name: "intelligence_agent"
+    purpose: "Anomaly detection, suggestions on rates / under-billing / scope creep."
+    autonomy_default: "L2"
+    eval_pack: "docs/test/agent_evals/intelligence_agent.yaml"
+  - name: "time_entry_agent"
+    purpose: "Chat-driven time entry parsing."
+    autonomy_default: "L3 if unambiguous else L2"
+    eval_pack: "docs/test/agent_evals/time_entry_agent.yaml"
+  - name: "revenue_recognition_agent"
+    purpose: "(v1.1) ASC 606 — WIP, deferred revenue, recognition schedule."
+    autonomy_default: "L1 → L2 over time"
+    eval_pack: "docs/test/agent_evals/revenue_recognition_agent.yaml"
+  - name: "bill_pay_agent"
+    purpose: "Proposes payment batches — which approved bills, optimal pay date, source account."
+    autonomy_default: "L2 (always — money out is sensitive)"
+    eval_pack: "docs/test/agent_evals/bill_pay_agent.yaml"
+
+# ============================================================================
+# Quality rules (consumed by quality-gates.md)
+# ============================================================================
+quality_rules:
+
+  money:
+    exact_decimal: true
+    db_precision: "NUMERIC(15,2)"
+    api_serialization: "string"
+    property_test_required_for_changes: true
+
+  tenancy:
+    required: true
+    enforcement: "application + database policy (RLS)"
+    cross_tenant_test_required_for_every_endpoint: true
+
+  ai:
+    pii_masking_required: true
+    human_approval_for_writes: true
+    eval_pack_required_per_agent: true
+    drift_alert_threshold:
+      average_score_drop: 0.05
+      pass_rate_drop: 0.05
+      red_team_pass_rate_drop: 0.01
+    autonomy_promotion_thresholds:
+      min_decided: 30
+      min_approval_rate: 0.95
+      min_avg_confidence: 0.85
+      max_edit_rate: 0.15
+    money_touching_agents_stricter_thresholds:
+      agents: ["invoice_drafter_agent", "accounting_guardian", "bill_pay_agent"]
+      min_decided: 60
+      min_approval_rate: 0.98
+
+  accounting:
+    debits_equal_credits: true
+    posted_immutable: true
+    corrections_via_reversing_entries_only: true
+    period_lock_enforced_at_api_and_db: true
+    fx_rate_frozen_at_post_time: true
+
+  observability:
+    every_endpoint_emits_trace: true
+    every_agent_run_emits_llm_trace: true
+    no_secrets_in_logs: true
+    no_raw_pii_in_logs: true
+
+  e2e:
+    flagship_workflow: "engagement-to-cash"
+    scenario_document_required: true
+    coverage_taxonomy:
+      - happy_path_ui
+      - happy_path_api
+      - multi_variant
+      - unhappy_user_error
+      - unhappy_system_error
+      - unhappy_auth_rbac
+      - unhappy_concurrency
+      - unhappy_money
+      - unhappy_agent
+      - audit
+      - idempotency

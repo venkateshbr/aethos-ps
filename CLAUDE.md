@@ -5,8 +5,14 @@
 
 Standalone product in the Aethos family. Sister product (general ERP) lives at `~/dev/aethos`.
 
-## 🚨 MANDATORY FIRST STEP — READ THE PLAN
-**Before any work, read [`docs/PLAN.md`](docs/PLAN.md).** It is the source of truth for product scope, data model, agent catalog, HITL flow, Stripe integration, phasing, and decisions log. Bring up any conflict with the plan to the Founder before writing code.
+## 🚨 MANDATORY FIRST STEP — LOAD THE HARNESS, THEN READ THE PLAN
+
+1. **Load the Agent Harness** in the order specified by [`agent-harness/adapters/claude/CLAUDE.md`](agent-harness/adapters/claude/CLAUDE.md). The harness is the model-neutral, project-agnostic source of truth for HOW we work — TDD discipline, agent evaluation, end-to-end workflows, contract testing, observability, security, quality gates.
+2. **Read [`docs/PLAN.md`](docs/PLAN.md)** — source of truth for product scope, data model, agent catalog, HITL flow, Stripe integration, phasing, decisions log.
+3. **Read [`docs/team/PROJECT_CONTEXT.md`](docs/team/PROJECT_CONTEXT.md)** — Aethos-specific project facts (stack, ports, conventions, markets).
+4. **Read [`docs/team/SDLC_PROTOCOL.md`](docs/team/SDLC_PROTOCOL.md)** — the Aethos-specific overlay on the generic SDLC protocol.
+
+Bring up any conflict with the plan to the Founder before writing code.
 
 ## Tech Stack
 - **Backend**: Python 3.12+, FastAPI 0.115+, PydanticAI, Pydantic Graph, Pydantic v2, ARQ workers

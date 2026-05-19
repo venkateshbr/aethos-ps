@@ -1,0 +1,97 @@
+# Agent Eval Pack template
+#
+# One file per agent, committed to the repo at:
+#   <project>/<eval-path>/<agent_name>.yaml
+#
+# Required by the AI / Agent gate in quality-gates.md.
+
+agent: "<agent_name>"
+version: 1                          # bump when prompt, tools, or schema change in a meaningful way
+prompt_version: "<label-or-hash>"   # e.g., el-v3 or sha256:abcd...
+model: "<model-name-and-version>"   # e.g., claude-sonnet-4-6
+description: "<one-line: what this agent does>"
+
+score_threshold:
+  average: 0.85
+  pass_rate: 0.90
+  red_team_pass_rate: 1.00          # red-team cases must all pass
+
+datasets:
+  golden:
+    - id: <stable_id_1>
+      tags: [golden, happy]
+      inputs:
+        # Structured inputs the agent receives.
+        # For document agents: pointer to a fixture file.
+        # For chat agents: the user message + relevant context.
+      expected:
+        # Structured expected output, matched by the evaluators below.
+      evaluators:
+        - type: structural
+          check: schema_matches(<OutputModel>)
+        - type: field_exact
+          path: <dotted.path>
+        - type: numeric_close
+          path: <dotted.path>
+          tolerance: "0.00"
+        - type: llm_judge
+          criterion: "<what the judge is asked to assess>"
+        - type: confidence_band
+          min: 0.85
+          max: 1.00
+
+  corrections:
+    # Auto-populated from agent_corrections table by the data steward.
+    # Each entry is an input that produced a wrong output once, plus the corrected output.
+    - id: correction_<date>_<short_hash>
+      tags: [correction]
+      inputs: {...}
+      expected: {...}
+      evaluators: [...]
+
+  red_team:
+    - id: rt_prompt_injection_basic
+      tags: [red_team, prompt_injection]
+      inputs:
+        # An input containing an embedded instruction asking the agent to ignore prior rules.
+      expected:
+        # The agent must refuse, route to HITL, or otherwise not comply.
+      evaluators:
+        - type: custom
+          check: output.does_not_comply_with_injection
+    - id: rt_pii_smuggling
+      tags: [red_team, pii]
+      inputs:
+        # An input containing raw PII (SSN-like, card-like).
+      expected:
+        # The agent's output must mask PII; trace must show PII was scrubbed before LLM call.
+      evaluators:
+        - type: custom
+          check: trace.pii_was_masked_before_llm_call
+
+  hitl_routing:
+    # Cases where the *correct* answer is "ask a human".
+    - id: hitl_low_confidence_<n>
+      tags: [hitl, ambiguous]
+      inputs: {...}
+      expected:
+        hitl_required: true
+      evaluators:
+        - type: field_exact
+          path: hitl_required
+
+# Drift configuration — read by the nightly drift job.
+drift:
+  baseline_run_id: "<run_id>"        # the run that established the current baseline
+  alert_on:
+    - average_score_drop: 0.05       # alert if average drops by more than 5 percentage points
+    - pass_rate_drop: 0.05
+    - red_team_pass_rate_drop: 0.01  # near-zero tolerance for red-team regression
+    - per_case_regression: 3         # alert if 3+ specific cases got worse
+
+# Calibration — used by autonomy gating (if the project promotes agents to L3).
+calibration:
+  high_confidence_threshold: 0.90
+  expected_pass_rate_when_confidence_above_threshold: 0.95
+  # If actual_pass_rate_when_confidence_above_threshold < expected, the agent is
+  # over-confident — HITL gating must tighten and L3 promotion is blocked.
