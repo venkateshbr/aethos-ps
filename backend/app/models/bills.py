@@ -1,0 +1,87 @@
+"""Pydantic request/response schemas for the Bills (AP) API.
+
+Money rules:
+- Input: Decimal fields (Python precision, no float leakage)
+- Output: serialised as str in JSON (JSON number precision is not guaranteed)
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+
+from pydantic import BaseModel, Field
+
+
+class BillLineCreate(BaseModel):
+    description: str = Field(..., min_length=1, max_length=500)
+    quantity: Decimal = Field(default=Decimal("1"), gt=Decimal("0"))
+    unit_price: Decimal = Field(..., ge=Decimal("0"))
+    amount: Decimal = Field(..., ge=Decimal("0"))
+    tax_amount: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    # Optional: override expense account; defaults to COA 5000 on approval
+    account_id: str | None = None
+
+
+class BillCreate(BaseModel):
+    client_id: str = Field(..., description="Must reference a client with kind='vendor' or 'both'")
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    issue_date: date | None = None
+    due_date: date | None = None
+    vendor_invoice_number: str | None = Field(default=None, max_length=100)
+    notes: str | None = Field(default=None, max_length=2000)
+    lines: list[BillLineCreate] = Field(default_factory=list)
+
+
+class BillLineResponse(BaseModel):
+    id: str
+    bill_id: str
+    description: str
+    quantity: str       # Decimal as string
+    unit_price: str     # Decimal as string
+    amount: str         # Decimal as string
+    tax_amount: str     # Decimal as string
+    account_id: str | None
+    created_at: str
+
+
+class BillResponse(BaseModel):
+    id: str
+    tenant_id: str
+    client_id: str
+    bill_number: str
+    currency: str
+    subtotal: str           # Decimal as string
+    tax_total: str          # Decimal as string
+    total: str              # Decimal as string
+    status: str
+    issue_date: str | None
+    due_date: str | None
+    vendor_invoice_number: str | None
+    notes: str | None
+    created_at: str
+    lines: list[BillLineResponse] = Field(default_factory=list)
+
+
+class BillListResponse(BaseModel):
+    items: list[BillResponse]
+    total: int
+
+
+class BillApproveResponse(BaseModel):
+    id: str
+    status: str
+    # Will be None until accounting_guardian agent is wired; service posts synchronously for v1
+    journal_entry_id: str | None
+    message: str
+
+
+class AgingBucket(BaseModel):
+    label: str       # e.g. "current", "1-30", "31-60", "61-90", "90+"
+    total: str       # Decimal as string
+    count: int
+
+
+class ApAgingResponse(BaseModel):
+    buckets: list[AgingBucket]
+    grand_total: str    # Decimal as string
