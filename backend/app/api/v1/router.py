@@ -19,8 +19,10 @@ from app.api.v1.endpoints import (
     engagements,
     health_check,
     inbox,
+    invoices,
     projects,
     rate_cards,
+    stripe_connect,
     time_entries,
     webhooks,
 )
@@ -39,7 +41,8 @@ api_router.include_router(engagements.router, prefix="/engagements", tags=["enga
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
-# Issue #48 — accounting_guardian + period locks
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
-# Issue #53 — Time entries CRUD API
 api_router.include_router(time_entries.router, prefix="/time-entries", tags=["time-entries"])
+api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
+api_router.include_router(invoices.public_router, prefix="/public/invoices", tags=["public"])
+api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"])
