@@ -65,6 +65,16 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/settings/settings.component').then(m => m.SettingsComponent),
       },
+      {
+        path: 'reports',
+        loadComponent: () =>
+          import('./features/reports/reports.component').then(m => m.ReportsComponent),
+      },
+      {
+        path: 'billing-runs',
+        loadComponent: () =>
+          import('./features/billing-runs/pay-bills.component').then(m => m.PayBillsComponent),
+      },
       { path: '', redirectTo: 'copilot', pathMatch: 'full' },
     ],
   },
