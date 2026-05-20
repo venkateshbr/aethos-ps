@@ -109,78 +109,154 @@ import { ConfidenceChipComponent } from '../../shared/components/confidence-chip
 
         } @else {
           @for (task of tasks(); track task.id; let idx = $index) {
-            <div
-              [id]="'task-' + task.id"
-              [class]="cardClass(idx)"
-              (click)="focusCard(idx)"
-              role="article"
-              [attr.aria-label]="task.title"
-              [attr.aria-current]="idx === focusedIdx() ? 'true' : null"
-            >
-              <!-- Card header -->
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-emerald-400 text-xs" aria-hidden="true">&#10022;</span>
-                  <span class="text-xs text-slate-400">{{ task.agent_name | titlecase }}</span>
-                  <app-confidence-chip [confidence]="task.confidence" />
+            @if (task.kind === 'promote_autonomy' || task.kind === 'autonomy_demotion') {
+              <!-- Autonomy promotion / demotion card -->
+              <div
+                [id]="'task-' + task.id"
+                [class]="autonomyCardClass(idx, task.kind)"
+                (click)="focusCard(idx)"
+                role="article"
+                [attr.aria-label]="task.title"
+                [attr.aria-current]="idx === focusedIdx() ? 'true' : null"
+              >
+                <div class="flex items-center gap-2 mb-3">
+                  <span [class]="task.kind === 'autonomy_demotion' ? 'text-red-400' : 'text-emerald-400'" aria-hidden="true">✦</span>
+                  <span class="text-xs font-medium uppercase tracking-wide"
+                        [class]="task.kind === 'autonomy_demotion' ? 'text-red-400' : 'text-emerald-400'">
+                    {{ task.kind === 'autonomy_demotion' ? 'Autonomy Alert' : 'Autonomy Upgrade' }}
+                  </span>
+                  <app-confidence-chip [confidence]="task.confidence || '0.9'" />
                 </div>
-                <span [class]="priorityBadge(task.priority)" aria-label="Priority: {{ task.priority }}">
-                  {{ task.priority }}
-                </span>
-              </div>
-
-              <!-- Title -->
-              <p class="text-sm font-medium text-slate-100 mb-2">{{ task.title }}</p>
-
-              <!-- Payload summary -->
-              <div class="text-xs text-slate-400 space-y-0.5 mb-4">
-                @for (entry of payloadSummary(task); track entry.key) {
-                  <div>
-                    <span class="text-slate-500">{{ entry.key }}:</span>
-                    {{ entry.value }}
+                <p class="text-sm font-semibold text-slate-100 mb-1">{{ task.title }}</p>
+                <p class="text-xs text-slate-400 mb-3">{{ task.agent_name | titlecase }}</p>
+                @if (task.suggestion_payload?.['approval_rate']) {
+                  <div class="flex flex-wrap gap-2 mb-4">
+                    <span class="bg-emerald-900 text-emerald-400 text-xs px-2 py-0.5 rounded">
+                      {{ (+task.suggestion_payload!['approval_rate'] * 100).toFixed(0) }}% approved
+                    </span>
+                    @if (task.suggestion_payload?.['sample_count']) {
+                      <span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded">
+                        {{ task.suggestion_payload!['sample_count'] }} decisions
+                      </span>
+                    }
+                    @if (task.suggestion_payload?.['avg_confidence']) {
+                      <span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded">
+                        Avg conf: {{ (+task.suggestion_payload!['avg_confidence'] * 100).toFixed(0) }}%
+                      </span>
+                    }
+                  </div>
+                }
+                @if (task.kind === 'promote_autonomy') {
+                  <div class="flex gap-2 flex-wrap">
+                    <button
+                      (click)="approve(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                      aria-label="Approve L3 promotion for {{ task.title }}"
+                    >
+                      @if (actioning() === task.id) { Processing... } @else { Approve L3 }
+                    </button>
+                    <button
+                      (click)="reject(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs rounded border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                      aria-label="Defer autonomy promotion 7 days"
+                    >Defer 7 days</button>
+                    <button
+                      (click)="reject(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs rounded text-red-400 hover:bg-red-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                      aria-label="Lock agent at L2"
+                    >Lock at L2</button>
+                  </div>
+                } @else {
+                  <!-- Demotion alert — just acknowledge -->
+                  <div class="flex gap-2">
+                    <button
+                      (click)="approve(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs font-medium rounded bg-red-700 hover:bg-red-600 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                    >
+                      @if (actioning() === task.id) { Processing... } @else { Acknowledge }
+                    </button>
                   </div>
                 }
               </div>
+            } @else {
+              <!-- Regular task card -->
+              <div
+                [id]="'task-' + task.id"
+                [class]="cardClass(idx)"
+                (click)="focusCard(idx)"
+                role="article"
+                [attr.aria-label]="task.title"
+                [attr.aria-current]="idx === focusedIdx() ? 'true' : null"
+              >
+                <!-- Card header -->
+                <div class="flex items-start justify-between mb-3">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-emerald-400 text-xs" aria-hidden="true">&#10022;</span>
+                    <span class="text-xs text-slate-400">{{ task.agent_name | titlecase }}</span>
+                    <app-confidence-chip [confidence]="task.confidence" />
+                  </div>
+                  <span [class]="priorityBadge(task.priority)" aria-label="Priority: {{ task.priority }}">
+                    {{ task.priority }}
+                  </span>
+                </div>
 
-              <!-- Action buttons -->
-              <div class="flex items-center gap-2">
-                <button
-                  (click)="approve(task, $event)"
-                  [disabled]="actioning() === task.id"
-                  class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                  aria-label="Approve {{ task.title }}"
-                >
-                  @if (actioning() === task.id) { Processing... } @else { Approve }
-                </button>
+                <!-- Title -->
+                <p class="text-sm font-medium text-slate-100 mb-2">{{ task.title }}</p>
 
-                <button
-                  (click)="startEdit(task, $event)"
-                  [disabled]="actioning() === task.id"
-                  class="px-3 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                  aria-label="Edit {{ task.title }}"
-                >
-                  Edit
-                </button>
+                <!-- Payload summary -->
+                <div class="text-xs text-slate-400 space-y-0.5 mb-4">
+                  @for (entry of payloadSummary(task); track entry.key) {
+                    <div>
+                      <span class="text-slate-500">{{ entry.key }}:</span>
+                      {{ entry.value }}
+                    </div>
+                  }
+                </div>
 
-                <button
-                  (click)="reject(task, $event)"
-                  [disabled]="actioning() === task.id"
-                  class="px-3 py-1.5 text-xs font-medium rounded text-red-400 hover:text-red-300 hover:bg-red-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
-                  aria-label="Reject {{ task.title }}"
-                >
-                  Reject
-                </button>
+                <!-- Action buttons -->
+                <div class="flex items-center gap-2">
+                  <button
+                    (click)="approve(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                    aria-label="Approve {{ task.title }}"
+                  >
+                    @if (actioning() === task.id) { Processing... } @else { Approve }
+                  </button>
 
-                <button
-                  (click)="escalate(task, $event)"
-                  [disabled]="actioning() === task.id"
-                  class="ml-auto px-3 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-                  aria-label="Escalate {{ task.title }}"
-                >
-                  Escalate
-                </button>
+                  <button
+                    (click)="startEdit(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="px-3 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                    aria-label="Edit {{ task.title }}"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    (click)="reject(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="px-3 py-1.5 text-xs font-medium rounded text-red-400 hover:text-red-300 hover:bg-red-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                    aria-label="Reject {{ task.title }}"
+                  >
+                    Reject
+                  </button>
+
+                  <button
+                    (click)="escalate(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="ml-auto px-3 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                    aria-label="Escalate {{ task.title }}"
+                  >
+                    Escalate
+                  </button>
+                </div>
               </div>
-            </div>
+            }
           }
         }
       </div>
@@ -255,6 +331,18 @@ export class InboxComponent implements OnInit {
     return idx === this.focusedIdx()
       ? `${base} border-emerald-500 ring-1 ring-emerald-500/30`
       : `${base} border-slate-700 hover:border-slate-600`;
+  }
+
+  autonomyCardClass(idx: number, kind: string): string {
+    const isDemotion = kind === 'autonomy_demotion';
+    const focusRing = isDemotion ? 'focus-within:ring-red-500/30' : 'focus-within:ring-emerald-500/30';
+    const base = `bg-slate-800 border rounded-lg p-4 cursor-pointer transition-all ${focusRing}`;
+    if (idx === this.focusedIdx()) {
+      const ring = isDemotion ? 'border-red-500 ring-1 ring-red-500/30' : 'border-emerald-500 ring-1 ring-emerald-500/30';
+      return `${base} ${ring}`;
+    }
+    const hoverBorder = isDemotion ? 'border-red-800/50 hover:border-red-700/50' : 'border-emerald-800/50 hover:border-emerald-700/50';
+    return `${base} ${hoverBorder}`;
   }
 
   priorityBadge(p: string): string {
