@@ -8,25 +8,34 @@ Security:
 - Unknown event types return 200 (Stripe requires this to stop retrying).
 - Idempotency: ``provider_event_id`` is checked before processing; duplicate
   events return 200 immediately.
+- Service-role client is used (bypasses RLS) since webhooks are server-to-server
+  with no user session — the event metadata carries tenant_id.
 
 Events handled:
-- customer.subscription.created  → update tenant billing status
-- customer.subscription.updated  → update tenant billing status + trial_ends_at
-- customer.subscription.deleted  → mark tenant canceled
+- customer.subscription.created     → update tenant billing status
+- customer.subscription.updated     → update tenant billing status + trial_ends_at
+- customer.subscription.deleted     → mark tenant canceled
+- checkout.session.completed        → record payment, post AR journal, mark invoice paid
+- account.updated (Connect)         → sync charges_enabled / payouts_enabled for tenant
 
 Never log the full event payload — it may contain card data or PII.
 Log only: event_id, event_type, stripe_customer_id (metadata only).
 """
+# Prahari review required — see docs/team/SECURITY_REVIEW.md
 
 from __future__ import annotations
 
+import asyncio
+import datetime
 import logging
+from decimal import Decimal
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
+from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService
 from supabase import Client
@@ -94,7 +103,7 @@ async def stripe_webhook(
     # 4. Dispatch to handler
     # ------------------------------------------------------------------
     try:
-        await _dispatch(event, tenant_repo)
+        await _dispatch(event, tenant_repo, db)
     except Exception:
         # Log but do not re-raise — we must return 200 so Stripe stops retrying.
         # The event is still recorded in webhook_events for audit / reconciliation.
@@ -135,7 +144,11 @@ async def stripe_webhook(
 # ---------------------------------------------------------------------------
 
 
-async def _dispatch(event: stripe.Event, tenant_repo: TenantRepository) -> None:
+async def _dispatch(
+    event: stripe.Event,
+    tenant_repo: TenantRepository,
+    db: Client,
+) -> None:
     """Route the event to the appropriate handler.  Unknown events are no-ops."""
     event_type: str = event.type
 
@@ -146,6 +159,10 @@ async def _dispatch(event: stripe.Event, tenant_repo: TenantRepository) -> None:
         await _handle_subscription_upserted(event, tenant_repo)
     elif event_type == "customer.subscription.deleted":
         await _handle_subscription_deleted(event, tenant_repo)
+    elif event_type == "checkout.session.completed":
+        await _handle_checkout_session_completed(event, db)
+    elif event_type == "account.updated":
+        await _handle_account_updated(event, tenant_repo, db)
     else:
         # Log at DEBUG; returning 200 is correct — Stripe requires it.
         logger.debug(
@@ -175,8 +192,6 @@ async def _handle_subscription_upserted(
         "stripe_subscription_status": sub.status,
     }
     if sub.trial_end:
-        import datetime
-
         update["trial_ends_at"] = datetime.datetime.fromtimestamp(
             sub.trial_end, tz=datetime.UTC
         ).isoformat()
@@ -228,3 +243,239 @@ def _extract_customer_id(event: stripe.Event) -> str | None:
         return getattr(obj, "customer", None)
     except Exception:
         return None
+
+
+async def _handle_checkout_session_completed(
+    event: stripe.Event,
+    db: Client,
+) -> None:
+    """Handle checkout.session.completed — record payment and post AR journal.
+
+    Flow:
+      1. Extract invoice_id + tenant_id from session metadata (set on Payment Link creation).
+      2. Idempotency check on stripe_payment_intent_id in payments table.
+      3. Record payment row.
+      4. Update invoice status → paid.
+      5. Post GL journal: DR 1100 Bank / CR 1200 Accounts Receivable.
+
+    Uses service-role client — no user session in webhook context.
+    """
+    session = event.data.object
+    meta = session.get("metadata", {}) if hasattr(session, "get") else {}
+    # stripe.checkout.Session is a StripeObject — use attribute access
+    if not meta:
+        meta = getattr(session, "metadata", {}) or {}
+
+    invoice_id: str | None = meta.get("invoice_id")
+    tenant_id: str | None = meta.get("tenant_id")
+
+    if not invoice_id or not tenant_id:
+        logger.warning(
+            "checkout.session.completed missing metadata — skipping",
+            extra={"event_id": event.id},
+        )
+        return
+
+    payment_intent_id: str | None = getattr(session, "payment_intent", None)
+
+    # ------------------------------------------------------------------
+    # Idempotency: skip if this payment_intent was already recorded
+    # ------------------------------------------------------------------
+    def _check_existing() -> bool:
+        if not payment_intent_id:
+            return False
+        result = (
+            db.table("payments")
+            .select("id")
+            .eq("stripe_payment_intent_id", payment_intent_id)
+            .execute()
+        )
+        return bool(result.data)
+
+    already_recorded = await asyncio.to_thread(_check_existing)
+    if already_recorded:
+        logger.info(
+            "Duplicate checkout.session.completed — skipping",
+            extra={"payment_intent_id": payment_intent_id, "event_id": event.id},
+        )
+        return
+
+    # ------------------------------------------------------------------
+    # Fetch invoice
+    # ------------------------------------------------------------------
+    def _get_invoice() -> dict | None:
+        result = (
+            db.table("invoices")
+            .select("*")
+            .eq("id", invoice_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    invoice = await asyncio.to_thread(_get_invoice)
+    if invoice is None:
+        logger.error(
+            "Invoice not found for checkout.session.completed",
+            extra={"invoice_id": invoice_id, "tenant_id": tenant_id, "event_id": event.id},
+        )
+        return
+
+    # Amount from Stripe is in the smallest currency unit (cents)
+    amount_total_cents: int = getattr(session, "amount_total", 0) or 0
+    currency: str = (getattr(session, "currency", "usd") or "usd").upper()
+    amount_received = Decimal(str(amount_total_cents)) / Decimal("100")
+
+    # ------------------------------------------------------------------
+    # Record payment
+    # ------------------------------------------------------------------
+    payment_data: dict = {
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "amount": str(amount_received),
+        "currency": currency,
+        "base_amount": str(amount_received),  # FX conversion deferred to fx_refresh_worker
+    }
+    if payment_intent_id:
+        payment_data["stripe_payment_intent_id"] = payment_intent_id
+
+    def _insert_payment() -> None:
+        db.table("payments").insert(payment_data).execute()
+
+    await asyncio.to_thread(_insert_payment)
+
+    # ------------------------------------------------------------------
+    # Mark invoice as paid
+    # ------------------------------------------------------------------
+    def _mark_paid() -> None:
+        db.table("invoices").update({"status": "paid"}).eq("id", invoice_id).execute()
+
+    await asyncio.to_thread(_mark_paid)
+
+    # ------------------------------------------------------------------
+    # Post journal: DR 1100 Bank / CR 1200 AR
+    # ------------------------------------------------------------------
+    def _get_accounts() -> dict[str, str]:
+        result = (
+            db.table("accounts")
+            .select("id, code")
+            .eq("tenant_id", tenant_id)
+            .in_("code", ["1100", "1200"])
+            .execute()
+        )
+        return {r["code"]: r["id"] for r in (result.data or [])}
+
+    acct_map = await asyncio.to_thread(_get_accounts)
+
+    invoice_number = invoice.get("invoice_number", invoice_id[:8])
+    journal_lines = [
+        JournalLineSpec(
+            direction="DR",
+            account_code="1100",
+            amount=amount_received,
+            description=f"Payment received for invoice {invoice_number}",
+            account_id=acct_map.get("1100"),
+            currency=currency,
+        ),
+        JournalLineSpec(
+            direction="CR",
+            account_code="1200",
+            amount=amount_received,
+            description=f"Payment received for invoice {invoice_number}",
+            account_id=acct_map.get("1200"),
+            currency=currency,
+        ),
+    ]
+
+    try:
+        post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by="system",
+            description=f"Payment received for invoice {invoice_number}",
+            entry_date=datetime.date.today().isoformat(),
+            reference_type="payment",
+            reference_id=payment_intent_id or invoice_id,
+            lines=journal_lines,
+        )
+    except Exception:
+        # Log but do not fail the webhook — the payment is already recorded.
+        # The accounting team can post a correcting entry manually.
+        logger.error(
+            "Failed to post payment journal — payment recorded, journal skipped",
+            exc_info=True,
+            extra={
+                "invoice_id": invoice_id,
+                "tenant_id": tenant_id,
+                "payment_intent_id": payment_intent_id,
+            },
+        )
+
+    logger.info(
+        "Payment recorded from checkout.session.completed",
+        extra={
+            "invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+            "amount": str(amount_received),
+            "currency": currency,
+            "event_id": event.id,
+        },
+    )
+
+
+async def _handle_account_updated(
+    event: stripe.Event,
+    tenant_repo: TenantRepository,
+    db: Client,
+) -> None:
+    """Handle account.updated — sync Connect charges_enabled / payouts_enabled.
+
+    Stripe sends this event whenever an account's state changes during
+    onboarding (identity verification, bank account added, etc.).
+
+    We look up the tenant by stripe_connect_account_id and update the
+    connect status columns.
+    """
+    account = event.data.object
+    connect_account_id: str = account.id
+    charges_enabled: bool = getattr(account, "charges_enabled", False)
+    payouts_enabled: bool = getattr(account, "payouts_enabled", False)
+
+    # Look up tenant by connect account ID
+    def _get_tenant() -> dict | None:
+        result = (
+            db.table("tenants")
+            .select("id, stripe_connect_status")
+            .eq("stripe_connect_account_id", connect_account_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    tenant = await asyncio.to_thread(_get_tenant)
+    if tenant is None:
+        logger.debug(
+            "account.updated for unknown Connect account — skipping",
+            extra={"connect_account_id": connect_account_id, "event_id": event.id},
+        )
+        return
+
+    new_status = "active" if charges_enabled else "pending"
+    await tenant_repo.update_tenant(
+        tenant["id"],
+        {
+            "stripe_connect_status": new_status,
+            "stripe_connect_charges_enabled": charges_enabled,
+            "stripe_connect_payouts_enabled": payouts_enabled,
+        },
+    )
+
+    logger.info(
+        "Stripe Connect account status synced from account.updated",
+        extra={
+            "tenant_id": tenant["id"],
+            "connect_account_id": connect_account_id,
+            "charges_enabled": charges_enabled,
+            "payouts_enabled": payouts_enabled,
+            "event_id": event.id,
+        },
+    )

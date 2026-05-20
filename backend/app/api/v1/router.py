@@ -18,8 +18,10 @@ from app.api.v1.endpoints import (
     engagements,
     health_check,
     inbox,
+    invoices,
     projects,
     rate_cards,
+    stripe_connect,
     webhooks,
 )
 
@@ -37,3 +39,13 @@ api_router.include_router(engagements.router, prefix="/engagements", tags=["enga
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
+# Issue #50 — Invoice lifecycle + Stripe Payment Link
+api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
+# Issue #50 — Public invoice endpoint (no auth — for customer payment page)
+api_router.include_router(
+    invoices.public_router, prefix="/public/invoices", tags=["public"]
+)
+# Issue #51 — Stripe Connect Standard onboarding
+api_router.include_router(
+    stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"]
+)
