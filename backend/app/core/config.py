@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    # Stripe Connect Standard — client_id from Connect > Settings in Stripe dashboard
+    stripe_connect_client_id: str = ""
 
-    # Stripe Price IDs — one per plan × interval × currency.
+    # Stripe Price IDs — one per plan x interval x currency.
     # Placeholder values; founder creates real Prices in the Stripe dashboard and
     # sets these in .env (test mode) / secrets manager (production).
     # Naming: STRIPE_PRICE_{TIER}_{INTERVAL}_{CURRENCY}
@@ -85,6 +87,11 @@ class Settings(BaseSettings):
     # FX Rates (Open Exchange Rates — free tier works without an app_id)
     # ------------------------------------------------------------------
     openexchangerates_app_id: str = ""
+
+    # ------------------------------------------------------------------
+    # Resend (transactional email — disabled when empty)
+    # ------------------------------------------------------------------
+    resend_api_key: str = ""
 
     # ------------------------------------------------------------------
     # Upstash Redis (optional — disabled when empty)
