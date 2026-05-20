@@ -15,6 +15,8 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
+from app.workers.autonomy_promoter import autonomy_promoter_worker
+from app.workers.collections import collections_worker
 from app.workers.document_extraction import extract_document_worker
 from app.workers.fx_refresh import fx_refresh_worker
 
@@ -29,15 +31,29 @@ class WorkerSettings:
     functions: ClassVar[list] = [
         fx_refresh_worker,
         extract_document_worker,
+        collections_worker,
+        autonomy_promoter_worker,
     ]
 
     cron_jobs: ClassVar[list] = [
-        # Run FX refresh daily at 08:00 UTC.
-        # run_at_startup=False: don't fetch rates the moment the worker boots —
-        # the daily schedule is sufficient unless manually triggered.
+        # FX refresh: daily at 08:00 UTC.
         cron(
             fx_refresh_worker,
             hour={8},
+            minute={0},
+            run_at_startup=False,
+        ),
+        # Dunning emails: daily at 06:00 UTC.
+        cron(
+            collections_worker,
+            hour={6},
+            minute={0},
+            run_at_startup=False,
+        ),
+        # Autonomy promoter: daily at 02:00 UTC.
+        cron(
+            autonomy_promoter_worker,
+            hour={2},
             minute={0},
             run_at_startup=False,
         ),
@@ -51,4 +67,4 @@ class WorkerSettings:
     max_jobs: int = 10
 
     # Seconds before a job is considered timed out and marked failed.
-    job_timeout: int = 120
+    job_timeout: int = 300

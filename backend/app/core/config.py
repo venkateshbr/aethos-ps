@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     openexchangerates_app_id: str = ""
 
     # ------------------------------------------------------------------
+    # Resend (transactional email — disabled when empty)
+    # ------------------------------------------------------------------
+    resend_api_key: str = ""
+
+    # ------------------------------------------------------------------
     # Upstash Redis (optional — disabled when empty)
     # ------------------------------------------------------------------
     upstash_redis_url: str = ""
