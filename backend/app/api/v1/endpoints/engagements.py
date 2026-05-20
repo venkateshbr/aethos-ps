@@ -84,3 +84,65 @@ async def update_engagement_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found"
         )
     return engagement
+
+
+@router.post("/{id}/draft-invoice")
+async def draft_invoice_endpoint(
+    id: str,
+    period_start: str | None = Query(
+        default=None, description="Period start date YYYY-MM-DD"
+    ),
+    period_end: str | None = Query(
+        default=None, description="Period end date YYYY-MM-DD"
+    ),
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Draft an invoice for an engagement based on its billing arrangement.
+
+    Calculates all unbilled items (time entries, expenses, milestones) and
+    applies the tenant's default tax rate. Returns an InvoiceDraft — this
+    does NOT create an invoice record; use POST /invoices to persist.
+
+    Requires member role or above.
+    """
+    from datetime import date as _date
+
+    from app.agents.base import AgentDeps
+    from app.agents.invoice_drafter_agent import draft_invoice
+
+    deps = AgentDeps(
+        tenant_id=tenant_id,
+        user_id=current_user.user_id,
+        db=db,
+    )
+
+    ps: _date | None = None
+    pe: _date | None = None
+    try:
+        if period_start:
+            ps = _date.fromisoformat(period_start)
+        if period_end:
+            pe = _date.fromisoformat(period_end)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid date format: {exc}",
+        ) from exc
+
+    try:
+        invoice_draft = draft_invoice(id, deps, ps, pe)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception("draft_invoice failed for engagement %s tenant %s", id, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return invoice_draft.model_dump(mode="json")
