@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    accounting,
     auth,
     billing,
     bills,
@@ -20,6 +21,7 @@ from app.api.v1.endpoints import (
     inbox,
     projects,
     rate_cards,
+    time_entries,
     webhooks,
 )
 
@@ -37,3 +39,7 @@ api_router.include_router(engagements.router, prefix="/engagements", tags=["enga
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
+# Issue #48 — accounting_guardian + period locks
+api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
+# Issue #53 — Time entries CRUD API
+api_router.include_router(time_entries.router, prefix="/time-entries", tags=["time-entries"])

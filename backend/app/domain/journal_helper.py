@@ -5,8 +5,8 @@ Usage::
     from app.domain.journal_helper import JournalLineSpec, validate_journal_balance
 
     lines = [
-        JournalLineSpec(direction="DR", account_code="5000", amount=Decimal("1000.00"), description="Expenses"),
-        JournalLineSpec(direction="CR", account_code="2000", amount=Decimal("1000.00"), description="Accounts Payable"),
+        JournalLineSpec(direction="DR", account_code="5000", account_id="uuid-...", amount=Decimal("1000.00"), description="Expenses"),
+        JournalLineSpec(direction="CR", account_code="2000", account_id="uuid-...", amount=Decimal("1000.00"), description="Accounts Payable"),
     ]
     assert validate_journal_balance(lines)
 
@@ -16,8 +16,15 @@ Rules enforced here (not in DB triggers, to enable Python-layer validation befor
 
 from __future__ import annotations
 
+import logging
+import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
+
+from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,20 +33,28 @@ class JournalLineSpec:
 
     ``direction`` must be "DR" (debit) or "CR" (credit).
     ``account_code`` is the COA code string (e.g. "5000", "2000").
+    ``account_id`` is the UUID of the resolved COA account (optional; required by guardian).
     ``amount`` must be positive; direction carries the sign semantics.
     ``description`` is an optional narrative for the line.
+    ``currency`` is the ISO-4217 currency code (default "USD").
+    ``base_amount`` is the tenant-base-currency equivalent (defaults to amount for single-currency).
     """
 
     direction: str  # "DR" or "CR"
     account_code: str
     amount: Decimal
     description: str = ""
+    account_id: str | None = None
+    currency: str = "USD"
+    base_amount: Decimal | None = None
 
     def __post_init__(self) -> None:
         if self.direction not in ("DR", "CR"):
             raise ValueError(f"direction must be 'DR' or 'CR', got {self.direction!r}")
         if self.amount < Decimal("0"):
             raise ValueError(f"amount must be non-negative, got {self.amount}")
+        if self.base_amount is None:
+            self.base_amount = self.amount
 
 
 def validate_journal_balance(lines: list[JournalLineSpec]) -> bool:
@@ -57,3 +72,124 @@ def validate_journal_balance(lines: list[JournalLineSpec]) -> bool:
     debits = sum(line.amount for line in lines if line.direction == "DR")
     credits = sum(line.amount for line in lines if line.direction == "CR")
     return abs(debits - credits) <= Decimal("0.01")
+
+
+def post_journal(
+    db: Client,
+    tenant_id: str,
+    created_by: str,
+    description: str,
+    entry_date: str,
+    reference_type: str,
+    reference_id: str,
+    lines: list[JournalLineSpec],
+    entry_number: str | None = None,
+) -> dict:
+    """Validate with accounting_guardian then INSERT journal_entry + journal_lines.
+
+    This is the canonical way to post a journal entry from Python code.
+    The accounting_guardian runs L3 always and cannot be disabled — it validates
+    balance, period lock, and account existence before any INSERT.
+
+    Args:
+        db: Supabase service-role client (tenant session var must already be set).
+        tenant_id: Tenant UUID string.
+        created_by: User UUID string of the person/system posting the entry.
+        description: Human-readable description of the journal entry.
+        entry_date: ISO date string "YYYY-MM-DD".
+        reference_type: Sub-ledger type (e.g. "bill", "invoice", "expense").
+        reference_id: UUID of the referencing record.
+        lines: List of JournalLineSpec entries (must balance within 0.01).
+        entry_number: Optional entry number (auto-generated if not provided).
+
+    Returns:
+        The journal_entry row dict as returned by Supabase.
+
+    Raises:
+        ValueError: If the accounting_guardian rejects the journal (imbalanced,
+                    locked period, or unknown accounts).
+    """
+    # Import here to avoid circular imports — guardian imports journal_helper
+    from app.agents.accounting_guardian import validate_journal
+
+    result = validate_journal(lines, entry_date, tenant_id, db)
+    if result["action"] == "reject":
+        raise ValueError(f"accounting_guardian rejected: {result['reason']}")
+
+    period = entry_date[:7]  # "YYYY-MM"
+    if not entry_number:
+        entry_number = f"JE-{str(uuid.uuid4())[:8].upper()}"
+
+    je = (
+        db.table("journal_entries")
+        .insert(
+            {
+                "tenant_id": tenant_id,
+                "entry_number": entry_number,
+                "entry_type": "auto",
+                "description": description,
+                "entry_date": entry_date,
+                "period": period,
+                "reference_type": reference_type,
+                "reference_id": reference_id,
+                "posted_at": datetime.now(UTC).isoformat(),
+                "created_by": created_by,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    je_lines = []
+    for spec in lines:
+        je_lines.append(
+            {
+                "tenant_id": tenant_id,
+                "journal_entry_id": je["id"],
+                "direction": spec.direction,
+                "account_id": spec.account_id,
+                "amount": str(spec.amount),
+                "currency": spec.currency,
+                "base_amount": str(spec.base_amount if spec.base_amount is not None else spec.amount),
+                "description": spec.description,
+            }
+        )
+
+    # Add FX residual line if needed (routes to account 7900 Realized FX Gain/Loss)
+    if result.get("fx_residual"):
+        fx_acct = (
+            db.table("accounts")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("code", "7900")
+            .execute()
+        )
+        fx_acct_id = fx_acct.data[0]["id"] if fx_acct.data else None
+        residual: Decimal = result["fx_residual"]
+        debits = sum(line.amount for line in lines if line.direction == "DR")
+        credits = sum(line.amount for line in lines if line.direction == "CR")
+        direction = "CR" if debits > credits else "DR"
+        je_lines.append(
+            {
+                "tenant_id": tenant_id,
+                "journal_entry_id": je["id"],
+                "direction": direction,
+                "account_id": fx_acct_id,
+                "amount": str(residual),
+                "currency": "USD",
+                "base_amount": str(residual),
+                "description": "Realized FX Gain/Loss",
+            }
+        )
+
+    db.table("journal_lines").insert(je_lines).execute()
+
+    logger.info(
+        "Journal posted",
+        extra={
+            "journal_entry_id": je["id"],
+            "tenant_id": tenant_id,
+            "lines": len(je_lines),
+        },
+    )
+    return je

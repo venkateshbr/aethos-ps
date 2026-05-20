@@ -18,13 +18,14 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, ClassVar
 
 import anthropic
 
 if TYPE_CHECKING:
-    from supabase import Client
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class CopilotAgent:
         "Be concise and professional. Format monetary values with their currency symbol."
     )
 
-    TOOLS: list[dict] = [
+    TOOLS: ClassVar[list[dict]] = [
         {
             "name": "query_engagements",
             "description": (
@@ -82,7 +83,32 @@ class CopilotAgent:
                 },
                 "required": [],
             },
-        }
+        },
+        {
+            "name": "query_time_entries",
+            "description": (
+                "List time entries for a project. "
+                "Use when the user asks about logged hours, timesheets, or billable time."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "Project ID to query",
+                    },
+                    "date_from": {
+                        "type": "string",
+                        "description": "Start date YYYY-MM-DD",
+                    },
+                    "date_to": {
+                        "type": "string",
+                        "description": "End date YYYY-MM-DD",
+                    },
+                },
+                "required": ["project_id"],
+            },
+        },
     ]
 
     def __init__(self, deps: CopilotDeps) -> None:
@@ -257,6 +283,12 @@ class CopilotAgent:
                 status=tool_input.get("status", "all"),
                 limit=int(tool_input.get("limit", 10)),
             )
+        if tool_name == "query_time_entries":
+            return await self._query_time_entries(
+                project_id=tool_input["project_id"],
+                date_from=tool_input.get("date_from"),
+                date_to=tool_input.get("date_to"),
+            )
         logger.warning(
             "Unknown tool requested by LLM",
             extra={"tool_name": tool_name, "tenant_id": self.deps.tenant_id},
@@ -312,3 +344,61 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc), "engagements": []}
+
+    async def _query_time_entries(
+        self,
+        project_id: str,
+        date_from: str | None,
+        date_to: str | None,
+    ) -> dict:
+        """Fetch time entries for a project.
+
+        Only non-PII fields are returned to the model.
+        """
+        import asyncio
+
+        try:
+            db = self.deps.db_client  # type: ignore[assignment]
+
+            def _fetch() -> list[dict]:
+                q = (
+                    db.table("time_entries")
+                    .select("id, date, hours, description, billable, billing_status, employee_id")
+                    .eq("tenant_id", self.deps.tenant_id)
+                    .eq("project_id", project_id)
+                    .is_("deleted_at", "null")
+                    .order("date", desc=True)
+                    .limit(50)
+                )
+                if date_from:
+                    q = q.gte("date", date_from)
+                if date_to:
+                    q = q.lte("date", date_to)
+                result = q.execute()
+                return result.data or []
+
+            entries = await asyncio.to_thread(_fetch)
+
+            total_hours = sum(float(e.get("hours", 0)) for e in entries)
+            return {
+                "count": len(entries),
+                "total_hours": round(total_hours, 2),
+                "entries": [
+                    {
+                        "id": e["id"],
+                        "date": str(e["date"]),
+                        "hours": str(e["hours"]),
+                        "description": e.get("description") or "",
+                        "billable": e.get("billable"),
+                        "billing_status": e.get("billing_status"),
+                    }
+                    for e in entries
+                ],
+            }
+        except Exception as exc:
+            logger.error(
+                "query_time_entries tool failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc), "entries": []}
