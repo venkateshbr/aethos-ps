@@ -57,6 +57,9 @@ class CopilotAgent:
         "You have access to tools to look up data. Always use tools to get real data — "
         "never invent numbers.\n"
         "When users ask about their engagements or projects, use the query_engagements tool.\n"
+        "When users ask about outstanding invoices or receivables, use get_ar_aging.\n"
+        "When users ask about outstanding bills or payables, use get_ap_aging.\n"
+        "When users ask about unbilled work or WIP, use get_wip.\n"
         "Be concise and professional. Format monetary values with their currency symbol."
     )
 
@@ -107,6 +110,41 @@ class CopilotAgent:
                     },
                 },
                 "required": ["project_id"],
+            },
+        },
+        # Issue #62 — reporting tools
+        {
+            "name": "get_ar_aging",
+            "description": (
+                "Get AR aging buckets for the tenant. "
+                "Use when user asks about outstanding invoices, receivables, "
+                "what clients owe, or overdue invoices."
+            ),
+            "input_schema": {"type": "object", "properties": {}, "required": []},
+        },
+        {
+            "name": "get_ap_aging",
+            "description": (
+                "Get AP aging buckets. "
+                "Use when user asks about outstanding bills, payables, "
+                "or what the firm owes vendors."
+            ),
+            "input_schema": {"type": "object", "properties": {}, "required": []},
+        },
+        {
+            "name": "get_wip",
+            "description": (
+                "Get work in progress — unbilled effort and its estimated value per project."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "engagement_id": {
+                        "type": "string",
+                        "description": "Filter by engagement ID (optional).",
+                    }
+                },
+                "required": [],
             },
         },
     ]
@@ -289,6 +327,21 @@ class CopilotAgent:
                 date_from=tool_input.get("date_from"),
                 date_to=tool_input.get("date_to"),
             )
+        if tool_name == "get_ar_aging":
+            from app.services.reports_service import ReportsService
+
+            svc = ReportsService(self.deps.db_client, self.deps.tenant_id)  # type: ignore[arg-type]
+            return svc.ar_aging()
+        if tool_name == "get_ap_aging":
+            from app.services.reports_service import ReportsService
+
+            svc = ReportsService(self.deps.db_client, self.deps.tenant_id)  # type: ignore[arg-type]
+            return svc.ap_aging()
+        if tool_name == "get_wip":
+            from app.services.reports_service import ReportsService
+
+            svc = ReportsService(self.deps.db_client, self.deps.tenant_id)  # type: ignore[arg-type]
+            return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
         logger.warning(
             "Unknown tool requested by LLM",
             extra={"tool_name": tool_name, "tenant_id": self.deps.tenant_id},
