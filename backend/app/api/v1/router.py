@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     accounting,
     auth,
+    bill_payments,
     billing,
     bills,
     chat,
@@ -21,6 +22,7 @@ from app.api.v1.endpoints import (
     inbox,
     projects,
     rate_cards,
+    reports,
     time_entries,
     webhooks,
 )
@@ -43,3 +45,7 @@ api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
 # Issue #53 — Time entries CRUD API
 api_router.include_router(time_entries.router, prefix="/time-entries", tags=["time-entries"])
+# Issue #61 — Bill payment batches + NACHA/CSV export
+api_router.include_router(bill_payments.router, prefix="/bill-payments", tags=["bill-payments"])
+# Issue #62 — Financial and operational reports
+api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
