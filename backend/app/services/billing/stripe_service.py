@@ -67,6 +67,7 @@ class StripeService:
     def __init__(self, settings: Settings) -> None:
         stripe.api_key = settings.stripe_secret_key
         self.webhook_secret = settings.stripe_webhook_secret
+        self._settings = settings
 
     # ------------------------------------------------------------------
     # Customer
@@ -283,3 +284,103 @@ class StripeService:
                 code=exc.code or "stripe_error",
             ) from exc
         return session.url
+
+    # ------------------------------------------------------------------
+    # Stripe Connect Standard — onboarding (issue #51)
+    # ------------------------------------------------------------------
+
+    async def create_connect_oauth_url(
+        self,
+        tenant_id: str,
+        redirect_uri: str,
+        country: str,
+    ) -> str:
+        """Return the Stripe Connect OAuth authorization URL.
+
+        The ``state`` parameter is set to ``tenant_id`` so the return handler
+        can look up the tenant without additional state storage.
+
+        The ``redirect_uri`` must be registered in the Stripe dashboard under
+        Connect → Settings → Redirects.
+
+        Args:
+            tenant_id: The tenant UUID — embedded as OAuth state parameter.
+            redirect_uri: The callback URL Stripe will redirect to after auth.
+            country: 2-letter ISO country code for pre-filling the onboarding form.
+
+        Returns:
+            Fully-formed OAuth authorization URL string.
+        """
+        from urllib.parse import urlencode
+
+        params = {
+            "response_type": "code",
+            "client_id": self._settings.stripe_connect_client_id,
+            "scope": "read_write",
+            "redirect_uri": redirect_uri,
+            "state": tenant_id,
+            "stripe_user[country]": country,
+        }
+        base = "https://connect.stripe.com/oauth/authorize"
+        return f"{base}?{urlencode(params)}"
+
+    async def exchange_connect_code(self, code: str) -> dict:
+        """Exchange the OAuth authorization code for a Stripe account ID.
+
+        Args:
+            code: The ``code`` query parameter from the OAuth callback.
+
+        Returns:
+            ``{"stripe_connect_account_id": str, "access_token": str}``
+
+        Raises:
+            BillingError: If the token exchange fails (invalid code, etc.).
+        """
+        try:
+            response = stripe.OAuth.token(
+                grant_type="authorization_code",
+                code=code,
+            )
+        except stripe.StripeError as exc:
+            logger.error(
+                "Stripe Connect OAuth token exchange failed",
+                extra={"stripe_code": getattr(exc, "code", "unknown")},
+            )
+            raise BillingError(
+                f"Stripe Connect onboarding failed: {getattr(exc, 'user_message', None) or str(exc)}",
+                code=getattr(exc, "code", None) or "stripe_error",
+            ) from exc
+
+        return {
+            "stripe_connect_account_id": response.stripe_user_id,
+            "access_token": response.access_token,
+        }
+
+    async def get_connect_account(self, connect_account_id: str) -> dict:
+        """Retrieve Connect account details (charges_enabled, payouts_enabled).
+
+        Args:
+            connect_account_id: The Stripe ``acct_`` account ID.
+
+        Returns:
+            ``{"charges_enabled": bool, "payouts_enabled": bool}``
+        """
+        try:
+            account = stripe.Account.retrieve(connect_account_id)
+        except stripe.StripeError as exc:
+            logger.error(
+                "Failed to retrieve Stripe Connect account",
+                extra={
+                    "connect_account_id": connect_account_id,
+                    "stripe_code": getattr(exc, "code", "unknown"),
+                },
+            )
+            raise BillingError(
+                f"Could not retrieve Connect account: {getattr(exc, 'user_message', None) or str(exc)}",
+                code=getattr(exc, "code", None) or "stripe_error",
+            ) from exc
+
+        return {
+            "charges_enabled": account.charges_enabled,
+            "payouts_enabled": account.payouts_enabled,
+        }
