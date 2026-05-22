@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -163,7 +163,7 @@ class BillPaymentsService:
         self.get_batch(batch_id)  # verify exists + tenant owns it
         result = (
             self.db.table("bill_payment_batches")
-            .update({"status": "sent_to_bank", "exported_at": datetime.utcnow().isoformat()})
+            .update({"status": "sent_to_bank", "exported_at": datetime.now(UTC).isoformat()})
             .eq("id", batch_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
@@ -184,7 +184,7 @@ class BillPaymentsService:
         batch = self.get_batch(batch_id)
         items = batch["items"]
 
-        today = datetime.utcnow()
+        today = datetime.now(UTC)
         file_date = today.strftime("%y%m%d")
         file_time = today.strftime("%H%M")
 
@@ -236,7 +236,7 @@ class BillPaymentsService:
         content = "\r\n".join(lines)
 
         self.db.table("bill_payment_batches").update(
-            {"file_format": "nacha", "exported_at": datetime.utcnow().isoformat()}
+            {"file_format": "nacha", "exported_at": datetime.now(UTC).isoformat()}
         ).eq("id", batch_id).execute()
 
         return content.encode("ascii")
@@ -282,7 +282,7 @@ class BillPaymentsService:
             )
 
         self.db.table("bill_payment_batches").update(
-            {"file_format": "csv", "exported_at": datetime.utcnow().isoformat()}
+            {"file_format": "csv", "exported_at": datetime.now(UTC).isoformat()}
         ).eq("id", batch_id).execute()
 
         return output.getvalue().encode("utf-8")

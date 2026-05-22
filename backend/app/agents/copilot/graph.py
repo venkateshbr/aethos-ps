@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 import anthropic
 
+from app.agents.base import mask_pii
+
 if TYPE_CHECKING:
     pass
 
@@ -199,7 +201,9 @@ class CopilotAgent:
 
     async def _run_agentic_loop(self, user_message: str) -> AsyncIterator[str]:
         """Inner agentic loop — may call tools before yielding a final response."""
-        messages: list[dict] = [{"role": "user", "content": user_message}]
+        # Mask PII before sending user input to the external LLM API.
+        safe_message = mask_pii(user_message)
+        messages: list[dict] = [{"role": "user", "content": safe_message}]
         system = self.SYSTEM_PROMPT.format(
             date=datetime.date.today().isoformat(),
             tenant_id=self.deps.tenant_id,

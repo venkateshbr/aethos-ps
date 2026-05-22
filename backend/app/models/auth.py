@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class SignupRequest(BaseModel):
@@ -51,6 +52,25 @@ class BillingPortalRequest(BaseModel):
         default="http://localhost:4201/settings/billing",
         description="URL to redirect back to after the portal session.",
     )
+
+    @field_validator("return_url")
+    @classmethod
+    def return_url_must_be_same_origin(cls, v: str) -> str:
+        """Reject open-redirect: return_url must share origin with frontend_base_url.
+
+        Prevents an attacker from crafting a portal URL that redirects to phishing.
+        """
+        from app.core.config import settings  # import here to keep model import-safe
+
+        allowed = urlparse(settings.frontend_base_url)
+        supplied = urlparse(v)
+
+        if supplied.scheme != allowed.scheme or supplied.netloc != allowed.netloc:
+            raise ValueError(
+                f"return_url must be on the same origin as the frontend "
+                f"({allowed.scheme}://{allowed.netloc})"
+            )
+        return v
 
 
 class BillingPortalResponse(BaseModel):

@@ -10,13 +10,12 @@ Flow:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from supabase import Client
 
-from app.domain.journal_helper import JournalLineSpec, validate_journal_balance
+from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.models.bills import (
     AgingBucket,
     ApAgingResponse,
@@ -28,6 +27,7 @@ from app.models.bills import (
 )
 from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -221,43 +221,66 @@ class BillsService:
                 detail="Chart of accounts not configured — cannot post journal entry",
             )
 
-        # 4. Build and validate journal lines
+        # 4. Build journal lines — accounting_guardian validates balance, period lock,
+        #    and account existence inside post_journal.  Never bypass with direct INSERT.
+        bill_number = bill.get("bill_number", "")
+        currency = bill.get("currency", "USD")
         journal_lines = [
             JournalLineSpec(
                 direction="DR",
                 account_code=_EXPENSE_ACCOUNT_CODE,
+                account_id=expense_account_id,
                 amount=total,
-                description=f"Expenses — {bill.get('bill_number', '')}",
+                description=f"Expenses — {bill_number}",
+                currency=currency,
             ),
             JournalLineSpec(
                 direction="CR",
                 account_code=_AP_ACCOUNT_CODE,
+                account_id=ap_account_id,
                 amount=total,
-                description=f"AP — {bill.get('bill_number', '')}",
+                description=f"AP — {bill_number}",
+                currency=currency,
             ),
         ]
-        if not validate_journal_balance(journal_lines):
-            logger.error("Journal imbalance for bill %s: lines=%s", bill_id, journal_lines)
+
+        # 5. Post via canonical post_journal — runs accounting_guardian L3 always.
+        #    This replaces the old _post_journal that bypassed the guardian entirely.
+        entry_date = bill.get("issue_date") or date.today().isoformat()
+        import asyncio as _asyncio
+
+        try:
+            je = await _asyncio.to_thread(
+                post_journal,
+                self._db,
+                self._tenant_id,
+                approved_by,
+                f"AP bill {bill_number}",
+                str(entry_date),
+                "bill",
+                bill_id,
+                journal_lines,
+                f"AP-{bill_number}",
+            )
+        except ValueError as exc:
+            # accounting_guardian rejected — period locked, imbalance, or unknown accounts
+            logger.error(
+                "accounting_guardian rejected journal for bill %s: %s",
+                bill_id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Error posting journal entry for bill %s", bill_id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Journal entry does not balance — cannot post",
-            )
+                detail="Failed to post GL journal — please try again",
+            ) from exc
 
-        # 5. INSERT journal_entry + journal_lines
-        entry_date = bill.get("issue_date") or date.today().isoformat()
-        period = str(entry_date)[:7]  # "YYYY-MM"
-
-        journal_entry_id = await self._post_journal(
-            bill_id=bill_id,
-            bill_number=bill.get("bill_number", ""),
-            entry_date=str(entry_date),
-            period=period,
-            currency=bill.get("currency", "USD"),
-            total=total,
-            expense_account_id=expense_account_id,
-            ap_account_id=ap_account_id,
-            created_by=approved_by,
-        )
+        journal_entry_id = je.get("id") if je else None
 
         # 6. Update bill status to 'approved'
         await self._repo.update(bill_id, {"status": "approved"})
@@ -266,91 +289,8 @@ class BillsService:
             id=bill_id,
             status="approved",
             journal_entry_id=journal_entry_id,
-            message=f"Bill {bill.get('bill_number', '')} approved and GL journal posted",
+            message=f"Bill {bill_number} approved and GL journal posted",
         )
-
-    async def _post_journal(
-        self,
-        bill_id: str,
-        bill_number: str,
-        entry_date: str,
-        period: str,
-        currency: str,
-        total: Decimal,
-        expense_account_id: str,
-        ap_account_id: str,
-        created_by: str,
-    ) -> str | None:
-        """Insert journal_entry + two journal_lines; return the entry UUID."""
-        import asyncio as _asyncio
-
-        try:
-            # Insert journal entry header
-            je_result = await _asyncio.to_thread(
-                lambda: self._db.table("journal_entries")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "entry_number": f"AP-{bill_number}",
-                        "entry_type": "standard",
-                        "description": f"AP bill {bill_number}",
-                        "entry_date": entry_date,
-                        "period": period,
-                        "reference_type": "bill",
-                        "reference_id": bill_id,
-                        "posted_at": datetime.now(timezone.utc).isoformat(),
-                        "created_by": created_by,
-                    }
-                )
-                .execute()
-            )
-            if not je_result.data:
-                logger.error("Failed to insert journal entry for bill %s", bill_id)
-                return None
-
-            je_id = str(je_result.data[0]["id"])
-
-            # Insert debit line — Expenses
-            await _asyncio.to_thread(
-                lambda: self._db.table("journal_lines")
-                .insert(
-                    {
-                        "journal_entry_id": je_id,
-                        "tenant_id": self._tenant_id,
-                        "direction": "DR",
-                        "account_id": expense_account_id,
-                        "amount": str(total),
-                        "currency": currency,
-                        "base_amount": str(total),
-                        "description": f"Expenses — {bill_number}",
-                    }
-                )
-                .execute()
-            )
-
-            # Insert credit line — Accounts Payable
-            await _asyncio.to_thread(
-                lambda: self._db.table("journal_lines")
-                .insert(
-                    {
-                        "journal_entry_id": je_id,
-                        "tenant_id": self._tenant_id,
-                        "direction": "CR",
-                        "account_id": ap_account_id,
-                        "amount": str(total),
-                        "currency": currency,
-                        "base_amount": str(total),
-                        "description": f"AP — {bill_number}",
-                    }
-                )
-                .execute()
-            )
-
-            return je_id
-
-        except Exception:
-            logger.exception("Error posting journal entry for bill %s", bill_id)
-            return None
 
     # ------------------------------------------------------------------
     # AP Aging
