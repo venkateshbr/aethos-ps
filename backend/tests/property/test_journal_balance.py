@@ -12,7 +12,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from tests.conftest import JournalEntry, JournalLine
 
@@ -91,7 +92,7 @@ def test_balanced_lines_produce_balanced_journal(lines):
 @given(balanced_lines(), money)
 def test_unbalancing_amount_breaks_balance(lines, extra_amount):
     """Adding an unmatched debit must break the balance."""
-    je = _build(lines + [("DR", "acct_extra", extra_amount)])
+    je = _build([*lines, ("DR", "acct_extra", extra_amount)])
     assert not je.is_balanced(fx_tolerance=Decimal("0.00"))
 
 
@@ -102,7 +103,7 @@ def test_unbalancing_amount_breaks_balance(lines, extra_amount):
 @given(balanced_lines())
 def test_accounting_guardian_accepts_balanced(lines):
     """accounting_guardian must approve a balanced entry. Wired when agent ships."""
-    from app.agents.accounting_guardian import validate  # noqa: F401  (will exist later)
+    from app.agents.accounting_guardian import validate
 
     result = validate(lines, tenant_id="test", entry_date="2026-05-19")
     assert result.action == "post"
@@ -115,8 +116,8 @@ def test_accounting_guardian_accepts_balanced(lines):
 @given(balanced_lines(), money)
 def test_accounting_guardian_rejects_imbalanced(lines, extra_amount):
     """accounting_guardian must reject an imbalanced entry."""
-    from app.agents.accounting_guardian import validate  # noqa: F401
+    from app.agents.accounting_guardian import validate
 
-    bad = lines + [("DR", "acct_extra", extra_amount)]
+    bad = [*lines, ("DR", "acct_extra", extra_amount)]
     result = validate(bad, tenant_id="test", entry_date="2026-05-19")
     assert result.action == "reject"

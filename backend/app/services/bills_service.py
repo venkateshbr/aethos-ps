@@ -10,7 +10,7 @@ Flow:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -66,7 +66,7 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         vendor_invoice_number=row.get("vendor_invoice_number"),
         notes=row.get("notes"),
         created_at=str(row["created_at"]),
-        lines=[_line_to_response(l) for l in (lines or [])],
+        lines=[_line_to_response(ln) for ln in (lines or [])],
     )
 
 

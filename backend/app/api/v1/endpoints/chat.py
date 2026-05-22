@@ -24,18 +24,18 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from supabase import Client
 
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_anon_client
 from app.core.tenant import get_tenant_id
 from app.repositories.chat_repo import ChatRepository
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +93,9 @@ def _build_repo(db: Client, tenant_id: str) -> ChatRepository:
     summary="Create a new chat thread",
 )
 async def create_thread(
-    payload: CreateThreadRequest = CreateThreadRequest(),
+    payload: CreateThreadRequest,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    tenant_id: str = Depends(get_tenant_id),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_anon_client),  # noqa: B008
 ) -> ThreadResponse:
     """Create a new copilot conversation thread for the authenticated user."""
@@ -105,7 +105,7 @@ async def create_thread(
             user_id=current_user.user_id,
             title=payload.title,
         )
-    except Exception:
+    except Exception as exc:
         logger.error(
             "Failed to create chat thread",
             exc_info=True,
@@ -114,7 +114,7 @@ async def create_thread(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create thread. Please try again.",
-        )
+        ) from exc
     return _thread_to_response(row)
 
 
@@ -126,7 +126,7 @@ async def create_thread(
 async def list_threads(
     limit: int = 20,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    tenant_id: str = Depends(get_tenant_id),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_anon_client),  # noqa: B008
 ) -> list[ThreadResponse]:
     """Return active threads for the authenticated user, newest first."""
@@ -136,7 +136,7 @@ async def list_threads(
             user_id=current_user.user_id,
             limit=min(limit, 100),
         )
-    except Exception:
+    except Exception as exc:
         logger.error(
             "Failed to list chat threads",
             exc_info=True,
@@ -145,7 +145,7 @@ async def list_threads(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch threads. Please try again.",
-        )
+        ) from exc
     return [_thread_to_response(r) for r in rows]
 
 
@@ -162,7 +162,7 @@ async def send_message(
     thread_id: str,
     payload: SendMessageRequest,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    tenant_id: str = Depends(get_tenant_id),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_anon_client),  # noqa: B008
 ) -> StreamingResponse:
     """Send a user message to the copilot and receive a streaming SSE response.
@@ -195,7 +195,7 @@ async def send_message(
             role="user",
             content=payload.content,
         )
-    except Exception:
+    except Exception as exc:
         logger.error(
             "Failed to persist user message",
             exc_info=True,
@@ -204,7 +204,7 @@ async def send_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save message. Please try again.",
-        )
+        ) from exc
 
     logger.info(
         "Chat message received — starting SSE stream",

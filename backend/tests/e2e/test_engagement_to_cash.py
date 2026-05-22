@@ -290,7 +290,7 @@ def test_4_e10_dst_transition_no_lost_or_dup_time_entries():
 
 
 # ===========================================================================
-# §5 RBAC matrix — one test per role × write-action cell
+# §5 RBAC matrix — one test per role x write-action cell
 # ===========================================================================
 
 
