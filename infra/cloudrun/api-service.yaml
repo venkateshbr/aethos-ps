@@ -1,0 +1,101 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: aethos-ps-api
+  labels:
+    app: aethos-ps
+    component: api
+spec:
+  template:
+    metadata:
+      annotations:
+        # Keep at least 1 instance to avoid cold-start latency for paying users
+        autoscaling.knative.dev/minScale: "1"
+        # Hard cap — revisit after Locust results (issue #86)
+        autoscaling.knative.dev/maxScale: "10"
+        # Disable CPU throttling so background work (ARQ, Procrastinate) runs at full speed
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      # 100 concurrent requests per instance; uvicorn has 2 workers * ~50 connections each
+      containerConcurrency: 100
+      # Generous timeout to cover streaming chat (TTFT SLO: 3 s p95, but full stream may be longer)
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/${PROJECT_ID}/aethos-ps-api:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          env:
+            - name: ENVIRONMENT
+              value: production
+            - name: DEBUG
+              value: "false"
+            # ── Supabase ──────────────────────────────────────────────────────
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: SUPABASE_URL
+            - name: SUPABASE_ANON_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: SUPABASE_ANON_KEY
+            - name: SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: SUPABASE_SERVICE_ROLE_KEY
+            - name: SUPABASE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: SUPABASE_JWT_SECRET
+            # ── Stripe ────────────────────────────────────────────────────────
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: STRIPE_WEBHOOK_SECRET
+            # ── LLM ──────────────────────────────────────────────────────────
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: ANTHROPIC_API_KEY
+            # ── Resend ────────────────────────────────────────────────────────
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: RESEND_API_KEY
+            # ── Langfuse ─────────────────────────────────────────────────────
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: LANGFUSE_SECRET_KEY
+            # ── Upstash Redis ─────────────────────────────────────────────────
+            - name: UPSTASH_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aethos-ps-secrets
+                  key: UPSTASH_REDIS_URL
+            # ── Application ───────────────────────────────────────────────────
+            - name: FRONTEND_BASE_URL
+              value: https://aethos.app
+            - name: CORS_ORIGINS
+              value: '["https://aethos.app","https://www.aethos.app"]'
