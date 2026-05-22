@@ -8,7 +8,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 pytestmark = pytest.mark.property
 
@@ -46,7 +47,7 @@ def test_subtraction_preserves_two_decimal_places(a, b):
 @given(two_dp_money)
 def test_money_serialises_as_string(a):
     """API serialisation must emit money as a JSON string with 2 decimal places."""
-    from app.domain.money import serialise_money  # noqa: F401
+    from app.domain.money import serialise_money
 
     out = serialise_money(a)
     assert isinstance(out, str)

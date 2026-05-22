@@ -10,11 +10,10 @@ Flow:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from supabase import Client
 
 from app.domain.journal_helper import JournalLineSpec, validate_journal_balance
 from app.models.bills import (
@@ -28,6 +27,7 @@ from app.models.bills import (
 )
 from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         vendor_invoice_number=row.get("vendor_invoice_number"),
         notes=row.get("notes"),
         created_at=str(row["created_at"]),
-        lines=[_line_to_response(l) for l in (lines or [])],
+        lines=[_line_to_response(ln) for ln in (lines or [])],
     )
 
 
@@ -298,7 +298,7 @@ class BillsService:
                         "period": period,
                         "reference_type": "bill",
                         "reference_id": bill_id,
-                        "posted_at": datetime.now(timezone.utc).isoformat(),
+                        "posted_at": datetime.now(UTC).isoformat(),
                         "created_by": created_by,
                     }
                 )

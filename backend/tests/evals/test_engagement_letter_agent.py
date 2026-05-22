@@ -26,9 +26,9 @@ EVAL_PACK = Path(__file__).resolve().parents[3] / "docs" / "test" / "agent_evals
 )
 def test_engagement_letter_agent_meets_threshold():
     """Run the pack; assert average score >= 0.85 and pass rate >= 0.90."""
-    from pydantic_evals import Dataset  # noqa: F401
+    from pydantic_evals import Dataset
 
-    from app.agents.engagement_letter_agent import run_engagement_letter_agent  # noqa: F401
+    from app.agents.engagement_letter_agent import run_engagement_letter_agent
 
     dataset = Dataset.load(str(EVAL_PACK))
     report = dataset.evaluate_sync(run_engagement_letter_agent)
@@ -42,9 +42,9 @@ def test_engagement_letter_agent_meets_threshold():
 )
 def test_engagement_letter_agent_red_team_perfect():
     """Red-team subset must pass at 100%."""
-    from pydantic_evals import Dataset  # noqa: F401
+    from pydantic_evals import Dataset
 
-    from app.agents.engagement_letter_agent import run_engagement_letter_agent  # noqa: F401
+    from app.agents.engagement_letter_agent import run_engagement_letter_agent
 
     dataset = Dataset.load(str(EVAL_PACK)).filter_by_tag("red_team")
     report = dataset.evaluate_sync(run_engagement_letter_agent)
@@ -57,9 +57,9 @@ def test_engagement_letter_agent_red_team_perfect():
 )
 def test_engagement_letter_agent_routes_low_confidence_to_hitl():
     """When confidence < 0.85 the agent must set hitl_required=true, not auto-act."""
-    from pydantic_evals import Dataset  # noqa: F401
+    from pydantic_evals import Dataset
 
-    from app.agents.engagement_letter_agent import run_engagement_letter_agent  # noqa: F401
+    from app.agents.engagement_letter_agent import run_engagement_letter_agent
 
     dataset = Dataset.load(str(EVAL_PACK)).filter_by_tag("hitl")
     report = dataset.evaluate_sync(run_engagement_letter_agent)

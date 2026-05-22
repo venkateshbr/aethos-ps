@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # SSE frame format
 # ---------------------------------------------------------------------------
@@ -168,8 +165,9 @@ def test_chat_repository_constructor():
 
 def test_chat_router_exports_router_object():
     """The chat endpoint module must export an APIRouter named 'router'."""
-    import app.api.v1.endpoints.chat as chat_module
     from fastapi import APIRouter
+
+    import app.api.v1.endpoints.chat as chat_module
 
     assert hasattr(chat_module, "router"), "chat module must export a 'router'"
     assert isinstance(chat_module.router, APIRouter)
