@@ -1,0 +1,90 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: aethos-ps-worker
+  labels:
+    app: aethos-ps
+    component: worker
+spec:
+  template:
+    spec:
+      # Restart on failure so ephemeral workers self-recover
+      taskCount: 1
+      template:
+        spec:
+          maxRetries: 3
+          containers:
+            - image: gcr.io/${PROJECT_ID}/aethos-ps-api:latest
+              # ARQ worker entry point — same image, different command
+              command: ["python", "-m", "arq", "app.workers.arq_settings.WorkerSettings"]
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              # Same secrets as api-service.yaml — workers need the same env
+              env:
+                - name: ENVIRONMENT
+                  value: production
+                - name: DEBUG
+                  value: "false"
+                # ── Supabase ─────────────────────────────────────────────────
+                - name: SUPABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: SUPABASE_URL
+                - name: SUPABASE_ANON_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: SUPABASE_ANON_KEY
+                - name: SUPABASE_SERVICE_ROLE_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: SUPABASE_SERVICE_ROLE_KEY
+                - name: SUPABASE_JWT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: SUPABASE_JWT_SECRET
+                # ── Stripe ───────────────────────────────────────────────────
+                - name: STRIPE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: STRIPE_SECRET_KEY
+                - name: STRIPE_WEBHOOK_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: STRIPE_WEBHOOK_SECRET
+                # ── LLM ──────────────────────────────────────────────────────
+                - name: ANTHROPIC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: ANTHROPIC_API_KEY
+                # ── Resend ───────────────────────────────────────────────────
+                - name: RESEND_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: RESEND_API_KEY
+                # ── Langfuse ─────────────────────────────────────────────────
+                - name: LANGFUSE_PUBLIC_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: LANGFUSE_PUBLIC_KEY
+                - name: LANGFUSE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: LANGFUSE_SECRET_KEY
+                # ── Upstash Redis ─────────────────────────────────────────────
+                - name: UPSTASH_REDIS_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: UPSTASH_REDIS_URL

@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "frontend/angular.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "frontend/dist/aethos-ps/browser"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://api.aethos.app/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "https://api.aethos.app"
+  }
+}
