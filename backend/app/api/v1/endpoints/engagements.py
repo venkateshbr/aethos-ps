@@ -134,9 +134,16 @@ async def draft_invoice_endpoint(
     try:
         invoice_draft = draft_invoice(id, deps, ps, pe)
     except ValueError as exc:
+        # Log the full message (may contain internal IDs) but return a safe response
+        logger.warning(
+            "draft_invoice raised ValueError for engagement %s: %s",
+            id,
+            exc,
+            extra={"tenant_id": tenant_id},
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            detail="Engagement not found or cannot be invoiced",
         ) from exc
     except Exception as exc:
         logger.exception("draft_invoice failed for engagement %s tenant %s", id, tenant_id)

@@ -95,9 +95,13 @@ async def handle_connect_return(
     try:
         token_data = await stripe_svc.exchange_connect_code(code)
     except BillingError as exc:
+        logger.error(
+            "Stripe Connect OAuth exchange failed",
+            extra={"tenant_id": tenant_id, "billing_code": exc.code},
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Stripe Connect error: {exc}",
+            detail="Stripe Connect error — please try again or contact support.",
         ) from exc
 
     connect_account_id = token_data["stripe_connect_account_id"]
