@@ -5,6 +5,8 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { ExpensesService, Expense } from '../../core/services/expenses.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { EmptyStateComponent } from '../../shared/components/empty-state.component';
+import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 
 @Component({
   selector: 'app-expenses-list',
@@ -14,6 +16,8 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
     MatTableModule,
     MatIconModule,
     MoneyPipe,
+    EmptyStateComponent,
+    SkeletonRowsComponent,
   ],
   template: `
     <div class="p-6 bg-slate-900 min-h-full">
@@ -25,17 +29,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 
       <!-- Loading skeleton -->
       @if (loading()) {
-        <div class="rounded-lg overflow-hidden border border-slate-700 animate-pulse" aria-busy="true" aria-label="Loading expenses">
-          @for (row of [1, 2, 3, 4]; track row) {
-            <div class="flex gap-4 px-4 py-3 border-b border-slate-800 last:border-0 bg-slate-800">
-              <div class="h-4 bg-slate-700 rounded w-24"></div>
-              <div class="h-4 bg-slate-700 rounded w-32"></div>
-              <div class="h-4 bg-slate-700 rounded w-24"></div>
-              <div class="h-4 bg-slate-700 rounded w-20"></div>
-              <div class="h-4 bg-slate-700 rounded w-16"></div>
-            </div>
-          }
-        </div>
+        <app-skeleton-rows [count]="4" ariaLabel="Loading expenses" />
       }
 
       <!-- Error state -->
@@ -48,11 +42,11 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 
       <!-- Empty state (also shown when endpoint returns 404 — handled as empty) -->
       @if (!loading() && !error() && expenses().length === 0) {
-        <div class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-12 text-center">
-          <mat-icon class="text-4xl text-slate-500 mb-3 block">receipt_long</mat-icon>
-          <p class="text-slate-300 font-medium mb-1">No expenses yet</p>
-          <p class="text-slate-500 text-sm">Expenses logged by the agent or entered manually will appear here.</p>
-        </div>
+        <app-empty-state
+          icon="receipt_long"
+          heading="No expenses yet"
+          message="Expenses logged by the agent or entered manually will appear here."
+        />
       }
 
       <!-- Table -->

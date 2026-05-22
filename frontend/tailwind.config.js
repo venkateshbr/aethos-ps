@@ -13,7 +13,16 @@ module.exports = {
         'emerald-confidence': '#10b981',
         'amber-confidence': '#f59e0b',
         'red-confidence': '#ef4444',
-      }
+      },
+      animation: {
+        'fade-in': 'fadeIn 0.35s ease-out',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%':   { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
     }
   },
   plugins: []

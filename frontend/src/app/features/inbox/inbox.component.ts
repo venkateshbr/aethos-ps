@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { HitlService, HitlTask } from '../../core/services/hitl.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
+import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, ConfidenceChipComponent],
+  imports: [CommonModule, FormsModule, MatIconModule, ConfidenceChipComponent, SkeletonRowsComponent],
   template: `
     <div class="h-full flex flex-col bg-slate-900 text-slate-100 outline-none"
          (keydown)="onKeydown($event)"
@@ -66,23 +67,7 @@ import { ConfidenceChipComponent } from '../../shared/components/confidence-chip
       <div class="flex-1 overflow-y-auto p-6 space-y-3" role="feed" aria-label="Pending review tasks">
 
         @if (loading()) {
-          <!-- Skeleton cards -->
-          @for (i of [1, 2, 3]; track i) {
-            <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 animate-pulse" aria-hidden="true">
-              <div class="flex items-center gap-2 mb-3">
-                <div class="h-3 bg-slate-700 rounded w-20"></div>
-                <div class="h-4 bg-slate-700 rounded w-10"></div>
-              </div>
-              <div class="h-4 bg-slate-700 rounded w-2/3 mb-2"></div>
-              <div class="h-3 bg-slate-700 rounded w-1/2 mb-1"></div>
-              <div class="h-3 bg-slate-700 rounded w-1/3 mb-4"></div>
-              <div class="flex gap-2">
-                <div class="h-7 bg-slate-700 rounded w-16"></div>
-                <div class="h-7 bg-slate-700 rounded w-12"></div>
-                <div class="h-7 bg-slate-700 rounded w-14"></div>
-              </div>
-            </div>
-          }
+          <app-skeleton-rows [count]="3" ariaLabel="Loading inbox tasks" />
         } @else if (hasError()) {
           <!-- Error state -->
           <div class="flex flex-col items-center justify-center h-64 text-center" role="alert">
