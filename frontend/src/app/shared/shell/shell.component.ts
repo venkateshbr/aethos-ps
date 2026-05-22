@@ -1,11 +1,17 @@
-import { Component } from '@angular/core';
+import { Component, signal, computed, OnInit, inject } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
+import { HttpClient } from '@angular/common/http';
 
 interface NavItem {
   label: string;
   icon: string;
   route: string;
+}
+
+interface SubscriptionStatus {
+  trial_ends_at?: string | null;
+  [key: string]: unknown;
 }
 
 @Component({
@@ -15,26 +21,71 @@ interface NavItem {
   template: `
     <div class="flex h-screen bg-slate-900 text-slate-100">
       <!-- Sidebar -->
-      <nav class="w-56 flex-none bg-slate-800 border-r border-slate-700 flex flex-col">
+      <nav [class]="sidebarClass()" aria-label="Main navigation">
         <!-- Logo -->
-        <div class="px-4 py-5 border-b border-slate-700">
+        <div class="px-4 py-5 border-b border-slate-700 flex-none">
           <span class="text-lg font-semibold tracking-tight text-white">Aethos</span>
-          <span class="text-xs text-slate-400 block mt-0.5">for professional services</span>
+          @if (!collapsed()) {
+            <span class="text-xs text-slate-400 block mt-0.5">for professional services</span>
+          }
         </div>
+
+        <!-- Trial countdown badge -->
+        @if (trialDaysLeft() !== null && trialDaysLeft()! <= 14) {
+          <div class="mx-3 mb-2 mt-2 px-3 py-2 bg-amber-950 border border-amber-800 rounded-lg flex-none">
+            @if (!collapsed()) {
+              <div class="text-xs text-amber-400 font-medium">
+                @if (trialDaysLeft()! > 0) {
+                  {{ trialDaysLeft() }} days left in trial
+                } @else {
+                  Trial ended — upgrade to continue
+                }
+              </div>
+            } @else {
+              <mat-icon
+                class="text-amber-400"
+                style="font-size:1rem;width:1rem;height:1rem;"
+                [title]="trialDaysLeft()! > 0 ? trialDaysLeft() + ' days left in trial' : 'Trial ended'"
+              >warning</mat-icon>
+            }
+          </div>
+        }
+
         <!-- Nav items -->
         <div class="flex-1 overflow-y-auto py-3">
           @for (item of navItems; track item.route) {
             <a
               [routerLink]="item.route"
               routerLinkActive="bg-slate-700 text-white"
-              class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white rounded mx-2 mb-0.5 transition-colors"
+              class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white rounded mx-2 mb-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              [title]="collapsed() ? item.label : ''"
+              [attr.aria-label]="item.label"
             >
-              <mat-icon class="text-base leading-none">{{ item.icon }}</mat-icon>
-              {{ item.label }}
+              <mat-icon class="text-base leading-none flex-none">{{ item.icon }}</mat-icon>
+              @if (!collapsed()) {
+                <span>{{ item.label }}</span>
+              }
             </a>
           }
         </div>
+
+        <!-- Collapse toggle -->
+        <div class="flex-none border-t border-slate-700 py-2">
+          <button
+            (click)="collapsed.update(v => !v)"
+            class="mx-2 p-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors flex items-center gap-2 w-[calc(100%-1rem)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            [title]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+            [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+            [attr.aria-expanded]="!collapsed()"
+          >
+            <mat-icon style="font-size:1.1rem;width:1.1rem;height:1.1rem;">
+              {{ collapsed() ? 'chevron_right' : 'chevron_left' }}
+            </mat-icon>
+            @if (!collapsed()) { <span class="text-xs">Collapse</span> }
+          </button>
+        </div>
       </nav>
+
       <!-- Main content -->
       <main class="flex-1 overflow-auto">
         <router-outlet />
@@ -42,7 +93,16 @@ interface NavItem {
     </div>
   `,
 })
-export class ShellComponent {
+export class ShellComponent implements OnInit {
+  private http = inject(HttpClient);
+
+  collapsed      = signal(false);
+  trialDaysLeft  = signal<number | null>(null);
+
+  sidebarClass = computed(() =>
+    `${this.collapsed() ? 'w-14' : 'w-56'} flex-none bg-slate-800 border-r border-slate-700 flex flex-col relative transition-all duration-200`
+  );
+
   navItems: NavItem[] = [
     { label: 'Copilot',      icon: 'auto_awesome',    route: '/app/copilot' },
     { label: 'Inbox',        icon: 'inbox',           route: '/app/inbox' },
@@ -58,4 +118,26 @@ export class ShellComponent {
     { label: 'People',       icon: 'badge',           route: '/app/people' },
     { label: 'Settings',     icon: 'settings',        route: '/app/settings' },
   ];
+
+  ngOnInit(): void {
+    this.fetchTrialStatus();
+  }
+
+  private fetchTrialStatus(): void {
+    this.http.get<SubscriptionStatus>('/api/v1/billing/subscription-status').subscribe({
+      next: (res) => {
+        if (res.trial_ends_at) {
+          const endsAt = new Date(res.trial_ends_at);
+          const now    = new Date();
+          const diffMs = endsAt.getTime() - now.getTime();
+          const days   = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+          // Only surface when ≤ 14 days remain (or expired)
+          this.trialDaysLeft.set(Math.max(days, 0));
+        }
+      },
+      error: () => {
+        // Silently ignore — the badge is non-critical
+      },
+    });
+  }
 }

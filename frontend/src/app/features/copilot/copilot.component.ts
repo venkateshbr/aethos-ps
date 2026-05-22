@@ -117,15 +117,42 @@ export interface ChatThread {
           aria-live="polite"
           aria-label="Conversation"
         >
-          <!-- Welcome / empty state -->
-          @if (messages().length === 0 && !streaming()) {
+          <!-- Welcome / empty state — shown on first use (no threads, no messages) -->
+          @if (threads().length === 0 && messages().length === 0) {
+            <div class="flex-1 flex flex-col items-center justify-center px-6 py-16 animate-fade-in">
+              <div class="w-14 h-14 rounded-full bg-emerald-900/40 border border-emerald-700/50 flex items-center justify-center mb-5">
+                <mat-icon class="text-emerald-400" style="font-size:1.75rem;width:1.75rem;height:1.75rem;">auto_awesome</mat-icon>
+              </div>
+              <p class="text-slate-200 font-semibold text-base mb-2">Welcome to Aethos</p>
+              <p class="text-slate-400 text-sm text-center max-w-xs leading-relaxed mb-6">
+                Drop your most recent engagement letter or invoice and I'll set up your first client.
+              </p>
+              <div class="flex gap-3 flex-wrap justify-center">
+                <button
+                  class="px-4 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-emerald-600 hover:text-emerald-400 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                  (click)="sendSuggestion('Drop engagement letter')"
+                >
+                  Drop engagement letter
+                </button>
+                <button
+                  class="px-4 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                  (click)="sendSuggestion('Create manually')"
+                >
+                  Create manually
+                </button>
+              </div>
+            </div>
+          }
+
+          <!-- Returning user: no messages in current thread yet -->
+          @if (threads().length > 0 && messages().length === 0 && !streaming()) {
             <div class="flex-1 flex items-center justify-center">
               <div class="text-center max-w-sm">
                 <div class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center mx-auto mb-4">
                   <mat-icon class="text-emerald-400">auto_awesome</mat-icon>
                 </div>
                 <p class="text-slate-300 text-sm leading-relaxed">
-                  Drop your most recent engagement letter or invoice and I'll set up your first client.
+                  How can I help you today?
                 </p>
                 <div class="flex flex-wrap gap-2 justify-center mt-4">
                   @for (suggestion of suggestions; track suggestion) {

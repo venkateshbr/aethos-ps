@@ -12,6 +12,8 @@ import {
   TimeEntry,
   TimeEntryCreate,
 } from '../../core/services/time-entries.service';
+import { EmptyStateComponent } from '../../shared/components/empty-state.component';
+import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 
 @Component({
   selector: 'app-time-entries-list',
@@ -24,6 +26,8 @@ import {
     MatButtonModule,
     MatChipsModule,
     MatTooltipModule,
+    EmptyStateComponent,
+    SkeletonRowsComponent,
   ],
   template: `
     <div class="p-6 bg-slate-900 min-h-full">
@@ -128,18 +132,7 @@ import {
 
       <!-- Loading skeleton -->
       @if (loading()) {
-        <div class="rounded-lg overflow-hidden border border-slate-700 animate-pulse" aria-busy="true" aria-label="Loading time entries">
-          @for (row of [1, 2, 3, 4]; track row) {
-            <div class="flex gap-4 px-4 py-3 border-b border-slate-800 last:border-0 bg-slate-800">
-              <div class="h-4 bg-slate-700 rounded w-24"></div>
-              <div class="h-4 bg-slate-700 rounded w-32"></div>
-              <div class="h-4 bg-slate-700 rounded w-12"></div>
-              <div class="h-4 bg-slate-700 rounded flex-1"></div>
-              <div class="h-4 bg-slate-700 rounded w-16"></div>
-              <div class="h-4 bg-slate-700 rounded w-20"></div>
-            </div>
-          }
-        </div>
+        <app-skeleton-rows [count]="4" ariaLabel="Loading time entries" />
       }
 
       <!-- Error state -->
@@ -152,11 +145,11 @@ import {
 
       <!-- Empty state -->
       @if (!loading() && !error() && entries().length === 0) {
-        <div class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-12 text-center">
-          <mat-icon class="text-4xl text-slate-500 mb-3 block">schedule</mat-icon>
-          <p class="text-slate-300 font-medium mb-1">No time entries yet</p>
-          <p class="text-slate-500 text-sm">Use the quick-add form above to log your first hours.</p>
-        </div>
+        <app-empty-state
+          icon="schedule"
+          heading="No time entries yet"
+          message="Use the quick-add form above to log your first hours."
+        />
       }
 
       <!-- Table -->
