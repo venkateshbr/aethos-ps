@@ -245,3 +245,26 @@ async def billing_portal(
         ) from exc
 
     return BillingPortalResponse(url=url)
+
+
+@router.get(
+    "/subscription-status",
+    summary="Return trial countdown and subscription status for the app shell badge",
+)
+def subscription_status(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    _: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> dict:
+    """Returns trial countdown and subscription status for the app shell badge."""
+    tenant = db.table("tenants").select(
+        "trial_ends_at, stripe_subscription_status, plan_tier"
+    ).eq("id", tenant_id).execute()
+    if not tenant.data:
+        return {"status": "unknown", "trial_ends_at": None, "plan_tier": "trial"}
+    t = tenant.data[0]
+    return {
+        "status": t.get("stripe_subscription_status", "trialing"),
+        "trial_ends_at": t.get("trial_ends_at"),
+        "plan_tier": t.get("plan_tier", "trial"),
+    }

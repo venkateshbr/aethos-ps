@@ -114,7 +114,7 @@ class InboxRepository:
         new_status: str,
         decided_by: str,
     ) -> None:
-        from datetime import datetime, timezone
+        from datetime import UTC, datetime
 
         await asyncio.to_thread(
             lambda: self.db.table(_SUGGESTIONS_TABLE)
@@ -122,7 +122,7 @@ class InboxRepository:
                 {
                     "status": new_status,
                     "decided_by": decided_by,
-                    "decided_at": datetime.now(timezone.utc).isoformat(),
+                    "decided_at": datetime.now(UTC).isoformat(),
                 }
             )
             .eq("id", suggestion_id)

@@ -6,6 +6,7 @@ Start locally:
 
 from __future__ import annotations
 
+import time as _time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -71,6 +72,36 @@ async def health() -> dict[str, str]:
 async def health_ready() -> dict[str, object]:
     """Readiness probe — checked before routing traffic.
 
-    TODO (Sthira): wire real DB ping and Redis ping once infra is provisioned.
+    Pings Supabase and Redis (if configured). Returns ``status: ready`` only
+    when the DB is reachable; degrades gracefully if Redis is not configured.
     """
-    return {"status": "ready", "checks": {"db": "unchecked", "redis": "unchecked"}}
+    checks: dict = {}
+
+    try:
+        from app.core.config import settings
+        from supabase import create_client
+
+        t0 = _time.monotonic()
+        db = create_client(settings.supabase_url, settings.supabase_anon_key)
+        db.table("tenants").select("id").limit(1).execute()
+        checks["db"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000)}
+    except Exception as e:
+        checks["db"] = {"status": "error", "error": str(e)[:80]}
+
+    try:
+        from app.core.config import settings
+
+        if settings.upstash_redis_url:
+            import redis as _redis
+
+            t0 = _time.monotonic()
+            r = _redis.from_url(settings.upstash_redis_url)
+            r.ping()
+            checks["redis"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000)}
+        else:
+            checks["redis"] = {"status": "not_configured"}
+    except Exception as e:
+        checks["redis"] = {"status": "error", "error": str(e)[:50]}
+
+    overall = "ready" if checks.get("db", {}).get("status") == "ok" else "degraded"
+    return {"status": overall, "checks": checks}
