@@ -1,0 +1,34 @@
+THE GOLDEN FORK BISTRO
+789 Market Street
+San Francisco, CA 94105
+Tel: (415) 555-0187
+
+Receipt #: RF-20260415-0892
+Date: April 15, 2026
+Time: 12:34 PM
+
+Server: Maria
+Table: 14
+
+-----------------------------------
+ITEMS
+-----------------------------------
+Caesar Salad               $18.00
+Pan-Seared Salmon          $32.00
+Sparkling Water             $4.00
+-----------------------------------
+Subtotal:                  $54.00
+Tax (8.625%):               $4.66
+-----------------------------------
+TOTAL:                     $58.66
+
+Payment Method: Visa ****3421
+Authorization: 449823
+
+-----------------------------------
+Thank you for dining with us!
+-----------------------------------
+
+[Client entertainment — Acme Corp kickoff lunch]
+Attendees: Sarah Mitchell, Robert Johnson (Acme CFO)
+Business Purpose: Project kickoff discussion

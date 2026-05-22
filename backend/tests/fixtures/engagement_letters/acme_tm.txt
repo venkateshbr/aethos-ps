@@ -1,0 +1,51 @@
+ENGAGEMENT LETTER — TIME AND MATERIALS
+
+Date: March 1, 2026
+
+To: Acme Corp
+    123 Main Street
+    San Francisco, CA 94105
+
+From: Lighthouse Advisory LLC
+      456 Consulting Ave, Suite 200
+      New York, NY 10001
+
+Re: Professional Services Engagement — Digital Transformation Advisory
+
+Dear Mr. Johnson,
+
+We are pleased to confirm the terms of our engagement with Acme Corp ("Client")
+as follows:
+
+SCOPE OF SERVICES
+Lighthouse Advisory LLC ("Firm") will provide technology strategy and advisory
+services related to the Client's digital transformation initiative, including:
+- Current-state architecture assessment
+- Technology roadmap development
+- Vendor selection support
+- Change management advisory
+
+BILLING ARRANGEMENT: Time and Materials
+
+RATE CARD:
+- Principal Consultant: $250.00 per hour
+- Senior Consultant: $175.00 per hour
+- Analyst: $125.00 per hour
+
+CURRENCY: USD
+
+ENGAGEMENT PERIOD:
+Start Date: April 1, 2026
+End Date: September 30, 2026
+
+PAYMENT TERMS: Net 30 from invoice date
+
+ESTIMATED BUDGET: $150,000.00 (not a cap)
+
+By signing below, both parties agree to the terms of this engagement.
+
+Lighthouse Advisory LLC                 Acme Corp
+
+____________________________            ____________________________
+Name: Sarah Mitchell, Managing Partner  Name: Robert Johnson, CFO
+Date: March 5, 2026                     Date: March 5, 2026
