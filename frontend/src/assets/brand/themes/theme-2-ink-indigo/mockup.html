@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aethos — Theme 2 (Ink + Indigo)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: {
+              900: '#0b1020', 800: '#161c33', 750: '#1f2742',
+              950: '#070b18', 700: '#2a3354', 850: '#1c2440',
+            },
+            paper:  { DEFAULT: '#f5f5f7', muted: '#cbd0e0', subtle: '#8b93ad' },
+            accent: { DEFAULT: '#818cf8', hover: '#6366f1', light: '#a5b4fc', subtle: '#1e1b4b', on: '#0b1020' },
+            confidence: { high: '#22d3ee', med: '#fbbf24', low: '#f87171' },
+          },
+          fontFamily: {
+            sans:  ['Inter','system-ui','sans-serif'],
+            serif: ['"Source Serif 4"','Georgia','serif'],
+          },
+          letterSpacing: { brand: '0.01em', tag: '0.22em' },
+        },
+      },
+    };
+  </script>
+  <style>
+    html, body { background: #0b1020; font-family: 'Inter', system-ui, sans-serif; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    .lockup .rule { background: #818cf8; height: 1.5px; }
+    .ink-grid {
+      background-image:
+        linear-gradient(rgba(129,140,248,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(129,140,248,0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+  </style>
+</head>
+<body class="text-paper antialiased">
+
+  <!-- =========================================================== HEADER -->
+  <header class="border-b border-ink-700 bg-ink-900/70 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-6xl mx-auto px-8 py-5 flex items-center justify-between">
+      <div class="lockup">
+        <div class="text-xl font-bold tracking-brand text-paper leading-none">Aethos</div>
+        <div class="rule my-1.5" style="width: 86px;"></div>
+        <div class="text-[10px] font-light tracking-tag text-paper-muted uppercase">for professional services</div>
+      </div>
+      <nav class="flex items-center gap-7 text-sm text-paper-subtle">
+        <a class="hover:text-paper">Copilot</a>
+        <a class="hover:text-paper">Inbox <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-accent-subtle text-accent-light">7</span></a>
+        <a class="hover:text-paper">Invoices</a>
+        <a class="hover:text-paper">Projects</a>
+        <div class="w-8 h-8 rounded-full bg-ink-800 border border-ink-700 flex items-center justify-center text-xs">VR</div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-8 py-12 space-y-14">
+
+    <!-- ============================================ 1. COPILOT EMPTY STATE -->
+    <section>
+      <div class="text-[10px] uppercase tracking-tag text-paper-subtle mb-3">01 — Copilot empty state</div>
+      <div class="relative rounded-2xl border border-ink-700 bg-ink-900 ink-grid overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-ink-900/40 to-ink-900"></div>
+        <div class="relative px-12 py-24 text-center">
+          <div class="inline-block lockup mb-8">
+            <div class="rule mx-auto" style="width: 48px;"></div>
+            <div class="text-[9px] font-light tracking-tag text-accent-light uppercase mt-2">copilot</div>
+          </div>
+          <h1 class="font-serif text-4xl text-paper mb-4 leading-tight" style="font-weight:400;">Drop your most recent engagement letter.</h1>
+          <p class="text-paper-muted text-base max-w-xl mx-auto">I will extract the client, scope, billing arrangement, and rate card — then propose the engagement and project for your approval.</p>
+
+          <div class="mt-12 max-w-2xl mx-auto">
+            <div class="rounded-lg border border-dashed border-ink-700 bg-ink-900/70 px-6 py-12 hover:border-accent/60 hover:bg-accent-subtle/20 transition">
+              <div class="text-paper-muted text-sm">Drag a PDF here, paste an email, or
+                <span class="text-accent-light underline-offset-4 hover:underline cursor-pointer">browse files</span>.
+              </div>
+              <div class="text-paper-subtle text-xs mt-2">PDF · DOCX · email · receipt photo · up to 25 MB</div>
+            </div>
+            <div class="mt-7 flex items-center gap-2 justify-center flex-wrap text-xs text-paper-subtle">
+              <span class="opacity-70">try:</span>
+              <button class="px-3 py-1.5 rounded-md border border-ink-700 hover:border-accent hover:text-accent-light">Create an invoice for Acme for May time</button>
+              <button class="px-3 py-1.5 rounded-md border border-ink-700 hover:border-accent hover:text-accent-light">What is outstanding from Northwind?</button>
+              <button class="px-3 py-1.5 rounded-md border border-ink-700 hover:border-accent hover:text-accent-light">Run the May billing</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================== 2. INBOX ROW -->
+    <section>
+      <div class="text-[10px] uppercase tracking-tag text-paper-subtle mb-3">02 — HITL inbox · suggestion card</div>
+      <div class="rounded-lg border border-ink-700 bg-ink-800 divide-y divide-ink-850">
+
+        <div class="px-5 py-4 flex items-start gap-4 hover:bg-ink-750 transition">
+          <div class="mt-1 w-2 h-2 rounded-full bg-confidence-high"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-medium text-paper">Post invoice INV-2026-0431 to Acme Corp.</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm bg-cyan-950 text-cyan-300 font-medium uppercase tracking-tag">0.94 · high</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm text-paper-subtle border border-ink-700">invoice_drafter</span>
+            </div>
+            <div class="text-sm text-paper-muted mt-1">May time entries · 48.5h × $225 · <span class="text-paper tabular">$10,912.50 USD</span> · due 2026-06-22</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button class="px-3 py-1.5 rounded-md text-xs text-paper-muted border border-ink-700 hover:bg-ink-750">Review</button>
+            <button class="px-3 py-1.5 rounded-md text-xs text-accent-on bg-accent hover:bg-accent-hover font-medium">Approve · post</button>
+          </div>
+        </div>
+
+        <div class="px-5 py-4 flex items-start gap-4 hover:bg-ink-750 transition">
+          <div class="mt-1 w-2 h-2 rounded-full bg-confidence-med"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-medium text-paper">Match payment of £4,200.00 to invoice INV-2026-0418.</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm bg-amber-950 text-amber-300 font-medium uppercase tracking-tag">0.78 · review</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm text-paper-subtle border border-ink-700">cash_matcher</span>
+            </div>
+            <div class="text-sm text-paper-muted mt-1">Northwind Advisory · BACS deposit · reference partial — amount off by <span class="text-amber-300 tabular">£0.13</span></div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button class="px-3 py-1.5 rounded-md text-xs text-paper-muted border border-ink-700 hover:bg-ink-750">Review</button>
+            <button class="px-3 py-1.5 rounded-md text-xs text-accent-on bg-accent hover:bg-accent-hover font-medium">Approve</button>
+          </div>
+        </div>
+
+        <div class="px-5 py-4 flex items-start gap-4 hover:bg-ink-750 transition">
+          <div class="mt-1 w-2 h-2 rounded-full bg-confidence-low"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-medium text-paper">Categorise expense — AWS · $1,284.22.</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm bg-red-950 text-red-300 font-medium uppercase tracking-tag">0.41 · manual</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-sm text-paper-subtle border border-ink-700">expense_extractor</span>
+            </div>
+            <div class="text-sm text-paper-muted mt-1">Ambiguous between <em class="text-paper-muted">Project: Northwind Migration</em> and <em class="text-paper-muted">Project: Acme Phase 2</em>.</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button class="px-3 py-1.5 rounded-md text-xs text-paper-muted border border-ink-700 hover:bg-ink-750">Open</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =============================================== 3. INVOICE LIST -->
+    <section>
+      <div class="text-[10px] uppercase tracking-tag text-paper-subtle mb-3">03 — Invoices · list view</div>
+      <div class="rounded-lg border border-ink-700 bg-ink-800 overflow-hidden">
+        <div class="grid grid-cols-12 px-5 py-3 text-[10px] uppercase tracking-tag text-paper-subtle border-b border-ink-700">
+          <div class="col-span-2">Invoice</div>
+          <div class="col-span-3">Client</div>
+          <div class="col-span-2">Issued</div>
+          <div class="col-span-2">Due</div>
+          <div class="col-span-2 text-right">Amount</div>
+          <div class="col-span-1 text-right">Status</div>
+        </div>
+
+        <div class="grid grid-cols-12 items-center px-5 py-3.5 hover:bg-ink-750 transition border-b border-ink-850">
+          <div class="col-span-2 text-sm text-paper tabular">INV-2026-0431</div>
+          <div class="col-span-3 text-sm text-paper-muted">Acme Corp.</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-05-22</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-06-22</div>
+          <div class="col-span-2 text-sm text-right text-paper font-medium tabular">$10,912.50</div>
+          <div class="col-span-1 text-right">
+            <span class="text-[10px] px-2 py-0.5 rounded-sm bg-cyan-950 text-cyan-300 uppercase tracking-tag">paid</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-12 items-center px-5 py-3.5 hover:bg-ink-750 transition border-b border-ink-850">
+          <div class="col-span-2 text-sm text-paper tabular">INV-2026-0430</div>
+          <div class="col-span-3 text-sm text-paper-muted">Northwind Advisory</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-05-18</div>
+          <div class="col-span-2 text-sm text-amber-300 tabular">2026-06-17</div>
+          <div class="col-span-2 text-sm text-right text-paper font-medium tabular">£4,200.00</div>
+          <div class="col-span-1 text-right">
+            <span class="text-[10px] px-2 py-0.5 rounded-sm bg-amber-950 text-amber-300 uppercase tracking-tag">sent</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-12 items-center px-5 py-3.5 hover:bg-ink-750 transition border-b border-ink-850">
+          <div class="col-span-2 text-sm text-paper tabular">INV-2026-0429</div>
+          <div class="col-span-3 text-sm text-paper-muted">Contoso Partners</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-05-12</div>
+          <div class="col-span-2 text-sm text-red-300 tabular">2026-06-11</div>
+          <div class="col-span-2 text-sm text-right text-paper font-medium tabular">S$22,450.00</div>
+          <div class="col-span-1 text-right">
+            <span class="text-[10px] px-2 py-0.5 rounded-sm bg-red-950 text-red-300 uppercase tracking-tag">overdue</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-12 items-center px-5 py-3.5 hover:bg-ink-750 transition">
+          <div class="col-span-2 text-sm text-paper tabular">INV-2026-0428</div>
+          <div class="col-span-3 text-sm text-paper-muted">Globex Holdings</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-05-08</div>
+          <div class="col-span-2 text-sm text-paper-subtle tabular">2026-06-07</div>
+          <div class="col-span-2 text-sm text-right text-paper font-medium tabular">₹4,82,500.00</div>
+          <div class="col-span-1 text-right">
+            <span class="text-[10px] px-2 py-0.5 rounded-sm bg-ink-700 text-paper-muted uppercase tracking-tag">draft</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================== 4. SIGNUP HERO -->
+    <section>
+      <div class="text-[10px] uppercase tracking-tag text-paper-subtle mb-3">04 — Signup hero</div>
+      <div class="relative rounded-2xl border border-ink-700 bg-gradient-to-br from-ink-900 via-ink-900 to-indigo-950/50 overflow-hidden">
+        <div class="absolute inset-0 ink-grid opacity-60"></div>
+        <div class="relative grid md:grid-cols-2 gap-12 px-12 py-20">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md border border-ink-700 bg-ink-900/60 text-xs text-paper-muted mb-8">
+              <span class="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_6px_rgba(129,140,248,0.7)]"></span>
+              Private beta · US · UK · SG · IN · AU
+            </div>
+            <h2 class="font-serif text-5xl text-paper leading-[1.05]" style="font-weight:400;">
+              The ledger your<br/>
+              <span class="text-accent-light">partners trust.</span>
+            </h2>
+            <p class="text-paper-muted text-lg mt-6 max-w-md">Engagement letters, time, expenses, billing, AR, AP. Extracted, proposed, posted — with you in the loop on every entry that matters.</p>
+            <div class="mt-8 flex items-center gap-3">
+              <button class="px-5 py-3 rounded-md bg-accent text-accent-on font-medium hover:bg-accent-hover shadow-[0_0_0_3px_rgba(129,140,248,0.18)]">Begin trial</button>
+              <button class="px-5 py-3 rounded-md border border-ink-700 text-paper-muted hover:bg-ink-800">Watch the 90-second tour</button>
+            </div>
+            <div class="mt-6 text-xs text-paper-subtle">No long form. Card capture at signup — cancel anytime in the 14-day trial.</div>
+          </div>
+
+          <div class="relative">
+            <div class="rounded-lg border border-ink-700 bg-ink-900/90 shadow-2xl p-5 max-w-md ml-auto">
+              <div class="flex items-center gap-2 mb-4">
+                <div class="w-6 h-px bg-accent"></div>
+                <span class="text-[10px] uppercase tracking-tag text-paper-subtle">Copilot</span>
+              </div>
+              <div class="text-sm text-paper">Extracted from <span class="text-accent-light">acme-msa-may-2026.pdf</span>:</div>
+              <dl class="mt-3 grid grid-cols-2 gap-y-2 text-xs">
+                <dt class="text-paper-subtle">Client</dt><dd class="text-paper">Acme Corp.</dd>
+                <dt class="text-paper-subtle">Scope</dt><dd class="text-paper">Phase 2 — implementation</dd>
+                <dt class="text-paper-subtle">Billing</dt><dd class="text-paper">T&amp;M · $225/hr blended</dd>
+                <dt class="text-paper-subtle">Cap</dt><dd class="text-paper tabular">$180,000.00</dd>
+                <dt class="text-paper-subtle">Confidence</dt>
+                <dd><span class="text-[10px] px-2 py-0.5 rounded-sm bg-cyan-950 text-cyan-300 uppercase tracking-tag">0.93 · high</span></dd>
+              </dl>
+              <div class="mt-4 flex justify-end gap-2">
+                <button class="px-3 py-1.5 text-xs rounded-md border border-ink-700 text-paper-muted">Edit</button>
+                <button class="px-3 py-1.5 text-xs rounded-md bg-accent text-accent-on font-medium">Create engagement</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="pt-8 text-xs text-paper-subtle flex items-center justify-between">
+      <div class="lockup">
+        <div class="text-sm font-bold tracking-brand text-paper-muted leading-none">Aethos</div>
+        <div class="rule my-1" style="width: 40px;"></div>
+        <div class="text-[9px] font-light tracking-tag text-paper-subtle uppercase">for professional services</div>
+      </div>
+      <div>Theme 2 · Ink + Indigo · mockup</div>
+    </footer>
+
+  </main>
+</body>
+</html>

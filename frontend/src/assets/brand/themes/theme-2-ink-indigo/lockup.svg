@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 96" role="img" aria-label="Aethos, for professional services">
+  <title>Aethos — Ink + Indigo lockup</title>
+  <defs>
+    <style>
+      .ink-bg { fill: #0b1020; }
+      .ink-rule { fill: #818cf8; }
+      .ink-word { fill: #f5f5f7; font-family: 'Inter', system-ui, sans-serif; font-weight: 700; font-size: 40px; letter-spacing: 0.01em; }
+      .ink-sub { fill: #a5b4fc; font-family: 'Inter', system-ui, sans-serif; font-weight: 300; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; }
+    </style>
+  </defs>
+  <rect class="ink-bg" width="380" height="96" rx="6"/>
+  <!-- Primary line: Aethos -->
+  <text class="ink-word" x="28" y="48">Aethos</text>
+  <!-- Indigo divider rule, width of "Aethos" wordmark -->
+  <rect class="ink-rule" x="28" y="58" width="156" height="1.5" rx="0.75"/>
+  <!-- Secondary line: services tag, indented to start under "A" -->
+  <text class="ink-sub" x="28" y="78">for professional services</text>
+</svg>
