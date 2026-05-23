@@ -90,16 +90,22 @@ def draft_invoice(
     """
     db = deps.db
 
-    # Fetch engagement + billing terms + client in one query
+    # Fetch engagement + billing terms + client in one query.
+    # We deliberately use .limit(1) instead of .single() because .single()
+    # raises postgrest.APIError (PGRST116) on 0 rows, which would bubble up
+    # as a 500. We want a clean ValueError that the router can translate to
+    # a 404. The .eq("tenant_id", ...) clause also makes cross-tenant lookups
+    # return 0 rows → 404, never a 5xx — see bug #101.
     eng_result = (
         db.table("engagements")
         .select("*, engagement_billing_terms(*), clients(id, name)")
         .eq("id", engagement_id)
         .eq("tenant_id", deps.tenant_id)
-        .single()
+        .limit(1)
         .execute()
     )
-    eng = eng_result.data if eng_result.data else None
+    rows = eng_result.data or []
+    eng = rows[0] if rows else None
 
     if not eng:
         raise ValueError(f"Engagement {engagement_id!r} not found for tenant {deps.tenant_id!r}")

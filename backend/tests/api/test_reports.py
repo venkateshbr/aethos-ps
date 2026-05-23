@@ -42,13 +42,6 @@ def test_report_endpoint_returns_200(client_a: httpx.Client, path: str) -> None:
     assert isinstance(body, (dict, list)), f"{path} returned non-JSON-object: {type(body).__name__}"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #99 — /reports/wip queries projects.rate_card_id which does not "
-        "exist in schema. Reports service needs to join via engagements.rate_card_id."
-    ),
-    strict=False,
-)
 def test_wip_report_returns_200(client_a: httpx.Client) -> None:
     """WIP report — currently bug #99 makes it 500."""
     r = client_a.get("/api/v1/reports/wip")

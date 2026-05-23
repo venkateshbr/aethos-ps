@@ -143,7 +143,10 @@ async def propose(
         deps,
         agent_name="bill_pay_agent",
         action_type="create_bill_payment_batch",
-        document_id=user.user_id,
+        # Bill-pay sweeps approved bills and has no single source document,
+        # so we pass None for document_id. Previously this passed user.user_id
+        # which violated agent_suggestions.original_document_id FK (#102).
+        document_id=None,
         output=proposal.model_dump(mode="json"),
         confidence=proposal.confidence,
         autonomy_level=2,  # ALWAYS L2 — money-out requires human approval

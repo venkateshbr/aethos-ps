@@ -240,15 +240,28 @@ class ReportsService:
     # ------------------------------------------------------------------
 
     def wip(self, engagement_id: str | None = None) -> list[dict]:
-        """Unbilled effort x average rate per project."""
+        """Unbilled effort x average rate per project.
+
+        Rate card lives on the engagement (``engagements.rate_card_id``), not
+        on the project — there is no per-project rate-card override in the
+        current schema. We join through the engagement to find the applicable
+        rate card. See bug #99.
+        """
+        # Embed the parent engagement so we can pick up its rate_card_id in
+        # the same round-trip. PostgREST returns embedded foreign tables as a
+        # nested dict when the FK is many-to-one.
         q = (
             self.db.table("projects")
-            .select("id, name, engagement_id, rate_card_id")
+            .select("id, name, engagement_id, engagements(rate_card_id)")
             .eq("tenant_id", self.tenant_id)
         )
         if engagement_id:
             q = q.eq("engagement_id", engagement_id)
         projects = q.execute().data or []
+
+        # Cache of rate_card_id → rate to avoid repeating the same lookup across
+        # multiple projects that share an engagement / rate card.
+        rate_cache: dict[str, Decimal] = {}
 
         result: list[dict] = []
         for proj in projects:
@@ -266,18 +279,29 @@ class ReportsService:
             )
             hours = sum(Decimal(str(e["hours"])) for e in entries)
 
+            # engagements may come back as a dict or a list depending on the
+            # PostgREST cardinality inference; normalise.
+            eng_embed = proj.get("engagements")
+            if isinstance(eng_embed, list):
+                eng_embed = eng_embed[0] if eng_embed else None
+            rate_card_id = (eng_embed or {}).get("rate_card_id")
+
             rate = Decimal("0")
-            if proj.get("rate_card_id"):
-                rc = (
-                    self.db.table("rate_card_lines")
-                    .select("rate")
-                    .eq("rate_card_id", proj["rate_card_id"])
-                    .limit(1)
-                    .execute()
-                    .data
-                )
-                if rc:
-                    rate = Decimal(str(rc[0]["rate"]))
+            if rate_card_id:
+                if rate_card_id in rate_cache:
+                    rate = rate_cache[rate_card_id]
+                else:
+                    rc = (
+                        self.db.table("rate_card_lines")
+                        .select("rate")
+                        .eq("rate_card_id", rate_card_id)
+                        .limit(1)
+                        .execute()
+                        .data
+                    )
+                    if rc:
+                        rate = Decimal(str(rc[0]["rate"]))
+                    rate_cache[rate_card_id] = rate
 
             value = (hours * rate).quantize(Decimal("0.01"))
             result.append(

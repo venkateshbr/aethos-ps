@@ -23,7 +23,7 @@ async def write_agent_suggestion(
     deps: AgentDeps,
     agent_name: str,
     action_type: str,
-    document_id: str,
+    document_id: str | None,
     output: dict,
     confidence: float,
     autonomy_level: int = 2,
@@ -36,7 +36,11 @@ async def write_agent_suggestion(
     deps:                 Tenant-scoped agent dependencies (db client + tenant_id).
     agent_name:           Machine name of the agent, e.g. "engagement_letter_agent".
     action_type:          The HITL action kind, e.g. "create_engagement_draft".
-    document_id:          UUID of the source document row.
+    document_id:          UUID of the source document row, or None if the agent
+                          has no single source document (e.g. bill_pay_agent
+                          sweeps approved bills). When None, the FK column
+                          ``original_document_id`` is omitted from the insert
+                          payload so it stores SQL NULL — see bug #102.
     output:               The typed draft serialised as a plain dict.
     confidence:           Agent confidence score (0.0 - 1.0).
     autonomy_level:       Agent autonomy level (1=notify, 2=suggest, 3=auto-apply).
@@ -52,7 +56,7 @@ async def write_agent_suggestion(
 
     db = deps.db
 
-    suggestion_payload = {
+    suggestion_payload: dict = {
         "tenant_id": deps.tenant_id,
         "agent_name": agent_name,
         "action_type": action_type,
@@ -61,8 +65,11 @@ async def write_agent_suggestion(
         "confidence": str(confidence),  # NUMERIC column — send as string
         "status": "pending" if hitl_required else "auto_applied",
         "hitl_required": hitl_required,
-        "original_document_id": document_id,
     }
+    # Only include the FK when we actually have a document — otherwise omit so
+    # the column stores SQL NULL (matches schema: nullable REFERENCES documents).
+    if document_id is not None:
+        suggestion_payload["original_document_id"] = document_id
 
     suggestion = db.table("agent_suggestions").insert(suggestion_payload).execute().data[0]
 
