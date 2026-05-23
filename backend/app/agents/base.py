@@ -1,4 +1,4 @@
-"""Agent base infrastructure — shared deps, PII masking.
+"""Agent base infrastructure — shared deps, PII masking, LLM client.
 
 All agents must import AgentDeps and mask_pii from here.
 Never send un-masked text to an external LLM API.
@@ -9,7 +9,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from openai import AsyncOpenAI, OpenAI
 from supabase import Client
+
+from app.core.config import settings
 
 
 @dataclass
@@ -19,6 +22,22 @@ class AgentDeps:
     tenant_id: str
     user_id: str | None
     db: Client  # service-role client for reading storage + writing suggestions
+
+
+def make_async_llm_client() -> AsyncOpenAI:
+    """Async OpenAI-compatible client pointed at OpenRouter."""
+    return AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
+
+
+def make_sync_llm_client() -> OpenAI:
+    """Sync OpenAI-compatible client pointed at OpenRouter."""
+    return OpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
 
 
 def mask_pii(text: str) -> str:

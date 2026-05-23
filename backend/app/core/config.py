@@ -6,7 +6,11 @@ Never import this module before process startup (keep tests fast with patch.dict
 
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -73,9 +77,49 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:4201"
 
     # ------------------------------------------------------------------
-    # Anthropic
+    # LLM provider (OpenRouter — OpenAI-compatible API)
     # ------------------------------------------------------------------
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Ordered model fallback chain. OpenRouter tries the first; if it errors or
+    # rate-limits, it transparently falls back to the next. Keep a paid Haiku at
+    # the tail so the product still works when the free tier is exhausted.
+    # NoDecode → bypass pydantic-settings' built-in JSON decoder for complex types,
+    # so the field_validator below sees the raw env string and can accept either
+    # JSON list ("[a,b,c]") or comma-separated ("a,b,c"). See #96.
+    agent_models: Annotated[list[str], NoDecode] = [
+        "google/gemma-4-31b-it:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "anthropic/claude-haiku-4.5",
+    ]
+    # Legacy — kept so older test configs don't fail to load. Unused.
     anthropic_api_key: str = ""
+
+    @field_validator("agent_models", "cors_origins", mode="before")
+    @classmethod
+    def _parse_str_list(cls, v: object) -> object:
+        """Accept JSON list OR comma-separated string for list[str] env vars.
+
+        Why both: ``pydantic-settings`` defaults to JSON-parsing list-typed env
+        vars. That works when pydantic loads ``.env`` directly, but breaks the
+        common ``set -a && source .env && set +a`` workflow because the shell
+        strips JSON quotes/brackets before pydantic ever sees the value.
+        Combined with ``Annotated[..., NoDecode]`` on the field, this validator
+        receives the raw env string and tolerates both shapes. (See #96.)
+        """
+        if v is None or isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return []
+            if s.startswith("["):
+                try:
+                    return json.loads(s)
+                except json.JSONDecodeError:
+                    s = s.strip("[]")
+            return [item.strip().strip('"').strip("'") for item in s.split(",") if item.strip()]
+        return v
 
     # ------------------------------------------------------------------
     # Langfuse (optional — disabled when empty)
@@ -101,7 +145,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # CORS / runtime
     # ------------------------------------------------------------------
-    cors_origins: list[str] = ["http://localhost:4201"]
+    # NoDecode → same reason as agent_models: tolerate shell-mangled list env vars.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4201"]
     debug: bool = False
     environment: str = "development"
 

@@ -71,3 +71,65 @@ def test_optional_fields_default_to_empty_string() -> None:
         s = cfg.Settings()
         assert s.langfuse_public_key == "" or isinstance(s.langfuse_public_key, str)
         assert s.upstash_redis_url == "" or isinstance(s.upstash_redis_url, str)
+
+
+# ---------------------------------------------------------------------------
+# AGENT_MODELS parser — regression guard for #96
+# AGENT_MODELS must load from BOTH JSON-list and comma-separated forms so that
+# `set -a && source .env && set +a` (which strips JSON quotes/brackets) works.
+# ---------------------------------------------------------------------------
+
+
+def test_agent_models_parsed_from_json_list() -> None:
+    env = {**_REQUIRED_ENV, "AGENT_MODELS": '["a/b","c/d","e/f"]'}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.agent_models == ["a/b", "c/d", "e/f"]
+
+
+def test_agent_models_parsed_from_comma_separated_string() -> None:
+    """The exact shape the shell produces after `set -a && source .env`."""
+    env = {**_REQUIRED_ENV, "AGENT_MODELS": "a/b,c/d,e/f"}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.agent_models == ["a/b", "c/d", "e/f"]
+
+
+def test_agent_models_tolerates_shell_mangled_brackets() -> None:
+    """Bash strips the JSON quotes but may leave brackets — handle both."""
+    env = {**_REQUIRED_ENV, "AGENT_MODELS": "[a/b,c/d,e/f]"}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.agent_models == ["a/b", "c/d", "e/f"]
+
+
+def test_agent_models_strips_whitespace_and_quote_remnants() -> None:
+    env = {**_REQUIRED_ENV, "AGENT_MODELS": ' "a/b" , "c/d" '}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.agent_models == ["a/b", "c/d"]
+
+
+def test_agent_models_default_when_unset() -> None:
+    """No AGENT_MODELS env var → built-in 3-model chain applies."""
+    with patch.dict(os.environ, _REQUIRED_ENV, clear=False):
+        # Make sure no AGENT_MODELS leaks from the host shell
+        os.environ.pop("AGENT_MODELS", None)
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert len(s.agent_models) == 3
+        assert s.agent_models[-1] == "anthropic/claude-haiku-4.5"

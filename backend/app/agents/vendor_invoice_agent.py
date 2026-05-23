@@ -4,7 +4,7 @@ Parses uploaded vendor invoices and returns a typed BillDraft.
 Also performs a duplicate-detection check against existing bills for the
 same tenant + vendor_invoice_number combination.
 
-Uses AsyncAnthropic for async-safe operation inside ARQ worker context.
+Uses AsyncOpenAI against OpenRouter for async-safe operation inside ARQ worker context.
 PII masking is applied to all text content before sending to the LLM.
 """
 
@@ -15,9 +15,7 @@ import json
 import logging
 import re
 
-from anthropic import AsyncAnthropic
-
-from app.agents.base import AgentDeps, mask_pii
+from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
 from app.agents.schemas import BillDraft
 from app.core.config import settings
 
@@ -82,21 +80,20 @@ async def run_vendor_invoice_agent(
     Gracefully degrades: on any exception the caller is expected to catch and
     update the document status to 'failed'.
     """
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = make_async_llm_client()
     schema = BillDraft.model_json_schema()
+
+    prompt = VENDOR_INVOICE_PROMPT.format(schema=json.dumps(schema, indent=2))
 
     if mime_type.startswith("image/"):
         encoded = base64.standard_b64encode(document_bytes).decode()
         media_type = mime_type.replace("image/jpg", "image/jpeg")
         content: list[dict] = [
             {
-                "type": "image",
-                "source": {"type": "base64", "media_type": media_type, "data": encoded},
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{encoded}"},
             },
-            {
-                "type": "text",
-                "text": VENDOR_INVOICE_PROMPT.format(schema=json.dumps(schema, indent=2)),
-            },
+            {"type": "text", "text": prompt},
         ]
     else:
         try:
@@ -107,10 +104,7 @@ async def run_vendor_invoice_agent(
         content = [
             {
                 "type": "text",
-                "text": (
-                    VENDOR_INVOICE_PROMPT.format(schema=json.dumps(schema, indent=2))
-                    + f"\n\nDocument text:\n{text[:8000]}"
-                ),
+                "text": prompt + f"\n\nDocument text:\n{text[:8000]}",
             }
         ]
 
@@ -119,18 +113,20 @@ async def run_vendor_invoice_agent(
         extra={
             "document_id": document_id,
             "tenant_id": deps.tenant_id,
-            "model": "claude-sonnet-4-6",
+            "models": settings.agent_models,
             "mime_type": mime_type,
         },
     )
 
-    message = await client.messages.create(
-        model="claude-sonnet-4-6",
+    completion = await client.chat.completions.create(
+        model=settings.agent_models[0],
+        extra_body={"models": settings.agent_models},
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
+        response_format={"type": "json_object"},
     )
 
-    response_text = message.content[0].text if message.content else "{}"
+    response_text = completion.choices[0].message.content or "{}"
 
     json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
     if json_match:
@@ -144,13 +140,15 @@ async def run_vendor_invoice_agent(
     if possible_duplicate:
         raw["possible_duplicate"] = True
 
+    usage = completion.usage
     logger.info(
         "vendor_invoice_agent: completed",
         extra={
             "document_id": document_id,
             "tenant_id": deps.tenant_id,
-            "input_tokens": message.usage.input_tokens,
-            "output_tokens": message.usage.output_tokens,
+            "model": completion.model,
+            "input_tokens": usage.prompt_tokens if usage else 0,
+            "output_tokens": usage.completion_tokens if usage else 0,
             "confidence": raw.get("confidence", 0.0),
             "possible_duplicate": possible_duplicate,
             "anomaly_detected": raw.get("anomaly_detected", False),
