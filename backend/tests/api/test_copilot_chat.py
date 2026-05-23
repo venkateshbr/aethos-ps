@@ -24,14 +24,6 @@ pytestmark = [
 ]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #98 — chat router uses anon Supabase client but no middleware sets "
-        "`app.current_tenant_id`, so RLS rejects the insert with 42501. Test is "
-        "kept to drive the fix; flip strict=True once #98 is resolved."
-    ),
-    strict=False,
-)
 def test_create_chat_thread_happy_path(client_a: httpx.Client) -> None:
     r = client_a.post("/api/v1/chat/threads", json={"title": "Aksha QA thread"})
     assert r.status_code in (200, 201), r.text
@@ -70,13 +62,6 @@ def test_send_message_to_unknown_thread_returns_404(
     assert r.status_code == 404, r.text
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #98 — thread create step is blocked by RLS so this test cannot run "
-        "end-to-end. Once #98 is fixed, this test should naturally pass."
-    ),
-    strict=False,
-)
 def test_send_message_cross_tenant_thread_returns_404(
     api_base_url: str, world: SeedWorld
 ) -> None:

@@ -14,12 +14,43 @@ import base64
 import json
 import logging
 import re
+from decimal import Decimal
+
+from pydantic import ValidationError
 
 from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
 from app.agents.schemas import BillDraft
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _empty_bill_draft(
+    *,
+    suspected_injection: bool = False,
+    possible_duplicate: bool = False,
+) -> BillDraft:
+    """Return a safe, low-confidence BillDraft.
+
+    Used when the LLM returned an empty/malformed response. The calling layer
+    will see confidence=0.0 and can either route to HITL or mark the document
+    as 'extraction failed'. See bug #104.
+    """
+    return BillDraft(
+        vendor_name="unknown",
+        vendor_invoice_number=None,
+        currency="USD",
+        subtotal=Decimal("0"),
+        tax_total=Decimal("0"),
+        total=Decimal("0"),
+        issue_date=None,
+        due_date=None,
+        lines=[],
+        confidence=0.0,
+        possible_duplicate=possible_duplicate,
+        anomaly_detected=False,
+        suspected_injection=suspected_injection,
+    )
 
 VENDOR_INVOICE_PROMPT = """You are parsing a vendor invoice for a professional services firm.
 Extract the following information and return it as JSON matching this schema exactly:
@@ -130,7 +161,10 @@ async def run_vendor_invoice_agent(
 
     json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
     if json_match:
-        raw = json.loads(json_match.group())
+        try:
+            raw = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            raw = {}
     else:
         raw = {}
 
@@ -156,4 +190,33 @@ async def run_vendor_invoice_agent(
         },
     )
 
-    return BillDraft(**raw)
+    # Defensive fallback (#104): if the LLM returned nothing / refused / produced
+    # malformed JSON, construct a safe low-confidence draft and treat the silence
+    # as suspicious. This matters for prompt-injection inputs where the model
+    # often emits "{}" rather than complying, and for free-tier models that
+    # occasionally return garbage.
+    required = ("vendor_name", "subtotal", "total")
+    if not raw or any(k not in raw for k in required):
+        logger.warning(
+            "vendor_invoice_agent: LLM returned no/empty JSON — degrading to low-confidence draft",
+            extra={"document_id": document_id, "tenant_id": deps.tenant_id},
+        )
+        return _empty_bill_draft(
+            suspected_injection=True, possible_duplicate=possible_duplicate
+        )
+
+    try:
+        return BillDraft(**raw)
+    except ValidationError as exc:
+        logger.warning(
+            "vendor_invoice_agent: ValidationError on LLM output — degrading",
+            extra={
+                "document_id": document_id,
+                "tenant_id": deps.tenant_id,
+                "error": str(exc),
+            },
+        )
+        return _empty_bill_draft(
+            suspected_injection=bool(raw.get("suspected_injection", False)),
+            possible_duplicate=possible_duplicate,
+        )

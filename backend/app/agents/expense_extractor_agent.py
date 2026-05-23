@@ -12,12 +12,33 @@ import base64
 import json
 import logging
 import re
+from decimal import Decimal
+
+from pydantic import ValidationError
 
 from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
 from app.agents.schemas import ProjectExpenseDraft
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _empty_expense_draft(*, suspected_injection: bool = False) -> ProjectExpenseDraft:
+    """Return a safe, low-confidence ProjectExpenseDraft.
+
+    Used when the LLM returned an empty/malformed response. The calling layer
+    will see confidence=0.0 and can either route to HITL or mark the document
+    as 'extraction failed'. See bug #104.
+    """
+    return ProjectExpenseDraft(
+        vendor="unknown",
+        amount=Decimal("0"),
+        category="other",
+        currency="USD",
+        description="(extraction failed — LLM returned no usable JSON)",
+        confidence=0.0,
+        suspected_injection=suspected_injection,
+    )
 
 EXPENSE_EXTRACTOR_PROMPT = """You are parsing a receipt or expense document for a professional services firm.
 Extract the following information and return it as JSON matching this schema exactly:
@@ -100,7 +121,10 @@ async def run_expense_extractor_agent(
 
     json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
     if json_match:
-        raw = json.loads(json_match.group())
+        try:
+            raw = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            raw = {}
     else:
         raw = {}
 
@@ -118,4 +142,28 @@ async def run_expense_extractor_agent(
         },
     )
 
-    return ProjectExpenseDraft(**raw)
+    # Defensive fallback (#104): if the LLM returned nothing / refused / produced
+    # malformed JSON, construct a safe low-confidence draft and treat the silence
+    # as suspicious. This matters for prompt-injection inputs where the model
+    # often emits "{}" rather than complying.
+    if not raw or "amount" not in raw or "vendor" not in raw:
+        logger.warning(
+            "expense_extractor_agent: LLM returned no/empty JSON — degrading to low-confidence draft",
+            extra={"document_id": document_id, "tenant_id": deps.tenant_id},
+        )
+        return _empty_expense_draft(suspected_injection=True)
+
+    try:
+        return ProjectExpenseDraft(**raw)
+    except ValidationError as exc:
+        logger.warning(
+            "expense_extractor_agent: ValidationError on LLM output — degrading",
+            extra={
+                "document_id": document_id,
+                "tenant_id": deps.tenant_id,
+                "error": str(exc),
+            },
+        )
+        return _empty_expense_draft(
+            suspected_injection=bool(raw.get("suspected_injection", False)),
+        )

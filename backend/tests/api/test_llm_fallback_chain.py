@@ -112,14 +112,6 @@ def test_expense_extractor_runs_against_real_openrouter_chain() -> None:
     assert not result.suspected_injection
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #104 — agent crashes with Pydantic ValidationError on empty/non-JSON "
-        "LLM response (free-tier Gemma sometimes refuses to engage with injected text). "
-        "Need defensive fallback in expense_extractor_agent."
-    ),
-    strict=False,
-)
 def test_expense_extractor_flags_prompt_injection() -> None:
     """A receipt with an embedded instruction must set suspected_injection=true.
 

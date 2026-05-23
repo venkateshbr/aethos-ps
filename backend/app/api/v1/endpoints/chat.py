@@ -15,8 +15,12 @@ SSE frame format (text/event-stream):
 Security:
     - All endpoints require a valid JWT (get_current_user) and tenant context
       (get_tenant_id).
-    - The anon Supabase client is used; RLS enforces tenant isolation at the DB
-      layer.  The middleware sets ``app.current_tenant_id`` so RLS is satisfied.
+    - The service-role Supabase client is used; tenant isolation is enforced at
+      the application/repository layer via explicit ``tenant_id`` filtering on
+      every query and insert.  This matches the pattern used by every other
+      service in the codebase (bills_service, invoices_service, etc.) — see
+      bug #98 for why RLS-on-anon-client did not work without middleware that
+      sets ``app.current_tenant_id``.
     - No PII is logged; thread/message IDs and tenant_id are safe to log.
 """
 
@@ -32,7 +36,7 @@ from pydantic import BaseModel
 
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_anon_client
+from app.core.db import get_service_role_client
 from app.core.tenant import get_tenant_id
 from app.repositories.chat_repo import ChatRepository
 from supabase import Client
@@ -49,6 +53,7 @@ router = APIRouter()
 
 class ThreadResponse(BaseModel):
     id: str
+    tenant_id: str
     title: str | None
     created_at: str
     updated_at: str
@@ -67,10 +72,17 @@ class SendMessageRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _thread_to_response(row: dict) -> ThreadResponse:
-    """Map a DB row dict to ThreadResponse, normalising datetime fields."""
+def _thread_to_response(row: dict, tenant_id: str) -> ThreadResponse:
+    """Map a DB row dict to ThreadResponse, normalising datetime fields.
+
+    ``tenant_id`` is supplied by the caller (router) rather than read from the
+    row so that responses are correct even when the repo's SELECT omits it.
+    Surfacing ``tenant_id`` in the response enables tenant-isolation regression
+    tests on the wire.
+    """
     return ThreadResponse(
         id=str(row["id"]),
+        tenant_id=str(row.get("tenant_id") or tenant_id),
         title=row.get("title"),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
@@ -96,7 +108,7 @@ async def create_thread(
     payload: CreateThreadRequest,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_anon_client),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> ThreadResponse:
     """Create a new copilot conversation thread for the authenticated user."""
     repo = _build_repo(db, tenant_id)
@@ -115,7 +127,7 @@ async def create_thread(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create thread. Please try again.",
         ) from exc
-    return _thread_to_response(row)
+    return _thread_to_response(row, tenant_id)
 
 
 @router.get(
@@ -127,7 +139,7 @@ async def list_threads(
     limit: int = 20,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_anon_client),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> list[ThreadResponse]:
     """Return active threads for the authenticated user, newest first."""
     repo = _build_repo(db, tenant_id)
@@ -146,7 +158,7 @@ async def list_threads(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch threads. Please try again.",
         ) from exc
-    return [_thread_to_response(r) for r in rows]
+    return [_thread_to_response(r, tenant_id) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +175,7 @@ async def send_message(
     payload: SendMessageRequest,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_anon_client),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> StreamingResponse:
     """Send a user message to the copilot and receive a streaming SSE response.
 

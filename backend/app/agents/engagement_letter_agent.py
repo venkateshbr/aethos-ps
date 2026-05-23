@@ -14,11 +14,29 @@ import json
 import logging
 import re
 
+from pydantic import ValidationError
+
 from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
 from app.agents.schemas import EngagementDraft
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _empty_engagement_draft(*, suspected_injection: bool = False) -> EngagementDraft:
+    """Return a safe, low-confidence EngagementDraft.
+
+    Used when the LLM returned an empty/malformed response. The EngagementDraft
+    schema already has defaults for every field, but we explicitly mark the
+    draft as low-confidence so the caller can decide to route to HITL or fail
+    the document. See bug #104.
+    """
+    return EngagementDraft(
+        client_name="unknown",
+        scope_summary="(extraction failed — LLM returned no usable JSON)",
+        confidence=0.0,
+        suspected_injection=suspected_injection,
+    )
 
 ENGAGEMENT_LETTER_PROMPT = """You are parsing a professional services engagement letter.
 Extract the following information and return it as JSON matching this schema exactly:
@@ -104,7 +122,10 @@ async def run_engagement_letter_agent(
     # Extract JSON from response — model may wrap it in markdown code fences
     json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
     if json_match:
-        raw = json.loads(json_match.group())
+        try:
+            raw = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            raw = {}
     else:
         raw = {}
 
@@ -122,4 +143,30 @@ async def run_engagement_letter_agent(
         },
     )
 
-    return EngagementDraft(**raw)
+    # Defensive fallback (#104): if the LLM returned nothing usable, degrade
+    # gracefully. EngagementDraft has defaults for all fields, but we still
+    # explicitly mark the draft as low-confidence so the caller routes it to
+    # HITL rather than treating defaults as a real extraction. We also catch
+    # ValidationError in case rate_card_hints / total_value etc. have garbage
+    # types.
+    if not raw:
+        logger.warning(
+            "engagement_letter_agent: LLM returned no/empty JSON — degrading to low-confidence draft",
+            extra={"document_id": document_id, "tenant_id": deps.tenant_id},
+        )
+        return _empty_engagement_draft(suspected_injection=True)
+
+    try:
+        return EngagementDraft(**raw)
+    except ValidationError as exc:
+        logger.warning(
+            "engagement_letter_agent: ValidationError on LLM output — degrading",
+            extra={
+                "document_id": document_id,
+                "tenant_id": deps.tenant_id,
+                "error": str(exc),
+            },
+        )
+        return _empty_engagement_draft(
+            suspected_injection=bool(raw.get("suspected_injection", False)),
+        )
