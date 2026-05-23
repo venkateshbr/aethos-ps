@@ -114,3 +114,9 @@ gcloud run services update-traffic aethos-ps-api \
 - Created `.github/workflows/deploy.yml` (parallel API + frontend deploy on push to main)
 - Created `infra/cloudrun/setup.sh` (one-time GCP setup — APIs, Secret Manager)
 - Recommendation: run Locust load tests (issue #86) before raising minScale or maxScale
+
+### [2026-05-23] — Supabase Storage `documents` bucket provisioned (issue #100)
+- Created bucket on project `glcljucaayeesvrsjths`: private, 20 MiB cap, MIME allow-list (PDF / JPEG / PNG / WebP / plain text) matched against `backend/app/api/v1/endpoints/documents.py`.
+- Added migration `backend/supabase/migrations/0016_storage_documents_bucket.sql` as the reproducible source of truth (idempotent — `ON CONFLICT DO UPDATE` for the bucket row, `DROP POLICY IF EXISTS` + `CREATE POLICY` for the four RLS policies).
+- Added defense-in-depth RLS on `storage.objects` for the `documents` bucket: SELECT/INSERT/UPDATE/DELETE policies require the first path segment (`(storage.foldername(name))[1]`) to be a tenant the authenticated user has an active row for in `public.tenant_users`. Service-role callers (the API upload path) bypass RLS — tenant scoping for writes lives in `get_tenant_id`.
+- Added operator runbook `docs/infra/STORAGE_BUCKETS.md` — bucket inventory, provisioning procedures, verification commands, failure-mode triage. Every new bucket the product adds must be listed there with a paired migration.
