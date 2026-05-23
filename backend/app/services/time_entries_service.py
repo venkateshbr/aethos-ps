@@ -22,6 +22,7 @@ from app.models.time_entries import (
     TimeEntryUpdate,
 )
 from app.repositories.time_entries_repo import TimeEntriesRepository
+from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 class TimeEntriesService:
     def __init__(self, db: Client, tenant_id: str) -> None:
+        self._db = db
         self._repo = TimeEntriesRepository(db, tenant_id)
         self._tenant_id = tenant_id
 
@@ -83,6 +85,16 @@ class TimeEntriesService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Employee {data.employee_id!r} not found",
+            )
+
+        # Bug #92 sweep: phase_id is a tenant-scoped FK.
+        if data.phase_id is not None:
+            await assert_belongs_to_tenant(
+                self._db,
+                "project_phases",
+                data.phase_id,
+                self._tenant_id,
+                not_found_detail="Phase not found",
             )
 
         payload: dict = {

@@ -15,8 +15,10 @@ from fastapi import HTTPException
 
 from app.core.config import settings
 from app.domain.journal_helper import JournalLineSpec, post_journal
+from app.domain.money import serialise_money
 from app.models.invoices import InvoiceCreate, InvoiceResponse, PublicInvoiceResponse
 from app.repositories.invoices_repo import InvoicesRepository
+from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,19 @@ class InvoicesService:
 
     async def create_invoice(self, data: InvoiceCreate, created_by: str) -> InvoiceResponse:
         """Persist a drafted invoice to DB (status=draft by default)."""
+        # Bug #92 sweep: every tenant-scoped FK on the inbound payload is
+        # validated up-front. Without this, a malicious tenant could attach
+        # another tenant's engagement / client / tax_rate / time_entry /
+        # expense to their invoice — see #92 root cause.
+        await assert_belongs_to_tenant(
+            self.db, "engagements", data.engagement_id, self.tenant_id,
+            not_found_detail="Engagement not found",
+        )
+        await assert_belongs_to_tenant(
+            self.db, "clients", data.client_id, self.tenant_id,
+            not_found_detail="Client not found",
+        )
+
         invoice_data: dict = {
             "tenant_id": self.tenant_id,
             "engagement_id": data.engagement_id,
@@ -95,9 +110,9 @@ class InvoicesService:
             subtotal += line_amount
 
         total = subtotal + tax_total
-        invoice_data["subtotal"] = str(subtotal)
-        invoice_data["tax_total"] = str(tax_total)
-        invoice_data["total"] = str(total)
+        invoice_data["subtotal"] = serialise_money(subtotal)
+        invoice_data["tax_total"] = serialise_money(tax_total)
+        invoice_data["total"] = serialise_money(total)
 
         row = await self._repo.create(invoice_data)
         invoice_id = str(row["id"])
@@ -111,15 +126,27 @@ class InvoicesService:
                 "invoice_id": invoice_id,
                 "description": line.description,
                 "quantity": str(line.quantity),
-                "unit_price": str(line.unit_price),
-                "amount": str(line_amount),
-                "tax_amount": "0",
+                "unit_price": serialise_money(line.unit_price),
+                "amount": serialise_money(line_amount),
+                "tax_amount": "0.00",
             }
             if line.tax_rate_id:
+                await assert_belongs_to_tenant(
+                    self.db, "tax_rates", line.tax_rate_id, self.tenant_id,
+                    not_found_detail="Tax rate not found",
+                )
                 line_data["tax_rate_id"] = line.tax_rate_id
             if line.time_entry_id:
+                await assert_belongs_to_tenant(
+                    self.db, "time_entries", line.time_entry_id, self.tenant_id,
+                    not_found_detail="Time entry not found",
+                )
                 line_data["time_entry_id"] = line.time_entry_id
             if line.expense_id:
+                await assert_belongs_to_tenant(
+                    self.db, "project_expenses", line.expense_id, self.tenant_id,
+                    not_found_detail="Expense not found",
+                )
                 line_data["expense_id"] = line.expense_id
             created_line = await self._repo.create_line(line_data)
             line_rows.append(created_line)

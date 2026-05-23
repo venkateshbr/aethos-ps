@@ -16,6 +16,7 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 
 from app.domain.journal_helper import JournalLineSpec, post_journal
+from app.domain.money import serialise_money
 from app.models.bills import (
     AgingBucket,
     ApAgingResponse,
@@ -27,6 +28,7 @@ from app.models.bills import (
 )
 from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
+from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -37,14 +39,16 @@ _AP_ACCOUNT_CODE = "2000"        # Accounts Payable (CR)
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
+    # quantity is a count (units), not money — render as-is.
+    # unit_price / amount / tax_amount are money — always 2dp (bug #93).
     return BillLineResponse(
         id=str(row["id"]),
         bill_id=str(row["bill_id"]),
         description=row["description"],
         quantity=str(row["quantity"]),
-        unit_price=str(row["unit_price"]),
-        amount=str(row["amount"]),
-        tax_amount=str(row["tax_amount"]),
+        unit_price=serialise_money(row["unit_price"]) or "0.00",
+        amount=serialise_money(row["amount"]) or "0.00",
+        tax_amount=serialise_money(row.get("tax_amount") or "0") or "0.00",
         account_id=str(row["account_id"]) if row.get("account_id") else None,
         created_at=str(row["created_at"]),
     )
@@ -57,9 +61,9 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         client_id=str(row["client_id"]),
         bill_number=row["bill_number"],
         currency=row["currency"],
-        subtotal=str(row["subtotal"]),
-        tax_total=str(row["tax_total"]),
-        total=str(row["total"]),
+        subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
+        tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
+        total=serialise_money(row.get("total") or "0") or "0.00",
         status=row["status"],
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
         due_date=str(row["due_date"]) if row.get("due_date") else None,
@@ -150,11 +154,19 @@ class BillsService:
             line_payload = {
                 "description": line.description,
                 "quantity": str(line.quantity),
-                "unit_price": str(line.unit_price),
-                "amount": str(line.amount),
-                "tax_amount": str(line.tax_amount),
+                "unit_price": serialise_money(line.unit_price),
+                "amount": serialise_money(line.amount),
+                "tax_amount": serialise_money(line.tax_amount),
             }
             if line.account_id is not None:
+                # Bug #92 sweep: account_id is a tenant-scoped FK.
+                await assert_belongs_to_tenant(
+                    self._db,
+                    "accounts",
+                    line.account_id,
+                    self._tenant_id,
+                    not_found_detail="Account not found",
+                )
                 line_payload["account_id"] = line.account_id
             line_row = await self._repo.create_line(bill_id, line_payload)
             lines_rows.append(line_row)
@@ -168,9 +180,9 @@ class BillsService:
             await self._repo.update_totals(bill_id, subtotal, tax_total, total)
             # Refresh the row to get the DB-set values
             bill_row = await self._repo.get(bill_id) or bill_row
-            bill_row["subtotal"] = str(subtotal)
-            bill_row["tax_total"] = str(tax_total)
-            bill_row["total"] = str(total)
+            bill_row["subtotal"] = serialise_money(subtotal)
+            bill_row["tax_total"] = serialise_money(tax_total)
+            bill_row["total"] = serialise_money(total)
 
         return _bill_to_response(bill_row, lines_rows)
 
@@ -336,8 +348,8 @@ class BillsService:
         grand_total = sum(buckets.values())
         return ApAgingResponse(
             buckets=[
-                AgingBucket(label=k, total=str(v), count=bucket_counts[k])
+                AgingBucket(label=k, total=serialise_money(v) or "0.00", count=bucket_counts[k])
                 for k, v in buckets.items()
             ],
-            grand_total=str(grand_total),
+            grand_total=serialise_money(grand_total) or "0.00",
         )

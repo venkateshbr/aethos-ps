@@ -1,6 +1,7 @@
 """Pydantic request/response schemas for the Rate Cards API.
 
-Money fields (rate) are Decimal in Python and serialised as str in JSON.
+Money fields (rate) are Decimal in Python and serialised as 2dp str in JSON
+via ``app.domain.money.serialise_money`` (bug #93).
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.domain.money import serialise_money
 
 
 class RateCardLineCreate(BaseModel):
@@ -34,7 +37,7 @@ class RateCardLineResponse(BaseModel):
 
     @classmethod
     def from_db(cls, row: dict) -> RateCardLineResponse:
-        return cls(role=row["role"], rate=str(Decimal(str(row["rate"]))))
+        return cls(role=row["role"], rate=serialise_money(row["rate"]) or "0.00")
 
 
 class RateCardResponse(BaseModel):

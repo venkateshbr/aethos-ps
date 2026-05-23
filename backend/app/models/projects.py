@@ -1,6 +1,7 @@
 """Pydantic request/response schemas for the Projects API.
 
-Budget is Decimal in Python and serialised as str in JSON.
+Budget is Decimal in Python and serialised as a 2dp str in JSON via
+``app.domain.money.serialise_money`` (bug #93).
 """
 
 from __future__ import annotations
@@ -8,6 +9,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.domain.money import serialise_money
 
 
 class ProjectCreate(BaseModel):
@@ -36,14 +39,13 @@ class ProjectResponse(BaseModel):
 
     @classmethod
     def from_db(cls, row: dict) -> ProjectResponse:
-        budget = row.get("budget")
         return cls(
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
             engagement_id=str(row["engagement_id"]),
             name=row["name"],
             currency=row["currency"],
-            budget=str(Decimal(str(budget))) if budget is not None else None,
+            budget=serialise_money(row.get("budget")),
             status=row["status"],
             created_at=str(row["created_at"]),
         )

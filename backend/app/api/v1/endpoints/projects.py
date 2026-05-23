@@ -1,4 +1,4 @@
-"""Projects router — list (by engagement), create, get endpoints.
+"""Projects router — list (by engagement or tenant-wide), create, get endpoints.
 
 RBAC:
   GET  → any authenticated user (viewer and above)
@@ -33,11 +33,21 @@ def _service(
 
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
-    engagement_id: str = Query(..., description="Filter projects by engagement (required)"),
+    engagement_id: str | None = Query(
+        default=None,
+        description=(
+            "Optional filter — when omitted, returns every project in the "
+            "current tenant (subject to RLS)."
+        ),
+    ),
+    limit: int = Query(default=100, ge=1, le=500, description="Max rows to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     svc: ProjectService = Depends(_service),  # noqa: B008
 ) -> list[ProjectResponse]:
-    return await svc.list_projects(engagement_id)
+    # Bug #91: engagement_id is now optional. When None we list every project
+    # in the tenant (RLS still scopes by tenant_id).
+    return await svc.list_projects(engagement_id=engagement_id, limit=limit, offset=offset)
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from app.domain.money import serialise_money
 from app.models.rate_cards import (
     RateCardCreate,
     RateCardLineResponse,
@@ -51,7 +52,7 @@ class RateCardService:
             "effective_date": data.effective_date.isoformat(),
         }
         line_data = [
-            {"role": ln.role, "rate": str(ln.rate)}
+            {"role": ln.role, "rate": serialise_money(ln.rate)}
             for ln in data.lines
         ]
         card = await self._repo.create(card_data, line_data)

@@ -167,3 +167,84 @@ def test_engagement_create_total_value_coerced_from_string() -> None:
         total_value="99999.99",  # type: ignore[arg-type]
     )
     assert eng.total_value == Decimal("99999.99")
+
+
+# ---------------------------------------------------------------------------
+# Bug #93 — money quantization to 2 decimal places across all 5 currencies
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("currency", ["USD", "GBP", "SGD", "INR", "AUD"])
+def test_engagement_response_total_value_quantises_short_decimal(currency: str) -> None:
+    """A DB row with one trailing zero ('100000.0') must serialise as '100000.00'."""
+    row = {
+        "id": "eng-q1",
+        "tenant_id": "tenant-abc",
+        "client_id": "client-xyz",
+        "name": f"Quantization {currency}",
+        "billing_arrangement": "fixed_fee",
+        "currency": currency,
+        "total_value": "100000.0",  # the offending stored form (bug #93)
+        "status": "draft",
+        "start_date": None,
+        "end_date": None,
+        "created_at": "2026-05-23T10:00:00+00:00",
+    }
+    resp = EngagementResponse.from_db(row)
+    assert resp.total_value == "100000.00", (
+        f"Bug #93 regression for {currency}: got {resp.total_value!r}"
+    )
+
+
+def test_engagement_response_total_value_quantises_decimal_input() -> None:
+    """When the Pydantic model is built directly with a Decimal that has 1 dp."""
+    resp = EngagementResponse(
+        id="abc",
+        tenant_id="t1",
+        client_id="c1",
+        name="x",
+        billing_arrangement="fixed_fee",
+        currency="USD",
+        total_value=Decimal("100000.0"),  # 1 trailing zero
+        status="draft",
+        start_date=None,
+        end_date=None,
+        created_at="2026-05-23",
+    )
+    assert resp.total_value == "100000.00"
+
+
+def test_engagement_response_total_value_quantises_integer_input() -> None:
+    """Integer-shaped money values get the .00 they need."""
+    resp = EngagementResponse(
+        id="abc",
+        tenant_id="t1",
+        client_id="c1",
+        name="x",
+        billing_arrangement="fixed_fee",
+        currency="USD",
+        total_value=Decimal("12345"),  # no decimal at all
+        status="draft",
+        start_date=None,
+        end_date=None,
+        created_at="2026-05-23",
+    )
+    assert resp.total_value == "12345.00"
+
+
+def test_engagement_billing_terms_response_quantises_each_field() -> None:
+    """All four nullable money fields on the terms response use the helper."""
+    from app.models.engagements import EngagementBillingTermsResponse
+
+    terms = EngagementBillingTermsResponse.from_db(
+        {
+            "fixed_fee_amount": "50000.0",
+            "retainer_monthly_amount": "10000",
+            "retainer_floor": None,
+            "cap_amount": "75000.5",
+        }
+    )
+    assert terms.fixed_fee_amount == "50000.00"
+    assert terms.retainer_monthly_amount == "10000.00"
+    assert terms.retainer_floor is None
+    assert terms.cap_amount == "75000.50"

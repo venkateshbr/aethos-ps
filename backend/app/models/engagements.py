@@ -1,6 +1,8 @@
 """Pydantic request/response schemas for the Engagements API.
 
 Total_value / billing term money fields: Decimal in Python, str in JSON.
+All money output goes through ``app.domain.money.serialise_money`` so the
+JSON representation is always two decimal places (bug #93).
 """
 
 from __future__ import annotations
@@ -10,6 +12,8 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.domain.money import serialise_money
 
 
 class BillingTerms(BaseModel):
@@ -64,14 +68,11 @@ class EngagementBillingTermsResponse(BaseModel):
 
     @classmethod
     def from_db(cls, row: dict) -> EngagementBillingTermsResponse:
-        def _str_or_none(v: object) -> str | None:
-            return str(Decimal(str(v))) if v is not None else None
-
         return cls(
-            fixed_fee_amount=_str_or_none(row.get("fixed_fee_amount")),
-            retainer_monthly_amount=_str_or_none(row.get("retainer_monthly_amount")),
-            retainer_floor=_str_or_none(row.get("retainer_floor")),
-            cap_amount=_str_or_none(row.get("cap_amount")),
+            fixed_fee_amount=serialise_money(row.get("fixed_fee_amount")),
+            retainer_monthly_amount=serialise_money(row.get("retainer_monthly_amount")),
+            retainer_floor=serialise_money(row.get("retainer_floor")),
+            cap_amount=serialise_money(row.get("cap_amount")),
         )
 
 
@@ -92,12 +93,8 @@ class EngagementResponse(BaseModel):
     @field_validator("total_value", mode="before")
     @classmethod
     def coerce_total_value_to_str(cls, v: object) -> str | None:
-        """Accept Decimal/int/float inputs and coerce to canonical str."""
-        if v is None:
-            return None
-        if isinstance(v, str):
-            return v
-        return str(Decimal(str(v)))
+        """Accept Decimal/int/float/str inputs and coerce to canonical 2dp str."""
+        return serialise_money(v)  # type: ignore[arg-type]
 
     @classmethod
     def from_db(
@@ -105,7 +102,6 @@ class EngagementResponse(BaseModel):
         row: dict,
         billing_terms_row: dict | None = None,
     ) -> EngagementResponse:
-        tv = row.get("total_value")
         return cls(
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
@@ -113,7 +109,7 @@ class EngagementResponse(BaseModel):
             name=row["name"],
             billing_arrangement=row["billing_arrangement"],
             currency=row["currency"],
-            total_value=str(Decimal(str(tv))) if tv is not None else None,
+            total_value=serialise_money(row.get("total_value")),
             status=row["status"],
             start_date=str(row["start_date"]) if row.get("start_date") else None,
             end_date=str(row["end_date"]) if row.get("end_date") else None,

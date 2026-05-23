@@ -19,6 +19,8 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from app.domain.money import serialise_money
+
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -73,7 +75,7 @@ class BillPaymentsService:
             .insert(
                 {
                     "tenant_id": self.tenant_id,
-                    "total": str(total),
+                    "total": serialise_money(total),
                     "currency": currency,
                     "bank_account_label": bank_account_label,
                     "pay_date": pay_date.isoformat() if pay_date else date.today().isoformat(),
@@ -89,7 +91,7 @@ class BillPaymentsService:
                 "tenant_id": self.tenant_id,
                 "batch_id": batch["id"],
                 "bill_id": b["id"],
-                "amount": str(b["total"]),
+                "amount": serialise_money(b["total"]),
                 "currency": b["currency"],
             }
             for b in bills

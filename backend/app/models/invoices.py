@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.money import serialise_money
+
 # ---------------------------------------------------------------------------
 # Invoice line models
 # ---------------------------------------------------------------------------
@@ -42,15 +44,17 @@ class InvoiceLineResponse(BaseModel):
 
     @classmethod
     def from_db(cls, row: dict) -> InvoiceLineResponse:
+        # Money fields always quantised to 2dp (bug #93). Quantity is a count
+        # (Decimal hours / units) and renders as-is — not money.
         return cls(
             id=str(row["id"]),
             invoice_id=str(row["invoice_id"]),
             description=row["description"],
             quantity=str(row.get("quantity", "1")),
-            unit_price=str(row.get("unit_price", "0")),
-            amount=str(row.get("amount", "0")),
+            unit_price=serialise_money(row.get("unit_price") or "0") or "0.00",
+            amount=serialise_money(row.get("amount") or "0") or "0.00",
             tax_rate_id=str(row["tax_rate_id"]) if row.get("tax_rate_id") else None,
-            tax_amount=str(row.get("tax_amount", "0")),
+            tax_amount=serialise_money(row.get("tax_amount") or "0") or "0.00",
             time_entry_id=str(row["time_entry_id"]) if row.get("time_entry_id") else None,
             expense_id=str(row["expense_id"]) if row.get("expense_id") else None,
             created_at=row["created_at"],
@@ -110,9 +114,9 @@ class InvoiceResponse(BaseModel):
             client_id=str(row["client_id"]),
             invoice_number=row.get("invoice_number", ""),
             currency=row.get("currency", "USD"),
-            subtotal=str(row.get("subtotal", "0")),
-            tax_total=str(row.get("tax_total", "0")),
-            total=str(row.get("total", "0")),
+            subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
+            tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
+            total=serialise_money(row.get("total") or "0") or "0.00",
             status=row.get("status", "draft"),
             issue_date=row.get("issue_date"),
             due_date=row.get("due_date"),
@@ -156,9 +160,9 @@ class PublicInvoiceResponse(BaseModel):
             id=str(row["id"]),
             invoice_number=row.get("invoice_number", ""),
             currency=row.get("currency", "USD"),
-            subtotal=str(row.get("subtotal", "0")),
-            tax_total=str(row.get("tax_total", "0")),
-            total=str(row.get("total", "0")),
+            subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
+            tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
+            total=serialise_money(row.get("total") or "0") or "0.00",
             status=row.get("status", "draft"),
             issue_date=row.get("issue_date"),
             due_date=row.get("due_date"),

@@ -33,10 +33,28 @@ class ProjectRepository:
     # Read
     # ------------------------------------------------------------------
 
-    async def list(self, engagement_id: str) -> list[dict]:
-        result = await asyncio.to_thread(
-            lambda: self._base_query().eq("engagement_id", engagement_id).execute()
-        )
+    async def list(
+        self,
+        engagement_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List projects in this tenant.
+
+        ``engagement_id`` is optional — bug #91, the original API required it
+        and broke any UI that wanted a tenant-wide list. When omitted, every
+        non-deleted project in the tenant is returned (RLS + tenant_id filter
+        ensure cross-tenant isolation).
+        """
+        def _query() -> object:
+            q = self._base_query()
+            if engagement_id is not None:
+                q = q.eq("engagement_id", engagement_id)
+            # Stable ordering keeps pagination deterministic.
+            q = q.order("created_at", desc=True).range(offset, offset + limit - 1)
+            return q.execute()
+
+        result = await asyncio.to_thread(_query)
         return result.data or []
 
     async def get(self, id: str) -> dict | None:
