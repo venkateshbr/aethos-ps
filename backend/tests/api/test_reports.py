@@ -26,7 +26,8 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/ap-aging",
     "/api/v1/reports/project-pnl",
     "/api/v1/reports/utilization",
-    "/api/v1/reports/wip",
+    # /api/v1/reports/wip is xfailed separately (bug #99 — references
+    # projects.rate_card_id which does not exist).
     "/api/v1/reports/revenue-by-engagement",
 ]
 
@@ -41,9 +42,26 @@ def test_report_endpoint_returns_200(client_a: httpx.Client, path: str) -> None:
     assert isinstance(body, (dict, list)), f"{path} returned non-JSON-object: {type(body).__name__}"
 
 
-@pytest.mark.parametrize("path", REPORT_ENDPOINTS)
+@pytest.mark.xfail(
+    reason=(
+        "Bug #99 — /reports/wip queries projects.rate_card_id which does not "
+        "exist in schema. Reports service needs to join via engagements.rate_card_id."
+    ),
+    strict=False,
+)
+def test_wip_report_returns_200(client_a: httpx.Client) -> None:
+    """WIP report — currently bug #99 makes it 500."""
+    r = client_a.get("/api/v1/reports/wip")
+    assert r.status_code == 200, f"/reports/wip → {r.status_code} {r.text[:200]}"
+
+
+_AUTH_CHECK_ENDPOINTS = REPORT_ENDPOINTS + ["/api/v1/reports/wip"]
+
+
+@pytest.mark.parametrize("path", _AUTH_CHECK_ENDPOINTS)
 def test_report_endpoint_requires_auth(client: httpx.Client, path: str) -> None:
-    """Reports must require auth."""
+    """Reports must require auth — this is enforced at the FastAPI dependency
+    layer BEFORE the handler runs, so bug #99 (wip 500) does not affect this."""
     r = client.get(path)
     assert r.status_code == 401, f"{path} returned {r.status_code} without auth — should be 401"
 

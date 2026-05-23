@@ -88,13 +88,19 @@ def test_list_bills_tenant_scoped(manager_a: httpx.Client, world: SeedWorld) -> 
 def test_create_bill_cross_tenant_vendor_blocked(
     manager_a: httpx.Client, world: SeedWorld
 ) -> None:
-    """The #92 sweep — vendor_id from tenant B must 404 not pass."""
+    """The #92 sweep — a client_id from tenant B must 404, not pass.
+
+    Bills schema uses ``client_id`` (the clients table holds both customer
+    and vendor kinds). Service must verify the client is in the caller's
+    tenant before insert.
+    """
     payload = _bill_payload(world)
-    payload["vendor_id"] = world.tenant_b.vendor_ids[0]
-    payload["bill_number"] = f"VEND-CROSS-{world.run_id[:6]}"
+    # Override with tenant B's vendor — the service must reject as 404
+    payload["client_id"] = world.tenant_b.vendor_ids[0]
+    payload["vendor_invoice_number"] = f"VEND-CROSS-{world.run_id[:6]}"
     r = manager_a.post("/api/v1/bills", json=payload)
     assert r.status_code in (400, 404, 422), (
-        f"Cross-tenant vendor_id accepted by bills: {r.status_code}, body={r.text[:200]}"
+        f"Cross-tenant client_id accepted by bills: {r.status_code}, body={r.text[:200]}"
     )
 
 
@@ -109,7 +115,7 @@ def test_manager_cannot_approve_bill_admin_can(
 ) -> None:
     """C19 RBAC — only admin/owner can approve a bill (parallel to invoice rule)."""
     payload = _bill_payload(world)
-    payload["bill_number"] = f"VEND-RBAC-{world.run_id[:6]}"
+    payload["vendor_invoice_number"] = f"VEND-RBAC-{world.run_id[:6]}"
     r = manager_a.post("/api/v1/bills", json=payload)
     assert r.status_code in (200, 201), r.text
     bill_id = r.json()["id"]

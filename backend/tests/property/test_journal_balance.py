@@ -98,7 +98,10 @@ def test_unbalancing_amount_breaks_balance(lines, extra_amount):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="accounting_guardian + post_journal not yet implemented — see PLAN §6.2",
+    reason=(
+        "Task #103 — validate_journal exists but requires a Supabase db; needs to "
+        "be split so check_balance(lines) is pure-unit testable. See bug #103."
+    ),
 )
 @given(balanced_lines())
 def test_accounting_guardian_accepts_balanced(lines):
@@ -111,7 +114,10 @@ def test_accounting_guardian_accepts_balanced(lines):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="accounting_guardian not yet implemented",
+    reason=(
+        "Task #103 — validate_journal exists but cannot be unit-tested without "
+        "Supabase. Refactor needed to split balance check from DB-bound checks."
+    ),
 )
 @given(balanced_lines(), money)
 def test_accounting_guardian_rejects_imbalanced(lines, extra_amount):

@@ -20,7 +20,20 @@ pytestmark = [
 
 
 @pytest.fixture
+def admin_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
+    """Sender role — POST /invoices/{id}/send requires admin or higher."""
+    u = world.tenant_a.owner
+    h = {
+        "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='admin')}",
+        "X-Tenant-ID": world.tenant_a.tenant_id,
+    }
+    with httpx.Client(base_url=api_base_url, headers=h, timeout=15.0) as c:
+        yield c
+
+
+@pytest.fixture
 def manager_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
+    """Lower-role client — used to prove RBAC rejects sends by non-admins."""
     u = world.tenant_a.members["manager"]
     h = {
         "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='manager')}",
@@ -30,15 +43,19 @@ def manager_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
         yield c
 
 
-def test_send_unknown_invoice_returns_404(manager_a: httpx.Client) -> None:
-    r = manager_a.post("/api/v1/invoices/00000000-0000-0000-0000-000000000000/send")
+def test_send_unknown_invoice_returns_404(admin_a: httpx.Client) -> None:
+    r = admin_a.post("/api/v1/invoices/00000000-0000-0000-0000-000000000000/send")
     assert r.status_code == 404, r.text
 
 
 def test_send_cross_tenant_invoice_returns_404(
-    manager_a: httpx.Client, world: SeedWorld, api_base_url: str
+    admin_a: httpx.Client, world: SeedWorld, api_base_url: str
 ) -> None:
-    """Create invoice as tenant B, then attempt to send as tenant A."""
+    """Create invoice as tenant B, then attempt to send as tenant A admin.
+
+    Tenant A admin has the role gate cleared — we are now genuinely testing
+    tenant isolation, not RBAC.
+    """
     b = world.tenant_b.owner
     b_headers = {
         "Authorization": f"Bearer {mint_jwt(user_id=b.user_id, email=b.email, role='owner')}",
@@ -55,10 +72,16 @@ def test_send_cross_tenant_invoice_returns_404(
         assert r.status_code == 201, r.text
         inv_id = r.json()["id"]
 
-    r2 = manager_a.post(f"/api/v1/invoices/{inv_id}/send")
+    r2 = admin_a.post(f"/api/v1/invoices/{inv_id}/send")
     assert r2.status_code == 404, (
-        f"Cross-tenant invoice send leak: tenant A got {r2.status_code} on tenant B invoice"
+        f"Cross-tenant invoice send leak: tenant A admin got {r2.status_code} on tenant B invoice"
     )
+
+
+def test_send_manager_role_rejected_403(manager_a: httpx.Client) -> None:
+    """RBAC: only admin+ may POST /invoices/{id}/send."""
+    r = manager_a.post("/api/v1/invoices/00000000-0000-0000-0000-000000000000/send")
+    assert r.status_code == 403, r.text
 
 
 def test_send_requires_auth(client: httpx.Client) -> None:

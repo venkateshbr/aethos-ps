@@ -30,6 +30,14 @@ _MIN_PDF = (
 )
 
 
+@pytest.mark.xfail(
+    reason=(
+        "Bug #100 — Supabase Storage 'documents' bucket does not exist on "
+        "project glcljucaayeesvrsjths; upload 500s with 'Bucket not found'. "
+        "Operational fix needed (create bucket + RLS policy)."
+    ),
+    strict=False,
+)
 def test_upload_pdf_document_happy_path(client_a: httpx.Client) -> None:
     files = {"file": ("test.pdf", io.BytesIO(_MIN_PDF), "application/pdf")}
     data = {"kind": "receipt"}
