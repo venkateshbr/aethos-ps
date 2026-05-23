@@ -49,6 +49,26 @@ markers = [
   "eval: agent evaluation suite",
   "security: auth / RBAC / tenant-isolation tests",
   "slow: takes more than 5 seconds",
+  # Aksha QA suite — pilot-readiness regression
+  "api: hits running API on :8011 against real Supabase",
+  "smoke: minimal sanity tests; run first",
+  "flow_signup: signup + trial",
+  "flow_engagement: engagement lifecycle",
+  "flow_billing: invoice drafting + send",
+  "flow_payments: payment receive / bill pay",
+  "flow_hitl: agent suggestions + inbox",
+  "flow_reports: read-side report endpoints",
+  "flow_accounting: journals / period lock",
+  "flow_copilot: chat + tool calls",
+  "rbac: RBAC matrix",
+  "multi_tenant: cross-tenant isolation",
+  "multi_currency: USD/GBP/SGD/INR/AUD",
+  "unhappy: failure/error paths",
+  "injection: prompt-injection / sanitisation",
+  "concurrency: race / idempotency",
+  "requires_stripe: needs Stripe sandbox keys",
+  "requires_supabase: needs Supabase project keys",
+  "requires_openrouter: spends LLM budget",
 ]
 xfail_strict = true
 
