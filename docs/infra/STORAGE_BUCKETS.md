@@ -28,8 +28,8 @@ This document is the operator inventory and the bootstrap procedure. Every Stora
 | Path constructed by | [`backend/app/api/v1/endpoints/documents.py`](../../backend/app/api/v1/endpoints/documents.py) (lines around `storage_path = ...`) |
 | Written via | Service-role Supabase client (`get_service_role_client`) — bypasses RLS |
 | Tenant scoping (writes) | Enforced at API layer by `get_tenant_id` membership check (issue #90) — the verified `tenant_id` is the first path segment |
-| Tenant scoping (RLS, defense in depth) | First path segment must match an active row in `public.tenant_users` for `auth.uid()`. See policies `documents_tenant_{select,insert,update,delete}` on `storage.objects`. |
-| Migration | [`backend/supabase/migrations/0016_storage_documents_bucket.sql`](../../backend/supabase/migrations/0016_storage_documents_bucket.sql) |
+| Tenant scoping (RLS, defense in depth) | First path segment must match an active row in `public.tenant_users` for `auth.uid()`. See policies `documents_tenant_{select,insert,update,delete}` on `storage.objects`, which call the SECURITY DEFINER helper `public.is_tenant_member(uuid, uuid)`. |
+| Migrations | [`backend/supabase/migrations/0016_storage_documents_bucket.sql`](../../backend/supabase/migrations/0016_storage_documents_bucket.sql) (bucket + first RLS pass) and [`backend/supabase/migrations/0017_storage_documents_rls_helper.sql`](../../backend/supabase/migrations/0017_storage_documents_rls_helper.sql) (replaces inline RLS subquery with `is_tenant_member` SECURITY DEFINER helper — fixes a false-deny against legit owners). |
 
 ### Future buckets (planned, not yet provisioned)
 
@@ -132,17 +132,20 @@ Expected (key fields):
 
 ### 2. RLS policies exist
 
-Query via psql / Supabase SQL editor:
-```sql
-SELECT polname, cmd::text
-  FROM pg_policy
-  JOIN pg_class ON pg_class.oid = pg_policy.polrelid
- WHERE pg_class.relname  = 'objects'
-   AND pg_class.relnamespace = 'storage'::regnamespace
-   AND polname LIKE 'documents_tenant_%';
+Query via the Supabase CLI (linked project) or psql / SQL editor:
+```bash
+cd backend
+supabase db query --linked --output table \
+  "SELECT polname, polcmd::text AS cmd
+     FROM pg_policy
+     JOIN pg_class ON pg_class.oid = pg_policy.polrelid
+    WHERE pg_class.relname  = 'objects'
+      AND pg_class.relnamespace = 'storage'::regnamespace
+      AND polname LIKE 'documents_tenant_%'
+    ORDER BY polname;"
 ```
 
-Expected: four rows — `documents_tenant_select`, `documents_tenant_insert`, `documents_tenant_update`, `documents_tenant_delete`.
+Expected: four rows — `documents_tenant_select` (`r`), `documents_tenant_insert` (`a`), `documents_tenant_update` (`w`), `documents_tenant_delete` (`d`).
 
 ### 3. End-to-end upload via the API
 
@@ -173,6 +176,7 @@ Upload as Tenant A; confirm Tenant B cannot read the same path through an authen
 | --- | --- | --- |
 | `404 Bucket not found` on upload | Bucket missing on this project | Scenario B above |
 | `403` on upload via authenticated client | RLS path-segment / membership check failed | Verify `(storage.foldername(name))[1]` matches a tenant the JWT subject is a member of |
+| `404 Object not found` for a legit owner reading their own object | `public.is_tenant_member` helper missing or not SECURITY DEFINER (the inner RLS on `tenant_users` blocked the lookup) | Re-apply migration `0017_*` — the helper must exist with `SECURITY DEFINER` and `STABLE` |
 | Upload accepted but file > 20 MiB rejected | Hit Supabase Storage `file_size_limit` | Increase via `UPDATE storage.buckets SET file_size_limit = ...` and update the API constant + migration to match |
 | MIME rejected by Storage but not by API | Storage `allowed_mime_types` is narrower than `_ALLOWED_MIME_TYPES` in `documents.py` | Sync both — Migration is source of truth; update via a new migration |
 
