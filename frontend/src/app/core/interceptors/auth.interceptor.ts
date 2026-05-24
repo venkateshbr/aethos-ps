@@ -1,4 +1,7 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
 
 /**
  * Auth interceptor — attaches the Authorization header for authenticated API calls.
@@ -7,8 +10,18 @@ import { HttpInterceptorFn } from '@angular/common/http';
  * an Authorization header. Callers can opt out by adding the `skip-auth` header to
  * the request; this interceptor strips that sentinel header before the request is sent.
  *
- * Token storage: held in module-level memory only, never in localStorage or
- * sessionStorage, so it cannot be exfiltrated by XSS attacks.
+ * Token storage:
+ *   - Module-level memory (`_accessToken`) is the runtime source for header
+ *     attachment, so per-request reads stay cheap.
+ *   - `AuthService` mirrors the token into localStorage so a hard refresh
+ *     keeps the user signed in during the pilot (XSS trade-off documented in
+ *     `auth.service.ts`).
+ *
+ * 401 handling — issue #111:
+ *   When the API returns 401 we clear all stored token state and redirect to
+ *   the landing page. This protects against the case where the token expires
+ *   mid-session: without this handler the user would see a half-broken UI
+ *   that keeps spinning instead of being prompted to re-authenticate.
  */
 
 // Module-level memory store — not accessible from JS outside this module.
@@ -24,20 +37,40 @@ export function clearAccessToken(): void {
   _accessToken = null;
 }
 
+const STORAGE_KEY = 'aethos_token';
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const router = inject(Router);
+
   // If the caller included the skip-auth sentinel, strip it and forward with no auth header.
   if (req.headers.has('skip-auth')) {
     return next(req.clone({ headers: req.headers.delete('skip-auth') }));
   }
 
-  // No token yet (unauthenticated state) — send the request as-is.
-  if (!_accessToken) {
-    return next(req);
-  }
+  const forwarded = _accessToken
+    ? req.clone({ headers: req.headers.set('Authorization', `Bearer ${_accessToken}`) })
+    : req;
 
-  // Attach the bearer token for all other requests.
-  const authReq = req.clone({
-    headers: req.headers.set('Authorization', `Bearer ${_accessToken}`),
-  });
-  return next(authReq);
+  return next(forwarded).pipe(
+    catchError((err: unknown) => {
+      if (err instanceof HttpErrorResponse && err.status === 401) {
+        // Session expired or token invalid — flush all token state and bounce.
+        // We intentionally clear localStorage here (rather than depending on
+        // AuthService) so the interceptor is self-contained and there is no
+        // circular DI risk.
+        _accessToken = null;
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        // Avoid a navigation storm if multiple in-flight calls 401 at once —
+        // only navigate when we're not already on the landing route.
+        if (!router.url.startsWith('/?') && router.url !== '/') {
+          void router.navigate(['/'], {
+            queryParams: { sessionExpired: '1' },
+          });
+        }
+      }
+      return throwError(() => err);
+    }),
+  );
 };

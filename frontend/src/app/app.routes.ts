@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { authGuard, authChildGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   // ── Public routes — no app shell, no auth ───────────────────────────────────
@@ -15,10 +16,14 @@ export const routes: Routes = [
   },
 
   // ── App shell — authenticated routes ────────────────────────────────────────
+  // Guarded by authGuard (parent) + authChildGuard (child re-check) per #111.
+  // Unauthenticated visitors are redirected to `/` with `?returnUrl=` set.
   {
     path: 'app',
     loadComponent: () =>
       import('./shared/shell/shell.component').then(m => m.ShellComponent),
+    canActivate: [authGuard],
+    canActivateChild: [authChildGuard],
     children: [
       {
         path: 'copilot',
