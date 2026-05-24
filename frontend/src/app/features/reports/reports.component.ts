@@ -37,6 +37,8 @@ import {
               } @else {
                 <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: arData()! }" />
               }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="agingSkeleton" /></div>
             } @loading {
               <ng-container *ngTemplateOutlet="agingSkeleton" />
             }
@@ -56,6 +58,8 @@ import {
               } @else {
                 <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: apData()! }" />
               }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="agingSkeleton" /></div>
             } @loading {
               <ng-container *ngTemplateOutlet="agingSkeleton" />
             }
@@ -104,6 +108,8 @@ import {
                   </table>
                 </div>
               }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
             } @loading {
               <ng-container *ngTemplateOutlet="tableSkeleton" />
             }
@@ -148,6 +154,8 @@ import {
                   </table>
                 </div>
               }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
             } @loading {
               <ng-container *ngTemplateOutlet="tableSkeleton" />
             }
@@ -188,6 +196,8 @@ import {
                   </table>
                 </div>
               }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
             } @loading {
               <ng-container *ngTemplateOutlet="tableSkeleton" />
             }
