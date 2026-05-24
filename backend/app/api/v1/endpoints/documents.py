@@ -74,7 +74,7 @@ async def upload_document(
     2. Reads full content, computes SHA-256.
     3. Uploads to Supabase Storage at ``{tenant_id}/{year}/{month}/{id}.{ext}``.
     4. Inserts a ``documents`` row with ``status='uploaded'``.
-    5. Enqueues ``extract_document_worker`` ARQ task.
+    5. Defers ``extract_document_worker`` Procrastinate task.
     6. Returns ``DocumentResponse``.
     """
     # ------------------------------------------------------------------
@@ -169,30 +169,23 @@ async def upload_document(
         ) from exc
 
     # ------------------------------------------------------------------
-    # 6. Enqueue ARQ extraction task.
-    # Degrade gracefully if Redis is unavailable (unit-test / dev environments
-    # may not have Redis configured).
+    # 6. Defer the Procrastinate extraction task.
+    # Degrade gracefully if the queue connector is unavailable (unit-test /
+    # dev environments may not have DATABASE_URL configured for the queue).
     # ------------------------------------------------------------------
     try:
-        import arq
-        from arq.connections import RedisSettings
+        from app.workers.document_extraction import extract_document_worker
 
-        from app.core.config import settings
-
-        redis_dsn = settings.upstash_redis_url or "redis://localhost:6379"
-        redis_pool = await arq.create_pool(RedisSettings.from_dsn(redis_dsn))
-        await redis_pool.enqueue_job(
-            "extract_document_worker",
+        await extract_document_worker.defer_async(
             document_id=document_id,
             tenant_id=tenant_id,
         )
-        await redis_pool.aclose()
     except Exception as exc:
         # Extraction is async and non-blocking — log the failure but don't
         # roll back the upload. The document is safe in storage; a manual
         # re-queue or cron sweep can pick it up later.
         logger.warning(
-            "Failed to enqueue extract_document_worker for %s: %s",
+            "Failed to defer extract_document_worker for %s: %s",
             document_id,
             exc,
         )

@@ -120,8 +120,12 @@ def test_health_ready_structure_keys():
     assert result["checks"]["db"]["status"] == "error"
 
 
-def test_health_ready_redis_not_configured_when_url_missing():
-    """health_ready.checks.redis must be not_configured when upstash_redis_url is falsy."""
+def test_health_ready_queue_not_configured_when_database_url_missing():
+    """health_ready.checks.queue must be not_configured when database_url is falsy.
+
+    Post-Procrastinate migration: the queue lives in Postgres, not Redis. The
+    health check probes the Procrastinate connector (driven by `database_url`).
+    """
     import asyncio
 
     mock_client = MagicMock()
@@ -135,11 +139,11 @@ def test_health_ready_redis_not_configured_when_url_missing():
     ):
         mock_settings.supabase_url = "https://fake.supabase.co"
         mock_settings.supabase_anon_key = "fake-key"
-        mock_settings.upstash_redis_url = None  # not configured
+        mock_settings.database_url = ""  # not configured
 
         result = asyncio.run(_call_health_ready())
 
-    assert result["checks"].get("redis") == {"status": "not_configured"}
+    assert result["checks"].get("queue") == {"status": "not_configured"}
 
 
 # ---------------------------------------------------------------------------

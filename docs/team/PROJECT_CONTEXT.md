@@ -19,14 +19,14 @@ US · UK · Singapore · India · Australia. English-only support, async-only SL
 
 | Layer | Tech | Version |
 | --- | --- | --- |
-| Backend | Python · FastAPI · PydanticAI · Pydantic Graph · Pydantic v2 · ARQ workers | Python 3.12+, FastAPI 0.115+ |
+| Backend | Python · FastAPI · PydanticAI · Pydantic Graph · Pydantic v2 · Procrastinate workers (Postgres-backed) | Python 3.12+, FastAPI 0.115+ |
 | Frontend | Angular 19 · Tailwind v3 · Angular Material (dark slate theme) · NgRx Signals | Angular 19 |
 | Database | Supabase (PostgreSQL 15+ with RLS, Auth, Storage, Realtime) | PG 15+ |
 | LLM | Anthropic Claude Sonnet 4.6 (default); Opus reserved for reasoning-heavy tasks | — |
 | LLM observability | Langfuse (traces, scores, prompt versioning) + Pydantic Logfire | — |
 | Payments | Stripe — SaaS subscriptions + Stripe Connect (Standard) + Payment Links + Stripe Tax | — |
 | Email | Resend | — |
-| Cache / queue | Upstash Redis | — |
+| Cache / queue | None — task queue lives in Supabase Postgres via Procrastinate | — |
 | Deploy | Vercel (frontend) · Cloud Run (api + workers) · Supabase managed | — |
 
 ## Ports (dev, non-colliding with sister product)
@@ -46,7 +46,7 @@ backend/app/
   domain/        Money, enums, validation rules, journal patterns
   repositories/  Supabase data access
   events/        Domain event bus + handlers
-  workers/       ARQ background workers
+  workers/       Procrastinate background workers (Postgres-backed)
   core/          Config, auth, RBAC, middleware
 frontend/src/app/
   features/      Lazy-loaded modules (copilot, inbox, engagements, projects, clients, invoices, ...)

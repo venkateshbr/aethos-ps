@@ -22,7 +22,7 @@ To be filled when first feature ships:
 - Service catalog (`app/services/`).
 - Agent catalog (`app/agents/`) and their tool surface.
 - Repository catalog (`app/repositories/`).
-- ARQ worker catalog (`app/workers/`).
+- Procrastinate worker catalog (`app/workers/`).
 - DB trigger map (`supabase/migrations/`).
 
 ## Review triggers

@@ -18,13 +18,13 @@ This is a standalone product in the **Aethos** family, focused on professional s
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.12+ · FastAPI · PydanticAI · Pydantic Graph · ARQ workers |
+| Backend | Python 3.12+ · FastAPI · PydanticAI · Pydantic Graph · Procrastinate workers (Postgres-backed) |
 | Frontend | Angular 19 · Tailwind · Angular Material (dark slate) |
 | Data | Supabase (PostgreSQL 15+, RLS, Auth, Storage, Realtime) |
 | Payments | Stripe (SaaS + Connect + Payment Links + Tax) |
 | Email | Resend |
 | LLM | Anthropic Claude Sonnet 4.6 + Langfuse traces |
-| Deploy | Vercel (web) · Cloud Run (api + workers) · Upstash Redis |
+| Deploy | Vercel (web) · Cloud Run (api + workers) · Supabase (queue lives in Postgres — no Redis) |
 
 ## Structure
 
@@ -38,7 +38,7 @@ backend/         FastAPI + PydanticAI
     domain/      Money, enums, rules, journal patterns
     repositories/  Supabase data access
     events/      Domain events
-    workers/     ARQ background workers
+    workers/     Procrastinate background workers (Postgres-backed queue)
     core/        Config, auth, RBAC
   supabase/migrations/
   tests/

@@ -15,13 +15,13 @@ Standalone product in the Aethos family. Sister product (general ERP) lives at `
 Bring up any conflict with the plan to the Founder before writing code.
 
 ## Tech Stack
-- **Backend**: Python 3.12+, FastAPI 0.115+, PydanticAI, Pydantic Graph, Pydantic v2, ARQ workers
+- **Backend**: Python 3.12+, FastAPI 0.115+, PydanticAI, Pydantic Graph, Pydantic v2, Procrastinate workers (Postgres-backed)
 - **Frontend**: Angular 19, Tailwind, Angular Material (dark slate theme), NgRx Signals
 - **Database**: Supabase (PostgreSQL 15+ with RLS), supabase-py / supabase-js
 - **LLM**: Anthropic Claude Sonnet 4.6 + Langfuse traces (+ Pydantic Logfire)
 - **Payments**: Stripe — SaaS subscriptions + Stripe Connect (Standard) + Payment Links + Stripe Tax
 - **Email**: Resend
-- **Cache / queue**: Upstash Redis
+- **Cache / queue**: None — queue lives in Supabase Postgres via Procrastinate
 - **Deploy**: Vercel (frontend) · Cloud Run (api + workers) · Supabase managed
 
 ## Launch Markets (day 1)
@@ -38,7 +38,7 @@ backend/app/
   domain/        Money, enums, validation rules, journal patterns
   repositories/  Supabase data access
   events/        Domain event bus + handlers
-  workers/       ARQ background workers (extraction, billing-run, collections, fx, autonomy-promoter)
+  workers/       Procrastinate background workers (extraction, billing-run, collections, fx, autonomy-promoter)
   core/          Config, auth, RBAC, middleware
 frontend/src/app/
   features/      Lazy-loaded modules (copilot, inbox, engagements, projects, clients, invoices, billing-runs, expenses, time-entries, payments, reports, people, onboarding, settings)
@@ -96,7 +96,7 @@ cd frontend && ng test
 cd frontend && ng lint
 
 # Workers
-cd backend && uv run arq app.workers.arq_settings.WorkerSettings
+cd backend && uv run python -m procrastinate --app=app.workers.procrastinate_app.app worker
 ```
 
 *(Ports 8011 / 4201 chosen to avoid collision with aethos erpcore's 8010 / 4200.)*

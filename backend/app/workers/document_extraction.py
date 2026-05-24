@@ -1,4 +1,4 @@
-"""Document Extraction ARQ Worker.
+"""Document Extraction Procrastinate task.
 
 Dispatched by the file-upload pipeline when a new document is uploaded.
 Classifies the document type by filename heuristic, downloads the file bytes
@@ -34,6 +34,7 @@ from app.agents.schemas import BillDraft, EngagementDraft, ProjectExpenseDraft
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.agents.vendor_invoice_agent import run_vendor_invoice_agent
 from app.core.config import settings
+from app.workers.procrastinate_app import app
 from supabase import create_client
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,9 @@ def _get_mime_type(filename: str) -> str:
     return "text/plain"
 
 
-async def extract_document_worker(ctx: dict, document_id: str, tenant_id: str) -> dict:
-    """ARQ worker entrypoint for document extraction.
+@app.task(name="extract_document_worker", queue="extraction")
+async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
+    """Procrastinate task entrypoint for document extraction.
 
     Steps:
     1. Build a service-role Supabase client (fresh per job — pooled in Week 4 by Sthira)
@@ -97,8 +99,8 @@ async def extract_document_worker(ctx: dict, document_id: str, tenant_id: str) -
     )
 
     # Instantiate a fresh service-role client.
-    # Not ideal (should use pooled connection), but correct for Week 2-3.
-    # Sthira will wire the full ARQ context with a shared client in Week 4.
+    # Not ideal (should use pooled connection); revisit once Procrastinate
+    # context-injection lands a shared pool.
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
     deps = AgentDeps(tenant_id=tenant_id, user_id=None, db=db)

@@ -4,7 +4,7 @@ Parses uploaded vendor invoices and returns a typed BillDraft.
 Also performs a duplicate-detection check against existing bills for the
 same tenant + vendor_invoice_number combination.
 
-Uses AsyncOpenAI against OpenRouter for async-safe operation inside ARQ worker context.
+Uses AsyncOpenAI against OpenRouter for async-safe operation inside Procrastinate worker context.
 PII masking is applied to all text content before sending to the LLM.
 """
 

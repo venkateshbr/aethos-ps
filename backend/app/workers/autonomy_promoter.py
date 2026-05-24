@@ -1,6 +1,6 @@
 """autonomy_promoter_worker — nightly; promotes/demotes agent autonomy per PLAN §6.5.
 
-Schedule: daily at 02:00 UTC (configured in arq_settings.py).
+Schedule: daily at 02:00 UTC (configured via Procrastinate periodic decorator).
 
 Promotion logic (per agent/action pair, last 30 days):
   - Requires minimum sample count: 60 decisions for money agents, 30 for others.
@@ -28,6 +28,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.core.config import settings
+from app.workers.procrastinate_app import app
 from supabase import create_client
 
 logger = logging.getLogger(__name__)
@@ -38,13 +39,16 @@ MONEY_AGENTS: frozenset[str] = frozenset(
 )
 
 
-async def autonomy_promoter_worker(ctx: dict) -> dict:
+@app.periodic(cron="0 2 * * *")
+@app.task(name="autonomy_promoter_worker", queue="cron")
+async def autonomy_promoter_worker(timestamp: int) -> dict:
     """Nightly autonomy promotion/demotion pass.
 
     Returns
     -------
     ``{"promotions_proposed": int, "demotions_applied": int}``
     """
+    _ = timestamp  # provided by Procrastinate periodic; unused
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
     tenants = (
         db.table("tenants").select("id").eq("status", "active").execute().data or []

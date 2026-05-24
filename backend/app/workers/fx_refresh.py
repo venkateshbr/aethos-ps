@@ -1,4 +1,4 @@
-"""ARQ worker: daily FX rate refresh.
+"""Procrastinate task: daily FX rate refresh.
 
 Fetches daily exchange rates from Open Exchange Rates (free tier) and upserts
 the ``fx_rates`` table in Supabase.
@@ -29,6 +29,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.db import get_service_role_client
+from app.workers.procrastinate_app import app
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +42,20 @@ _FX_API_URL = "https://open.er-api.com/v6/latest/USD"
 _SOURCE = "open.er-api.com"
 
 
-async def fx_refresh_worker(ctx: dict) -> dict:
+@app.periodic(cron="0 8 * * *")
+@app.task(name="fx_refresh_worker", queue="cron")
+async def fx_refresh_worker(timestamp: int) -> dict:
     """Fetch and store daily FX rates for the 5 launch currencies.
 
-    Scheduled daily at 08:00 UTC by ``arq_settings.WorkerSettings``.
-    Can also be triggered manually via the ARQ CLI:
-        uv run arq app.workers.arq_settings.WorkerSettings fx_refresh_worker
+    Scheduled daily at 08:00 UTC by Procrastinate's periodic registry.
+    Can also be triggered manually via the Procrastinate CLI:
+        uv run python -m procrastinate --app=app.workers.procrastinate_app.app \
+            defer app.workers.fx_refresh.fx_refresh_worker
 
     Returns:
         {"updated": int, "skipped": int, "errors": list[str]}
     """
+    _ = timestamp  # provided by Procrastinate periodic; we use date.today() instead
     today = date.today()
     db = get_service_role_client()
     updated = 0

@@ -1,6 +1,6 @@
-"""collections_worker — nightly ARQ task; drafts/sends dunning emails.
+"""collections_worker — nightly Procrastinate task; drafts/sends dunning emails.
 
-Schedule: daily at 06:00 UTC (configured in arq_settings.py).
+Schedule: daily at 06:00 UTC (configured via Procrastinate periodic decorator).
 
 For each active tenant, queries overdue invoices (status in ['sent','overdue']
 with due_date < today) and either:
@@ -21,18 +21,22 @@ from app.agents.collections_agent import draft_collection_email
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.config import settings
 from app.services.resend_service import ResendService
+from app.workers.procrastinate_app import app
 from supabase import create_client
 
 logger = logging.getLogger(__name__)
 
 
-async def collections_worker(ctx: dict) -> dict:
+@app.periodic(cron="0 6 * * *")
+@app.task(name="collections_worker", queue="cron")
+async def collections_worker(timestamp: int) -> dict:
     """Nightly dunning email worker.
 
     Returns
     -------
     ``{"sent": int, "hitl_queued": int}``
     """
+    _ = timestamp  # provided by Procrastinate periodic; we use date.today() instead
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
     resend = ResendService()
     today = date.today().isoformat()

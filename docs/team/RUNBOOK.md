@@ -9,9 +9,9 @@
 | --- | --- | --- |
 | Frontend | Vercel | Angular 19 SSR-disabled SPA; preview deploys per PR |
 | Backend API | Cloud Run | FastAPI on `:8011` dev / managed port in prod |
-| Workers (ARQ) | Cloud Run jobs / always-on container | Document extraction, FX refresh, autonomy promoter, payment reconciliation, collections |
-| Database | Supabase (PostgreSQL 15+) | RLS + Auth + Storage + Realtime |
-| Cache / queue | Upstash Redis | — |
+| Workers (Procrastinate) | Cloud Run jobs / always-on container | Document extraction, FX refresh, autonomy promoter, payment reconciliation, collections |
+| Database | Supabase (PostgreSQL 15+) | RLS + Auth + Storage + Realtime + Procrastinate task queue |
+| Cache / queue | None — queue lives in the Supabase Postgres via Procrastinate (no Redis) | — |
 | Email | Resend | — |
 | LLM | Anthropic Claude Sonnet 4.6 | Per-tenant budget enforced in middleware |
 | LLM observability | Langfuse | Datasets + scores + drift |
@@ -108,7 +108,7 @@ gcloud run services update-traffic aethos-ps-api \
 ### [2026-05-23] — Production deployment infrastructure added (issue #85)
 - Created `backend/Dockerfile` (multi-stage, non-root user, health check, Cloud Run PORT env var)
 - Created `infra/cloudrun/api-service.yaml` (Knative service, minScale=1, all secrets via Secret Manager)
-- Created `infra/cloudrun/worker-job.yaml` (Cloud Run Job for ARQ workers, same image different CMD)
+- Created `infra/cloudrun/worker-job.yaml` (Cloud Run Job for Procrastinate workers, same image different CMD)
 - Created `infra/vercel/vercel.json` (Angular SPA, /api/* proxy to Cloud Run)
 - Created `frontend/src/environments/environment{.prod}.ts` + wired `fileReplacements` in angular.json
 - Created `.github/workflows/deploy.yml` (parallel API + frontend deploy on push to main)

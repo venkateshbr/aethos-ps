@@ -15,8 +15,16 @@ spec:
           maxRetries: 3
           containers:
             - image: gcr.io/${PROJECT_ID}/aethos-ps-api:latest
-              # ARQ worker entry point — same image, different command
-              command: ["python", "-m", "arq", "app.workers.arq_settings.WorkerSettings"]
+              # Procrastinate worker entry point — same image, different command.
+              # Replaces the prior ARQ command; the queue now lives in Postgres
+              # (Supabase) rather than Redis, so DATABASE_URL replaces
+              # UPSTASH_REDIS_URL below.
+              command:
+                - python
+                - -m
+                - procrastinate
+                - --app=app.workers.procrastinate_app.app
+                - worker
               resources:
                 limits:
                   cpu: "1"
@@ -59,12 +67,17 @@ spec:
                     secretKeyRef:
                       name: aethos-ps-secrets
                       key: STRIPE_WEBHOOK_SECRET
-                # ── LLM ──────────────────────────────────────────────────────
-                - name: ANTHROPIC_API_KEY
+                # ── LLM (OpenRouter — OpenAI-compatible) ─────────────────────
+                - name: OPENROUTER_API_KEY
                   valueFrom:
                     secretKeyRef:
                       name: aethos-ps-secrets
-                      key: ANTHROPIC_API_KEY
+                      key: OPENROUTER_API_KEY
+                - name: AGENT_MODELS
+                  valueFrom:
+                    secretKeyRef:
+                      name: aethos-ps-secrets
+                      key: AGENT_MODELS
                 # ── Resend ───────────────────────────────────────────────────
                 - name: RESEND_API_KEY
                   valueFrom:
@@ -82,9 +95,12 @@ spec:
                     secretKeyRef:
                       name: aethos-ps-secrets
                       key: LANGFUSE_SECRET_KEY
-                # ── Upstash Redis ─────────────────────────────────────────────
-                - name: UPSTASH_REDIS_URL
+                # ── Queue (Procrastinate on Postgres / Supabase) ──────────────
+                # Postgres direct connection string for the task queue. Use the
+                # Supabase SESSION pooler (5432) — transaction pooler (6543)
+                # does not support LISTEN/NOTIFY which Procrastinate relies on.
+                - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:
                       name: aethos-ps-secrets
-                      key: UPSTASH_REDIS_URL
+                      key: DATABASE_URL

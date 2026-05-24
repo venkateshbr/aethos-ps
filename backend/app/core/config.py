@@ -138,8 +138,18 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
 
     # ------------------------------------------------------------------
-    # Upstash Redis (optional — disabled when empty)
+    # Task queue (Procrastinate — Postgres-backed; lives in Supabase)
     # ------------------------------------------------------------------
+    # Direct Postgres connection string for the Procrastinate queue.
+    # Format: postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
+    # Pooler (recommended for serverless workers):
+    #   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+    # Use the SESSION pooler (5432) not transaction pooler (6543) — Procrastinate
+    # needs LISTEN/NOTIFY which transaction pooling doesn't support.
+    database_url: str = ""
+
+    # Legacy — kept so older test configs don't fail to load. Unused since the
+    # ARQ → Procrastinate migration moved the queue into Supabase Postgres.
     upstash_redis_url: str = ""
 
     # ------------------------------------------------------------------

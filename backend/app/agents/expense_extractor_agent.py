@@ -1,7 +1,7 @@
 """Expense Extractor Agent.
 
 Parses uploaded receipt / expense documents and returns a typed ProjectExpenseDraft.
-Uses AsyncOpenAI against OpenRouter for async-safe operation inside ARQ worker context.
+Uses AsyncOpenAI against OpenRouter for async-safe operation inside Procrastinate worker context.
 
 PII masking is applied to all text content before sending to the LLM.
 """

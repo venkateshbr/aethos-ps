@@ -2,7 +2,7 @@
 
 Parses uploaded engagement letter documents and returns a typed EngagementDraft.
 Uses the OpenAI-compatible chat-completions API against OpenRouter so we remain async-safe
-inside the ARQ worker context.
+inside the Procrastinate worker context.
 
 PII masking is applied to all text content before sending to the LLM.
 """

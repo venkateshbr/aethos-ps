@@ -23,8 +23,28 @@ from app.core.tenant import TenantMiddleware
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: setup → yield → teardown."""
     configure_logging()
+
+    # Open the Procrastinate connector if a DATABASE_URL is configured.
+    # Degrades gracefully when unset (dev / test envs without the queue).
+    queue_app = None
+    if settings.database_url:
+        try:
+            from app.workers.procrastinate_app import app as queue_app  # noqa: F811
+            await queue_app.open_async()
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Procrastinate connector failed to open — defers will degrade: %s", exc
+            )
+            queue_app = None
+
     yield
-    # Teardown hooks (DB pool close, etc.) added here by Sthira as infra lands
+
+    if queue_app is not None:
+        try:
+            await queue_app.close_async()
+        except Exception:
+            pass
 
 
 app = FastAPI(
@@ -72,8 +92,9 @@ async def health() -> dict[str, str]:
 async def health_ready() -> dict[str, object]:
     """Readiness probe — checked before routing traffic.
 
-    Pings Supabase and Redis (if configured). Returns ``status: ready`` only
-    when the DB is reachable; degrades gracefully if Redis is not configured.
+    Pings Supabase and the Procrastinate queue (if configured). Returns
+    ``status: ready`` only when the DB is reachable; degrades gracefully if
+    the queue connector is not configured.
     """
     checks: dict = {}
 
@@ -88,20 +109,23 @@ async def health_ready() -> dict[str, object]:
     except Exception as e:
         checks["db"] = {"status": "error", "error": str(e)[:80]}
 
+    # Queue: Procrastinate-on-Postgres. Same DB but a separate connector.
     try:
         from app.core.config import settings
 
-        if settings.upstash_redis_url:
-            import redis as _redis
+        if settings.database_url:
+            from app.workers.procrastinate_app import app as queue_app
 
             t0 = _time.monotonic()
-            r = _redis.from_url(settings.upstash_redis_url)
-            r.ping()
-            checks["redis"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000)}
+            await queue_app.check_connection_async()
+            checks["queue"] = {
+                "status": "ok",
+                "latency_ms": round((_time.monotonic() - t0) * 1000),
+            }
         else:
-            checks["redis"] = {"status": "not_configured"}
+            checks["queue"] = {"status": "not_configured"}
     except Exception as e:
-        checks["redis"] = {"status": "error", "error": str(e)[:50]}
+        checks["queue"] = {"status": "error", "error": str(e)[:80]}
 
     overall = "ready" if checks.get("db", {}).get("status") == "ok" else "degraded"
     return {"status": overall, "checks": checks}

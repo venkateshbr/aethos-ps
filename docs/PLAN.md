@@ -171,7 +171,7 @@ The repo root **is** the product — no outer `aethos-ps/` wrapper. Scaffolded:
       domain/                      # Money, enums, rules, journal patterns (copied from aethos)
       repositories/                # Supabase data access
       events/                      # Domain events + handlers
-      workers/                     # ARQ workers
+      workers/                     # Procrastinate workers (Postgres-backed queue)
       core/                        # Config, auth, RBAC, middleware
     supabase/migrations/           # Fresh migration set (numbered from 0001)
     tests/
@@ -365,7 +365,7 @@ DB triggers auto-create journals for the standard 4 events (invoice sent, paymen
 - `webhooks/stripe`
 - `settings/agent_autonomy`
 
-### 5.3 Workers (ARQ)
+### 5.3 Workers (Procrastinate — Postgres-backed, no Redis)
 - `extract_document_worker` — invoked on `documents` insert; runs OCR (if needed) + extraction agent
 - `billing_run_worker` — scheduled monthly; produces billing run drafts
 - `collections_worker` — daily; finds overdue invoices, drafts reminders
@@ -585,7 +585,7 @@ Stripe Connect Standard is supported in all 5 launch markets. Onboarding redirec
 Upload (multipart or chat drop)
   → Supabase Storage (private bucket per tenant)
   → INSERT documents (status=uploaded)
-  → ARQ enqueues extract_document_worker
+  → Procrastinate defers extract_document_worker
   → worker: if mime=pdf and >1pg, render pages to images; else use file directly
   → call Claude Sonnet 4.6 (vision multimodal, structured output)
   → typed agent (engagement_letter_agent / receipt / vendor_invoice / bank_statement)
@@ -700,7 +700,7 @@ Tenants outside the US who haven't gotten native-format support yet can use Univ
 | Frontend | Vercel (new project `aethos-ps-web`) | `aethos-ps.com` (or chosen domain). Preview deploys on PR. Static landing at `/`, app at `/app`. |
 | Backend | Cloud Run (new service `aethos-ps-api`) | `api.aethos-ps.com`. Min 1 instance to keep chat warm. |
 | DB / Auth / Storage / Realtime | **New Supabase project** `aethos-ps-prod` (+ `-staging`) | Fresh `auth.users`, fresh storage buckets per tenant. |
-| ARQ workers | Cloud Run worker service | Redis (Upstash) for queue. Workers: `extract_document`, `billing_run`, `collections`, `stripe_webhook`, `payment_link`, `fx_refresh`, `wip_snapshot`, `autonomy_promoter`. |
+| Procrastinate workers | Cloud Run worker service | Postgres (Supabase) for queue — no Redis needed. Workers: `extract_document`, `billing_run`, `collections`, `stripe_webhook`, `payment_link`, `fx_refresh`, `wip_snapshot`, `autonomy_promoter`. |
 | Cache | Upstash Redis | |
 | LLM | Anthropic (Claude Sonnet 4.6) + Langfuse for traces | New Anthropic key for clean per-product billing visibility. |
 | Email | **Resend** | Branded transactional + invoice emails. Per-tenant DKIM/SPF in v1.1. |

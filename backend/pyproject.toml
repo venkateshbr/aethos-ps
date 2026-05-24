@@ -18,7 +18,10 @@ dependencies = [
   "anthropic>=0.30",
   "openai>=1.50",
   "stripe>=10.0",
-  "arq>=0.25",
+  # Procrastinate — Postgres-backed task queue. Replaces ARQ (Redis-backed) so
+  # the queue lives in Supabase, eliminating Redis as a dependency. See #108.
+  "procrastinate>=3.0",
+  "psycopg[binary,pool]>=3.2",
 ]
 
 [project.optional-dependencies]

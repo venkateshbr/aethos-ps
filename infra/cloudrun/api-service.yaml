@@ -13,7 +13,7 @@ spec:
         autoscaling.knative.dev/minScale: "1"
         # Hard cap — revisit after Locust results (issue #86)
         autoscaling.knative.dev/maxScale: "10"
-        # Disable CPU throttling so background work (ARQ, Procrastinate) runs at full speed
+        # Disable CPU throttling so background work (Procrastinate task defers) runs at full speed
         run.googleapis.com/cpu-throttling: "false"
     spec:
       # 100 concurrent requests per instance; uvicorn has 2 workers * ~50 connections each
