@@ -22,11 +22,19 @@ interface SubscriptionStatus {
     <div class="flex h-screen bg-slate-900 text-slate-100">
       <!-- Sidebar -->
       <nav [class]="sidebarClass()" aria-label="Main navigation">
-        <!-- Logo -->
-        <div class="px-4 py-5 border-b border-slate-700 flex-none">
-          <span class="text-lg font-semibold tracking-tight text-white">Aethos</span>
+        <!-- Logo (rotated-square mark + wordmark) -->
+        <div class="px-4 py-5 border-b border-slate-700 flex-none flex items-center gap-2.5">
+          <span
+            class="lockup-mark inline-block w-3.5 h-3.5 bg-accent rounded-[2px] flex-none"
+            aria-hidden="true"
+          ></span>
           @if (!collapsed()) {
-            <span class="text-xs text-slate-400 block mt-0.5">for professional services</span>
+            <div class="leading-tight">
+              <span class="text-lg font-bold tracking-brand text-slate-50 block">Aethos</span>
+              <span class="text-[10px] uppercase tracking-[0.18em] text-slate-400 block -mt-0.5">
+                for professional services
+              </span>
+            </div>
           }
         </div>
 

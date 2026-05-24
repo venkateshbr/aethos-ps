@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 80" role="img" aria-label="Aethos, for professional services">
+  <title>Aethos — Slate + Emerald lockup</title>
+  <defs>
+    <style>
+      .ae-bg { fill: #0f172a; }
+      .ae-mark { fill: #10b981; }
+      .ae-word { fill: #f8fafc; font-family: 'Inter', system-ui, sans-serif; font-weight: 700; font-size: 36px; letter-spacing: 0.04em; }
+      .ae-sub { fill: #94a3b8; font-family: 'Inter', system-ui, sans-serif; font-weight: 400; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+    </style>
+  </defs>
+  <!-- background plate (transparent in production, shown here for context) -->
+  <rect class="ae-bg" width="380" height="80" rx="6"/>
+  <!-- micro-mark: rotated square (14x14), vertically centered on cap-height -->
+  <g transform="translate(28 40) rotate(45)">
+    <rect class="ae-mark" x="-10" y="-10" width="20" height="20" rx="1.5"/>
+  </g>
+  <!-- wordmark -->
+  <text class="ae-word" x="54" y="46">Aethos</text>
+  <!-- sub-mark (services tag) -->
+  <text class="ae-sub" x="54" y="64">for professional services</text>
+</svg>

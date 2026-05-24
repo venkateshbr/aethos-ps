@@ -8,18 +8,25 @@ import { RouterLink } from '@angular/router';
   template: `
     <div class="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       <header class="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
-        <div>
-          <span class="text-xl font-semibold">Aethos</span>
-          <span class="text-slate-400 text-sm ml-2">for professional services</span>
-        </div>
+        <a routerLink="/" aria-label="Aethos — for professional services">
+          <img
+            src="/assets/brand/lockup.svg"
+            alt="Aethos — for professional services"
+            class="h-10 w-auto"
+          />
+        </a>
         <a routerLink="/app" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
       </header>
 
       <main class="flex-1 flex items-center justify-center px-8">
         <div class="text-center max-w-2xl">
+          <div class="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full border border-slate-700 bg-slate-900/60 text-xs text-slate-300">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent shadow-accent-ring"></span>
+            Now in private beta · US · UK · SG · IN · AU
+          </div>
           <h1 class="text-5xl font-bold tracking-tight mb-6">
             Engagement to cash.<br>
-            <span class="text-emerald-400">Without the forms.</span>
+            <span class="text-accent-light">Without the forms.</span>
           </h1>
           <p class="text-slate-400 text-lg mb-10 leading-relaxed">
             Drop your engagement letter. Aethos extracts, proposes, and posts —
@@ -27,7 +34,7 @@ import { RouterLink } from '@angular/router';
           </p>
           <a
             routerLink="/app"
-            class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-medium px-8 py-3 rounded-lg transition-colors text-sm"
+            class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-8 py-3 rounded-lg transition-colors text-sm shadow-accent-ring"
           >
             Get started
           </a>
@@ -35,8 +42,12 @@ import { RouterLink } from '@angular/router';
         </div>
       </main>
 
-      <footer class="px-8 py-4 border-t border-slate-800 text-center text-slate-500 text-xs">
-        &copy; 2026 Aethos &middot; Professional Services ERP
+      <footer class="px-8 py-4 border-t border-slate-800 flex items-center justify-between text-slate-500 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="lockup-mark inline-block w-2.5 h-2.5 bg-accent rounded-[1.5px]"></span>
+          <span>Aethos &middot; for professional services</span>
+        </div>
+        <div>&copy; 2026 Aethos</div>
       </footer>
     </div>
   `,
