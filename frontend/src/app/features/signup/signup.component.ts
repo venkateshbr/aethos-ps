@@ -5,8 +5,11 @@ import { Router, RouterLink } from '@angular/router';
 import { ThemeService } from '../../core/services/theme.service';
 import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
 import {
+  BillingInterval,
   LAUNCH_COUNTRIES,
   LaunchCountry,
+  PlanTier,
+  PriceCatalogue,
   SignupApiResponse,
   SignupService,
 } from './signup.service';
@@ -232,19 +235,122 @@ import {
       </form>
     </ng-template>
 
-    <!-- ── Step 2 · Plan (next commit) ─────────────────────────────────────── -->
+    <!-- ── Step 2 · Plan ───────────────────────────────────────────────────── -->
     <ng-template #planStep>
       <h1 class="text-2xl font-semibold mb-1">Pick a plan</h1>
       <p class="text-slate-400 text-sm mb-6">
-        Coming next commit. Your firm is created; this step picks a Stripe price.
+        14-day trial on any plan. We'll only charge after the trial ends —
+        cancel anytime from settings.
       </p>
-      <button
-        type="button"
-        (click)="step.set(1)"
-        class="text-sm text-slate-400 hover:text-slate-200"
-      >
-        ← Back
-      </button>
+
+      @if (loadingPrices()) {
+        <div class="flex items-center justify-center py-12" role="status" aria-label="Loading plans">
+          <span class="w-6 h-6 border-2 border-accent border-r-transparent rounded-full animate-spin" aria-hidden="true"></span>
+        </div>
+      } @else if (pricesError()) {
+        <div role="alert" class="text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-3 mb-4">
+          {{ pricesError() }}
+          <button type="button" (click)="loadPrices()" class="ml-2 underline">Retry</button>
+        </div>
+      } @else if (prices() !== null) {
+        <!-- Billing interval toggle -->
+        <div class="flex items-center justify-center mb-5">
+          <div role="radiogroup" aria-label="Billing interval" class="inline-flex bg-slate-800 border border-slate-700 rounded-lg p-1 text-xs">
+            <button
+              type="button"
+              role="radio"
+              [attr.aria-checked]="interval() === 'monthly'"
+              (click)="interval.set('monthly')"
+              [class.bg-slate-700]="interval() === 'monthly'"
+              [class.text-slate-100]="interval() === 'monthly'"
+              [class.text-slate-400]="interval() !== 'monthly'"
+              class="px-3 py-1.5 rounded-md transition-colors"
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              role="radio"
+              [attr.aria-checked]="interval() === 'annual'"
+              (click)="interval.set('annual')"
+              [class.bg-slate-700]="interval() === 'annual'"
+              [class.text-slate-100]="interval() === 'annual'"
+              [class.text-slate-400]="interval() !== 'annual'"
+              class="px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              Annual
+              <span class="text-[10px] text-accent-light bg-accent-subtle px-1.5 py-0.5 rounded">2 mo free</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Plan tiles -->
+        <div class="space-y-3" role="radiogroup" aria-label="Plan tier">
+          @for (plan of planList(); track plan.tier) {
+            <button
+              type="button"
+              role="radio"
+              [attr.aria-checked]="selectedTier() === plan.tier"
+              [disabled]="!plan.priceId"
+              (click)="selectTier(plan.tier)"
+              [class]="planTileClass(plan)"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-slate-100 capitalize">{{ plan.tier }}</span>
+                    @if (plan.recommended) {
+                      <span class="text-[10px] uppercase tracking-wider bg-accent text-accent-on px-1.5 py-0.5 rounded">
+                        Recommended
+                      </span>
+                    }
+                  </div>
+                  <p class="text-xs text-slate-400 mt-1">{{ plan.summary }}</p>
+                </div>
+                <div class="text-right shrink-0">
+                  @if (plan.priceId) {
+                    <div class="text-base font-semibold text-slate-50">
+                      {{ prices()?.currency }} <span class="text-slate-300 text-xs">/ {{ interval() === 'monthly' ? 'mo' : 'yr' }}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500" title="Stripe price id">
+                      {{ plan.priceId | slice:0:14 }}…
+                    </div>
+                  } @else {
+                    <div class="text-xs text-slate-500">Not available in {{ prices()?.currency }}</div>
+                  }
+                </div>
+              </div>
+            </button>
+          }
+        </div>
+
+        @if (serverError()) {
+          <div role="alert" class="mt-4 text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2">
+            {{ serverError() }}
+          </div>
+        }
+
+        <div class="flex items-center justify-between gap-3 mt-6">
+          <button
+            type="button"
+            (click)="step.set(1)"
+            class="text-sm text-slate-400 hover:text-slate-200"
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            [disabled]="!canAdvanceFromPlan()"
+            (click)="advanceToCard()"
+            class="inline-flex items-center justify-center gap-2
+                   bg-accent hover:bg-accent-hover text-accent-on font-medium
+                   px-4 py-2.5 rounded-lg transition-colors text-sm
+                   disabled:opacity-50 disabled:cursor-not-allowed shadow-accent-ring"
+          >
+            Continue to card →
+          </button>
+        </div>
+      }
     </ng-template>
 
     <!-- ── Step 3 · Card (next commit) ─────────────────────────────────────── -->
@@ -283,6 +389,65 @@ export class SignupComponent {
    * Set on successful step-1 submission and consumed by step 3.
    */
   protected signupResult = signal<SignupApiResponse | null>(null);
+
+  // ── Step 2 state ────────────────────────────────────────────────────────
+  protected loadingPrices = signal(false);
+  protected pricesError = signal<string | null>(null);
+  protected prices = signal<PriceCatalogue | null>(null);
+  protected interval = signal<BillingInterval>('monthly');
+  protected selectedTier = signal<PlanTier>('growth'); // recommended default
+
+  /** Per-tier metadata that's UI-only (copy, recommended flag). */
+  private readonly tierMeta: Record<PlanTier, { summary: string; recommended: boolean }> = {
+    starter: {
+      summary: '1 owner · 10 invoices/mo · core agents at L2',
+      recommended: false,
+    },
+    growth: {
+      summary: 'Up to 5 seats · unlimited invoices · agent autonomy promotion',
+      recommended: true,
+    },
+    pro: {
+      summary: 'Unlimited seats · multi-entity · priority support · L3 auto-eligible',
+      recommended: false,
+    },
+  };
+
+  /**
+   * Combined list of plans with their currently-selected interval's price id
+   * resolved from the catalogue. Drives the @for tile loop in step 2.
+   */
+  protected planList = computed(() => {
+    const cat = this.prices();
+    if (!cat) return [];
+    const order: PlanTier[] = ['starter', 'growth', 'pro'];
+    return order.map((tier) => {
+      const entry = cat.plans.find((p) => p.tier === tier);
+      const priceId =
+        entry == null
+          ? null
+          : this.interval() === 'monthly'
+            ? entry.monthly_id
+            : entry.annual_id;
+      return {
+        tier,
+        priceId,
+        summary: this.tierMeta[tier].summary,
+        recommended: this.tierMeta[tier].recommended,
+      };
+    });
+  });
+
+  /** Resolved Stripe price_id for the current (tier, interval) selection. */
+  protected selectedPriceId = computed<string | null>(() => {
+    const cat = this.prices();
+    if (!cat) return null;
+    const entry = cat.plans.find((p) => p.tier === this.selectedTier());
+    if (!entry) return null;
+    return this.interval() === 'monthly' ? entry.monthly_id : entry.annual_id;
+  });
+
+  protected canAdvanceFromPlan = computed(() => this.selectedPriceId() !== null);
 
   /** Reactive form — typed via FormBuilder.group. */
   protected accountForm = this.fb.nonNullable.group({
@@ -343,10 +508,65 @@ export class SignupComponent {
       });
       this.signupResult.set(resp);
       this.step.set(2);
+      // Fire-and-forget price catalogue load — needs the JWT from signin above.
+      void this.loadPrices();
     } catch (err: unknown) {
       this.serverError.set(this.friendlyError(err));
     } finally {
       this.submitting.set(false);
+    }
+  }
+
+  /** Step 2 — fetch the price catalogue from the backend. Auto-runs on entering the step. */
+  protected async loadPrices(): Promise<void> {
+    this.loadingPrices.set(true);
+    this.pricesError.set(null);
+    try {
+      const cat = await this.signupSvc.fetchPrices();
+      this.prices.set(cat);
+      // Snap selectedTier to 'growth' if it's available, otherwise the first
+      // tier that has a price for the current interval.
+      if (!this.selectedPriceId()) {
+        const firstAvailable = this.planList().find((p) => p.priceId !== null);
+        if (firstAvailable) this.selectedTier.set(firstAvailable.tier);
+      }
+    } catch (err: unknown) {
+      this.pricesError.set(
+        this.friendlyError(err) || 'Could not load plans. Please try again.',
+      );
+    } finally {
+      this.loadingPrices.set(false);
+    }
+  }
+
+  /**
+   * Resolve the class string for a plan tile. Kept in TS (not template) because
+   * Angular's [class.foo] binding doesn't accept Tailwind variant prefixes like
+   * `hover:` or arbitrary opacity suffixes (`bg-slate-800/60`) — those fail the
+   * template lexer.
+   */
+  protected planTileClass(plan: { tier: PlanTier; priceId: string | null }): string {
+    const base =
+      'w-full text-left rounded-lg border px-4 py-3 transition-colors block ' +
+      'disabled:opacity-40 disabled:cursor-not-allowed';
+    if (this.selectedTier() === plan.tier) {
+      return `${base} border-accent shadow-accent-ring bg-slate-800`;
+    }
+    const hover = plan.priceId ? ' hover:border-slate-600' : '';
+    return `${base} border-slate-700 bg-slate-800/60${hover}`;
+  }
+
+  /** Tile click — only select if a price_id exists for this (tier, interval). */
+  protected selectTier(tier: PlanTier): void {
+    const plan = this.planList().find((p) => p.tier === tier);
+    if (plan?.priceId) this.selectedTier.set(tier);
+  }
+
+  /** Advance from plan → card step. Card-step Stripe wiring lands in commit 3. */
+  protected advanceToCard(): void {
+    this.serverError.set(null);
+    if (this.canAdvanceFromPlan()) {
+      this.step.set(3);
     }
   }
 
