@@ -117,7 +117,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                 @if (task.suggestion_payload?.['approval_rate']) {
                   <div class="flex flex-wrap gap-2 mb-4">
                     <span class="bg-emerald-900 text-emerald-400 text-xs px-2 py-0.5 rounded">
-                      {{ (+task.suggestion_payload!['approval_rate'] * 100).toFixed(0) }}% approved
+                      {{ (+$any(task.suggestion_payload!['approval_rate']) * 100).toFixed(0) }}% approved
                     </span>
                     @if (task.suggestion_payload?.['sample_count']) {
                       <span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded">
@@ -126,7 +126,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     }
                     @if (task.suggestion_payload?.['avg_confidence']) {
                       <span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded">
-                        Avg conf: {{ (+task.suggestion_payload!['avg_confidence'] * 100).toFixed(0) }}%
+                        Avg conf: {{ (+$any(task.suggestion_payload!['avg_confidence']) * 100).toFixed(0) }}%
                       </span>
                     }
                   </div>
