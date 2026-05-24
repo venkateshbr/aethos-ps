@@ -14,6 +14,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from supabase_auth.errors import AuthApiError, AuthWeakPasswordError
 
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
@@ -26,6 +27,118 @@ from supabase import Client
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# AuthApiError → HTTPException mapping (bug #97)
+# ---------------------------------------------------------------------------
+#
+# Supabase's gotrue SDK raises ``AuthApiError`` for any 4xx response from the
+# auth backend (invalid email, weak password, rate-limit, etc).  Letting it
+# bubble up surfaces as HTTP 500 with a stack trace, which is both a poor UX
+# and an SLO violation on a public endpoint.  ``_auth_error_to_http`` maps the
+# SDK exception to a sanitised :class:`fastapi.HTTPException` we can re-raise.
+#
+# Mapping precedence is by SDK ``code`` field first, then a substring fallback
+# on the human-readable message (older Supabase responses omit ``code``).  The
+# detail body is rewritten in user-facing English — we never leak the vendor
+# name or the raw SDK error code.
+
+_CODE_TO_STATUS: dict[str, int] = {
+    # 409 — conflict (already-registered email or identity)
+    "user_already_exists": 409,
+    "email_exists": 409,
+    "phone_exists": 409,
+    "identity_already_exists": 409,
+    "conflict": 409,
+    # 422 — validation (bad input the caller can fix)
+    "weak_password": 422,
+    "validation_failed": 422,
+    "email_address_invalid": 422,
+    "email_address_not_authorized": 422,
+    "bad_json": 400,  # malformed payload — caller bug, plain 400
+    # 429 — rate limited
+    "over_request_rate_limit": 429,
+    "over_email_send_rate_limit": 429,
+    "over_sms_send_rate_limit": 429,
+    # 503 — config disabled (admin must fix)
+    "signup_disabled": 503,
+    "email_provider_disabled": 503,
+    "phone_provider_disabled": 503,
+}
+
+_FRIENDLY_DETAIL: dict[int, str] = {
+    409: "Email already registered. Try signing in instead.",
+    422: "Invalid signup details. Check your email address and password.",
+    429: "Too many signup attempts. Please wait a moment and try again.",
+    503: "Signup is temporarily unavailable. Please try again later.",
+    400: "Could not complete signup. Please check your details and try again.",
+}
+
+
+def _auth_error_to_http(exc: AuthApiError) -> HTTPException:
+    """Translate a Supabase ``AuthApiError`` into a sanitised HTTPException.
+
+    Args:
+        exc: the SDK exception (covers both :class:`AuthApiError` and its
+             :class:`AuthWeakPasswordError` subclass).
+
+    Returns:
+        An :class:`HTTPException` with a 4xx/5xx status code and a user-facing
+        ``detail`` string.  Never includes the vendor name, the raw error code,
+        or any stack-trace fragment.
+    """
+    code = getattr(exc, "code", None)
+    raw_message = (getattr(exc, "message", None) or str(exc) or "").strip()
+    lower = raw_message.lower()
+
+    # 1. Map by structured ``code`` field if present.
+    http_status: int | None = _CODE_TO_STATUS.get(code) if code else None
+
+    # 2. AuthWeakPasswordError is the only subclass we care about — treat as 422.
+    if http_status is None and isinstance(exc, AuthWeakPasswordError):
+        http_status = 422
+
+    # 3. Substring fallback for SDK versions that omit ``code``.
+    if http_status is None:
+        if "already registered" in lower or "already exists" in lower:
+            http_status = 409
+        elif "rate limit" in lower or "too many" in lower:
+            http_status = 429
+        elif "invalid" in lower and ("email" in lower or "password" in lower):
+            http_status = 422
+        elif "weak" in lower and "password" in lower:
+            http_status = 422
+        elif "disabled" in lower:
+            http_status = 503
+
+    if http_status is None:
+        http_status = 400
+
+    # Choose detail — prefer a slightly personalised message for the common
+    # 409/422 cases, otherwise the canned friendly string. NEVER include the
+    # vendor name or the raw SDK code.
+    detail = _FRIENDLY_DETAIL[http_status]
+    if http_status == 422 and ("password" in lower and "weak" in lower):
+        detail = "Password is too weak. Use at least 8 characters with a mix of letters, numbers, and symbols."
+    elif http_status == 422 and "email" in lower and "invalid" in lower:
+        detail = "Email address is invalid. Please check the spelling and try again."
+
+    headers: dict[str, str] | None = None
+    if http_status == 429:
+        # Supabase doesn't surface a precise reset time via the SDK exception,
+        # so we send a conservative default. The client must back off.
+        headers = {"Retry-After": "60"}
+
+    # Log the original (sanitised) error server-side for observability —
+    # email domain only, no PII, no message body that might include the email.
+    logger.warning(
+        "Supabase auth error translated to HTTP %s (code=%s)",
+        http_status,
+        code or "<none>",
+    )
+
+    return HTTPException(status_code=http_status, detail=detail, headers=headers)
 
 
 @router.post(
@@ -56,12 +169,18 @@ async def signup(
     # ------------------------------------------------------------------
     # 1. Create Supabase Auth user (or detect existing)
     # ------------------------------------------------------------------
-    auth_response = db.auth.sign_up(
-        {
-            "email": payload.email,
-            "password": payload.password,
-        }
-    )
+    try:
+        auth_response = db.auth.sign_up(
+            {
+                "email": payload.email,
+                "password": payload.password,
+            }
+        )
+    except AuthApiError as exc:
+        # Bug #97 — translate to a 4xx HTTPException so we never return 500 on
+        # a signup-rejection path (invalid email, weak password, rate limit,
+        # already-registered, etc).
+        raise _auth_error_to_http(exc) from exc
 
     # Supabase returns a user even on duplicate if email confirmation is off.
     # Distinguish "new" vs "existing" by checking whether identities is empty

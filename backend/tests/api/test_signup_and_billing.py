@@ -42,12 +42,11 @@ def _signup_payload() -> dict:
 
 @pytest.mark.xfail(
     reason=(
-        "Bug #97 — supabase_auth.errors.AuthApiError ('email invalid' / "
-        "'rate limit') is uncaught in app/api/v1/endpoints/auth.py:signup and "
-        "returns 500. Should be translated to 422/429. The Supabase project's "
-        "email-domain allowlist + send-rate-limit makes the happy path "
-        "untestable from CI without a deliverable mailbox — needs (a) the "
-        "exception caught and (b) a 'test mode' bypass for QA."
+        "Bug #97 fixed (AuthApiError now translated to 4xx), but the happy "
+        "path is still blocked by the Supabase project's email-domain "
+        "allowlist + send-rate-limit: @example.com addresses are rejected by "
+        "the auth backend itself, so the endpoint correctly returns 422. "
+        "Needs a 'test mode' bypass or a deliverable mailbox to flip green."
     ),
     strict=False,
 )
@@ -55,9 +54,8 @@ def test_signup_happy_path_returns_setup_intent(client: httpx.Client) -> None:
     """A fresh signup creates a tenant + Stripe customer and returns the
     SetupIntent client_secret needed for card capture.
 
-    Blocked by bug #97 and Supabase rate-limit/domain-allowlist on the project.
-    Re-enable once Karya fixes #97 and the Supabase project is configured for
-    QA-friendly email validation."""
+    Blocked by the Supabase project's email-allowlist for @example.com; not
+    by bug #97 anymore."""
     payload = _signup_payload()
     r = client.post("/api/v1/auth/signup", json=payload)
     assert r.status_code == 201, r.text
@@ -73,28 +71,24 @@ def test_signup_happy_path_returns_setup_intent(client: httpx.Client) -> None:
         pass
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #97 — supabase_auth.errors.AuthApiError ('email invalid') is "
-        "uncaught and propagates as 500. Should be 4xx."
-    ),
-    strict=False,
-)
 def test_signup_invalid_email_translates_to_422_not_500(client: httpx.Client) -> None:
     """Bug #97 sentinel — Supabase AuthApiError must NOT propagate as 500.
 
-    Today it does (we verified with @example.com). The endpoint must catch
-    supabase_auth.errors.AuthApiError and return 4xx. Marked xfail so this
-    test goes green automatically when Karya fixes the bug.
+    Pre-fix: the endpoint returned 500 with a Supabase stack trace.
+    Post-fix (PR for #97): ``_auth_error_to_http`` in auth.py maps the SDK
+    error to a 4xx status with a sanitised, vendor-neutral detail string.
     """
     payload = _signup_payload()
     payload["email"] = "definitely-not-a-real@example.com"  # Supabase rejects this
     r = client.post("/api/v1/auth/signup", json=payload)
-    # Today: 500. Target: 422 (validation) or 400 (bad request).
-    assert r.status_code in (400, 422, 429), (
-        f"Bug #97 — uncaught AuthApiError → {r.status_code}. "
+    assert r.status_code in (400, 409, 422, 429), (
+        f"Bug #97 regression — AuthApiError returned {r.status_code}. "
         f"Body: {r.text[:200]}"
     )
+    # Detail body must be a string, never empty, and never leak the vendor.
+    body = r.json()
+    assert isinstance(body.get("detail"), str) and body["detail"], body
+    assert "supabase" not in body["detail"].lower(), body
 
 
 def test_signup_rejects_short_password(client: httpx.Client) -> None:
