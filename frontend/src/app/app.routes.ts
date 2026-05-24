@@ -14,6 +14,12 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/public-invoice/public-invoice.component').then(m => m.PublicInvoiceComponent),
   },
+  {
+    // #115 — signup flow (multi-step: account → plan → card).
+    path: 'signup',
+    loadComponent: () =>
+      import('./features/signup/signup.component').then(m => m.SignupComponent),
+  },
 
   // ── App shell — authenticated routes ────────────────────────────────────────
   // Guarded by authGuard (parent) + authChildGuard (child re-check) per #111.

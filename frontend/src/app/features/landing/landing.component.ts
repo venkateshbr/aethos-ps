@@ -19,7 +19,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
         </a>
         <div class="flex items-center gap-5">
           <app-theme-picker />
-          <a routerLink="/app" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
+          <a routerLink="/signup" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
         </div>
       </header>
 
@@ -38,7 +38,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
             you approve. GAAP double-entry under the hood. Works for US, UK, Singapore, India, and Australia.
           </p>
           <a
-            routerLink="/app"
+            routerLink="/signup"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-8 py-3 rounded-lg transition-colors text-sm shadow-accent-ring"
           >
             Get started
