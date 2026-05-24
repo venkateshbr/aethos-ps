@@ -1,0 +1,29 @@
+[
+  {
+    "tag": "BUTTON",
+    "type": "button",
+    "name": null,
+    "id": null,
+    "placeholder": null,
+    "label": "Switch theme to Slate + Emerald",
+    "text": "Slate"
+  },
+  {
+    "tag": "BUTTON",
+    "type": "button",
+    "name": null,
+    "id": null,
+    "placeholder": null,
+    "label": "Switch theme to Ink + Indigo",
+    "text": "Ink"
+  },
+  {
+    "tag": "BUTTON",
+    "type": "button",
+    "name": null,
+    "id": null,
+    "placeholder": null,
+    "label": "Switch theme to Carbon + Amber",
+    "text": "Carbon"
+  }
+]

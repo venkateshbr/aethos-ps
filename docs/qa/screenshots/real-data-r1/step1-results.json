@@ -1,0 +1,30 @@
+{
+  "run_id": 1779625448196,
+  "email": "aksha-pilot-1779625448196@aethos-qa.dev",
+  "password": "Aksha-pilot-2026!",
+  "tenant_name": "Aksha Pilot 1779625448196",
+  "steps": [
+    {
+      "name": "auth_guard_redirect_111",
+      "expected": "/ or /login",
+      "actual": "/",
+      "pass": true
+    },
+    {
+      "name": "signup_form_fill",
+      "selectors": {
+        "email": null,
+        "password": null,
+        "tenant": null,
+        "country": null
+      }
+    },
+    {
+      "name": "signup_submit",
+      "submitted_via": null,
+      "post_path": "/",
+      "token_present": false,
+      "signup_api_responses": []
+    }
+  ]
+}
