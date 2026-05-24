@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aethos — app shell (theme applied)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: { 750: '#293548' },
+            accent:     { DEFAULT: '#10b981', hover: '#059669', light: '#34d399', subtle: '#064e3b', on: '#ffffff' },
+            confidence: { high: '#10b981', med: '#f59e0b', low: '#ef4444' },
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          letterSpacing: { brand: '0.04em' },
+        },
+      },
+    };
+  </script>
+  <style>
+    html, body { background: #0f172a; font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+    .lockup-mark { transform: rotate(45deg); }
+  </style>
+</head>
+<body class="text-slate-100">
+  <!--
+    Verbatim render of frontend/src/app/shared/shell/shell.component.ts (expanded state)
+    + a representative copilot empty-state on the right, so the founder can see the
+    sidebar lockup wiring in context. Uses the same Tailwind tokens as the live app.
+  -->
+  <div class="flex h-screen bg-slate-900 text-slate-100">
+    <!-- Sidebar -->
+    <nav class="w-56 flex-none bg-slate-800 border-r border-slate-700 flex flex-col relative">
+      <!-- Logo (rotated-square mark + wordmark) -->
+      <div class="px-4 py-5 border-b border-slate-700 flex-none flex items-center gap-2.5">
+        <span class="lockup-mark inline-block w-3.5 h-3.5 bg-accent rounded-[2px] flex-none"></span>
+        <div class="leading-tight">
+          <span class="text-lg font-bold tracking-brand text-slate-50 block">Aethos</span>
+          <span class="text-[10px] uppercase tracking-[0.18em] text-slate-400 block -mt-0.5">for professional services</span>
+        </div>
+      </div>
+
+      <!-- Nav items -->
+      <div class="flex-1 overflow-y-auto py-3">
+        <a class="flex items-center gap-3 px-4 py-2 text-sm bg-slate-700 text-white rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">auto_awesome</span>
+          <span>Copilot</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">inbox</span>
+          <span>Inbox</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">work</span>
+          <span>Engagements</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">folder</span>
+          <span>Projects</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">people</span>
+          <span>Clients</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">receipt</span>
+          <span>Invoices</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">payments</span>
+          <span>Billing Runs</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">bar_chart</span>
+          <span>Reports</span>
+        </a>
+        <a class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 rounded mx-2 mb-0.5">
+          <span class="material-icons text-base leading-none flex-none">settings</span>
+          <span>Settings</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- Copilot empty state -->
+    <main class="flex-1 overflow-auto px-8 py-10">
+      <div class="max-w-3xl mx-auto">
+        <div class="relative rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/30 to-slate-900"></div>
+          <div class="relative px-12 py-20 text-center">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-accent-subtle border border-emerald-700/40 mb-6">
+              <span class="lockup-mark inline-block w-4 h-4 bg-accent rounded-[2px]"></span>
+            </div>
+            <h1 class="text-3xl font-semibold text-slate-50 mb-3">Drop your most recent engagement letter.</h1>
+            <p class="text-slate-400 text-base max-w-xl mx-auto">I'll extract the client, scope, billing arrangement, and rate card — then propose the engagement and project for your approval.</p>
+
+            <div class="mt-10 max-w-2xl mx-auto">
+              <div class="rounded-xl border border-dashed border-slate-700 bg-slate-900/60 px-6 py-10 hover:border-accent-light/60 hover:bg-emerald-900/10 transition">
+                <div class="text-slate-400 text-sm">Drag a PDF here, paste an email, or
+                  <span class="text-accent-light underline-offset-4 hover:underline cursor-pointer">browse files</span>.
+                </div>
+                <div class="text-slate-500 text-xs mt-2">PDF · DOCX · email · receipt photo · up to 25 MB</div>
+              </div>
+              <div class="mt-6 flex items-center gap-2 justify-center flex-wrap text-xs text-slate-400">
+                <span class="opacity-70">try:</span>
+                <button class="px-3 py-1.5 rounded-full border border-slate-700 hover:border-accent hover:text-accent-light">Create an invoice for Acme for May time</button>
+                <button class="px-3 py-1.5 rounded-full border border-slate-700 hover:border-accent hover:text-accent-light">What's outstanding from Northwind?</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
