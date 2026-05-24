@@ -2,6 +2,7 @@ import { Component, signal, computed, OnInit, inject } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { HttpClient } from '@angular/common/http';
+import { ThemePickerComponent } from '../components/theme-picker.component';
 
 interface NavItem {
   label: string;
@@ -17,7 +18,7 @@ interface SubscriptionStatus {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, MatIconModule],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, MatIconModule, ThemePickerComponent],
   template: `
     <div class="flex h-screen bg-slate-900 text-slate-100">
       <!-- Sidebar -->
@@ -74,6 +75,15 @@ interface SubscriptionStatus {
                 <span>{{ item.label }}</span>
               }
             </a>
+          }
+        </div>
+
+        <!-- Theme picker — lets the user switch palette at runtime during pilot -->
+        <div class="flex-none border-t border-slate-700 px-3 py-2">
+          @if (!collapsed()) {
+            <app-theme-picker />
+          } @else {
+            <app-theme-picker size="compact" />
           }
         </div>
 

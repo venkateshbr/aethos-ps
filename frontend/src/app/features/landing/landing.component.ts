@@ -1,21 +1,26 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ThemeService } from '../../core/services/theme.service';
+import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, ThemePickerComponent],
   template: `
     <div class="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       <header class="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
         <a routerLink="/" aria-label="Aethos — for professional services">
           <img
-            src="/assets/brand/lockup.svg"
-            alt="Aethos — for professional services"
+            [src]="themeSvc.meta().lockupSrc"
+            [alt]="'Aethos — for professional services (' + themeSvc.meta().label + ')'"
             class="h-10 w-auto"
           />
         </a>
-        <a routerLink="/app" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
+        <div class="flex items-center gap-5">
+          <app-theme-picker />
+          <a routerLink="/app" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
+        </div>
       </header>
 
       <main class="flex-1 flex items-center justify-center px-8">
@@ -52,4 +57,6 @@ import { RouterLink } from '@angular/router';
     </div>
   `,
 })
-export class LandingComponent {}
+export class LandingComponent {
+  protected themeSvc = inject(ThemeService);
+}

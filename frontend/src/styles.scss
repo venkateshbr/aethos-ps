@@ -2,53 +2,164 @@
 
 // =====================================================================
 // Aethos PS — global styles.
-// Tokens sourced from src/assets/brand/themes/theme-1-slate-emerald/
-// (Direction A — founder-picked, issue #9).
-// CSS custom properties below expose the same hexes used by Tailwind
-// so non-Tailwind contexts (Angular Material overrides, inline styles,
-// SVG fills) can pull from the same source.
+//
+// Three theme palettes are defined as CSS-custom-property scopes. The
+// default tokens (slate + emerald) live on :root so a first paint
+// without any data-theme attribute still renders correctly. Switching
+// the body[data-theme=...] attribute swaps every component that reads
+// from --t-* / --brand-* / --t-confidence-* tokens — without rebuilding.
+//
+// Sources of truth: src/assets/brand/themes/theme-{1,2,3}-*/palette.md
 // =====================================================================
 
-:root {
-  // ── Surface ────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────
+// Theme 1 — Slate + Emerald  (default, Direction A)
+// ──────────────────────────────────────────────────────────────────────
+:root,
+body[data-theme="slate-emerald"] {
+  // Surface
   --t-bg-base:           #0f172a; // slate-900
   --t-bg-surface:        #1e293b; // slate-800
   --t-bg-surface-raised: #293548; // slate-750 (custom)
   --t-bg-surface-sunken: #0d1424; // slate-950
   --t-bg-overlay:        rgba(15, 23, 42, 0.80);
 
-  // ── Border ─────────────────────────────────────────────────────────
+  // Border
   --t-border-default: #334155; // slate-700
   --t-border-subtle:  #1e293b; // slate-800
   --t-border-strong:  #475569; // slate-600
 
-  // ── Text ───────────────────────────────────────────────────────────
+  // Text
   --t-text-primary:   #f8fafc; // slate-50
   --t-text-secondary: #cbd5e1; // slate-300
   --t-text-muted:     #94a3b8; // slate-400
   --t-text-disabled:  #475569; // slate-600
   --t-text-inverse:   #0f172a; // slate-900
 
-  // ── Brand accent (emerald) ─────────────────────────────────────────
+  // Brand accent (emerald)
   --brand-primary:        #10b981; // emerald-500
   --brand-primary-hover:  #059669; // emerald-600
   --brand-primary-light:  #34d399; // emerald-400
   --brand-primary-subtle: #064e3b; // emerald-900
   --brand-on-primary:     #ffffff;
 
-  // Aliases that match the DESIGN_SYSTEM.md naming convention.
-  --t-accent:             var(--brand-primary);
-  --t-accent-hover:       var(--brand-primary-hover);
-  --t-accent-light:       var(--brand-primary-light);
-  --t-accent-subtle-bg:   var(--brand-primary-subtle);
-  --t-accent-on-accent:   var(--brand-on-primary);
+  --t-accent:           var(--brand-primary);
+  --t-accent-hover:     var(--brand-primary-hover);
+  --t-accent-light:     var(--brand-primary-light);
+  --t-accent-subtle-bg: var(--brand-primary-subtle);
+  --t-accent-on-accent: var(--brand-on-primary);
 
-  // ── Confidence (HITL chips) ────────────────────────────────────────
-  --t-confidence-high: #10b981; // emerald-500 ≥ 0.90
-  --t-confidence-med:  #f59e0b; // amber-500  0.70–0.89
-  --t-confidence-low:  #ef4444; // red-500    < 0.70
+  // Confidence (HITL chips)
+  --t-confidence-high:    #10b981; // emerald-500
+  --t-confidence-high-bg: #064e3b; // emerald-900
+  --t-confidence-med:     #f59e0b; // amber-500
+  --t-confidence-med-bg:  #451a03; // amber-950
+  --t-confidence-low:     #ef4444; // red-500
+  --t-confidence-low-bg:  #450a0a; // red-950
 
-  // ── Semantic (mirror of confidence + info) ─────────────────────────
+  // Asset references — the theme picker reads these from the service,
+  // not from CSS, but listing them here keeps the source-of-truth aligned.
+  // --t-lockup-asset: '/assets/brand/themes/theme-1-slate-emerald/lockup.svg';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Theme 2 — Ink + Indigo
+// ──────────────────────────────────────────────────────────────────────
+body[data-theme="ink-indigo"] {
+  // Surface — cooler / deeper than slate
+  --t-bg-base:           #0b1020;
+  --t-bg-surface:        #161c33;
+  --t-bg-surface-raised: #1f2742;
+  --t-bg-surface-sunken: #070b18;
+  --t-bg-overlay:        rgba(11, 16, 32, 0.80);
+
+  // Border
+  --t-border-default: #2a3354;
+  --t-border-subtle:  #1c2440;
+  --t-border-strong:  #3a4570;
+
+  // Text — warmer white "paper"
+  --t-text-primary:   #f5f5f7;
+  --t-text-secondary: #cbd0e0;
+  --t-text-muted:     #8b93ad;
+  --t-text-disabled:  #4a5170;
+  --t-text-inverse:   #0b1020;
+
+  // Brand accent (indigo)
+  --brand-primary:        #818cf8; // indigo-400
+  --brand-primary-hover:  #6366f1; // indigo-500
+  --brand-primary-light:  #a5b4fc; // indigo-300
+  --brand-primary-subtle: #1e1b4b; // indigo-950
+  --brand-on-primary:     #0b1020; // ink (dark text on light indigo)
+
+  --t-accent:           var(--brand-primary);
+  --t-accent-hover:     var(--brand-primary-hover);
+  --t-accent-light:     var(--brand-primary-light);
+  --t-accent-subtle-bg: var(--brand-primary-subtle);
+  --t-accent-on-accent: var(--brand-on-primary);
+
+  // Confidence — cyan replaces emerald so the triad stays cool-spectrum
+  --t-confidence-high:    #22d3ee; // cyan-400
+  --t-confidence-high-bg: #164e63; // cyan-900
+  --t-confidence-med:     #fbbf24; // amber-400
+  --t-confidence-med-bg:  #451a03; // amber-950
+  --t-confidence-low:     #f87171; // red-400
+  --t-confidence-low-bg:  #450a0a; // red-950
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Theme 3 — Carbon + Amber
+// ──────────────────────────────────────────────────────────────────────
+body[data-theme="carbon-amber"] {
+  // Surface — warm near-black
+  --t-bg-base:           #161514;
+  --t-bg-surface:        #1f1d1b;
+  --t-bg-surface-raised: #2a2825;
+  --t-bg-surface-sunken: #0e0d0c;
+  --t-bg-overlay:        rgba(22, 21, 20, 0.82);
+
+  // Border
+  --t-border-default: #3a3733;
+  --t-border-subtle:  #252320;
+  --t-border-strong:  #4a4641;
+
+  // Text — slightly warm whites
+  --t-text-primary:   #fafaf7;
+  --t-text-secondary: #d6d3d1;
+  --t-text-muted:     #a8a29e;
+  --t-text-disabled:  #57534e;
+  --t-text-inverse:   #161514;
+
+  // Brand accent (amber)
+  --brand-primary:        #f5a524;
+  --brand-primary-hover:  #d97706; // amber-600
+  --brand-primary-light:  #fbbf24; // amber-400
+  --brand-primary-subtle: #3a2a08;
+  --brand-on-primary:     #161514; // carbon (dark text on warm amber)
+
+  --t-accent:           var(--brand-primary);
+  --t-accent-hover:     var(--brand-primary-hover);
+  --t-accent-light:     var(--brand-primary-light);
+  --t-accent-subtle-bg: var(--brand-primary-subtle);
+  --t-accent-on-accent: var(--brand-on-primary);
+
+  // Confidence — warm-cool-warm to read distinctly against amber
+  --t-confidence-high:    #84cc16; // lime-500
+  --t-confidence-high-bg: #1a2e05; // lime-950
+  --t-confidence-med:     #fb923c; // orange-400 — distinct from amber accent
+  --t-confidence-med-bg:  #431407; // orange-950
+  --t-confidence-low:     #ef4444; // red-500
+  --t-confidence-low-bg:  #450a0a; // red-950
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Shared (typography, semantic mirrors of confidence)
+// ──────────────────────────────────────────────────────────────────────
+:root {
+  // Semantic colours kept on :root so they don't have to be duplicated
+  // per theme — the confidence vars above already vary, and the
+  // success / warning / error semantics are intentionally fixed across
+  // themes (red = bad everywhere).
   --t-success:       #10b981;
   --t-success-light: #34d399;
   --t-success-bg:    #064e3b;
@@ -62,12 +173,13 @@
   --t-info-light:    #818cf8;
   --t-info-bg:       #1e1b4b;
 
-  // ── Typography ─────────────────────────────────────────────────────
+  // Typography
   --t-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --t-letter-spacing-brand: 0.04em;
 }
 
-// Dark slate custom theme for Angular Material
+// Dark Angular Material baseline — palette is theme-neutral; per-theme
+// brand colour comes from the --brand-primary CSS var, not Material.
 $dark-theme: mat.define-theme((
   color: (
     theme-type: dark,
@@ -93,14 +205,30 @@ body {
   font-family: var(--t-font-sans);
   background-color: var(--t-bg-base);
   color: var(--t-text-primary);
-  font-variant-numeric: tabular-nums; // numeric columns align by default
+  font-variant-numeric: tabular-nums;
 }
 
 // Utility class for the rotated-square micro-mark used inline alongside
-// the wordmark (see DESIGN_SYSTEM.md → Brand lockup).
+// the wordmark (Theme 1 lockup mark — see DESIGN_SYSTEM.md → Brand lockup).
 .lockup-mark {
   transform: rotate(45deg);
 }
+
+// Confidence-chip CSS-var classes. Components emit these class names so
+// the chip colour follows the active theme. See:
+//   shared/components/confidence-chip.component.ts
+.confidence-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+}
+.confidence-chip--high { color: var(--t-confidence-high); background-color: var(--t-confidence-high-bg); }
+.confidence-chip--med  { color: var(--t-confidence-med);  background-color: var(--t-confidence-med-bg); }
+.confidence-chip--low  { color: var(--t-confidence-low);  background-color: var(--t-confidence-low-bg); }
 
 /* Tailwind base */
 @tailwind base;
