@@ -1,0 +1,55 @@
+AMAZON WEB SERVICES, INC.
+410 Terry Avenue North
+Seattle, WA 98109-5210
+United States
+
+Tax ID: 91-1646860
+
+
+INVOICE
+=======
+Invoice Number:   INV-2026-03-9847122
+Issue Date:       April 1, 2026
+Due Date:         May 1, 2026 (NET 30)
+Currency:         USD
+
+BILL TO
+-------
+Aksha Pilot Consulting LLC
+100 Pine Street, Suite 2500
+San Francisco, CA 94111
+USA
+Account ID: 581193847266
+
+
+BILLING PERIOD: March 1, 2026 — March 31, 2026
+
+
+CHARGES
+=================================================================
+Service                                              Amount (USD)
+-----------------------------------------------------------------
+Amazon EC2 - US-West-2                                    421.17
+Amazon S3 - Standard Storage                              168.43
+Amazon RDS - PostgreSQL multi-AZ                          892.50
+Amazon CloudFront - Data Transfer Out                      87.62
+AWS Lambda - Compute & Requests                            34.20
+Amazon Route 53 - Hosted Zones                              1.50
+AWS Support (Business plan)                               110.00
+                                                     ----------
+Subtotal                                                1,715.42
+Tax (State + local 8.875%)                                152.24
+                                                     ==========
+TOTAL DUE                                               1,867.66
+
+
+PAYMENT INSTRUCTIONS
+--------------------
+Auto-debit will occur on May 1, 2026 against
+the card ending in ****4421 on file.
+
+For invoice questions: aws-billing@amazon.example
+For statement support: 1-866-216-1072
+
+This invoice is generated automatically.
+No signature required.

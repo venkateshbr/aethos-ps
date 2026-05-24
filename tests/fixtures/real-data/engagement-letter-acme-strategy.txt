@@ -1,0 +1,104 @@
+ENGAGEMENT LETTER
+=================
+
+Date: March 15, 2026
+
+To:    Acme Corporation
+       Attention: Sarah Chen, Chief Operating Officer
+       400 Madison Avenue, Suite 1200
+       New York, NY 10017
+       sarah.chen@acme-corp.example
+       Phone: +1 (212) 555-0143
+
+From:  Aksha Pilot Consulting LLC
+       100 Pine Street, Suite 2500
+       San Francisco, CA 94111
+
+Re:    Strategy Review Engagement — Fixed-Fee Advisory Services
+
+Dear Ms. Chen,
+
+Thank you for selecting Aksha Pilot Consulting to assist Acme Corporation
+with the 2026 strategic review of its B2B SaaS portfolio. This letter
+("Engagement Letter") sets forth the terms under which we will perform
+the services described below.
+
+1. SCOPE OF SERVICES
+--------------------
+We will deliver a 6-week strategic review covering:
+
+  (a) Competitive landscape analysis of the top 5 Acme SaaS competitors,
+      with quarterly revenue and growth data sourced from public filings
+      and industry reports.
+
+  (b) Customer-segment economics review: ARR, gross margin, CAC, and
+      LTV/CAC ratios across Acme's three primary verticals (Healthcare,
+      Financial Services, Retail).
+
+  (c) Three strategic-option recommendations with associated financial
+      models projecting 24-month outcomes under each option.
+
+  (d) A board-ready deliverable (50-page PDF + executive summary deck)
+      to be presented to the Acme Board of Directors on May 14, 2026.
+
+2. FEE ARRANGEMENT
+------------------
+This is a FIXED-FEE engagement.
+
+  Total Fixed Fee:           USD $50,000.00
+  Billing Schedule:          50% upon execution of this letter,
+                             50% upon final deliverable acceptance.
+
+  Out-of-pocket expenses (travel, third-party data subscriptions)
+  are billed at cost, with a not-to-exceed cap of USD $5,000.00,
+  invoiced monthly with supporting receipts.
+
+3. ENGAGEMENT PERIOD
+--------------------
+  Start Date:    April 1, 2026
+  End Date:      May 14, 2026
+  Duration:      6 weeks
+
+4. PROJECT TEAM
+---------------
+  Engagement Partner:        Maya Iyer, Managing Director
+  Project Manager:           David Park, Senior Manager
+  Analyst:                   Priya Sharma, Associate
+
+5. PAYMENT TERMS
+----------------
+  Invoices are due NET 30 from invoice date.
+  Late payments accrue interest at 1.5% per month.
+  All amounts are quoted in US Dollars (USD) and exclude any
+  applicable state or local taxes.
+
+6. CONFIDENTIALITY
+------------------
+Both parties acknowledge that information exchanged in connection with
+this engagement is confidential. Standard NDA terms (separate mutual
+NDA signed January 12, 2026) govern.
+
+7. ACCEPTANCE
+-------------
+Please indicate Acme Corporation's acceptance of this Engagement Letter
+by counter-signing below and returning a copy to our office.
+
+We look forward to working with Acme on this important initiative.
+
+Sincerely,
+
+/s/ Maya Iyer
+________________________________
+Maya Iyer
+Managing Director
+Aksha Pilot Consulting LLC
+
+ACCEPTED AND AGREED:
+
+Acme Corporation
+
+By: /s/ Sarah Chen
+    ________________________________
+    Sarah Chen
+    Chief Operating Officer
+    Date: March 18, 2026

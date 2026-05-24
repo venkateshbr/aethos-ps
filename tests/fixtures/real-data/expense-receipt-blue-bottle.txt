@@ -1,0 +1,44 @@
+BLUE BOTTLE COFFEE
+3rd & Mission Cafe
+66 Mint Plaza
+San Francisco, CA 94103
+(415) 555-0177
+
+================================
+RECEIPT
+================================
+
+Date:        March 22, 2026
+Time:        09:14 AM
+Order #:     A2026-0322-00471
+Cashier:     Sam K.
+Table:       Counter
+
+ITEMS
+--------------------------------
+  1  New Orleans Iced Coffee        $5.75
+  1  Almond Croissant               $5.25
+  1  Avocado Toast (gluten-free)   $14.50
+  3  Espresso Single, drip in box   $6.25 ea
+                                  -------
+                                   $18.75
+                              ----------
+  Subtotal:                       $44.25
+  Tax (SF 8.625%):                 $3.82
+                              ==========
+  TOTAL:                          $48.07
+
+  Charged to:  VISA ****4421
+  Tip:         $10.00
+  Final:       $58.07
+
+================================
+Client meeting — Acme Corporation strategic
+review kick-off with Sarah Chen (COO) and
+Jordan Tan (Strategy Director).
+
+Engagement: Acme Strategy Review
+Expense category: Meals & Entertainment
+
+Thanks for visiting! Reorder at bluebottlecoffee.example/order
+================================
