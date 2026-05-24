@@ -1,6 +1,73 @@
 @use '@angular/material' as mat;
 
-// Dark slate custom theme
+// =====================================================================
+// Aethos PS — global styles.
+// Tokens sourced from src/assets/brand/themes/theme-1-slate-emerald/
+// (Direction A — founder-picked, issue #9).
+// CSS custom properties below expose the same hexes used by Tailwind
+// so non-Tailwind contexts (Angular Material overrides, inline styles,
+// SVG fills) can pull from the same source.
+// =====================================================================
+
+:root {
+  // ── Surface ────────────────────────────────────────────────────────
+  --t-bg-base:           #0f172a; // slate-900
+  --t-bg-surface:        #1e293b; // slate-800
+  --t-bg-surface-raised: #293548; // slate-750 (custom)
+  --t-bg-surface-sunken: #0d1424; // slate-950
+  --t-bg-overlay:        rgba(15, 23, 42, 0.80);
+
+  // ── Border ─────────────────────────────────────────────────────────
+  --t-border-default: #334155; // slate-700
+  --t-border-subtle:  #1e293b; // slate-800
+  --t-border-strong:  #475569; // slate-600
+
+  // ── Text ───────────────────────────────────────────────────────────
+  --t-text-primary:   #f8fafc; // slate-50
+  --t-text-secondary: #cbd5e1; // slate-300
+  --t-text-muted:     #94a3b8; // slate-400
+  --t-text-disabled:  #475569; // slate-600
+  --t-text-inverse:   #0f172a; // slate-900
+
+  // ── Brand accent (emerald) ─────────────────────────────────────────
+  --brand-primary:        #10b981; // emerald-500
+  --brand-primary-hover:  #059669; // emerald-600
+  --brand-primary-light:  #34d399; // emerald-400
+  --brand-primary-subtle: #064e3b; // emerald-900
+  --brand-on-primary:     #ffffff;
+
+  // Aliases that match the DESIGN_SYSTEM.md naming convention.
+  --t-accent:             var(--brand-primary);
+  --t-accent-hover:       var(--brand-primary-hover);
+  --t-accent-light:       var(--brand-primary-light);
+  --t-accent-subtle-bg:   var(--brand-primary-subtle);
+  --t-accent-on-accent:   var(--brand-on-primary);
+
+  // ── Confidence (HITL chips) ────────────────────────────────────────
+  --t-confidence-high: #10b981; // emerald-500 ≥ 0.90
+  --t-confidence-med:  #f59e0b; // amber-500  0.70–0.89
+  --t-confidence-low:  #ef4444; // red-500    < 0.70
+
+  // ── Semantic (mirror of confidence + info) ─────────────────────────
+  --t-success:       #10b981;
+  --t-success-light: #34d399;
+  --t-success-bg:    #064e3b;
+  --t-warning:       #f59e0b;
+  --t-warning-light: #fbbf24;
+  --t-warning-bg:    #451a03;
+  --t-error:         #ef4444;
+  --t-error-light:   #f87171;
+  --t-error-bg:      #450a0a;
+  --t-info:          #6366f1;
+  --t-info-light:    #818cf8;
+  --t-info-bg:       #1e1b4b;
+
+  // ── Typography ─────────────────────────────────────────────────────
+  --t-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --t-letter-spacing-brand: 0.04em;
+}
+
+// Dark slate custom theme for Angular Material
 $dark-theme: mat.define-theme((
   color: (
     theme-type: dark,
@@ -15,17 +82,24 @@ $dark-theme: mat.define-theme((
 
 html {
   @include mat.all-component-themes($dark-theme);
-  background-color: #0f172a; // slate-900
-  color: #f1f5f9;            // slate-100
+  background-color: var(--t-bg-base);
+  color: var(--t-text-primary);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, sans-serif;
-  background-color: #0f172a;
-  color: #f1f5f9;
+  font-family: var(--t-font-sans);
+  background-color: var(--t-bg-base);
+  color: var(--t-text-primary);
+  font-variant-numeric: tabular-nums; // numeric columns align by default
+}
+
+// Utility class for the rotated-square micro-mark used inline alongside
+// the wordmark (see DESIGN_SYSTEM.md → Brand lockup).
+.lockup-mark {
+  transform: rotate(45deg);
 }
 
 /* Tailwind base */
