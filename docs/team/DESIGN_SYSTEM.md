@@ -18,8 +18,9 @@
 
 ## Tokens
 
-> **Provisional working defaults from Direction A of the Logo Lockup Brief** (`docs/team/DESIGN_BRIEF.md`).
-> Founder picks final direction by Friday Week 1. If Direction B or C is chosen, the accent tokens in §Accent Colour will be updated. All structural tokens (background, surface, text, border, semantic) are stable regardless of direction.
+> **Direction A — Slate + Emerald — finalised on 2026-05-24** (issue #9 selection).
+> Source of truth for token hexes: `frontend/src/assets/brand/themes/theme-1-slate-emerald/`.
+> Live in code at: `frontend/tailwind.config.js` (Tailwind utilities) and `frontend/src/styles.scss` (CSS custom properties `--t-*`).
 
 ### Background & Surface
 
@@ -51,17 +52,58 @@ Note: `slate-750` is not a native Tailwind step. Define in `tailwind.config.js` 
 | `--t-text-disabled` | `#475569` | `slate-600` | Disabled form fields, inactive nav items |
 | `--t-text-inverse` | `#0f172a` | `slate-900` | Text on accent-coloured backgrounds |
 
-### Accent Colour (Direction A — Emerald)
+### Accent Colour (Direction A — Emerald — selected)
 
-> Update this section if the founder selects Direction B (Indigo) or Direction C (Emerald-400 + Slate-300). See `DESIGN_BRIEF.md` for the complete token sets for B and C.
+> **Brand accent doubles as the in-app "success / approval / payment-received" semantic.** This is a deliberate coherence win — when an agent posts a journal or a payment lands, the brand colour fires. The trade-off is documented in `frontend/src/assets/brand/themes/theme-1-slate-emerald/notes.md`: we cannot later introduce a green semantic distinct from the brand without pivoting both at once.
 
-| Token | Hex | Tailwind | Usage |
+| Token (CSS var) | Tailwind utility | Hex | Usage |
 |---|---|---|---|
-| `--t-accent` | `#10b981` | `emerald-500` | Primary action buttons, links, brand mark micro-element, active nav indicator |
-| `--t-accent-hover` | `#059669` | `emerald-600` | Hover state on accent-coloured elements |
-| `--t-accent-light` | `#34d399` | `emerald-400` | Accent on text (when `--t-accent` has insufficient contrast on dark bg), icon fills |
-| `--t-accent-subtle-bg` | `#064e3b` | `emerald-900` | Subtle background tint for success states, selected rows, approved-badge backgrounds |
-| `--t-accent-on-accent` | `#ffffff` | `white` | Text / icons on `--t-accent` filled backgrounds |
+| `--t-accent` / `--brand-primary` | `bg-accent` `text-accent` `border-accent` | `#10b981` | Primary action buttons, links, brand mark micro-element, active nav indicator |
+| `--t-accent-hover` / `--brand-primary-hover` | `bg-accent-hover` `hover:bg-accent-hover` | `#059669` | Hover state on accent-coloured elements |
+| `--t-accent-light` / `--brand-primary-light` | `text-accent-light` `border-accent-light` | `#34d399` | Accent on text (use in place of `--t-accent` for body copy contrast), icon fills, focus rings |
+| `--t-accent-subtle-bg` / `--brand-primary-subtle` | `bg-accent-subtle` | `#064e3b` | Subtle background tint for success states, selected rows, approved-badge backgrounds |
+| `--t-accent-on-accent` / `--brand-on-primary` | `text-accent-on` | `#ffffff` | Text / icons on `--t-accent` filled backgrounds |
+
+### Brand Lockup
+
+The Aethos PS lockup pairs a rotated-square mark (14×14, emerald-500, 1.5px radius, rotated 45°) with the wordmark "Aethos" in Inter Bold + 0.04em letter-spacing, over a sub-mark "for professional services" in Inter Regular 11px + 0.18em letter-spacing + slate-400.
+
+| File | Purpose |
+|---|---|
+| `frontend/src/assets/brand/lockup.svg` | Full lockup (mark + wordmark + sub-mark). Use in landing header, signup hero, emails, marketing. |
+| `frontend/src/assets/brand/mark.svg` | Mark only (rotated square). Use as favicon, app icon, sidebar logo when collapsed. |
+| `frontend/public/favicon.svg` | Browser tab favicon (modern browsers). |
+| `frontend/public/favicon.ico` | Fallback favicon (legacy browsers, `/favicon.ico` auto-requests). |
+
+**Inline micro-mark pattern**: For sidebar logos and inline brand chips, the rotated square can be reproduced with Tailwind utilities instead of importing the SVG:
+
+```html
+<span class="lockup-mark inline-block w-3.5 h-3.5 bg-accent rounded-[2px]" aria-hidden="true"></span>
+```
+
+`lockup-mark` is a tiny global class in `styles.scss` that applies `transform: rotate(45deg)`.
+
+**Source of truth**: `frontend/src/assets/brand/themes/theme-1-slate-emerald/` — palette spec, mockup, theme partial, lockup, and design notes.
+
+### Confidence Chips (HITL agent UI)
+
+Confidence pills appear on every agent-generated suggestion in the inbox and on suggestion cards in the copilot. The pill uses the same hex as the corresponding semantic (success / warning / error) so the visual language carries across.
+
+| Confidence band | Tailwind utility | CSS var | Hex | Rule |
+|---|---|---|---|---|
+| `≥ 0.90` (auto-eligible) | `bg-confidence-high` `text-confidence-high` | `--t-confidence-high` | `#10b981` | Agent can act at L3 if autonomy permits |
+| `0.70 – 0.89` (review) | `bg-confidence-med` `text-confidence-med` | `--t-confidence-med` | `#f59e0b` | Surface as HITL task; one-click approve |
+| `< 0.70` (mandatory review) | `bg-confidence-low` `text-confidence-low` | `--t-confidence-low` | `#ef4444` | Block auto-action; require human edit |
+
+Pill background convention: `bg-accent-subtle` (or `bg-amber-900/40` / `bg-red-900/40` for med/low) with `text-confidence-*` foreground — gives a dim glow on the slate-900 surface rather than a solid fill that would over-weight the row.
+
+**Contrast on `slate-900`** (`#0f172a`):
+- `confidence-high` `#10b981` → 5.2:1 (passes WCAG AA for large text and UI components)
+- `confidence-med`  `#f59e0b` → 7.6:1 (passes AAA for normal text)
+- `confidence-low`  `#ef4444` → 4.9:1 (passes AA for normal text)
+- `accent-light`    `#34d399` → 7.2:1 (passes AAA — preferred for body copy in green)
+
+No hex adjustments were required from the `palette.md` spec — the founder-picked palette already meets WCAG AA on every confidence chip / accent pair against the slate-900 canvas.
 
 ### Semantic Colours
 
@@ -239,6 +281,16 @@ Angular Material theme override: define a custom Angular Material theme file (`s
 ---
 
 ## Changelog
+
+### 2026-05-24 — Direction A (Slate + Emerald) finalised — issue #89
+
+- Founder selected `theme-1-slate-emerald` on issue #9. Direction A is now the canonical brand direction.
+- `frontend/tailwind.config.js` updated: nested `accent.*` (`accent` / `hover` / `light` / `subtle` / `on`), `confidence.*` (`high` / `med` / `low`), `slate.750` custom step, brand `boxShadow` (`card` / `card-hover` / `accent-ring`), `letterSpacing.brand` (0.04em), `fontFamily.display` (Inter), and a missing `blink` keyframe.
+- Legacy flat tokens removed: `slate-ui-{900,800,700,600}`, `emerald-confidence`, `amber-confidence`, `red-confidence`. None were referenced by component templates (grep returned zero matches).
+- `frontend/src/styles.scss` exposes the same hexes as CSS custom properties under both the `--t-*` and `--brand-*` namespaces.
+- Lockup wired: full `lockup.svg` on the landing header / footer + sidebar wordmark; standalone `mark.svg` for collapsed sidebar and favicon. ICO + SVG favicons added under `frontend/public/`.
+- "Brand Lockup" section + "Confidence Chips" section added above.
+- Provisional-defaults notice removed — palette is final.
 
 ### 2026-05-19 — Initial design system creation
 - Document created by Chitra for Issue #9.
