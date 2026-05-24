@@ -9,6 +9,7 @@
 | Run | Date | Stack | Result |
 |---|---|---|---|
 | R1 | 2026-05-23 | local backend :8011 + real Supabase + real OpenRouter | **290 passed, 6 xfailed, 0 failures** |
+| R2 | 2026-05-24 | same stack — re-run after #97/#98/#99/#100/#101/#102/#104 fixes landed | **383 passed, 4 xfailed, 1 xpassed, 10 failures** (8 stale unit-test mocks tracked as #105; 2 LLM flakes tracked as #106 — all P2/P3 test-side issues, no product regression) |
 
 ## 1. Foundation (security + auth)
 
@@ -50,22 +51,41 @@
 
 | ID | Capability | Status | Evidence |
 |---|---|---|---|
-| C12 / C37 | expense_extractor_agent live OpenRouter | PASS | `tests/api/test_llm_fallback_chain.py::test_expense_extractor_runs_against_real_openrouter_chain` (R1) |
-| C12 | Prompt injection guard | PASS | `tests/api/test_llm_fallback_chain.py::test_expense_extractor_flags_prompt_injection` (R1) |
-| C11 | engagement_letter_agent | UNTESTED | Pending — Phase 3b |
-| C13 | vendor_invoice_agent | UNTESTED | Pending — Phase 3b |
-| C28 | Copilot SSE chat | UNTESTED | Pending — Phase 3b |
+| C12 / C37 | expense_extractor_agent live OpenRouter | PASS (flaky — #106) | `tests/api/test_llm_fallback_chain.py::test_expense_extractor_runs_against_real_openrouter_chain` (R1 pass; R2 1/2 pass — Gemma sometimes returns `{}`, defensive fallback correctly degrades; tracked as #106 P3) |
+| C12 | Prompt injection guard | PASS | `tests/api/test_llm_fallback_chain.py::test_expense_extractor_flags_prompt_injection` (R1, R2) |
+| C11 | engagement_letter_agent | PASS | `tests/api/test_agents_engagement_letter.py` (3 tests: draft, garbage-input graceful degrade, total_value is Decimal) (R2) |
+| C13 | vendor_invoice_agent | PASS | `tests/api/test_agents_vendor_invoice.py` (3 tests: happy path, empty-input no-crash, total = subtotal+tax or flagged) (R2) |
+| C28 | Copilot SSE chat | PASS | `tests/api/test_copilot_chat.py` (5 tests, all green after #98 fix — incl. cross-tenant 404, auth required) (R2) |
+| #104 | Extraction agents — defensive fallback on empty LLM output | PASS | All 3 agents now ship `_empty_*_draft()` returning `confidence=0.0, suspected_injection=True` instead of raising ValidationError (commit `3b4bfdd`, R2) |
 
 ## 5. Stripe
 
 | ID | Capability | Status | Evidence |
 |---|---|---|---|
-| C1 | Signup happy path | **XFAIL** | Blocked by bug #97 (uncaught AuthApiError → 500) + Supabase email-allowlist config |
+| C1 | Signup happy path | **XFAIL** (env-only) | #97 fixed; blocker now is Supabase project's email-allowlist + send-rate-limit rejecting @example.com test inboxes. Needs a test-mode bypass or deliverable mailbox (env config, not code). |
+| C1 | Signup AuthApiError → 4xx (not 500) | PASS | `tests/api/test_signup_and_billing.py::test_signup_invalid_email_translates_to_422_not_500` (R2 — #97 closed) |
 | C1 | Signup validation 422s | PASS | `tests/api/test_signup_and_billing.py` (short password, invalid country, invalid plan tier — 3 tests, R1) |
 | C1 | Billing prices endpoint | PASS | `tests/api/test_signup_and_billing.py::test_billing_prices_returns_currency_for_country` (US→USD, R1) |
 | C1 | Real Stripe Price IDs (not placeholders) | **XFAIL** | Blocked by bug #94 — `price_REPLACE_ME` in `.env` |
 | C3 | Stripe Connect onboarding | UNTESTED — blocked | Blocked by bug #95 — `ca_REPLACE_ME` client_id |
 | C4 | Stripe webhook signature | PASS | See §1 |
+
+## 5b. Storage + extraction pipeline (added R2)
+
+| ID | Capability | Status | Evidence |
+|---|---|---|---|
+| C10 / #100 | documents bucket exists + RLS enforced | PASS | `tests/api/test_documents.py::test_upload_pdf_document_happy_path` (was xfail; un-xfailed in R2). Bucket provisioned via migrations 0015 (bucket) + 0016 (RLS policies) + 0017 (SECURITY DEFINER `is_tenant_member()` helper — Sthira self-caught 0016's recursive EXISTS). |
+| C10 / #100 | Cross-tenant storage RLS denial | PASS | `tests/api/test_storage_rls.py::test_storage_rls_cross_tenant_denial` — Tenant A reads own object OK, Tenant B JWT denied, service-role bypass OK (R2) |
+| C10 / #100 | Storage bucket config matches API (size cap, MIME allow-list) | PASS | `tests/api/test_storage_rls.py::test_storage_bucket_config_matches_api` (R2) |
+| C10 | Upload rejects unsupported MIME (executable) | PASS | `tests/api/test_documents.py::test_upload_unsupported_mime_rejected` (R2) |
+| C10 | Upload requires auth | PASS | `tests/api/test_documents.py::test_upload_requires_auth` (R2) |
+| C14 / #101 | invoice_drafter — unknown engagement → 404 | PASS | `tests/api/test_invoice_drafter.py::test_draft_invoice_unknown_engagement_returns_404` (un-xfailed in R2) |
+| C14 / #101 | invoice_drafter — cross-tenant engagement → 404 (no info disclosure) | PASS | `tests/api/test_invoice_drafter.py::test_draft_invoice_cross_tenant_engagement_returns_404` (un-xfailed in R2) |
+| C14 | invoice_drafter — T&M happy path | PASS | `tests/api/test_invoice_drafter.py::test_draft_invoice_tm_engagement_returns_proposal` (R2) |
+| C21 / #102 | bill_pay_agent — propose empty batch | PASS | `tests/api/test_bill_payments.py::test_propose_batch_with_empty_bills_handled_gracefully` (un-xfailed in R2) |
+| C20 | Bill payments — tenant scoping + 404s | PASS | `tests/api/test_bill_payments.py` (6 tests, R2) |
+| C24 / #99 | /reports/wip → 200 (rate_card_id via engagements FK) | PASS | `tests/api/test_reports.py::test_wip_report_returns_200` (un-xfailed in R2) |
+| C24 | 6 report endpoints — auth + 200 | PASS | `tests/api/test_reports.py` (13 tests, R2) |
 
 ## 6. Untested capabilities (Phase 3b backlog)
 

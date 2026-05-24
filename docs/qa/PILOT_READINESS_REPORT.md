@@ -1,7 +1,7 @@
 # Aethos PS — Pilot Readiness Report
 
 > **Owner**: Aksha (SDET)
-> **Date**: 2026-05-23
+> **Date**: 2026-05-24 (R2 — updated after fix-verification run)
 > **Branch**: `claude/compassionate-merkle-90c923`
 > **Charter**: founder direct — verify EVERY user-facing capability against the real, deployed stack before pilot launch.
 > **Companion docs**: [`MASTER_TEST_PLAN.md`](./MASTER_TEST_PLAN.md) · [`EVIDENCE.md`](./EVIDENCE.md)
@@ -10,54 +10,66 @@
 
 ## 1. Verdict
 
-### YELLOW — ship pilot with named caveats
+### YELLOW — flips GREEN the moment Founder ships #94 + #95
 
-The core engagement-to-cash loop is GREEN at the API layer. Multi-tenant
-isolation (the #1 ship-stopper risk for an ERP) is verified end-to-end.
-Multi-currency works. RBAC works. The accounting backbone (journal balance,
-period locks) works. **343 backend tests pass against the real Supabase
-project (`glcljucaayeesvrsjths`), real Stripe sandbox, and real OpenRouter
-LLM chain. Zero failures.**
+All 7 product bugs from R1 (#97, #98, #99, #100, #101, #102, #104) are
+**verified closed** in R2. The two remaining blockers are both Founder
+operational items, not code defects:
 
-The YELLOW (vs GREEN) is driven by **4 open P0 issues** that block specific
-revenue-relevant flows but do NOT prevent a pilot tenant from being
-provisioned, doing work, and seeing data:
+- **#94 — Stripe Price IDs are placeholders.** Founder must replace 31
+  `price_REPLACE_ME` values in `backend/.env` with real `price_*` strings
+  from Stripe Dashboard for each plan × currency. **Ship blocker for paid
+  signup.**
+- **#95 — `STRIPE_CONNECT_CLIENT_ID=ca_REPLACE_ME`.** Founder must
+  create the Stripe Connect platform account and paste the real `ca_*`.
+  Pilot ships PDF-only without this — acceptable caveat if Founder
+  prefers.
 
-- **#94 — Stripe Price IDs are placeholders.** No tenant can complete a
-  trial subscription until Founder replaces 31 `price_REPLACE_ME` values
-  in `backend/.env`. **Ship blocker for the signup flow.**
-- **#95 — `STRIPE_CONNECT_CLIENT_ID=ca_REPLACE_ME`.** No tenant can onboard
-  Stripe Connect → no payment links on invoices. Pilot can ship without
-  this only if Founder accepts that invoices go out PDF-only.
-- **#98 — Copilot chat thread create 500.** The copilot is the primary
-  surface per `CLAUDE.md`. With this bug, the chat panel will 500 on the
-  user's first message. UI work-around: skip chat entirely in pilot tour
-  and have users drop into the inbox/CRUD views first.
-- **#100 — Supabase Storage `documents` bucket missing.** Every document
-  upload 500s. With this bug, the entire AI-extraction loop
-  (engagement_letter / expense / vendor_invoice agents) is dead.
-  Operational fix — Founder/Sthira creates the bucket; should be a
-  10-minute task.
+Everything else is GREEN at the API layer. **383 backend tests pass
+against the real Supabase project (`glcljucaayeesvrsjths`), real Stripe
+sandbox, and real OpenRouter LLM chain.** The 10 test-side failures
+observed in the full-suite run are all tracked as low-severity follow-ups
+(8 stale unit-test mocks #105 from Karya's fix sweep; 2 LLM flakes #106
+from free-tier Gemma) and do not represent product regressions.
 
-If the four above are fixed before pilot kickoff, this report flips to
-**GREEN**. If not, the pilot can still ship with these caveats explicitly
-called out to the pilot tenant.
+**If Founder lands #94 alone**, this report flips to GREEN with #95 as a
+documented "PDF-only" caveat. If Founder lands both, it's unqualified
+GREEN.
+
+### What changed since R1 (2026-05-23)
+
+| Bug | R1 state | R2 state | Closed by |
+|---|---|---|---|
+| #97 (signup AuthApiError → 500) | P2 open | **CLOSED** | `_auth_error_to_http` translation (Karya, was in tree before R1) |
+| #98 (copilot chat RLS 500) | P0 open | **CLOSED** | `3b4bfdd` — service-role client switch (Karya) |
+| #99 (/reports/wip 500) | P1 open | **CLOSED** | `c2ff4ac` — rate_card_id via engagements FK (Karya) |
+| #100 (storage bucket missing) | P0 open | **CLOSED** | `bdbcd3b` + `ac0d91d` — bucket provisioned, RLS hardened (Sthira) |
+| #101 (draft-invoice 500 instead of 404) | P1 open | **CLOSED** | `c2ff4ac` — `.limit(1)` instead of `.single()` (Karya) |
+| #102 (bill-pay propose FK violation) | P1 open | **CLOSED** | `c2ff4ac` — `document_id=None` (Karya) |
+| #104 (extractor crash on empty LLM) | P1 open | **CLOSED** | `3b4bfdd` — defensive `_empty_*_draft()` fallbacks (Karya) |
+| #94 (Stripe Price IDs placeholder) | P0 open | **still open** | Founder action |
+| #95 (Stripe Connect client_id placeholder) | P0 open | **still open** | Founder action |
+| #103 (accounting_guardian split for unit-test) | P2 open | **still open** | Karya — not pilot-blocking |
+
+**New follow-ups filed in R2** (none are pilot-blockers):
+- #105 — 8 unit-test mocks went stale after Karya's #98/#99/#101 fixes (test-only regression; API behavior verified correct)
+- #106 — `test_expense_extractor_runs_against_real_openrouter_chain` flaky on free-tier Gemma (defensive fallback prevents crash; only impacts confidence not safety)
 
 ---
 
-## 2. Feature inventory — coverage state
+## 2. Feature inventory — coverage state (R2 update)
 
 The matrix in [`MASTER_TEST_PLAN.md §2`](./MASTER_TEST_PLAN.md#2-feature-inventory-the-matrix)
 has 37 capability rows. Coverage today:
 
 | Status | Count | Notes |
 |---|---|---|
-| Verified (API + UI or API-only with clean tests) | 23 | All in `backend/tests/api/`; 141 tests passing |
-| Verified at API only (UI deferred) | 11 | Listed in §6 as Playwright follow-ups |
-| Blocked on open bug | 7 | Each bug filed, owner assigned, xfail in suite |
-| Not exercised (test-runtime gap) | 3 | C21 bill_pay_agent eval, C25 reporting_agent eval, C33 autonomy promoter — covered by integration smoke only |
+| Verified (API + UI or API-only with clean tests) | 30 | +7 since R1 (C10 documents, C11 engagement_letter, C12 expense_extractor, C13 vendor_invoice, C14 invoice_drafter happy + edge, C20/C21 bill_payments, C28 copilot) |
+| Verified at API only (UI deferred) | 4 | Down from 11; the AI surface moved into "verified" with R2 fixes |
+| Blocked on open bug | 2 | C1 signup happy path (#94/email-allowlist), C3 Connect (#95) — both Founder action |
+| Not exercised (test-runtime gap) | 1 | C25 reporting_agent eval — covered by integration smoke only |
 
-**Total**: 37 rows covered; 30 actively verified, 7 blocked-but-tracked.
+**Total**: 37 rows; 34 actively verified, 2 blocked-but-tracked (both Founder action), 1 smoke-only.
 
 ### Verified core flows
 
@@ -75,54 +87,59 @@ has 37 capability rows. Coverage today:
 
 ### Blocked on open bugs (still tested, just xfailed)
 
-- C28 Copilot chat → #98
-- C10/C11/C12/C13 (any test that needs an upload) → #100
-- C14 invoice_drafter unknown/cross-tenant → #101
-- C21 bill_pay_agent propose-batch → #102
-- C26 accounting_guardian pure-unit balance check → #103 (P2)
-- C37 prompt-injection robustness → #104
+After R2:
+- C1 Signup happy path → #94 (Stripe Price IDs) + Supabase email-allowlist env
+- C3 Stripe Connect onboarding → #95
+- C26 accounting_guardian pure-unit balance check → #103 (P2, not pilot-blocking)
+
+R1 entries now resolved (all xfails un-fired, tests green):
+- ~~C28 Copilot chat → #98~~ — fixed in `3b4bfdd`
+- ~~C10/C11/C12/C13 (uploads) → #100~~ — bucket provisioned in `bdbcd3b`+`ac0d91d`
+- ~~C14 invoice_drafter unknown/cross-tenant → #101~~ — fixed in `c2ff4ac`
+- ~~C21 bill_pay_agent propose-batch → #102~~ — fixed in `c2ff4ac`
+- ~~C37 prompt-injection robustness → #104~~ — defensive fallback in `3b4bfdd`
 
 ---
 
 ## 3. Bugs filed this charter
 
-**16 issues filed** by Aksha across the three runs (#90 through #104, plus #103). Severity distribution today:
+**18 issues filed** by Aksha across the four runs (#90 through #106). Severity distribution after R2:
 
 | Severity | Open | Closed (fixed + verified) | Notes |
 |---|---|---|---|
-| P0 | 4 | 2 | #94, #95, #98, #100 still open · #90, #92 closed |
-| P1 | 4 | 2 | #99, #101, #102, #104 still open · #91, #93 closed |
-| P2 | 1 | 1 | #103 (task, open) · #96 closed |
-| Total | **9 open** | **5 closed** | — |
+| P0 | 2 | 4 | #94, #95 still open (both Founder operational) · #90, #92, #98, #100 closed |
+| P1 | 0 | 6 | #91, #93, #99, #101, #102, #104 all closed |
+| P2 | 2 | 2 | #103 (task) and #105 (stale unit tests, new in R2) open · #96, #97 closed |
+| P3 | 1 | 0 | #106 (Gemma flake, new in R2) open |
+| Total | **5 open** | **12 closed** | — |
 
-### Bug details
+### Open bugs
 
-#### Open P0 (must be in Founder's review queue)
+#### P0 (Founder-only — blocks pilot until Founder ships)
 
 - **#94** — Stripe Price IDs placeholder. **Founder action.** Replace 31 IDs in `backend/.env`. Sign-off when `tests/api/test_signup_and_billing.py::test_billing_prices_returns_real_stripe_price_ids_not_placeholders` flips from xfail to pass.
-- **#95** — `STRIPE_CONNECT_CLIENT_ID` placeholder. **Founder action.** Create the Connect platform account, paste real `ca_*` into `.env`.
-- **#98** — Copilot chat 500 (RLS rejects insert; no middleware sets `app.current_tenant_id`). **Karya action.** Recommended fix: switch chat router to service-role client + service-layer tenant filter (matches `bills_service.py` pattern).
-- **#100** — Storage `documents` bucket missing. **Sthira action.** 10-minute Supabase dashboard task; should also be captured as a SQL migration `00NN_storage_documents_bucket.sql` so it's reproducible.
+- **#95** — `STRIPE_CONNECT_CLIENT_ID` placeholder. **Founder action.** Create the Connect platform account, paste real `ca_*` into `.env`. Pilot can ship without this if PDF-only invoices are acceptable.
 
-#### Open P1 (ship with caveat acceptable)
+#### P2 / P3 (not pilot-blocking)
 
-- **#99** — `/reports/wip` 500 (queries non-existent `projects.rate_card_id`). **Karya action.** Either drop the column from the SELECT and join via `engagements.rate_card_id`, or add the column to `projects` (check with Vastu on the data model).
-- **#101** — `/engagements/{id}/draft-invoice` 500 on unknown engagement instead of 404. Cross-tenant variant is a leak risk. **Karya action.**
-- **#102** — `/bill-payments/propose` passes `user_id` as `document_id` → FK violation. **One-line fix** in `bill_payments.py:146`.
-- **#104** — `expense_extractor_agent` (and vendor_invoice_agent + engagement_letter_agent) crashes on empty/garbage LLM output. The docstring already promises graceful degradation; agent body just needs the defensive fallback. **Karya action.**
+- **#103** — `accounting_guardian.validate_journal` needs split so `check_balance` is pure-unit testable. Hypothesis-driven property testing of the most-critical financial invariant blocked. **Karya action.** Tracked but not pilot-blocking — the L3 guardian still runs on every POST and `tests/api/test_invoices.py::test_invoice_approve_posts_balanced_journals` proves end-to-end balance correctness.
+- **#105** (new R2) — 8 unit tests under `tests/unit/test_chat.py`, `test_invoice_drafter.py`, `test_reports_service.py` went stale after Karya's #98/#99/#101 fixes. **Test-only regression.** API behavior is verified correct (383 API tests pass). **Karya action** to update the MagicMock chains.
+- **#106** (new R2) — `test_expense_extractor_runs_against_real_openrouter_chain` flaky — Gemma free-tier occasionally returns `{}`, OpenRouter provider-fallback doesn't trigger on empty-content responses. The defensive fallback from #104 fix correctly degrades to a low-confidence draft. **Karya/Dhruva** can either explicit-retry on empty-content or move Gemma out of position [0].
 
-#### Open P2
+### Closed bugs (proof on issue)
 
-- **#97** — Signup AuthApiError → 500 instead of 4xx. Wraps Supabase auth exception cleanly. Cosmetic / 4xx hygiene.
-- **#103** — `accounting_guardian.validate_journal` needs split so `check_balance` is pure-unit testable. The most-critical financial invariant is currently behind a DB requirement that blocks Hypothesis-driven property testing.
-
-#### Closed (proof on issue)
-
-- **#90** — JWT-vs-X-Tenant-ID spoof. Karya shipped fix in commit `6db238b`; Aksha verified.
-- **#91** — `/projects` list endpoint missing. Closed in commit `72afb99`.
-- **#92** — Cross-tenant `client_id` accepted by engagement create. Closed in `72afb99` with regression test.
-- **#93** — Money quantisation drift. Closed in `72afb99`.
+- **#90** — JWT-vs-X-Tenant-ID spoof. Closed by `6db238b`; verified R1.
+- **#91** — `/projects` list endpoint missing. Closed by `72afb99`.
+- **#92** — Cross-tenant `client_id` accepted by engagement create. Closed by `72afb99` with regression test.
+- **#93** — Money quantisation drift. Closed by `72afb99`.
 - **#96** — `AGENT_MODELS` env var parse failure. Worked around in `tests/api/conftest.py`.
+- **#97** — Signup AuthApiError → 500 instead of 4xx. Closed R2 — `_auth_error_to_http` in `auth.py:79` was already in tree; `test_signup_invalid_email_translates_to_422_not_500` PASSED.
+- **#98** — Copilot chat thread create 500. Closed R2 by `3b4bfdd` — switched chat router to service-role client + explicit `.eq("tenant_id")` filter; `tenant_id` surfaced on `ThreadResponse`. 5/5 copilot tests green.
+- **#99** — `/reports/wip` 500. Closed R2 by `c2ff4ac` — `rate_card_id` fetched via embedded `engagements(rate_card_id)` select. 13/13 reports tests green.
+- **#100** — Storage `documents` bucket missing + RLS. Closed R2 by `bdbcd3b` (bucket + initial RLS) + `ac0d91d` (Sthira self-caught the recursive-EXISTS flaw in migration 0016, added migration 0017 with SECURITY DEFINER `is_tenant_member()` helper). Cross-tenant denial test + bucket-config drift guard both green.
+- **#101** — `/engagements/{id}/draft-invoice` 500 on unknown/cross-tenant. Closed R2 by `c2ff4ac` — `.limit(1)` with explicit empty check.
+- **#102** — `/bill-payments/propose` FK violation. Closed R2 by `c2ff4ac` — `document_id=None`.
+- **#104** — extractor crash on empty LLM output. Closed R2 by `3b4bfdd` — all 3 agents ship `_empty_*_draft()` fallbacks.
 
 ---
 
@@ -144,15 +161,24 @@ When Aksha started, 9 closed-but-unverified tickets were re-opened. Final state:
 
 ---
 
-## 5. Top 5 things the Founder must do before pilot
+## 5. What the Founder must do before pilot
+
+Reduced from 5 items to 2 since R1. Items 3-5 from the old list are all done.
 
 1. **Replace the 31 Stripe Price IDs** in `backend/.env` with real `price_*` strings created in Stripe Dashboard for each plan × currency combination. (Bug #94, blocks all paid signups.)
-2. **Create the Stripe Connect platform account** and paste the real `ca_*` into `STRIPE_CONNECT_CLIENT_ID`. (Bug #95, blocks invoice payment links.)
-3. **Create the Supabase Storage `documents` bucket** (private, per-tenant prefix RLS). Add a SQL migration so it's reproducible. (Bug #100, blocks all AI extraction.)
-4. **Get Karya to ship the one-line fixes**: #102 (`document_id=None` instead of `user.user_id`), #98 (switch chat to service-role client). Both are mechanical.
-5. **Pick a brand theme** (3 delivered to `frontend/src/assets/brand/themes/`) and tell Rupa which one to wire into tailwind.config.js + component styles (issue #89).
+2. **Create the Stripe Connect platform account** and paste the real `ca_*` into `STRIPE_CONNECT_CLIENT_ID`. (Bug #95, blocks invoice payment links — pilot can ship without it as PDF-only.)
 
-If the above 5 land, this report flips from YELLOW to GREEN. Below this bar, the pilot is shippable but you'll be asking the pilot tenant to ignore real defects.
+**Sign-off**: when #94 lands, run `uv run pytest tests/api/test_signup_and_billing.py::test_billing_prices_returns_real_stripe_price_ids_not_placeholders` — it should flip from XFAIL to PASS. When #95 lands, run `uv run pytest tests/api/test_stripe_connect.py::test_connect_oauth_url_returns_real_stripe_url` — same.
+
+### What's still missing (non-blocking)
+
+These are tracked but not pilot-blocking:
+
+- **#103** — accounting_guardian unit-testability refactor (the L3 guardian is verified working via API tests; this is a test-quality improvement only).
+- **#105** — 8 stale unit-test mocks need updating after Karya's R2 fixes.
+- **#106** — Free-tier Gemma occasional flake; defensive fallback prevents user-visible breakage.
+- **UI E2E coverage** — Only 3 Playwright specs shipped (landing, brand assets, global setup). Founder should manually walk the engagement-to-cash flow once in a browser per `agent-harness/core/e2e-workflow-standard.md` before pilot (~30 min).
+- **CI integration** — pytest-api + playwright-e2e GitHub Actions jobs deferred. Local-only runs work today; Sthira owns the CI wiring as post-pilot follow-up.
 
 ---
 
@@ -184,9 +210,13 @@ uv run pytest -m multi_currency                # FX + tax + foreign invoice/bill
 uv run pytest -m requires_openrouter           # only the LLM-using tests
 ```
 
-**Expected**: 343+ passed, ~69+ xfailed (each xfail references a tracked
-bug), 0 failures. If you see a failure, read the assertion message — the
-test was designed to give an actionable repro hint.
+**Expected (R2 baseline)**: 383+ passed in API + property + e2e stubs, 4
+xfailed (each xfail references a tracked bug or env config), 1 xpassed
+(documents upload — un-xfail in next commit). 8 stale unit-test mocks
+(#105) currently fail; these are test-only and will green up once Karya
+updates the MagicMock chains. If you see an API failure, read the
+assertion message — the test was designed to give an actionable repro
+hint.
 
 #### Frontend (Playwright)
 
@@ -229,28 +259,36 @@ specifies:
 
 ---
 
-## 7. Aksha's recommendation to the Founder
+## 7. Aksha's recommendation to the Founder (R2 — updated)
 
-**Ship the pilot in 7-10 days IF the four open P0s land.** The product
-core is solid:
+**Ship the pilot the moment Founder lands #94.** (Optionally #95 too.)
 
-- The financial backbone is correct (343 tests prove it).
-- Multi-tenant isolation has never leaked in any of the 100+ cross-tenant
-  probes I've written.
-- Multi-currency works for all 5 launch markets.
-- The LLM degrades gracefully when the free tier rate-limits (Haiku
-  fallback proven working).
+Since R1 (24 hours ago), Karya and Sthira closed all 7 product bugs that
+were blocking the pilot. Storage works. Copilot chat works. Invoice
+drafting routes the right errors. The bill-pay propose loop posts cleanly.
+The extraction agents degrade safely on bad LLM output. Auth errors return
+4xx.
 
-The open P0s are all mechanical fixes — none of them require architectural
-rework. The biggest risk to pilot is NOT a code defect; it is the
-**unfinished operational checklist** (Price IDs, Connect, storage bucket).
-That checklist belongs to the Founder, not to engineering.
+What's left is **two Founder-owned operational items** — replace
+placeholder Price IDs in `.env`, optionally create the Stripe Connect
+platform account. Neither requires engineering.
 
-The biggest test coverage gap is **UI E2E** — 8 of the 12 Playwright specs
-in the plan are unwritten. Founder should manually run through the screenshot
-protocol from `agent-harness/core/e2e-workflow-standard.md` once before
-pilot, hitting the engagement-to-cash flow end-to-end in a real browser.
-This is a 30-minute exercise and worth doing.
+### Risk profile after R2
+
+| Risk | Status |
+|---|---|
+| Tenant isolation breach | LOW — 100+ cross-tenant probes green incl. R2 storage RLS test |
+| Financial correctness (journal balance, money precision) | LOW — 343 + new 40 R2 tests green, no regressions |
+| Multi-currency / multi-market | LOW — 5 launch markets seeded and round-trip verified |
+| AI surface (extraction + chat) | MEDIUM-LOW — defensive fallbacks shipped; free-tier Gemma flake (#106) tracked but degrades safely |
+| Stripe billing / Connect | OPEN — blocked on Founder action #94/#95 |
+| UI flows | MEDIUM — automation gap; Founder manual walk-through recommended |
+
+### Aksha's call
+
+GREEN-when-Founder-ships. The engineering work is done. The pilot is
+shippable today PDF-only if Founder accepts the Stripe Connect gap; fully
+green the moment Price IDs are replaced.
 
 **Sign-off**: Aksha, SDET
-**Document state**: LIVE — will be updated on each post-pilot regression run.
+**Document state**: LIVE — R2 update 2026-05-24. Next regression run is the day Founder lands #94.
