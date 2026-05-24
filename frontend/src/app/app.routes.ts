@@ -56,6 +56,26 @@ export const routes: Routes = [
           import('./features/invoices/invoices-list.component').then(m => m.InvoicesListComponent),
       },
       {
+        // #112 — without this route, the Clients sidebar link hit the `**`
+        // wildcard and redirected to '/'. Placeholder until the full Clients
+        // CRUD ships.
+        path: 'clients',
+        loadComponent: () =>
+          import('./features/clients/clients-list.component').then(m => m.ClientsListComponent),
+      },
+      {
+        // #112 — placeholder, see comment on /clients above.
+        path: 'payments',
+        loadComponent: () =>
+          import('./features/payments/payments-list.component').then(m => m.PaymentsListComponent),
+      },
+      {
+        // #112 — placeholder, see comment on /clients above.
+        path: 'people',
+        loadComponent: () =>
+          import('./features/people/people-list.component').then(m => m.PeopleListComponent),
+      },
+      {
         path: 'time',
         loadComponent: () =>
           import('./features/time-entries/time-entries-list.component').then(m => m.TimeEntriesListComponent),
