@@ -19,7 +19,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
         </a>
         <div class="flex items-center gap-5">
           <app-theme-picker />
-          <a routerLink="/signup" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
+          <a routerLink="/login" class="text-sm text-slate-300 hover:text-white transition-colors">Sign in</a>
         </div>
       </header>
 

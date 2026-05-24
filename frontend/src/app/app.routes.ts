@@ -20,6 +20,12 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/signup/signup.component').then(m => m.SignupComponent),
   },
+  {
+    // #119 — login for returning users (Supabase signInWithPassword).
+    path: 'login',
+    loadComponent: () =>
+      import('./features/login/login.component').then(m => m.LoginComponent),
+  },
 
   // ── App shell — authenticated routes ────────────────────────────────────────
   // Guarded by authGuard (parent) + authChildGuard (child re-check) per #111.
