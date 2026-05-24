@@ -137,7 +137,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                       (click)="approve(task, $event)"
                       [disabled]="actioning() === task.id"
                       class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                      aria-label="Approve L3 promotion for {{ task.title }}"
+                      [attr.aria-label]="'Approve L3 promotion for ' + (task.title)"
                     >
                       @if (actioning() === task.id) { Processing... } @else { Approve L3 }
                     </button>
@@ -184,7 +184,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     <span class="text-xs text-slate-400">{{ task.agent_name | titlecase }}</span>
                     <app-confidence-chip [confidence]="task.confidence" />
                   </div>
-                  <span [class]="priorityBadge(task.priority)" aria-label="Priority: {{ task.priority }}">
+                  <span [class]="priorityBadge(task.priority)" [attr.aria-label]="'Priority: ' + (task.priority)">
                     {{ task.priority }}
                   </span>
                 </div>
@@ -208,7 +208,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     (click)="approve(task, $event)"
                     [disabled]="actioning() === task.id"
                     class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                    aria-label="Approve {{ task.title }}"
+                    [attr.aria-label]="'Approve ' + (task.title)"
                   >
                     @if (actioning() === task.id) { Processing... } @else { Approve }
                   </button>
@@ -217,7 +217,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     (click)="startEdit(task, $event)"
                     [disabled]="actioning() === task.id"
                     class="px-3 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                    aria-label="Edit {{ task.title }}"
+                    [attr.aria-label]="'Edit ' + (task.title)"
                   >
                     Edit
                   </button>
@@ -226,7 +226,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     (click)="reject(task, $event)"
                     [disabled]="actioning() === task.id"
                     class="px-3 py-1.5 text-xs font-medium rounded text-red-400 hover:text-red-300 hover:bg-red-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
-                    aria-label="Reject {{ task.title }}"
+                    [attr.aria-label]="'Reject ' + (task.title)"
                   >
                     Reject
                   </button>
@@ -235,7 +235,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
                     (click)="escalate(task, $event)"
                     [disabled]="actioning() === task.id"
                     class="ml-auto px-3 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-                    aria-label="Escalate {{ task.title }}"
+                    [attr.aria-label]="'Escalate ' + (task.title)"
                   >
                     Escalate
                   </button>

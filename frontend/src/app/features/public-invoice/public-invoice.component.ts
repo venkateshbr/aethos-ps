@@ -206,7 +206,7 @@ export interface PublicInvoice {
                            bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700
                            text-white transition-colors shadow-lg shadow-emerald-900/30
                            focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                    aria-label="Pay invoice {{ invoice()!.total_amount | money: invoice()!.currency }}"
+                    [attr.aria-label]="'Pay invoice ' + (invoice()!.total_amount | money: invoice()!.currency)"
                   >
                     Pay Now — {{ invoice()!.total_amount | money: invoice()!.currency }}
                   </button>

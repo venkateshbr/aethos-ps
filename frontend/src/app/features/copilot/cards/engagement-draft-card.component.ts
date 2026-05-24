@@ -17,7 +17,7 @@ export interface EngagementDraftPayload {
   standalone: true,
   imports: [MatIconModule, MoneyPipe, ConfidenceChipComponent],
   template: `
-    <div [class]="cardClass()" role="article" aria-label="Engagement draft: {{ payload().client_name }}">
+    <div [class]="cardClass()" role="article" [attr.aria-label]="'Engagement draft: ' + (payload().client_name)">
 
       <!-- Card header -->
       <div class="flex items-center gap-2 mb-3">

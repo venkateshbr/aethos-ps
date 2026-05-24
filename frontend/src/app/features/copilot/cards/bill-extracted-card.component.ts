@@ -18,7 +18,7 @@ export interface BillExtractedPayload {
   standalone: true,
   imports: [MatIconModule, MoneyPipe, ConfidenceChipComponent],
   template: `
-    <div [class]="cardClass()" role="article" aria-label="Vendor bill: {{ payload().vendor_name }}">
+    <div [class]="cardClass()" role="article" [attr.aria-label]="'Vendor bill: ' + (payload().vendor_name)">
 
       <!-- Card header -->
       <div class="flex items-center gap-2 mb-3">

@@ -170,7 +170,7 @@ interface InvoiceListResponse {
                     mat-stroked-button
                     class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     matTooltip="Send this invoice to the client"
-                    aria-label="Send invoice {{ row.invoice_number }}"
+                    [attr.aria-label]="'Send invoice ' + (row.invoice_number)"
                   >
                     <mat-icon class="text-sm">send</mat-icon>
                     @if (sendingId() === row.id) { Sending… } @else { Send }
@@ -182,7 +182,7 @@ interface InvoiceListResponse {
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-                    aria-label="Open payment link for {{ row.invoice_number }}"
+                    [attr.aria-label]="'Open payment link for ' + (row.invoice_number)"
                   >
                     <mat-icon class="text-sm">open_in_new</mat-icon>
                     Payment link
