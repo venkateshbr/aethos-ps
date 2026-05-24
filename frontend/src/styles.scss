@@ -10,6 +10,10 @@
 // from --t-* / --brand-* / --t-confidence-* tokens — without rebuilding.
 //
 // Sources of truth: src/assets/brand/themes/theme-{1,2,3}-*/palette.md
+//
+// VALUES ARE `R G B` TRIPLES (issue #120 phase 1) so tailwind.config.js
+// can compose them via `rgb(var(--t-X) / <alpha-value>)`. The original
+// hex is kept in the trailing comment for human reference.
 // =====================================================================
 
 // ──────────────────────────────────────────────────────────────────────
@@ -18,30 +22,31 @@
 :root,
 body[data-theme="slate-emerald"] {
   // Surface
-  --t-bg-base:           #0f172a; // slate-900
-  --t-bg-surface:        #1e293b; // slate-800
-  --t-bg-surface-raised: #293548; // slate-750 (custom)
-  --t-bg-surface-sunken: #0d1424; // slate-950
+  --t-bg-base:           15 23 42;    // #0f172a slate-900
+  --t-bg-surface:        30 41 59;    // #1e293b slate-800
+  --t-bg-surface-raised: 41 53 72;    // #293548 slate-750 (custom)
+  --t-bg-surface-sunken: 13 20 36;    // #0d1424 slate-950
+  --t-bg-overlay-rgb:    15 23 42;    // base rgb for rgba overlay
   --t-bg-overlay:        rgba(15, 23, 42, 0.80);
 
   // Border
-  --t-border-default: #334155; // slate-700
-  --t-border-subtle:  #1e293b; // slate-800
-  --t-border-strong:  #475569; // slate-600
+  --t-border-default: 51 65 85;       // #334155 slate-700
+  --t-border-subtle:  30 41 59;       // #1e293b slate-800
+  --t-border-strong:  71 85 105;      // #475569 slate-600
 
   // Text
-  --t-text-primary:   #f8fafc; // slate-50
-  --t-text-secondary: #cbd5e1; // slate-300
-  --t-text-muted:     #94a3b8; // slate-400
-  --t-text-disabled:  #475569; // slate-600
-  --t-text-inverse:   #0f172a; // slate-900
+  --t-text-primary:   248 250 252;    // #f8fafc slate-50
+  --t-text-secondary: 203 213 225;    // #cbd5e1 slate-300
+  --t-text-muted:     148 163 184;    // #94a3b8 slate-400
+  --t-text-disabled:  71 85 105;      // #475569 slate-600
+  --t-text-inverse:   15 23 42;       // #0f172a slate-900
 
   // Brand accent (emerald)
-  --brand-primary:        #10b981; // emerald-500
-  --brand-primary-hover:  #059669; // emerald-600
-  --brand-primary-light:  #34d399; // emerald-400
-  --brand-primary-subtle: #064e3b; // emerald-900
-  --brand-on-primary:     #ffffff;
+  --brand-primary:        16 185 129;   // #10b981 emerald-500
+  --brand-primary-hover:  5 150 105;    // #059669 emerald-600
+  --brand-primary-light:  52 211 153;   // #34d399 emerald-400
+  --brand-primary-subtle: 6 78 59;      // #064e3b emerald-900
+  --brand-on-primary:     255 255 255;  // #ffffff
 
   --t-accent:           var(--brand-primary);
   --t-accent-hover:     var(--brand-primary-hover);
@@ -50,12 +55,12 @@ body[data-theme="slate-emerald"] {
   --t-accent-on-accent: var(--brand-on-primary);
 
   // Confidence (HITL chips)
-  --t-confidence-high:    #10b981; // emerald-500
-  --t-confidence-high-bg: #064e3b; // emerald-900
-  --t-confidence-med:     #f59e0b; // amber-500
-  --t-confidence-med-bg:  #451a03; // amber-950
-  --t-confidence-low:     #ef4444; // red-500
-  --t-confidence-low-bg:  #450a0a; // red-950
+  --t-confidence-high:    16 185 129;   // #10b981 emerald-500
+  --t-confidence-high-bg: 6 78 59;      // #064e3b emerald-900
+  --t-confidence-med:     245 158 11;   // #f59e0b amber-500
+  --t-confidence-med-bg:  69 26 3;      // #451a03 amber-950
+  --t-confidence-low:     239 68 68;    // #ef4444 red-500
+  --t-confidence-low-bg:  69 10 10;     // #450a0a red-950
 
   // Asset references — the theme picker reads these from the service,
   // not from CSS, but listing them here keeps the source-of-truth aligned.
@@ -67,30 +72,30 @@ body[data-theme="slate-emerald"] {
 // ──────────────────────────────────────────────────────────────────────
 body[data-theme="ink-indigo"] {
   // Surface — cooler / deeper than slate
-  --t-bg-base:           #0b1020;
-  --t-bg-surface:        #161c33;
-  --t-bg-surface-raised: #1f2742;
-  --t-bg-surface-sunken: #070b18;
+  --t-bg-base:           11 16 32;     // #0b1020
+  --t-bg-surface:        22 28 51;     // #161c33
+  --t-bg-surface-raised: 31 39 66;     // #1f2742
+  --t-bg-surface-sunken: 7 11 24;      // #070b18
   --t-bg-overlay:        rgba(11, 16, 32, 0.80);
 
   // Border
-  --t-border-default: #2a3354;
-  --t-border-subtle:  #1c2440;
-  --t-border-strong:  #3a4570;
+  --t-border-default: 42 51 84;        // #2a3354
+  --t-border-subtle:  28 36 64;        // #1c2440
+  --t-border-strong:  58 69 112;       // #3a4570
 
   // Text — warmer white "paper"
-  --t-text-primary:   #f5f5f7;
-  --t-text-secondary: #cbd0e0;
-  --t-text-muted:     #8b93ad;
-  --t-text-disabled:  #4a5170;
-  --t-text-inverse:   #0b1020;
+  --t-text-primary:   245 245 247;     // #f5f5f7
+  --t-text-secondary: 203 208 224;     // #cbd0e0
+  --t-text-muted:     139 147 173;     // #8b93ad
+  --t-text-disabled:  74 81 112;       // #4a5170
+  --t-text-inverse:   11 16 32;        // #0b1020
 
   // Brand accent (indigo)
-  --brand-primary:        #818cf8; // indigo-400
-  --brand-primary-hover:  #6366f1; // indigo-500
-  --brand-primary-light:  #a5b4fc; // indigo-300
-  --brand-primary-subtle: #1e1b4b; // indigo-950
-  --brand-on-primary:     #0b1020; // ink (dark text on light indigo)
+  --brand-primary:        129 140 248;  // #818cf8 indigo-400
+  --brand-primary-hover:  99 102 241;   // #6366f1 indigo-500
+  --brand-primary-light:  165 180 252;  // #a5b4fc indigo-300
+  --brand-primary-subtle: 30 27 75;     // #1e1b4b indigo-950
+  --brand-on-primary:     11 16 32;     // #0b1020 ink (dark text on light indigo)
 
   --t-accent:           var(--brand-primary);
   --t-accent-hover:     var(--brand-primary-hover);
@@ -99,12 +104,12 @@ body[data-theme="ink-indigo"] {
   --t-accent-on-accent: var(--brand-on-primary);
 
   // Confidence — cyan replaces emerald so the triad stays cool-spectrum
-  --t-confidence-high:    #22d3ee; // cyan-400
-  --t-confidence-high-bg: #164e63; // cyan-900
-  --t-confidence-med:     #fbbf24; // amber-400
-  --t-confidence-med-bg:  #451a03; // amber-950
-  --t-confidence-low:     #f87171; // red-400
-  --t-confidence-low-bg:  #450a0a; // red-950
+  --t-confidence-high:    34 211 238;   // #22d3ee cyan-400
+  --t-confidence-high-bg: 22 78 99;     // #164e63 cyan-900
+  --t-confidence-med:     251 191 36;   // #fbbf24 amber-400
+  --t-confidence-med-bg:  69 26 3;      // #451a03 amber-950
+  --t-confidence-low:     248 113 113;  // #f87171 red-400
+  --t-confidence-low-bg:  69 10 10;     // #450a0a red-950
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -112,30 +117,30 @@ body[data-theme="ink-indigo"] {
 // ──────────────────────────────────────────────────────────────────────
 body[data-theme="carbon-amber"] {
   // Surface — warm near-black
-  --t-bg-base:           #161514;
-  --t-bg-surface:        #1f1d1b;
-  --t-bg-surface-raised: #2a2825;
-  --t-bg-surface-sunken: #0e0d0c;
+  --t-bg-base:           22 21 20;     // #161514
+  --t-bg-surface:        31 29 27;     // #1f1d1b
+  --t-bg-surface-raised: 42 40 37;     // #2a2825
+  --t-bg-surface-sunken: 14 13 12;     // #0e0d0c
   --t-bg-overlay:        rgba(22, 21, 20, 0.82);
 
   // Border
-  --t-border-default: #3a3733;
-  --t-border-subtle:  #252320;
-  --t-border-strong:  #4a4641;
+  --t-border-default: 58 55 51;        // #3a3733
+  --t-border-subtle:  37 35 32;        // #252320
+  --t-border-strong:  74 70 65;        // #4a4641
 
   // Text — slightly warm whites
-  --t-text-primary:   #fafaf7;
-  --t-text-secondary: #d6d3d1;
-  --t-text-muted:     #a8a29e;
-  --t-text-disabled:  #57534e;
-  --t-text-inverse:   #161514;
+  --t-text-primary:   250 250 247;     // #fafaf7
+  --t-text-secondary: 214 211 209;     // #d6d3d1
+  --t-text-muted:     168 162 158;     // #a8a29e
+  --t-text-disabled:  87 83 78;        // #57534e
+  --t-text-inverse:   22 21 20;        // #161514
 
   // Brand accent (amber)
-  --brand-primary:        #f5a524;
-  --brand-primary-hover:  #d97706; // amber-600
-  --brand-primary-light:  #fbbf24; // amber-400
-  --brand-primary-subtle: #3a2a08;
-  --brand-on-primary:     #161514; // carbon (dark text on warm amber)
+  --brand-primary:        245 165 36;   // #f5a524
+  --brand-primary-hover:  217 119 6;    // #d97706 amber-600
+  --brand-primary-light:  251 191 36;   // #fbbf24 amber-400
+  --brand-primary-subtle: 58 42 8;      // #3a2a08
+  --brand-on-primary:     22 21 20;     // #161514 carbon (dark text on warm amber)
 
   --t-accent:           var(--brand-primary);
   --t-accent-hover:     var(--brand-primary-hover);
@@ -144,12 +149,12 @@ body[data-theme="carbon-amber"] {
   --t-accent-on-accent: var(--brand-on-primary);
 
   // Confidence — warm-cool-warm to read distinctly against amber
-  --t-confidence-high:    #84cc16; // lime-500
-  --t-confidence-high-bg: #1a2e05; // lime-950
-  --t-confidence-med:     #fb923c; // orange-400 — distinct from amber accent
-  --t-confidence-med-bg:  #431407; // orange-950
-  --t-confidence-low:     #ef4444; // red-500
-  --t-confidence-low-bg:  #450a0a; // red-950
+  --t-confidence-high:    132 204 22;   // #84cc16 lime-500
+  --t-confidence-high-bg: 26 46 5;      // #1a2e05 lime-950
+  --t-confidence-med:     251 146 60;   // #fb923c orange-400 — distinct from amber accent
+  --t-confidence-med-bg:  67 20 7;      // #431407 orange-950
+  --t-confidence-low:     239 68 68;    // #ef4444 red-500
+  --t-confidence-low-bg:  69 10 10;     // #450a0a red-950
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -194,8 +199,8 @@ $dark-theme: mat.define-theme((
 
 html {
   @include mat.all-component-themes($dark-theme);
-  background-color: var(--t-bg-base);
-  color: var(--t-text-primary);
+  background-color: rgb(var(--t-bg-base));
+  color: rgb(var(--t-text-primary));
 }
 
 * { box-sizing: border-box; }
@@ -203,8 +208,8 @@ html {
 body {
   margin: 0;
   font-family: var(--t-font-sans);
-  background-color: var(--t-bg-base);
-  color: var(--t-text-primary);
+  background-color: rgb(var(--t-bg-base));
+  color: rgb(var(--t-text-primary));
   font-variant-numeric: tabular-nums;
 }
 
@@ -226,9 +231,9 @@ body {
   line-height: 1rem;
   font-weight: 500;
 }
-.confidence-chip--high { color: var(--t-confidence-high); background-color: var(--t-confidence-high-bg); }
-.confidence-chip--med  { color: var(--t-confidence-med);  background-color: var(--t-confidence-med-bg); }
-.confidence-chip--low  { color: var(--t-confidence-low);  background-color: var(--t-confidence-low-bg); }
+.confidence-chip--high { color: rgb(var(--t-confidence-high)); background-color: rgb(var(--t-confidence-high-bg)); }
+.confidence-chip--med  { color: rgb(var(--t-confidence-med));  background-color: rgb(var(--t-confidence-med-bg)); }
+.confidence-chip--low  { color: rgb(var(--t-confidence-low));  background-color: rgb(var(--t-confidence-low-bg)); }
 
 /* Tailwind base */
 @tailwind base;

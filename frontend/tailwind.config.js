@@ -1,14 +1,20 @@
 /**
  * Aethos PS — Tailwind v3 config.
  *
- * Tokens sourced from `src/assets/brand/themes/theme-1-slate-emerald/`
- * (Direction A — founder-picked, issue #9). The structural slate scale
- * already lives in Tailwind's defaults — we only extend the custom
- * `slate-750` raised-surface step plus the brand `accent` and HITL
- * `confidence` palettes.
+ * SEMANTIC THEME TOKENS (issue #120 phase 1)
+ * ------------------------------------------
+ * Every `surface-*`, `border-*`, `text-*` (theme), `accent*`, `confidence-*`
+ * utility below resolves to `rgb(var(--t-X) / <alpha-value>)`. The runtime
+ * theme picker writes `data-theme="..."` on <body>, which switches the
+ * `--t-*` triples defined in `src/styles.scss` and re-skins every component
+ * that uses these utilities.
  *
- * If the brand direction is ever re-picked, swap the partial in:
- *   src/assets/brand/themes/<direction>/tailwind.config.partial.js
+ * `<alpha-value>` is Tailwind's opacity placeholder — it composes correctly
+ * with `bg-accent/20`, `text-confidence-med/80`, etc.
+ *
+ * Legacy literal palettes (`slate.750`, `accent.*`, `confidence.*`) are kept
+ * so feature pages that haven't been migrated yet keep rendering. Those
+ * pages are theme-blind until the phase-2 follow-up migrates them.
  */
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -16,6 +22,38 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // ── Theme-aware semantic tokens (read from CSS vars) ──────────
+        // Surfaces
+        'surface-base':   'rgb(var(--t-bg-base) / <alpha-value>)',
+        'surface':        'rgb(var(--t-bg-surface) / <alpha-value>)',
+        'surface-raised': 'rgb(var(--t-bg-surface-raised) / <alpha-value>)',
+        'surface-sunken': 'rgb(var(--t-bg-surface-sunken) / <alpha-value>)',
+        // Borders
+        'border-default': 'rgb(var(--t-border-default) / <alpha-value>)',
+        'border-subtle':  'rgb(var(--t-border-subtle) / <alpha-value>)',
+        'border-strong':  'rgb(var(--t-border-strong) / <alpha-value>)',
+        // Text
+        'text-primary':   'rgb(var(--t-text-primary) / <alpha-value>)',
+        'text-secondary': 'rgb(var(--t-text-secondary) / <alpha-value>)',
+        'text-muted':     'rgb(var(--t-text-muted) / <alpha-value>)',
+        'text-subtle':    'rgb(var(--t-text-muted) / <alpha-value>)',
+        'text-disabled':  'rgb(var(--t-text-disabled) / <alpha-value>)',
+        'text-inverse':   'rgb(var(--t-text-inverse) / <alpha-value>)',
+        // Accent
+        'accent':         'rgb(var(--t-accent) / <alpha-value>)',
+        'accent-hover':   'rgb(var(--t-accent-hover) / <alpha-value>)',
+        'accent-light':   'rgb(var(--t-accent-light) / <alpha-value>)',
+        'accent-subtle':  'rgb(var(--t-accent-subtle-bg) / <alpha-value>)',
+        'accent-on':      'rgb(var(--t-accent-on-accent) / <alpha-value>)',
+        // HITL confidence chips
+        'confidence-high':    'rgb(var(--t-confidence-high) / <alpha-value>)',
+        'confidence-high-bg': 'rgb(var(--t-confidence-high-bg) / <alpha-value>)',
+        'confidence-med':     'rgb(var(--t-confidence-med) / <alpha-value>)',
+        'confidence-med-bg':  'rgb(var(--t-confidence-med-bg) / <alpha-value>)',
+        'confidence-low':     'rgb(var(--t-confidence-low) / <alpha-value>)',
+        'confidence-low-bg':  'rgb(var(--t-confidence-low-bg) / <alpha-value>)',
+
+        // ── Legacy literal tokens (KEEP — unmigrated pages depend on these) ──
         // Custom raised-surface step (hovered cards, dropdowns)
         slate: {
           750: '#293548',
@@ -23,7 +61,10 @@ module.exports = {
         // Brand accent — emerald. Doubles as the success / approval
         // semantic so the brand colour and the most common positive
         // in-app signal reinforce each other (see notes.md).
-        accent: {
+        // NOTE: this `accent.*` namespace is the LEGACY literal hex.
+        // The new theme-aware `accent` / `accent-hover` / `accent-light`
+        // utilities above take precedence when used as flat names.
+        'accent-legacy': {
           DEFAULT: '#10b981', // emerald-500
           hover:   '#059669', // emerald-600
           light:   '#34d399', // emerald-400
@@ -33,7 +74,8 @@ module.exports = {
         // HITL confidence chips — bound to the same hexes as the
         // semantic success / warning / error palette so a single
         // visual language carries across agent UI and status badges.
-        confidence: {
+        // Legacy literal; migrated pages should use `confidence-high|med|low`.
+        'confidence-legacy': {
           high: '#10b981', // ≥ 0.90 (auto-eligible)
           med:  '#f59e0b', // 0.70–0.89 (review)
           low:  '#ef4444', // < 0.70 (mandatory review)
@@ -49,7 +91,7 @@ module.exports = {
       boxShadow: {
         card:         '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 1px 2px 0 rgba(0,0,0,0.4)',
         'card-hover': '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 4px 12px 0 rgba(0,0,0,0.45)',
-        'accent-ring':'0 0 0 3px rgba(16,185,129,0.25)',
+        'accent-ring':'0 0 0 3px rgb(var(--t-accent) / 0.25)',
       },
       animation: {
         'fade-in': 'fadeIn 0.35s ease-out',
