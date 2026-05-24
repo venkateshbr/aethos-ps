@@ -168,12 +168,23 @@ async def signup(
 
     # ------------------------------------------------------------------
     # 1. Create Supabase Auth user (or detect existing)
+    #
+    # Use the admin API (`auth.admin.create_user`) rather than `auth.sign_up`
+    # for a critical reason: `sign_up` mutates the supabase-py client's
+    # internal session, replacing the service-role JWT with the new user's
+    # authenticated JWT. Subsequent `db.table(...)` calls then run as that
+    # authenticated user, which is denied by RLS on the `tenants` table
+    # (migration 0015 deny_direct_tenant_access RESTRICTIVE policy) — see
+    # bug #121. `admin.create_user` is a service-role endpoint that does
+    # NOT mutate the client session, so the same `db` instance keeps
+    # service-role privileges for the subsequent tenant insert.
     # ------------------------------------------------------------------
     try:
-        auth_response = db.auth.sign_up(
+        admin_response = db.auth.admin.create_user(
             {
                 "email": payload.email,
                 "password": payload.password,
+                "email_confirm": True,  # skip the verification email (Founder disabled it project-wide too — #116)
             }
         )
     except AuthApiError as exc:
@@ -182,11 +193,15 @@ async def signup(
         # already-registered, etc).
         raise _auth_error_to_http(exc) from exc
 
-    # Supabase returns a user even on duplicate if email confirmation is off.
-    # Distinguish "new" vs "existing" by checking whether identities is empty
-    # (duplicate) or populated (new user).
-    user = auth_response.user
-    is_new_user = bool(user and user.identities)
+    # admin.create_user always returns the user (or raises on duplicate).
+    # We treat a successful return as "new user" — the duplicate path is now
+    # handled by the AuthApiError branch above (Supabase raises
+    # `email_exists` on duplicate). Idempotency for browser-refresh mid-signup
+    # is preserved by the existing-tenant lookup further down.
+    user = admin_response.user if hasattr(admin_response, "user") else admin_response
+    is_new_user = True
+    if not user:
+        is_new_user = False
 
     if not user:
         logger.warning(
