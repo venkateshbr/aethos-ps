@@ -80,7 +80,7 @@ interface SubscriptionStatus {
         <!-- Collapse toggle -->
         <div class="flex-none border-t border-slate-700 py-2">
           <button
-            (click)="collapsed.update(v => !v)"
+            (click)="toggleCollapsed()"
             class="mx-2 p-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors flex items-center gap-2 w-[calc(100%-1rem)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             [title]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
             [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
@@ -106,6 +106,13 @@ export class ShellComponent implements OnInit {
 
   collapsed      = signal(false);
   trialDaysLeft  = signal<number | null>(null);
+
+  /** Toggle the sidebar collapsed state. Wraps the signal update so the
+   *  template binding stays a plain method call — Angular template parsers
+   *  reject arrow functions in event bindings (NG5002). See bug #107. */
+  toggleCollapsed(): void {
+    this.collapsed.update((v) => !v);
+  }
 
   sidebarClass = computed(() =>
     `${this.collapsed() ? 'w-14' : 'w-56'} flex-none bg-slate-800 border-r border-slate-700 flex flex-col relative transition-all duration-200`
