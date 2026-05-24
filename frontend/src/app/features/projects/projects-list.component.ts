@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { EngagementService, ProjectSummary } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { userMessageForError } from '../../core/utils/error-message';
 
 @Component({
   selector: 'app-projects-list',
@@ -34,7 +35,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
     @if (error() && !loading()) {
       <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
         <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
-        Something went wrong loading projects.
+        {{ error() }}
       </div>
     }
 
@@ -139,8 +140,9 @@ export class ProjectsListComponent implements OnInit {
         this.projects.set(res.items);
         this.loading.set(false);
       },
-      error: () => {
-        this.error.set('Failed to load');
+      error: (err: unknown) => {
+        // #113: per-status-code copy.
+        this.error.set(userMessageForError(err, 'Projects'));
         this.loading.set(false);
       },
     });

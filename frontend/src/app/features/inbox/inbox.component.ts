@@ -2,9 +2,11 @@ import { Component, signal, computed, inject, HostListener, OnInit } from '@angu
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
+import { HttpErrorResponse } from '@angular/common/http';
 import { HitlService, HitlTask } from '../../core/services/hitl.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
+import { userMessageForError } from '../../core/utils/error-message';
 
 @Component({
   selector: 'app-inbox',
@@ -72,8 +74,8 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
           <!-- Error state -->
           <div class="flex flex-col items-center justify-center h-64 text-center" role="alert">
             <mat-icon class="text-red-400 mb-3" style="font-size:2rem;width:2rem;height:2rem;">error_outline</mat-icon>
-            <p class="text-slate-300 font-medium">Failed to load inbox</p>
-            <p class="text-slate-500 text-sm mt-1 mb-4">Something went wrong. Please try again.</p>
+            <p class="text-slate-300 font-medium">{{ errorHeadline() }}</p>
+            <p class="text-slate-500 text-sm mt-1 mb-4">{{ errorDetail() }}</p>
             <button
               (click)="loadTasks()"
               class="px-4 py-2 text-xs font-medium rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
@@ -264,6 +266,10 @@ export class InboxComponent implements OnInit {
 
   loading = signal(true);
   hasError = signal(false);
+  /** Headline shown above the error detail. Differs by status code (#113). */
+  errorHeadline = signal('Failed to load inbox');
+  /** Single sentence explaining what went wrong + what to do next. */
+  errorDetail = signal('Something went wrong. Please try again.');
   allTasks = signal<HitlTask[]>([]);
   kindFilter = signal<string>('all');
   focusedIdx = signal(0);
@@ -295,7 +301,15 @@ export class InboxComponent implements OnInit {
         this.allTasks.set(tasks);
         this.loading.set(false);
       },
-      error: () => {
+      error: (err: unknown) => {
+        // #113: pick the right copy for the actual failure.
+        // 401 → session expired; 5xx → backend down; otherwise generic.
+        this.errorHeadline.set(
+          err instanceof HttpErrorResponse && err.status === 401
+            ? 'Session expired'
+            : 'Failed to load inbox',
+        );
+        this.errorDetail.set(userMessageForError(err, 'Inbox'));
         this.hasError.set(true);
         this.loading.set(false);
       },

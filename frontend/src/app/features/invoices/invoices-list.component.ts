@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { userMessageForError } from '../../core/utils/error-message';
 
 export interface InvoiceSummary {
   id: string;
@@ -70,7 +71,7 @@ interface InvoiceListResponse {
       @if (error() && !loading()) {
         <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
-          Something went wrong loading invoices. Please try again.
+          {{ error() }}
         </div>
       }
 
@@ -229,8 +230,9 @@ export class InvoicesListComponent implements OnInit {
         this.invoices.set(res.items);
         this.loading.set(false);
       },
-      error: () => {
-        this.error.set('Failed to load');
+      error: (err: unknown) => {
+        // #113: per-status-code copy.
+        this.error.set(userMessageForError(err, 'Invoices'));
         this.loading.set(false);
       },
     });

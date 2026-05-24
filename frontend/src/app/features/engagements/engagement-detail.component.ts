@@ -8,6 +8,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { EngagementService, EngagementDetail } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { ProjectsListComponent } from '../projects/projects-list.component';
+import { userMessageForError } from '../../core/utils/error-message';
 
 @Component({
   selector: 'app-engagement-detail',
@@ -50,7 +51,7 @@ import { ProjectsListComponent } from '../projects/projects-list.component';
       @if (error() && !loading()) {
         <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
-          Something went wrong loading this engagement. Please try again.
+          {{ error() }}
         </div>
       }
 
@@ -138,8 +139,9 @@ export class EngagementDetailComponent implements OnInit {
         this.engagement.set(data);
         this.loading.set(false);
       },
-      error: () => {
-        this.error.set('Failed to load');
+      error: (err: unknown) => {
+        // #113: per-status-code copy.
+        this.error.set(userMessageForError(err, 'Engagement'));
         this.loading.set(false);
       },
     });

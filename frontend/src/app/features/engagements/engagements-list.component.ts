@@ -8,6 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { userMessageForError } from '../../core/utils/error-message';
 
 function formatBillingArrangement(arrangement: string): string {
   const map: Record<string, string> = {
@@ -68,7 +69,7 @@ function formatBillingArrangement(arrangement: string): string {
       @if (error() && !loading()) {
         <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
-          Something went wrong loading engagements. Please try again.
+          {{ error() }}
         </div>
       }
 
@@ -238,8 +239,9 @@ export class EngagementsListComponent implements OnInit {
         this.engagements.set(res.items);
         this.loading.set(false);
       },
-      error: () => {
-        this.error.set('Failed to load');
+      error: (err: unknown) => {
+        // #113: pick copy by status code (session-expired vs. service-down).
+        this.error.set(userMessageForError(err, 'Engagements'));
         this.loading.set(false);
       },
     });
