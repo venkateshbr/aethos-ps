@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { StripeConnectComponent } from './stripe-connect.component';
+import { ChangePasswordComponent } from './change-password.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [StripeConnectComponent],
+  imports: [StripeConnectComponent, ChangePasswordComponent],
   template: `
     <div class="p-6 bg-slate-900 min-h-full">
       <!-- Page header -->
@@ -14,7 +15,15 @@ import { StripeConnectComponent } from './stripe-connect.component';
       </div>
 
       <!-- Sections -->
-      <div class="max-w-2xl space-y-6">
+      <div class="max-w-2xl space-y-8">
+
+        <!-- Account / Security section (#118) -->
+        <section aria-labelledby="account-heading">
+          <h2 id="account-heading" class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+            Account &amp; security
+          </h2>
+          <app-change-password />
+        </section>
 
         <!-- Integrations section -->
         <section aria-labelledby="integrations-heading">
