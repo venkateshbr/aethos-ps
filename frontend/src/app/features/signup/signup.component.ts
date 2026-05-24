@@ -1,4 +1,15 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { loadStripe, Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
+import { environment } from '../../../environments/environment';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -353,20 +364,118 @@ import {
       }
     </ng-template>
 
-    <!-- ── Step 3 · Card (next commit) ─────────────────────────────────────── -->
+    <!-- ── Step 3 · Card ───────────────────────────────────────────────────── -->
     <ng-template #cardStep>
       <h1 class="text-2xl font-semibold mb-1">Confirm your card</h1>
       <p class="text-slate-400 text-sm mb-6">
-        Coming next commit. Stripe Elements + start-trial wiring.
+        Card is required to start the trial — you won't be charged for 14 days.
+        We use Stripe; your card number never touches our servers.
       </p>
+
+      <div class="space-y-4">
+        <!-- Stripe Elements card mount point.  Stripe.js renders an iframe here. -->
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+            Card details
+          </label>
+          <div
+            #cardEl
+            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-3 min-h-[44px]
+                   focus-within:border-accent focus-within:shadow-accent-ring transition-colors"
+            aria-label="Card details"
+          ></div>
+          @if (cardError()) {
+            <p role="alert" class="text-xs text-red-400 mt-1.5">{{ cardError() }}</p>
+          } @else {
+            <p class="text-xs text-slate-500 mt-1.5">
+              Test mode — use 4242 4242 4242 4242 with any future date + any CVC.
+            </p>
+          }
+        </div>
+
+        <!-- Order summary -->
+        <div class="bg-slate-800/60 border border-slate-700 rounded-lg p-3 text-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400">Plan</span>
+            <span class="text-slate-100 capitalize">
+              {{ selectedTier() }} · {{ interval() }}
+            </span>
+          </div>
+          <div class="flex items-center justify-between mt-1.5">
+            <span class="text-slate-400">Today</span>
+            <span class="text-accent-light font-medium">{{ prices()?.currency }} 0.00</span>
+          </div>
+          <div class="flex items-center justify-between mt-1.5">
+            <span class="text-slate-400">After 14-day trial</span>
+            <span class="text-slate-300">Charged in {{ prices()?.currency }}</span>
+          </div>
+        </div>
+
+        @if (serverError()) {
+          <div role="alert" class="text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2">
+            {{ serverError() }}
+          </div>
+        }
+
+        <div class="flex items-center justify-between gap-3 pt-1">
+          <button
+            type="button"
+            (click)="goBackFromCard()"
+            [disabled]="confirming()"
+            class="text-sm text-slate-400 hover:text-slate-200 disabled:opacity-50"
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            [disabled]="!cardReady() || confirming()"
+            (click)="confirmCard()"
+            class="inline-flex items-center justify-center gap-2
+                   bg-accent hover:bg-accent-hover text-accent-on font-medium
+                   px-4 py-2.5 rounded-lg transition-colors text-sm
+                   disabled:opacity-50 disabled:cursor-not-allowed shadow-accent-ring"
+          >
+            @if (confirming()) {
+              <span class="w-4 h-4 border-2 border-current border-r-transparent rounded-full animate-spin" aria-hidden="true"></span>
+              Starting trial…
+            } @else {
+              Start 14-day trial
+            }
+          </button>
+        </div>
+      </div>
     </ng-template>
   `,
 })
-export class SignupComponent {
+export class SignupComponent implements AfterViewInit {
   protected themeSvc = inject(ThemeService);
   private fb = inject(FormBuilder);
   private signupSvc = inject(SignupService);
   private router = inject(Router);
+
+  /** Card mount node — only present in DOM when step() === 3. */
+  protected cardEl = viewChild<ElementRef<HTMLDivElement>>('cardEl');
+
+  // ── Stripe.js handles — initialised lazily on entering step 3 ─────────────
+  private _stripe: Stripe | null = null;
+  private _elements: StripeElements | null = null;
+  private _card: StripeCardElement | null = null;
+
+  constructor() {
+    // When the user enters step 3, mount the card element. We watch the
+    // signal so the mount happens after the @switch renders the template
+    // (cardEl() ref is null until then).
+    effect(() => {
+      if (this.step() === 3 && this.cardEl()) {
+        void this.ensureStripeMounted();
+      }
+    });
+  }
+
+  ngAfterViewInit(): void {
+    // Step always starts at 1; nothing to do here. The effect() above handles
+    // mounting when (if) the user reaches step 3.
+  }
 
   protected readonly countries = LAUNCH_COUNTRIES;
   protected readonly stepLabels = [
@@ -448,6 +557,11 @@ export class SignupComponent {
   });
 
   protected canAdvanceFromPlan = computed(() => this.selectedPriceId() !== null);
+
+  // ── Step 3 state ────────────────────────────────────────────────────────
+  protected cardReady = signal(false);
+  protected cardError = signal<string | null>(null);
+  protected confirming = signal(false);
 
   /** Reactive form — typed via FormBuilder.group. */
   protected accountForm = this.fb.nonNullable.group({
@@ -562,11 +676,140 @@ export class SignupComponent {
     if (plan?.priceId) this.selectedTier.set(tier);
   }
 
-  /** Advance from plan → card step. Card-step Stripe wiring lands in commit 3. */
+  /** Advance from plan → card step. */
   protected advanceToCard(): void {
     this.serverError.set(null);
     if (this.canAdvanceFromPlan()) {
       this.step.set(3);
+    }
+  }
+
+  /** Back from card step — preserve the mounted element so the user doesn't lose it. */
+  protected goBackFromCard(): void {
+    if (this.confirming()) return;
+    this.serverError.set(null);
+    this.step.set(2);
+  }
+
+  /**
+   * Lazily load Stripe.js, create the Elements + card mount, and bind the
+   * change handler. Idempotent — re-entering step 3 reuses the existing card.
+   */
+  private async ensureStripeMounted(): Promise<void> {
+    if (this._card) return; // already mounted
+    const mountEl = this.cardEl()?.nativeElement;
+    if (!mountEl) return;
+
+    if (!environment.stripePublishableKey) {
+      this.cardError.set(
+        'Stripe is not configured for this environment. Contact support.',
+      );
+      return;
+    }
+
+    try {
+      this._stripe = await loadStripe(environment.stripePublishableKey);
+      if (!this._stripe) {
+        this.cardError.set('Could not load Stripe.js. Check your network and retry.');
+        return;
+      }
+
+      // Pull the SetupIntent client_secret from step 1's response so Stripe
+      // styles the element correctly and ties it to the right intent.
+      const clientSecret = this.signupResult()?.stripe_setup_intent_client_secret;
+      if (!clientSecret) {
+        this.cardError.set('Missing setup intent. Please restart signup.');
+        return;
+      }
+
+      this._elements = this._stripe.elements({
+        clientSecret,
+        appearance: {
+          theme: 'night',
+          variables: {
+            colorPrimary: '#10b981',         // accent
+            colorBackground: '#1e293b',      // slate-800
+            colorText: '#f1f5f9',            // slate-100
+            colorTextPlaceholder: '#64748b', // slate-500
+            colorDanger: '#f87171',          // red-400
+            fontFamily: 'Inter, system-ui, sans-serif',
+            borderRadius: '8px',
+          },
+        },
+      });
+
+      this._card = this._elements.create('card', {
+        hidePostalCode: false,
+        style: {
+          base: {
+            iconColor: '#94a3b8',
+            color: '#f1f5f9',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '14px',
+            '::placeholder': { color: '#64748b' },
+          },
+          invalid: { color: '#f87171', iconColor: '#f87171' },
+        },
+      });
+
+      this._card.mount(mountEl);
+      this._card.on('change', (ev) => {
+        this.cardError.set(ev.error?.message ?? null);
+        this.cardReady.set(ev.complete);
+      });
+    } catch (err) {
+      console.error('Stripe init failed', err);
+      this.cardError.set('Could not initialise card form. Please retry.');
+    }
+  }
+
+  /**
+   * Confirm the SetupIntent with Stripe → POST /billing/start-trial → land in /app/copilot.
+   * Errors at any step are surfaced via serverError() and leave the user able to retry.
+   */
+  protected async confirmCard(): Promise<void> {
+    if (this.confirming() || !this.cardReady()) return;
+    const clientSecret = this.signupResult()?.stripe_setup_intent_client_secret;
+    const priceId = this.selectedPriceId();
+    if (!this._stripe || !this._card || !clientSecret || !priceId) {
+      this.serverError.set('Missing setup data. Please restart signup.');
+      return;
+    }
+
+    this.confirming.set(true);
+    this.serverError.set(null);
+
+    try {
+      // 1. Confirm card with Stripe directly — card never touches our backend.
+      const result = await this._stripe.confirmCardSetup(clientSecret, {
+        payment_method: { card: this._card },
+      });
+
+      if (result.error) {
+        // Stripe returns a user-safe `message` on errors.
+        this.serverError.set(result.error.message ?? 'Card was declined. Try a different card.');
+        return;
+      }
+
+      const setupIntentId = result.setupIntent?.id;
+      if (!setupIntentId) {
+        this.serverError.set('Card setup did not return a confirmation. Please retry.');
+        return;
+      }
+
+      // 2. Kick off the trial subscription on the backend.
+      await this.signupSvc.startTrial({
+        setup_intent_id: setupIntentId,
+        price_id: priceId,
+      });
+
+      // 3. Land in the app. The auth-interceptor will attach the JWT we
+      //    stored in step 1, so /app/copilot loads authenticated.
+      await this.router.navigateByUrl('/app/copilot');
+    } catch (err: unknown) {
+      this.serverError.set(this.friendlyError(err));
+    } finally {
+      this.confirming.set(false);
     }
   }
 
