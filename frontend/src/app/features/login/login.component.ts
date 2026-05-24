@@ -28,9 +28,9 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink, ThemePickerComponent],
   template: `
-    <div class="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+    <div class="min-h-screen bg-surface-base text-text-primary flex flex-col">
       <!-- Header — mirror landing for visual continuity -->
-      <header class="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
+      <header class="px-8 py-5 border-b border-border-subtle flex items-center justify-between">
         <a routerLink="/" aria-label="Aethos — for professional services">
           <img
             [src]="themeSvc.meta().lockupSrc"
@@ -40,7 +40,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
         </a>
         <div class="flex items-center gap-5">
           <app-theme-picker />
-          <a routerLink="/signup" class="text-sm text-slate-300 hover:text-white transition-colors">
+          <a routerLink="/signup" class="text-sm text-text-secondary hover:text-text-primary transition-colors">
             Create account
           </a>
         </div>
@@ -48,8 +48,8 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
 
       <main class="flex-1 flex items-center justify-center px-8 py-10">
         <div class="w-full max-w-md">
-          <h1 class="text-3xl font-semibold text-slate-50 mb-2">Sign in</h1>
-          <p class="text-sm text-slate-400 mb-8">
+          <h1 class="text-3xl font-semibold text-text-primary mb-2">Sign in</h1>
+          <p class="text-sm text-text-muted mb-8">
             Welcome back to Aethos.
           </p>
 
@@ -57,7 +57,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
 
             <!-- Email -->
             <div>
-              <label for="email" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">
+              <label for="email" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
                 Email
               </label>
               <input
@@ -65,17 +65,17 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
                 type="email"
                 formControlName="email"
                 autocomplete="email"
-                class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
                 placeholder="you@firm.com"
               />
               @if (form.controls.email.touched && form.controls.email.errors) {
-                <p class="text-xs text-red-400 mt-1">Enter a valid email.</p>
+                <p class="text-xs text-confidence-low mt-1">Enter a valid email.</p>
               }
             </div>
 
             <!-- Password -->
             <div>
-              <label for="password" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">
+              <label for="password" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
                 Password
               </label>
               <input
@@ -83,13 +83,13 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
                 type="password"
                 formControlName="password"
                 autocomplete="current-password"
-                class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
               />
             </div>
 
             <!-- Error / submit -->
             @if (error()) {
-              <p role="alert" class="text-sm text-red-400 bg-red-950 border border-red-900 rounded px-3 py-2">
+              <p role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
                 {{ error() }}
               </p>
             }
@@ -103,7 +103,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
             </button>
           </form>
 
-          <p class="text-center text-sm text-slate-400 mt-8">
+          <p class="text-center text-sm text-text-muted mt-8">
             New here?
             <a routerLink="/signup" class="text-accent-light hover:text-accent font-medium">
               Get started
@@ -112,7 +112,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
         </div>
       </main>
 
-      <footer class="px-8 py-4 border-t border-slate-800 text-center text-xs text-slate-500">
+      <footer class="px-8 py-4 border-t border-border-subtle text-center text-xs text-text-muted">
         Aethos · for professional services · &copy; 2026
       </footer>
     </div>

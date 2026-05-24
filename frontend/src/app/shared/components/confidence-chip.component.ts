@@ -30,9 +30,12 @@ export class ConfidenceChipComponent {
 
   chipClass = computed(() => {
     const v = this.value();
+    // Theme-aware: bg uses /15 opacity over the confidence colour so the chip
+    // reads against every theme's surface, foreground is the full-strength
+    // confidence colour (WCAG AA verified slate/ink/carbon surfaces).
     const base = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium';
-    if (v >= 0.8) return `${base} bg-emerald-900 text-emerald-400`;
-    if (v >= 0.5) return `${base} bg-amber-950 text-amber-400`;
-    return `${base} bg-red-950 text-red-400`;
+    if (v >= 0.8) return `${base} bg-confidence-high/15 text-confidence-high`;
+    if (v >= 0.5) return `${base} bg-confidence-med/15 text-confidence-med`;
+    return `${base} bg-confidence-low/15 text-confidence-low`;
   });
 }

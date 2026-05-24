@@ -20,19 +20,19 @@ interface SubscriptionStatus {
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, MatIconModule, ThemePickerComponent],
   template: `
-    <div class="flex h-screen bg-slate-900 text-slate-100">
+    <div class="flex h-screen bg-surface-base text-text-primary">
       <!-- Sidebar -->
       <nav [class]="sidebarClass()" aria-label="Main navigation">
         <!-- Logo (rotated-square mark + wordmark) -->
-        <div class="px-4 py-5 border-b border-slate-700 flex-none flex items-center gap-2.5">
+        <div class="px-4 py-5 border-b border-border-default flex-none flex items-center gap-2.5">
           <span
             class="lockup-mark inline-block w-3.5 h-3.5 bg-accent rounded-[2px] flex-none"
             aria-hidden="true"
           ></span>
           @if (!collapsed()) {
             <div class="leading-tight">
-              <span class="text-lg font-bold tracking-brand text-slate-50 block">Aethos</span>
-              <span class="text-[10px] uppercase tracking-[0.18em] text-slate-400 block -mt-0.5">
+              <span class="text-lg font-bold tracking-brand text-text-primary block">Aethos</span>
+              <span class="text-[10px] uppercase tracking-[0.18em] text-text-muted block -mt-0.5">
                 for professional services
               </span>
             </div>
@@ -41,9 +41,9 @@ interface SubscriptionStatus {
 
         <!-- Trial countdown badge -->
         @if (trialDaysLeft() !== null && trialDaysLeft()! <= 14) {
-          <div class="mx-3 mb-2 mt-2 px-3 py-2 bg-amber-950 border border-amber-800 rounded-lg flex-none">
+          <div class="mx-3 mb-2 mt-2 px-3 py-2 bg-confidence-med/10 border border-confidence-med/40 rounded-lg flex-none">
             @if (!collapsed()) {
-              <div class="text-xs text-amber-400 font-medium">
+              <div class="text-xs text-confidence-med font-medium">
                 @if (trialDaysLeft()! > 0) {
                   {{ trialDaysLeft() }} days left in trial
                 } @else {
@@ -52,7 +52,7 @@ interface SubscriptionStatus {
               </div>
             } @else {
               <mat-icon
-                class="text-amber-400"
+                class="text-confidence-med"
                 style="font-size:1rem;width:1rem;height:1rem;"
                 [title]="trialDaysLeft()! > 0 ? trialDaysLeft() + ' days left in trial' : 'Trial ended'"
               >warning</mat-icon>
@@ -65,8 +65,8 @@ interface SubscriptionStatus {
           @for (item of navItems; track item.route) {
             <a
               [routerLink]="item.route"
-              routerLinkActive="bg-slate-700 text-white"
-              class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white rounded mx-2 mb-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              routerLinkActive="bg-surface-raised text-text-primary"
+              class="flex items-center gap-3 px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded mx-2 mb-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               [title]="collapsed() ? item.label : ''"
               [attr.aria-label]="item.label"
             >
@@ -79,7 +79,7 @@ interface SubscriptionStatus {
         </div>
 
         <!-- Theme picker — lets the user switch palette at runtime during pilot -->
-        <div class="flex-none border-t border-slate-700 px-3 py-2">
+        <div class="flex-none border-t border-border-default px-3 py-2">
           @if (!collapsed()) {
             <app-theme-picker />
           } @else {
@@ -88,10 +88,10 @@ interface SubscriptionStatus {
         </div>
 
         <!-- Collapse toggle -->
-        <div class="flex-none border-t border-slate-700 py-2">
+        <div class="flex-none border-t border-border-default py-2">
           <button
             (click)="toggleCollapsed()"
-            class="mx-2 p-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors flex items-center gap-2 w-[calc(100%-1rem)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            class="mx-2 p-2 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors flex items-center gap-2 w-[calc(100%-1rem)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             [title]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
             [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
             [attr.aria-expanded]="!collapsed()"
@@ -125,7 +125,7 @@ export class ShellComponent implements OnInit {
   }
 
   sidebarClass = computed(() =>
-    `${this.collapsed() ? 'w-14' : 'w-56'} flex-none bg-slate-800 border-r border-slate-700 flex flex-col relative transition-all duration-200`
+    `${this.collapsed() ? 'w-14' : 'w-56'} flex-none bg-surface border-r border-border-default flex flex-col relative transition-all duration-200`
   );
 
   navItems: NavItem[] = [
