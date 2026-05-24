@@ -1,4 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+// Pre-seed the storage-state file BEFORE Playwright's config parses
+// `use.storageState`. The `setup` project rewrites this file each run; this
+// bootstrap step is purely to keep the loader from ENOENT-ing on a fresh
+// checkout / cleaned worktree where e2e/.auth/storage-state.json does not
+// yet exist. See e2e/global.setup.ts for the real session bootstrap.
+const STORAGE_STATE = path.join(__dirname, 'e2e', '.auth', 'storage-state.json');
+if (!fs.existsSync(STORAGE_STATE)) {
+  fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
+  fs.writeFileSync(STORAGE_STATE, JSON.stringify({ cookies: [], origins: [] }));
+}
 
 /**
  * Playwright config for Aethos PS frontend e2e.

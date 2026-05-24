@@ -131,22 +131,17 @@ def test_billing_prices_returns_currency_for_country(
         assert "tier" in plan and "monthly_id" in plan and "annual_id" in plan, plan
 
 
-@pytest.mark.xfail(
-    reason="F1 LAUNCH BLOCKER — Stripe Price IDs in backend/.env are price_REPLACE_ME placeholders",
-    strict=False,
-)
 def test_billing_prices_returns_real_stripe_price_ids_not_placeholders(
     client_a: httpx.Client,
 ) -> None:
-    """F1 LAUNCH BLOCKER assertion.
+    """Pilot gate: real Stripe Price IDs are configured for all 30 SKUs.
 
     Real Stripe Price IDs look like `price_1NABCdef...` — they start with
     `price_` followed by random base-58-ish characters (1 + uppercase mix).
     Placeholders look like `price_REPLACE_ME` or `price_starter_monthly_usd`.
 
-    This test is expected to fail today. Once the founder creates real Prices
-    in the Stripe dashboard and pastes them into backend/.env, this test must
-    pass for pilot.
+    Verified against the bootstrap_prices.py script that created all 30
+    test-mode Prices (3 tiers x 2 intervals x 5 currencies); see #94.
     """
     r = client_a.get("/api/v1/billing/prices")
     assert r.status_code == 200, r.text

@@ -47,6 +47,11 @@ htmlcov/
 .ruff_cache/
 .eslintcache
 
+# --- Playwright ---
+test-results/
+playwright-report/
+frontend/e2e/.auth/
+
 # --- Build artifacts / logs ---
 *.log
 *.pid
