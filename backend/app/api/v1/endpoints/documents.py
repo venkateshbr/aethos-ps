@@ -208,3 +208,97 @@ async def upload_document(
         status=saved_row.get("status", "uploaded"),
         created_at=saved_row.get("created_at", now_iso),
     )
+
+
+# ---------------------------------------------------------------------------
+# Presigned URL endpoint (#127)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{document_id}/url",
+    summary="Return a short-lived presigned URL for a document the caller can access",
+)
+async def get_document_url(
+    document_id: str,
+    expires_in: int = 3600,
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Return a tenant-scoped presigned URL for the document's bucket object.
+
+    Authorisation: the caller's tenant must own the row. Cross-tenant requests
+    yield 404 (same information-hiding pattern as the rest of the API).
+
+    The URL expires in `expires_in` seconds (default 1h, cap 24h to keep blast
+    radius small if it leaks via screen-share, copy/paste, etc.).
+    """
+    if expires_in <= 0 or expires_in > 86400:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="expires_in must be between 1 and 86400 seconds.",
+        )
+
+    # Tenant-scoped lookup. The membership dep on tenant_id already verified
+    # the caller belongs to this tenant; we re-filter by tenant_id on the row
+    # to make cross-tenant access yield 404, not 403, on documents owned by
+    # someone else (information-hiding parity with #90/#92).
+    try:
+        row = (
+            db.table("documents")
+            .select("id, storage_path, original_filename, mime_type")
+            .eq("id", document_id)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.exception("Document lookup failed for %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load document.",
+        ) from exc
+
+    if not row.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    doc = row.data[0]
+    storage_path = doc.get("storage_path")
+    if not storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Document row has no storage_path.",
+        )
+
+    try:
+        # supabase-py: create_signed_url(path, expires_in_seconds)
+        signed = db.storage.from_(_STORAGE_BUCKET).create_signed_url(
+            storage_path, expires_in
+        )
+    except Exception as exc:
+        logger.exception("Failed to create signed URL for document %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Storage provider rejected the signed-URL request.",
+        ) from exc
+
+    # supabase-py 2.x returns {"signedURL": ..., "path": ...} on success.
+    url = signed.get("signedURL") or signed.get("signed_url") or signed.get("url")
+    if not url:
+        logger.error("Storage create_signed_url returned no URL: %r", signed)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Storage provider returned no signed URL.",
+        )
+
+    return {
+        "document_id": document_id,
+        "url": url,
+        "original_filename": doc.get("original_filename"),
+        "mime_type": doc.get("mime_type"),
+        "expires_in": expires_in,
+    }

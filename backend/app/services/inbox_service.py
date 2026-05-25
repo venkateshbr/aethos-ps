@@ -211,6 +211,16 @@ class InboxService:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
 
+    @staticmethod
+    def _source_document_id(payload: dict) -> str | None:
+        """Source-document FK plumbing (#127).
+
+        `suggestion_writer` mirrors `original_document_id` into the suggestion
+        payload, so every approve/approve_with_edits path can carry the link
+        back into the materialised row without an extra DB lookup.
+        """
+        return payload.get("original_document_id")
+
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
 
@@ -256,6 +266,7 @@ class InboxService:
                         else None
                     ),
                     "status": "draft",
+                    "source_document_id": self._source_document_id(payload),  # #127
                 }
             )
             .execute()
@@ -288,6 +299,7 @@ class InboxService:
                     "expense_date": payload.get("expense_date"),
                     "category": payload.get("category", "other"),
                     "billable": payload.get("billable", True),
+                    "document_id": self._source_document_id(payload),  # #127 — column existed from 0007, never populated
                 }
             )
             .execute()
@@ -342,6 +354,7 @@ class InboxService:
                     "vendor_invoice_number": payload.get("vendor_invoice_number"),
                     "issue_date": payload.get("issue_date"),
                     "due_date": payload.get("due_date"),
+                    "source_document_id": self._source_document_id(payload),  # #127
                 }
             )
             .execute()
