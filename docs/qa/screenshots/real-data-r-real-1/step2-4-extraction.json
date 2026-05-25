@@ -1,0 +1,26 @@
+{
+  "engagement": {
+    "doc_id": "5cfdced6-c720-4925-9140-0af86381d548",
+    "result": {
+      "status": "extracted",
+      "document_id": "5cfdced6-c720-4925-9140-0af86381d548"
+    },
+    "elapsed_sec": 8.6
+  },
+  "expense": {
+    "doc_id": "9a5b0dea-37a1-4496-b435-d8da06dfb6a2",
+    "result": {
+      "status": "extracted",
+      "document_id": "9a5b0dea-37a1-4496-b435-d8da06dfb6a2"
+    },
+    "elapsed_sec": 12.57
+  },
+  "vendor": {
+    "doc_id": "ceba89cd-93cc-4132-9657-2adb4e557c48",
+    "result": {
+      "status": "extracted",
+      "document_id": "ceba89cd-93cc-4132-9657-2adb4e557c48"
+    },
+    "elapsed_sec": 12.18
+  }
+}

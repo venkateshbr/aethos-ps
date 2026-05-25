@@ -1,0 +1,93 @@
+{
+  "tenant_id": "9cc3e696-d69c-4bfe-825c-bf4bc6f88d9b",
+  "docs": {
+    "engagement": {
+      "doc_id": "5cfdced6-c720-4925-9140-0af86381d548",
+      "doc_status": "extracted",
+      "original_filename_in_db": null,
+      "suggestion_count": 1,
+      "first_suggestion": {
+        "agent": "vendor_invoice_agent",
+        "conf": 0.9,
+        "status": "pending",
+        "action": "create_bill_draft",
+        "output_keys": [
+          "lines",
+          "total",
+          "currency",
+          "due_date",
+          "subtotal",
+          "tax_total",
+          "confidence",
+          "issue_date"
+        ]
+      },
+      "hitl_count": 1,
+      "first_hitl": {
+        "kind": "create_bill_draft",
+        "status": "open",
+        "title": "Review: Vendor Invoice Agent"
+      }
+    },
+    "expense": {
+      "doc_id": "9a5b0dea-37a1-4496-b435-d8da06dfb6a2",
+      "doc_status": "extracted",
+      "original_filename_in_db": null,
+      "suggestion_count": 1,
+      "first_suggestion": {
+        "agent": "vendor_invoice_agent",
+        "conf": 1.0,
+        "status": "pending",
+        "action": "create_bill_draft",
+        "output_keys": [
+          "lines",
+          "total",
+          "currency",
+          "due_date",
+          "subtotal",
+          "tax_total",
+          "confidence",
+          "issue_date"
+        ]
+      },
+      "hitl_count": 1,
+      "first_hitl": {
+        "kind": "create_bill_draft",
+        "status": "open",
+        "title": "Review: Vendor Invoice Agent"
+      }
+    },
+    "vendor": {
+      "doc_id": "ceba89cd-93cc-4132-9657-2adb4e557c48",
+      "doc_status": "extracted",
+      "original_filename_in_db": null,
+      "suggestion_count": 1,
+      "first_suggestion": {
+        "agent": "vendor_invoice_agent",
+        "conf": 0.0,
+        "status": "pending",
+        "action": "create_bill_draft",
+        "output_keys": [
+          "lines",
+          "total",
+          "currency",
+          "due_date",
+          "subtotal",
+          "tax_total",
+          "confidence",
+          "issue_date"
+        ]
+      },
+      "hitl_count": 1,
+      "first_hitl": {
+        "kind": "create_bill_draft",
+        "status": "open",
+        "title": "[INJECTION DETECTED] Review: Vendor Invoice Agent"
+      }
+    }
+  },
+  "totals": {
+    "suggestions": 3,
+    "hitl": 3
+  }
+}
