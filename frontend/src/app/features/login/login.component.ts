@@ -6,7 +6,6 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
 
 /**
  * LoginComponent — sign in for returning pilot tenants.
@@ -26,7 +25,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, ThemePickerComponent],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink],
   template: `
     <div class="min-h-screen bg-surface-base text-text-primary flex flex-col">
       <!-- Header — mirror landing for visual continuity -->
@@ -38,12 +37,9 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
             class="h-10 w-auto"
           />
         </a>
-        <div class="flex items-center gap-5">
-          <app-theme-picker />
-          <a routerLink="/signup" class="text-sm text-text-secondary hover:text-text-primary transition-colors">
-            Create account
-          </a>
-        </div>
+        <a routerLink="/signup" class="text-sm text-text-secondary hover:text-text-primary transition-colors">
+          Create account
+        </a>
       </header>
 
       <main class="flex-1 flex items-center justify-center px-8 py-10">

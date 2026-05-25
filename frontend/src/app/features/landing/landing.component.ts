@@ -1,12 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ThemeService } from '../../core/services/theme.service';
-import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink, ThemePickerComponent],
+  imports: [RouterLink],
   template: `
     <div class="min-h-screen bg-surface-base text-text-primary flex flex-col">
       <header class="px-8 py-5 border-b border-border-subtle flex items-center justify-between">
@@ -17,10 +16,7 @@ import { ThemePickerComponent } from '../../shared/components/theme-picker.compo
             class="h-10 w-auto"
           />
         </a>
-        <div class="flex items-center gap-5">
-          <app-theme-picker />
-          <a routerLink="/login" class="text-sm text-text-secondary hover:text-text-primary transition-colors">Sign in</a>
-        </div>
+        <a routerLink="/login" class="text-sm text-text-secondary hover:text-text-primary transition-colors">Sign in</a>
       </header>
 
       <main class="flex-1 flex items-center justify-center px-8">
