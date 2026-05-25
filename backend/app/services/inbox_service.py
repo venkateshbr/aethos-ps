@@ -75,15 +75,14 @@ class InboxService:
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "approved", user_id)
-            await self._repo.record_correction(
-                suggestion_id=suggestion_id,
-                agent_name=agent_name,
-                action_type=kind,
-                original_output=payload,
-                corrected_output=None,
-                correction_type="none",
-                corrected_by=user_id,
-            )
+            # Note: do NOT write an agent_corrections row on plain approve.
+            # The `agent_corrections` table records EDITS and REJECTIONS only
+            # (enum agent_correction_type = 'edit' | 'reject'). Plain approvals
+            # are already captured by `agent_suggestions.status='approved'`.
+            # Writing a "none" correction was a copy-paste from approve_with_edits
+            # that crashed because "none" is not a valid enum value (#124).
+            # Approval rate for autonomy promotion is computed from
+            # agent_suggestions.status, not from this table.
 
         await self._repo.mark_done(task_id, decided_by=user_id)
 
