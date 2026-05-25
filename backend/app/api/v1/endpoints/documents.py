@@ -144,6 +144,11 @@ async def upload_document(
         "id": document_id,
         "tenant_id": tenant_id,
         "uploader_id": current_user.user_id,
+        # #125 — persist the original filename so the extraction worker's
+        # keyword classifier (engagement / receipt / invoice) sees the real
+        # name instead of the {uuid}.{ext} storage_path tail and defaulting
+        # every upload to vendor_invoice.
+        "original_filename": file.filename or "untitled",
         "storage_path": storage_path,
         "mime_type": content_type,
         "file_size_bytes": len(content),

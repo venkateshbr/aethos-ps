@@ -134,7 +134,15 @@ async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
         file_response = db.storage.from_(DOCUMENTS_BUCKET).download(storage_path)
         document_bytes: bytes = file_response
 
-        filename = document.get("filename") or storage_path.split("/")[-1]
+        # #125 — read the canonical `original_filename` column (not the
+        # misnamed `filename` key, which never existed on the row). Falls
+        # back to the storage_path tail for legacy rows uploaded before
+        # the fix landed.
+        filename = (
+            document.get("original_filename")
+            or document.get("filename")
+            or storage_path.split("/")[-1]
+        )
         mime_type = document.get("mime_type") or _get_mime_type(filename)
 
         # Step 4: Classify
