@@ -27,16 +27,16 @@ import { AuthService } from '../../core/services/auth.service';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div class="bg-slate-800 border border-slate-700 rounded-lg p-6">
-      <h3 class="text-sm font-semibold text-slate-100 mb-1">Change password</h3>
-      <p class="text-xs text-slate-400 mb-5">
+    <div class="bg-surface-raised border border-border-default rounded-lg p-6">
+      <h3 class="text-sm font-semibold text-text-primary mb-1">Change password</h3>
+      <p class="text-xs text-text-muted mb-5">
         You'll need to enter your current password to confirm the change.
       </p>
 
       <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-4 max-w-md" novalidate>
 
         <div>
-          <label for="current_password" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">
+          <label for="current_password" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
             Current password
           </label>
           <input
@@ -44,12 +44,12 @@ import { AuthService } from '../../core/services/auth.service';
             type="password"
             formControlName="current_password"
             autocomplete="current-password"
-            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
           />
         </div>
 
         <div>
-          <label for="new_password" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">
+          <label for="new_password" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
             New password
           </label>
           <input
@@ -58,27 +58,27 @@ import { AuthService } from '../../core/services/auth.service';
             formControlName="new_password"
             autocomplete="new-password"
             minlength="8"
-            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
           />
           @if (newPwd().length > 0) {
             <div class="mt-2 flex items-center gap-2">
-              <div class="flex-1 h-1 bg-slate-700 rounded overflow-hidden">
+              <div class="flex-1 h-1 bg-surface rounded overflow-hidden">
                 <div
                   class="h-full transition-all"
                   [style.width.%]="strengthPct()"
                   [class]="strengthBarClass()"
                 ></div>
               </div>
-              <span class="text-xs text-slate-400 w-16 text-right">{{ strengthLabel() }}</span>
+              <span class="text-xs text-text-muted w-16 text-right">{{ strengthLabel() }}</span>
             </div>
           }
           @if (form.controls.new_password.touched && form.controls.new_password.errors?.['minlength']) {
-            <p class="text-xs text-red-400 mt-1">Password must be at least 8 characters.</p>
+            <p class="text-xs text-confidence-low mt-1">Password must be at least 8 characters.</p>
           }
         </div>
 
         <div>
-          <label for="confirm_password" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">
+          <label for="confirm_password" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
             Confirm new password
           </label>
           <input
@@ -86,20 +86,20 @@ import { AuthService } from '../../core/services/auth.service';
             type="password"
             formControlName="confirm_password"
             autocomplete="new-password"
-            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
           />
           @if (form.controls.confirm_password.touched && form.errors?.['mismatch']) {
-            <p class="text-xs text-red-400 mt-1">Passwords don't match.</p>
+            <p class="text-xs text-confidence-low mt-1">Passwords don't match.</p>
           }
         </div>
 
         @if (error()) {
-          <p role="alert" class="text-sm text-red-400 bg-red-950 border border-red-900 rounded px-3 py-2">
+          <p role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
             {{ error() }}
           </p>
         }
         @if (success()) {
-          <p role="status" class="text-sm text-emerald-400 bg-emerald-950 border border-emerald-900 rounded px-3 py-2">
+          <p role="status" class="text-sm text-accent-light bg-accent/10 border border-accent/40 rounded px-3 py-2">
             Password updated. Use your new password the next time you sign in.
           </p>
         }
@@ -147,9 +147,9 @@ export class ChangePasswordComponent {
   });
   protected strengthBarClass = computed(() => {
     const s = scorePassword(this.newPwd());
-    if (s <= 1) return 'bg-red-500';
-    if (s === 2) return 'bg-amber-500';
-    return 'bg-emerald-500';
+    if (s <= 1) return 'bg-confidence-low';
+    if (s === 2) return 'bg-confidence-med';
+    return 'bg-accent';
   });
 
   private _supabase: SupabaseClient | null = null;

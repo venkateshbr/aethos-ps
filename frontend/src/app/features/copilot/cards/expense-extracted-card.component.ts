@@ -22,8 +22,8 @@ export interface ExpenseExtractedPayload {
 
       <!-- Card header -->
       <div class="flex items-center gap-2 mb-3">
-        <span class="text-amber-400 text-sm" aria-hidden="true">&#10022;</span>
-        <span class="text-xs text-slate-400 font-medium uppercase tracking-wide">Expense Extracted</span>
+        <span class="text-confidence-med text-sm" aria-hidden="true">&#10022;</span>
+        <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Expense Extracted</span>
         <app-confidence-chip [confidence]="payload().confidence" />
         @if (streaming()) {
           <div
@@ -34,53 +34,53 @@ export interface ExpenseExtractedPayload {
       </div>
 
       <!-- Vendor + description -->
-      <p class="text-sm font-semibold text-slate-100 mb-1">
+      <p class="text-sm font-semibold text-text-primary mb-1">
         {{ payload().vendor || 'Unknown Vendor' }}
       </p>
       @if (payload().description) {
-        <p class="text-xs text-slate-400 mb-3 leading-relaxed">{{ payload().description }}</p>
+        <p class="text-xs text-text-muted mb-3 leading-relaxed">{{ payload().description }}</p>
       }
 
       <!-- Detail grid -->
       <div class="grid grid-cols-3 gap-3 text-xs mb-4">
         <div>
-          <div class="text-slate-500 mb-0.5">Amount</div>
-          <div class="text-slate-200 font-mono">
+          <div class="text-text-disabled mb-0.5">Amount</div>
+          <div class="text-text-primary font-mono">
             {{ payload().amount | money:payload().currency }}
           </div>
         </div>
         <div>
-          <div class="text-slate-500 mb-0.5">Category</div>
-          <div class="text-slate-200">{{ payload().category }}</div>
+          <div class="text-text-disabled mb-0.5">Category</div>
+          <div class="text-text-primary">{{ payload().category }}</div>
         </div>
         @if (payload().expense_date) {
           <div>
-            <div class="text-slate-500 mb-0.5">Date</div>
-            <div class="text-slate-200">{{ payload().expense_date }}</div>
+            <div class="text-text-disabled mb-0.5">Date</div>
+            <div class="text-text-primary">{{ payload().expense_date }}</div>
           </div>
         }
       </div>
 
       <!-- Actions -->
       @if (!streaming() && hitlTaskId()) {
-        <div class="flex gap-2 pt-3 border-t border-slate-700">
+        <div class="flex gap-2 pt-3 border-t border-border-default">
           <button
             (click)="onApprove.emit()"
-            class="px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            class="px-3 py-1.5 text-xs font-medium rounded bg-accent hover:bg-accent text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             aria-label="Approve expense"
           >
             Approve
           </button>
           <button
             (click)="onEdit.emit()"
-            class="px-3 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+            class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-secondary hover:border-slate-500 hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
             aria-label="Edit expense"
           >
             Edit
           </button>
           <button
             (click)="onReject.emit()"
-            class="px-3 py-1.5 text-xs font-medium rounded text-red-400 hover:text-red-300 hover:bg-red-950 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+            class="px-3 py-1.5 text-xs font-medium rounded text-confidence-low hover:text-confidence-low hover:bg-confidence-low/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
             aria-label="Reject expense"
           >
             Reject
@@ -102,7 +102,7 @@ export class ExpenseExtractedCardComponent {
   cardClass(): string {
     const base = 'rounded-lg border p-4 my-2 transition-all';
     return this.streaming()
-      ? `${base} border-amber-500/50 bg-slate-800 shadow-[0_0_12px_rgba(245,158,11,0.08)]`
-      : `${base} border-slate-600 bg-slate-800`;
+      ? `${base} border-amber-500/50 bg-surface-raised shadow-[0_0_12px_rgba(245,158,11,0.08)]`
+      : `${base} border-border-strong bg-surface-raised`;
   }
 }

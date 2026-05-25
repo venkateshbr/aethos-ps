@@ -22,11 +22,11 @@ import { userMessageForError } from '../../core/utils/error-message';
     ProjectsListComponent,
   ],
   template: `
-    <div class="p-6 bg-slate-900 min-h-full">
+    <div class="p-6 bg-surface-base min-h-full">
       <!-- Back nav -->
       <button
         mat-button
-        class="text-slate-400 hover:text-slate-100 mb-4 -ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+        class="text-text-muted hover:text-text-primary mb-4 -ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         (click)="goBack()"
         aria-label="Back to engagements"
       >
@@ -37,11 +37,11 @@ import { userMessageForError } from '../../core/utils/error-message';
       <!-- Loading skeleton -->
       @if (loading()) {
         <div class="animate-pulse" aria-busy="true" aria-label="Loading engagement">
-          <div class="h-8 bg-slate-800 rounded w-1/3 mb-3"></div>
-          <div class="h-4 bg-slate-800 rounded w-1/5 mb-6"></div>
+          <div class="h-8 bg-surface-raised rounded w-1/3 mb-3"></div>
+          <div class="h-4 bg-surface-raised rounded w-1/5 mb-6"></div>
           <div class="grid grid-cols-2 gap-4">
             @for (item of [1,2,3,4,5,6]; track item) {
-              <div class="bg-slate-800 rounded p-4 h-16"></div>
+              <div class="bg-surface-raised rounded p-4 h-16"></div>
             }
           </div>
         </div>
@@ -49,7 +49,7 @@ import { userMessageForError } from '../../core/utils/error-message';
 
       <!-- Error state -->
       @if (error() && !loading()) {
-        <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
+        <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
           {{ error() }}
         </div>
@@ -60,8 +60,8 @@ import { userMessageForError } from '../../core/utils/error-message';
         <!-- Header -->
         <div class="flex items-start justify-between mb-6">
           <div>
-            <h1 class="text-2xl font-bold text-slate-50">{{ engagement()!.name }}</h1>
-            <p class="text-sm text-slate-400 mt-1">{{ engagement()!.client_name ?? 'Client' }}</p>
+            <h1 class="text-2xl font-bold text-text-primary">{{ engagement()!.name }}</h1>
+            <p class="text-sm text-text-muted mt-1">{{ engagement()!.client_name ?? 'Client' }}</p>
           </div>
           <span
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
@@ -75,43 +75,43 @@ import { userMessageForError } from '../../core/utils/error-message';
 
         <!-- Key metrics grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-            <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Billing Arrangement</dt>
-            <dd class="text-slate-50 text-sm font-medium">{{ formatBilling(engagement()!.billing_arrangement) }}</dd>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Billing Arrangement</dt>
+            <dd class="text-text-primary text-sm font-medium">{{ formatBilling(engagement()!.billing_arrangement) }}</dd>
           </div>
-          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-            <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Currency</dt>
-            <dd class="text-slate-50 text-sm font-mono font-medium">{{ engagement()!.currency }}</dd>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Currency</dt>
+            <dd class="text-text-primary text-sm font-mono font-medium">{{ engagement()!.currency }}</dd>
           </div>
-          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-            <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Total Value</dt>
-            <dd class="text-slate-50 text-sm font-mono font-medium tabular-nums">
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Total Value</dt>
+            <dd class="text-text-primary text-sm font-mono font-medium tabular-nums">
               {{ engagement()!.total_value | money: engagement()!.currency }}
             </dd>
           </div>
           @if (engagement()!.start_date) {
-            <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-              <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Start Date</dt>
-              <dd class="text-slate-50 text-sm">{{ engagement()!.start_date }}</dd>
+            <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+              <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Start Date</dt>
+              <dd class="text-text-primary text-sm">{{ engagement()!.start_date }}</dd>
             </div>
           }
           @if (engagement()!.end_date) {
-            <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-              <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">End Date</dt>
-              <dd class="text-slate-50 text-sm">{{ engagement()!.end_date }}</dd>
+            <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+              <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">End Date</dt>
+              <dd class="text-text-primary text-sm">{{ engagement()!.end_date }}</dd>
             </div>
           }
           @if (engagement()!.rate_card_name) {
-            <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-              <dt class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Rate Card</dt>
-              <dd class="text-slate-50 text-sm">{{ engagement()!.rate_card_name }}</dd>
+            <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+              <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Rate Card</dt>
+              <dd class="text-text-primary text-sm">{{ engagement()!.rate_card_name }}</dd>
             </div>
           }
         </div>
 
         <!-- Projects section -->
         <div class="mt-2">
-          <h2 class="text-base font-semibold text-slate-50 mb-4">Projects</h2>
+          <h2 class="text-base font-semibold text-text-primary mb-4">Projects</h2>
           <app-projects-list [engagementId]="engagement()!.id" />
         </div>
       }
@@ -164,11 +164,11 @@ export class EngagementDetailComponent implements OnInit {
 
   statusClass(status: string): string {
     switch (status) {
-      case 'active':    return 'bg-emerald-900 text-emerald-400';
-      case 'draft':     return 'bg-amber-950 text-amber-400';
-      case 'completed': return 'bg-slate-800 text-slate-400';
-      case 'cancelled': return 'bg-red-950 text-red-400';
-      default:          return 'bg-slate-800 text-slate-400';
+      case 'active':    return 'bg-accent/15 text-accent-light';
+      case 'draft':     return 'bg-confidence-med/10 text-confidence-med';
+      case 'completed': return 'bg-surface-raised text-text-muted';
+      case 'cancelled': return 'bg-confidence-low/10 text-confidence-low';
+      default:          return 'bg-surface-raised text-text-muted';
     }
   }
 

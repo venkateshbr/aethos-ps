@@ -656,7 +656,7 @@ export class SignupComponent implements AfterViewInit {
   /**
    * Resolve the class string for a plan tile. Kept in TS (not template) because
    * Angular's [class.foo] binding doesn't accept Tailwind variant prefixes like
-   * `hover:` or arbitrary opacity suffixes (`bg-slate-800/60`) — those fail the
+   * `hover:` or arbitrary opacity suffixes (`bg-surface-raised/60`) — those fail the
    * template lexer.
    */
   protected planTileClass(plan: { tier: PlanTier; priceId: string | null }): string {

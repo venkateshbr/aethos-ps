@@ -33,16 +33,16 @@ function formatBillingArrangement(arrangement: string): string {
     MoneyPipe,
   ],
   template: `
-    <div class="p-6 bg-slate-900 min-h-full">
+    <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
       <div class="flex items-center justify-between mb-6">
         <div>
-          <h1 class="text-2xl font-bold text-slate-50">Engagements</h1>
-          <p class="text-sm text-slate-400 mt-1">All client engagements across your firm</p>
+          <h1 class="text-2xl font-bold text-text-primary">Engagements</h1>
+          <p class="text-sm text-text-muted mt-1">All client engagements across your firm</p>
         </div>
         <button
           mat-flat-button
-          class="bg-emerald-500 hover:bg-emerald-600 text-white rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+          class="bg-accent hover:bg-accent text-text-primary rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           aria-label="Create new engagement"
         >
           <mat-icon>add</mat-icon>
@@ -52,14 +52,14 @@ function formatBillingArrangement(arrangement: string): string {
 
       <!-- Loading skeleton -->
       @if (loading()) {
-        <div class="rounded-lg overflow-hidden border border-slate-700" aria-label="Loading engagements" aria-busy="true">
+        <div class="rounded-lg overflow-hidden border border-border-default" aria-label="Loading engagements" aria-busy="true">
           @for (row of [1, 2, 3]; track row) {
-            <div class="flex gap-4 px-4 py-3 border-b border-slate-800 last:border-0">
-              <div class="h-4 bg-slate-800 animate-pulse rounded w-1/4"></div>
-              <div class="h-4 bg-slate-800 animate-pulse rounded w-1/6"></div>
-              <div class="h-4 bg-slate-800 animate-pulse rounded w-1/8"></div>
-              <div class="h-4 bg-slate-800 animate-pulse rounded w-1/6"></div>
-              <div class="h-4 bg-slate-800 animate-pulse rounded w-1/12"></div>
+            <div class="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0">
+              <div class="h-4 bg-surface-raised animate-pulse rounded w-1/4"></div>
+              <div class="h-4 bg-surface-raised animate-pulse rounded w-1/6"></div>
+              <div class="h-4 bg-surface-raised animate-pulse rounded w-1/8"></div>
+              <div class="h-4 bg-surface-raised animate-pulse rounded w-1/6"></div>
+              <div class="h-4 bg-surface-raised animate-pulse rounded w-1/12"></div>
             </div>
           }
         </div>
@@ -67,7 +67,7 @@ function formatBillingArrangement(arrangement: string): string {
 
       <!-- Error state -->
       @if (error() && !loading()) {
-        <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
+        <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
           {{ error() }}
         </div>
@@ -75,14 +75,14 @@ function formatBillingArrangement(arrangement: string): string {
 
       <!-- Empty state -->
       @if (!loading() && !error() && engagements().length === 0) {
-        <div class="rounded-lg border border-slate-700 bg-slate-800 px-6 py-12 text-center">
-          <mat-icon class="text-4xl text-slate-500 mb-4 block">work_outline</mat-icon>
-          <p class="text-slate-300 text-sm leading-relaxed mb-4">
+        <div class="rounded-lg border border-border-default bg-surface-raised px-6 py-12 text-center">
+          <mat-icon class="text-4xl text-text-disabled mb-4 block">work_outline</mat-icon>
+          <p class="text-text-secondary text-sm leading-relaxed mb-4">
             No engagements yet. Start by uploading an engagement letter or creating one manually.
           </p>
           <button
             mat-stroked-button
-            class="border-slate-600 text-slate-300 hover:border-slate-400 hover:text-slate-100 rounded"
+            class="border-border-strong text-text-secondary hover:border-slate-400 hover:text-text-primary rounded"
             aria-label="Create your first engagement"
           >
             <mat-icon>add</mat-icon>
@@ -93,21 +93,21 @@ function formatBillingArrangement(arrangement: string): string {
 
       <!-- Table -->
       @if (!loading() && !error() && engagements().length > 0) {
-        <div class="rounded-lg overflow-hidden border border-slate-700">
+        <div class="rounded-lg overflow-hidden border border-border-default">
           <table
             mat-table
             [dataSource]="engagements()"
-            class="w-full bg-slate-900"
+            class="w-full bg-surface-base"
             aria-label="Engagements"
           >
             <!-- Name column -->
             <ng-container matColumnDef="name">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Name
               </th>
-              <td mat-cell *matCellDef="let row" class="text-slate-50 text-sm font-medium px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium px-4 py-3 border-b border-border-subtle">
                 <button
-                  class="text-left hover:text-emerald-400 transition-colors focus-visible:outline-none focus-visible:underline"
+                  class="text-left hover:text-accent-light transition-colors focus-visible:outline-none focus-visible:underline"
                   (click)="openDetail(row.id)"
                   [attr.aria-label]="'Open engagement ' + row.name"
                 >
@@ -118,50 +118,50 @@ function formatBillingArrangement(arrangement: string): string {
 
             <!-- Client column -->
             <ng-container matColumnDef="client">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Client
               </th>
-              <td mat-cell *matCellDef="let row" class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle">
                 {{ row.client_name ?? '—' }}
               </td>
             </ng-container>
 
             <!-- Billing type column -->
             <ng-container matColumnDef="billing">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Billing
               </th>
-              <td mat-cell *matCellDef="let row" class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle">
                 {{ formatBilling(row.billing_arrangement) }}
               </td>
             </ng-container>
 
             <!-- Currency column -->
             <ng-container matColumnDef="currency">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Currency
               </th>
-              <td mat-cell *matCellDef="let row" class="text-slate-400 text-sm font-mono px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="text-text-muted text-sm font-mono px-4 py-3 border-b border-border-subtle">
                 {{ row.currency }}
               </td>
             </ng-container>
 
             <!-- Value column -->
             <ng-container matColumnDef="value">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3 text-right">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
                 Value
               </th>
-              <td mat-cell *matCellDef="let row" class="text-slate-50 text-sm font-mono px-4 py-3 border-b border-slate-800 text-right tabular-nums">
+              <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
                 {{ row.total_value | money: row.currency }}
               </td>
             </ng-container>
 
             <!-- Status column -->
             <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Status
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
                   [class]="statusClass(row.status)"
@@ -175,13 +175,13 @@ function formatBillingArrangement(arrangement: string): string {
 
             <!-- Actions column -->
             <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef class="bg-slate-800 border-b border-slate-700 px-4 py-3 w-12">
+              <th mat-header-cell *matHeaderCellDef class="bg-surface-raised border-b border-border-default px-4 py-3 w-12">
                 <span class="sr-only">Actions</span>
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <button
                   mat-icon-button
-                  class="text-slate-400 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                  class="text-text-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   [matTooltip]="'Open engagement'"
                   (click)="openDetail(row.id)"
                   [attr.aria-label]="'Open ' + row.name"
@@ -195,14 +195,14 @@ function formatBillingArrangement(arrangement: string): string {
             <tr
               mat-row
               *matRowDef="let row; columns: displayedColumns"
-              class="hover:bg-slate-800 transition-colors cursor-pointer"
+              class="hover:bg-surface-raised transition-colors cursor-pointer"
               (click)="openDetail(row.id)"
               [attr.aria-label]="'Engagement: ' + row.name"
             ></tr>
           </table>
         </div>
 
-        <p class="text-xs text-slate-500 mt-3">{{ engagements().length }} engagement{{ engagements().length !== 1 ? 's' : '' }}</p>
+        <p class="text-xs text-text-disabled mt-3">{{ engagements().length }} engagement{{ engagements().length !== 1 ? 's' : '' }}</p>
       }
     </div>
   `,
@@ -253,11 +253,11 @@ export class EngagementsListComponent implements OnInit {
 
   statusClass(status: string): string {
     switch (status) {
-      case 'active':    return 'bg-emerald-900 text-emerald-400';
-      case 'draft':     return 'bg-amber-950 text-amber-400';
-      case 'completed': return 'bg-slate-800 text-slate-400';
-      case 'cancelled': return 'bg-red-950 text-red-400';
-      default:          return 'bg-slate-800 text-slate-400';
+      case 'active':    return 'bg-accent/15 text-accent-light';
+      case 'draft':     return 'bg-confidence-med/10 text-confidence-med';
+      case 'completed': return 'bg-surface-raised text-text-muted';
+      case 'cancelled': return 'bg-confidence-low/10 text-confidence-low';
+      default:          return 'bg-surface-raised text-text-muted';
     }
   }
 

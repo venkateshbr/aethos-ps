@@ -9,17 +9,17 @@ import { Component, input, computed } from '@angular/core';
   standalone: true,
   template: `
     <div
-      class="rounded-lg overflow-hidden border border-slate-700 animate-pulse"
+      class="rounded-lg overflow-hidden border border-border-default animate-pulse"
       aria-busy="true"
       [attr.aria-label]="ariaLabel()"
     >
       @for (row of rows(); track row) {
-        <div class="flex gap-4 px-4 py-3 border-b border-slate-800 last:border-0 bg-slate-800">
-          <div class="h-4 bg-slate-700 rounded w-24"></div>
-          <div class="h-4 bg-slate-700 rounded w-32"></div>
-          <div class="h-4 bg-slate-700 rounded w-20"></div>
-          <div class="h-4 bg-slate-700 rounded flex-1"></div>
-          <div class="h-4 bg-slate-700 rounded w-16"></div>
+        <div class="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0 bg-surface-raised">
+          <div class="h-4 bg-surface rounded w-24"></div>
+          <div class="h-4 bg-surface rounded w-32"></div>
+          <div class="h-4 bg-surface rounded w-20"></div>
+          <div class="h-4 bg-surface rounded flex-1"></div>
+          <div class="h-4 bg-surface rounded w-16"></div>
         </div>
       }
     </div>

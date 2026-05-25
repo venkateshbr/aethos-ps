@@ -11,18 +11,18 @@ import { MatIconModule } from '@angular/material/icon';
   standalone: true,
   imports: [MatIconModule],
   template: `
-    <section class="h-full flex flex-col bg-slate-900 text-slate-100">
-      <header class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-        <h1 class="text-lg font-semibold text-slate-50">Payments</h1>
+    <section class="h-full flex flex-col bg-surface-base text-text-primary">
+      <header class="px-6 py-4 border-b border-border-default flex items-center justify-between">
+        <h1 class="text-lg font-semibold text-text-primary">Payments</h1>
       </header>
       <div class="flex-1 flex flex-col items-center justify-center text-center px-6">
         <mat-icon
-          class="text-slate-500 mb-3"
+          class="text-text-disabled mb-3"
           style="font-size:2.5rem;width:2.5rem;height:2.5rem;"
           aria-hidden="true"
         >account_balance</mat-icon>
-        <p class="text-slate-300 font-medium">Payments view coming soon</p>
-        <p class="text-slate-500 text-sm mt-1 max-w-md">
+        <p class="text-text-secondary font-medium">Payments view coming soon</p>
+        <p class="text-text-disabled text-sm mt-1 max-w-md">
           Track received payments, Stripe Connect transfers, and manual
           payment recording. Ships with the billing-cash close in the next release.
         </p>

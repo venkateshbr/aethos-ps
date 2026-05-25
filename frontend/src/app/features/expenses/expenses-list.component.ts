@@ -20,11 +20,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
     SkeletonRowsComponent,
   ],
   template: `
-    <div class="p-6 bg-slate-900 min-h-full">
+    <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold text-slate-50">Expenses</h1>
-        <p class="text-sm text-slate-400 mt-1">Track and review project expenses.</p>
+        <h1 class="text-2xl font-bold text-text-primary">Expenses</h1>
+        <p class="text-sm text-text-muted mt-1">Track and review project expenses.</p>
       </div>
 
       <!-- Loading skeleton -->
@@ -34,7 +34,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
       <!-- Error state -->
       @if (error() && !loading()) {
-        <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
+        <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
           Something went wrong loading expenses. Please try again.
         </div>
@@ -51,21 +51,21 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
       <!-- Table -->
       @if (!loading() && !error() && expenses().length > 0) {
-        <div class="rounded-lg overflow-hidden border border-slate-700">
+        <div class="rounded-lg overflow-hidden border border-border-default">
           <table
             mat-table
             [dataSource]="expenses()"
-            class="w-full bg-slate-900"
+            class="w-full bg-surface-base"
             aria-label="Expenses"
           >
             <!-- Date column -->
             <ng-container matColumnDef="date">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Date
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800 tabular-nums">
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle tabular-nums">
                 {{ row.date }}
               </td>
             </ng-container>
@@ -73,11 +73,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Vendor column -->
             <ng-container matColumnDef="vendor">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Vendor
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm font-medium px-4 py-3 border-b border-slate-800">
+                  class="text-text-primary text-sm font-medium px-4 py-3 border-b border-border-subtle">
                 {{ row.vendor }}
               </td>
             </ng-container>
@@ -85,11 +85,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Amount column -->
             <ng-container matColumnDef="amount">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3 text-right">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
                 Amount
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm font-mono px-4 py-3 border-b border-slate-800 text-right tabular-nums">
+                  class="text-text-primary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
                 {{ row.amount | money: row.currency }}
               </td>
             </ng-container>
@@ -97,11 +97,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Category column -->
             <ng-container matColumnDef="category">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Category
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800">
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle">
                 {{ row.category | titlecase }}
               </td>
             </ng-container>
@@ -109,13 +109,13 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Billable column -->
             <ng-container matColumnDef="billable">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Billable
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
-                  [class]="row.billable ? 'bg-emerald-900 text-emerald-400' : 'bg-slate-700 text-slate-400'"
+                  [class]="row.billable ? 'bg-accent/15 text-accent-light' : 'bg-surface text-text-muted'"
                   [attr.aria-label]="row.billable ? 'Billable' : 'Non-billable'"
                 >
                   <mat-icon class="text-xs leading-none" style="font-size:12px;width:12px;height:12px;">
@@ -128,11 +128,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"
-                class="hover:bg-slate-800 transition-colors"></tr>
+                class="hover:bg-surface-raised transition-colors"></tr>
           </table>
         </div>
 
-        <p class="text-xs text-slate-500 mt-3 text-right">
+        <p class="text-xs text-text-disabled mt-3 text-right">
           {{ expenses().length }} {{ expenses().length === 1 ? 'expense' : 'expenses' }}
         </p>
       }

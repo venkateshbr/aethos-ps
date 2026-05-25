@@ -30,37 +30,37 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
     SkeletonRowsComponent,
   ],
   template: `
-    <div class="p-6 bg-slate-900 min-h-full">
+    <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold text-slate-50">Time Entries</h1>
-        <p class="text-sm text-slate-400 mt-1">Log and review billable hours across your projects.</p>
+        <h1 class="text-2xl font-bold text-text-primary">Time Entries</h1>
+        <p class="text-sm text-text-muted mt-1">Log and review billable hours across your projects.</p>
       </div>
 
       <!-- Quick-add row -->
-      <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-6" role="region" aria-label="Add time entry">
-        <h2 class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Quick Add</h2>
+      <div class="bg-surface-raised border border-border-default rounded-lg p-4 mb-6" role="region" aria-label="Add time entry">
+        <h2 class="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Quick Add</h2>
         <form
           (ngSubmit)="submitEntry()"
           class="flex flex-wrap gap-3 items-end"
           aria-label="New time entry form"
         >
           <div class="flex flex-col gap-1">
-            <label for="entry-date" class="text-xs text-slate-400">Date</label>
+            <label for="entry-date" class="text-xs text-text-muted">Date</label>
             <input
               id="entry-date"
               type="date"
               [(ngModel)]="newDate"
               name="entry-date"
               required
-              class="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-slate-50
+              class="bg-surface border border-border-strong rounded px-3 py-1.5 text-sm text-text-primary
                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                     placeholder:text-slate-500"
+                     placeholder:text-text-disabled"
             />
           </div>
 
           <div class="flex flex-col gap-1">
-            <label for="entry-hours" class="text-xs text-slate-400">Hours</label>
+            <label for="entry-hours" class="text-xs text-text-muted">Hours</label>
             <input
               id="entry-hours"
               type="number"
@@ -71,14 +71,14 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
               step="0.25"
               placeholder="0.00"
               required
-              class="w-24 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-slate-50
+              class="w-24 bg-surface border border-border-strong rounded px-3 py-1.5 text-sm text-text-primary
                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                     placeholder:text-slate-500"
+                     placeholder:text-text-disabled"
             />
           </div>
 
           <div class="flex flex-col gap-1 flex-1 min-w-40">
-            <label for="entry-description" class="text-xs text-slate-400">Description</label>
+            <label for="entry-description" class="text-xs text-text-muted">Description</label>
             <input
               id="entry-description"
               type="text"
@@ -87,23 +87,23 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
               placeholder="What did you work on?"
               required
               (keydown.enter)="submitEntry()"
-              class="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-slate-50
+              class="bg-surface border border-border-strong rounded px-3 py-1.5 text-sm text-text-primary
                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                     placeholder:text-slate-500"
+                     placeholder:text-text-disabled"
             />
           </div>
 
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-slate-400">Billable</label>
+            <label class="text-xs text-text-muted">Billable</label>
             <label class="flex items-center gap-2 cursor-pointer h-[34px]">
               <input
                 type="checkbox"
                 [(ngModel)]="newBillable"
                 name="entry-billable"
-                class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500
+                class="w-4 h-4 rounded border-border-strong bg-surface text-accent
                        focus:ring-emerald-500 focus:ring-offset-slate-900"
               />
-              <span class="text-sm text-slate-300">Yes</span>
+              <span class="text-sm text-text-secondary">Yes</span>
             </label>
           </div>
 
@@ -111,7 +111,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             type="submit"
             [disabled]="addingEntry()"
             mat-flat-button
-            class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-1.5 rounded
+            class="bg-indigo-600 hover:bg-indigo-500 text-text-primary text-sm font-medium px-4 py-1.5 rounded
                    disabled:opacity-50 disabled:cursor-not-allowed transition-colors
                    focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             aria-label="Add time entry"
@@ -126,7 +126,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
         </form>
 
         @if (addError()) {
-          <p class="mt-2 text-xs text-red-400" role="alert">{{ addError() }}</p>
+          <p class="mt-2 text-xs text-confidence-low" role="alert">{{ addError() }}</p>
         }
       </div>
 
@@ -137,7 +137,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
       <!-- Error state -->
       @if (error() && !loading()) {
-        <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
+        <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
           Something went wrong loading time entries. Please try again.
         </div>
@@ -154,21 +154,21 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
       <!-- Table -->
       @if (!loading() && !error() && entries().length > 0) {
-        <div class="rounded-lg overflow-hidden border border-slate-700">
+        <div class="rounded-lg overflow-hidden border border-border-default">
           <table
             mat-table
             [dataSource]="entries()"
-            class="w-full bg-slate-900"
+            class="w-full bg-surface-base"
             aria-label="Time entries"
           >
             <!-- Date column -->
             <ng-container matColumnDef="date">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Date
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800 tabular-nums">
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle tabular-nums">
                 {{ row.date }}
               </td>
             </ng-container>
@@ -176,11 +176,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Employee column (placeholder — employee lookup not wired yet) -->
             <ng-container matColumnDef="employee">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Employee
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-400 text-sm px-4 py-3 border-b border-slate-800 font-mono">
+                  class="text-text-muted text-sm px-4 py-3 border-b border-border-subtle font-mono">
                 {{ row.employee_id | slice:0:8 }}…
               </td>
             </ng-container>
@@ -188,11 +188,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Hours column -->
             <ng-container matColumnDef="hours">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3 text-right">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
                 Hours
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm font-mono px-4 py-3 border-b border-slate-800 text-right tabular-nums">
+                  class="text-text-primary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
                 {{ row.hours }}
               </td>
             </ng-container>
@@ -200,11 +200,11 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Description column -->
             <ng-container matColumnDef="description">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Description
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm px-4 py-3 border-b border-slate-800 max-w-xs truncate">
+                  class="text-text-primary text-sm px-4 py-3 border-b border-border-subtle max-w-xs truncate">
                 {{ row.description }}
               </td>
             </ng-container>
@@ -212,13 +212,13 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Billable column -->
             <ng-container matColumnDef="billable">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Billable
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
-                  [class]="row.billable ? 'bg-emerald-900 text-emerald-400' : 'bg-slate-700 text-slate-400'"
+                  [class]="row.billable ? 'bg-accent/15 text-accent-light' : 'bg-surface text-text-muted'"
                   [attr.aria-label]="row.billable ? 'Billable' : 'Non-billable'"
                 >
                   <mat-icon class="text-xs leading-none" style="font-size:12px;width:12px;height:12px;">
@@ -232,10 +232,10 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
             <!-- Billing status column -->
             <ng-container matColumnDef="billing_status">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Status
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <span
                   class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                   [class]="billingStatusClass(row.billing_status)"
@@ -247,12 +247,12 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"
-                class="hover:bg-slate-800 transition-colors"></tr>
+                class="hover:bg-surface-raised transition-colors"></tr>
           </table>
         </div>
 
         <!-- Row count summary -->
-        <p class="text-xs text-slate-500 mt-3 text-right">
+        <p class="text-xs text-text-disabled mt-3 text-right">
           {{ entries().length }} {{ entries().length === 1 ? 'entry' : 'entries' }}
         </p>
       }
@@ -353,10 +353,10 @@ export class TimeEntriesListComponent implements OnInit {
 
   billingStatusClass(status: string): string {
     switch (status) {
-      case 'unbilled':     return 'bg-amber-950 text-amber-400';
-      case 'billed':       return 'bg-emerald-900 text-emerald-400';
-      case 'non_billable': return 'bg-slate-700 text-slate-400';
-      default:             return 'bg-slate-700 text-slate-400';
+      case 'unbilled':     return 'bg-confidence-med/10 text-confidence-med';
+      case 'billed':       return 'bg-accent/15 text-accent-light';
+      case 'non_billable': return 'bg-surface text-text-muted';
+      default:             return 'bg-surface text-text-muted';
     }
   }
 

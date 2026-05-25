@@ -36,16 +36,16 @@ interface InvoiceListResponse {
     MoneyPipe,
   ],
   template: `
-    <div class="p-6 bg-slate-900 min-h-full">
+    <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold text-slate-50">Invoices</h1>
-        <p class="text-sm text-slate-400 mt-1">Review and send client invoices.</p>
+        <h1 class="text-2xl font-bold text-text-primary">Invoices</h1>
+        <p class="text-sm text-text-muted mt-1">Review and send client invoices.</p>
       </div>
 
       <!-- Send confirmation toast -->
       @if (sentMessage()) {
-        <div class="mb-4 rounded-lg border border-emerald-800 bg-emerald-950 px-4 py-3 text-sm text-emerald-400 flex items-center gap-2"
+        <div class="mb-4 rounded-lg border border-emerald-800 bg-accent/10 px-4 py-3 text-sm text-accent-light flex items-center gap-2"
              role="status" aria-live="polite">
           <mat-icon class="text-base">check_circle</mat-icon>
           {{ sentMessage() }}
@@ -54,14 +54,14 @@ interface InvoiceListResponse {
 
       <!-- Loading skeleton -->
       @if (loading()) {
-        <div class="rounded-lg overflow-hidden border border-slate-700 animate-pulse" aria-busy="true" aria-label="Loading invoices">
+        <div class="rounded-lg overflow-hidden border border-border-default animate-pulse" aria-busy="true" aria-label="Loading invoices">
           @for (row of [1, 2, 3]; track row) {
-            <div class="flex gap-4 px-4 py-3 border-b border-slate-800 last:border-0 bg-slate-800">
-              <div class="h-4 bg-slate-700 rounded w-24"></div>
-              <div class="h-4 bg-slate-700 rounded w-32"></div>
-              <div class="h-4 bg-slate-700 rounded w-20"></div>
-              <div class="h-4 bg-slate-700 rounded w-28"></div>
-              <div class="h-4 bg-slate-700 rounded w-16"></div>
+            <div class="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0 bg-surface-raised">
+              <div class="h-4 bg-surface rounded w-24"></div>
+              <div class="h-4 bg-surface rounded w-32"></div>
+              <div class="h-4 bg-surface rounded w-20"></div>
+              <div class="h-4 bg-surface rounded w-28"></div>
+              <div class="h-4 bg-surface rounded w-16"></div>
             </div>
           }
         </div>
@@ -69,7 +69,7 @@ interface InvoiceListResponse {
 
       <!-- Error state -->
       @if (error() && !loading()) {
-        <div class="rounded-lg border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-400" role="alert">
+        <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low" role="alert">
           <mat-icon class="text-base align-middle mr-1">error_outline</mat-icon>
           {{ error() }}
         </div>
@@ -77,30 +77,30 @@ interface InvoiceListResponse {
 
       <!-- Empty state -->
       @if (!loading() && !error() && invoices().length === 0) {
-        <div class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-12 text-center">
-          <mat-icon class="text-4xl text-slate-500 mb-3 block">receipt</mat-icon>
-          <p class="text-slate-300 font-medium mb-1">No invoices yet</p>
-          <p class="text-slate-500 text-sm">Invoices generated from billing runs will appear here.</p>
+        <div class="rounded-lg border border-border-default bg-surface-raised px-4 py-12 text-center">
+          <mat-icon class="text-4xl text-text-disabled mb-3 block">receipt</mat-icon>
+          <p class="text-text-secondary font-medium mb-1">No invoices yet</p>
+          <p class="text-text-disabled text-sm">Invoices generated from billing runs will appear here.</p>
         </div>
       }
 
       <!-- Table -->
       @if (!loading() && !error() && invoices().length > 0) {
-        <div class="rounded-lg overflow-hidden border border-slate-700">
+        <div class="rounded-lg overflow-hidden border border-border-default">
           <table
             mat-table
             [dataSource]="invoices()"
-            class="w-full bg-slate-900"
+            class="w-full bg-surface-base"
             aria-label="Invoices"
           >
             <!-- Invoice number -->
             <ng-container matColumnDef="invoice_number">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Invoice
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm font-mono font-medium px-4 py-3 border-b border-slate-800">
+                  class="text-text-primary text-sm font-mono font-medium px-4 py-3 border-b border-border-subtle">
                 {{ row.invoice_number }}
               </td>
             </ng-container>
@@ -108,11 +108,11 @@ interface InvoiceListResponse {
             <!-- Client -->
             <ng-container matColumnDef="client_name">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Client
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm px-4 py-3 border-b border-slate-800">
+                  class="text-text-primary text-sm px-4 py-3 border-b border-border-subtle">
                 {{ row.client_name }}
               </td>
             </ng-container>
@@ -120,10 +120,10 @@ interface InvoiceListResponse {
             <!-- Status -->
             <ng-container matColumnDef="status">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Status
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
                   [class]="statusClass(row.status)"
@@ -136,11 +136,11 @@ interface InvoiceListResponse {
             <!-- Total -->
             <ng-container matColumnDef="total_amount">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3 text-right">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
                 Total
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-50 text-sm font-mono px-4 py-3 border-b border-slate-800 text-right tabular-nums">
+                  class="text-text-primary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
                 {{ row.total_amount | money: row.currency }}
               </td>
             </ng-container>
@@ -148,11 +148,11 @@ interface InvoiceListResponse {
             <!-- Due date -->
             <ng-container matColumnDef="due_date">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Due
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-slate-300 text-sm px-4 py-3 border-b border-slate-800 tabular-nums">
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle tabular-nums">
                 {{ row.due_date }}
               </td>
             </ng-container>
@@ -160,10 +160,10 @@ interface InvoiceListResponse {
             <!-- Actions -->
             <ng-container matColumnDef="actions">
               <th mat-header-cell *matHeaderCellDef
-                  class="text-slate-400 text-xs font-medium uppercase tracking-wide bg-slate-800 border-b border-slate-700 px-4 py-3">
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Actions
               </th>
-              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-slate-800">
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
                 @if (row.status === 'approved') {
                   <button
                     (click)="sendInvoice(row)"
@@ -182,7 +182,7 @@ interface InvoiceListResponse {
                     [href]="row.payment_link_url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                    class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent-light transition-colors"
                     [attr.aria-label]="'Open payment link for ' + (row.invoice_number)"
                   >
                     <mat-icon class="text-sm">open_in_new</mat-icon>
@@ -194,11 +194,11 @@ interface InvoiceListResponse {
 
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"
-                class="hover:bg-slate-800 transition-colors"></tr>
+                class="hover:bg-surface-raised transition-colors"></tr>
           </table>
         </div>
 
-        <p class="text-xs text-slate-500 mt-3 text-right">
+        <p class="text-xs text-text-disabled mt-3 text-right">
           {{ invoices().length }} {{ invoices().length === 1 ? 'invoice' : 'invoices' }}
         </p>
       }
@@ -269,13 +269,13 @@ export class InvoicesListComponent implements OnInit {
 
   statusClass(status: string): string {
     switch (status) {
-      case 'draft':    return 'bg-slate-700 text-slate-400';
+      case 'draft':    return 'bg-surface text-text-muted';
       case 'approved': return 'bg-indigo-950 text-indigo-400';
       case 'sent':     return 'bg-blue-950 text-blue-400';
-      case 'paid':     return 'bg-emerald-900 text-emerald-400';
-      case 'overdue':  return 'bg-red-950 text-red-400';
-      case 'void':     return 'bg-slate-800 text-slate-500';
-      default:         return 'bg-slate-700 text-slate-400';
+      case 'paid':     return 'bg-accent/15 text-accent-light';
+      case 'overdue':  return 'bg-confidence-low/10 text-confidence-low';
+      case 'void':     return 'bg-surface-raised text-text-disabled';
+      default:         return 'bg-surface text-text-muted';
     }
   }
 

@@ -17,8 +17,8 @@ import {
   standalone: true,
   imports: [CommonModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe],
   template: `
-    <div class="min-h-full bg-slate-900 p-6">
-      <h1 class="text-2xl font-semibold text-slate-50 mb-6">Reports</h1>
+    <div class="min-h-full bg-surface-base p-6">
+      <h1 class="text-2xl font-semibold text-text-primary mb-6">Reports</h1>
 
       <mat-tab-group
         animationDuration="150ms"
@@ -77,34 +77,34 @@ import {
               } @else if (pnlRows().length === 0) {
                 <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'P&L data' }" />
               } @else {
-                <div class="overflow-x-auto rounded-lg border border-slate-700">
-                  <table mat-table [dataSource]="pnlRows()" class="w-full bg-slate-800">
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="pnlRows()" class="w-full bg-surface-raised">
                     <ng-container matColumnDef="project_name">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Project</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-medium">{{ row.project_name }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Project</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">{{ row.project_name }}</td>
                     </ng-container>
                     <ng-container matColumnDef="revenue">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Revenue</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-mono">{{ row.revenue | money: row.currency }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Revenue</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.revenue | money: row.currency }}</td>
                     </ng-container>
                     <ng-container matColumnDef="direct_cost">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Direct Cost</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-300 text-sm font-mono">{{ row.direct_cost | money: row.currency }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Direct Cost</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.direct_cost | money: row.currency }}</td>
                     </ng-container>
                     <ng-container matColumnDef="gross_margin">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Gross Margin</th>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Gross Margin</th>
                       <td mat-cell *matCellDef="let row" class="text-sm font-mono font-medium" [class]="marginAmountClass(row.gross_margin_pct)">{{ row.gross_margin | money: row.currency }}</td>
                     </ng-container>
                     <ng-container matColumnDef="gross_margin_pct">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Margin %</th>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Margin %</th>
                       <td mat-cell *matCellDef="let row">
                         <span [class]="marginPctClass(row.gross_margin_pct)">
                           {{ row.gross_margin_pct.toFixed(1) }}%
                         </span>
                       </td>
                     </ng-container>
-                    <tr mat-header-row *matHeaderRowDef="pnlColumns" class="bg-slate-900/50"></tr>
-                    <tr mat-row *matRowDef="let row; columns: pnlColumns;" class="border-slate-700 hover:bg-slate-700/40 transition-colors"></tr>
+                    <tr mat-header-row *matHeaderRowDef="pnlColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: pnlColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
                   </table>
                 </div>
               }
@@ -127,30 +127,30 @@ import {
               } @else if (utilRows().length === 0) {
                 <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'utilization data' }" />
               } @else {
-                <div class="overflow-x-auto rounded-lg border border-slate-700">
-                  <table mat-table [dataSource]="utilRows()" class="w-full bg-slate-800">
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="utilRows()" class="w-full bg-surface-raised">
                     <ng-container matColumnDef="employee_id">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Employee</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-300 text-sm font-mono">{{ row.employee_id }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Employee</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.employee_id }}</td>
                     </ng-container>
                     <ng-container matColumnDef="total_hours">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Total Hours</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-mono">{{ row.total_hours }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Total Hours</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.total_hours }}</td>
                     </ng-container>
                     <ng-container matColumnDef="billable_hours">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Billable Hours</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-mono">{{ row.billable_hours }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Billable Hours</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.billable_hours }}</td>
                     </ng-container>
                     <ng-container matColumnDef="utilization_pct">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Util %</th>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Util %</th>
                       <td mat-cell *matCellDef="let row">
                         <span [class]="utilChipClass(row.utilization_pct)">
                           {{ row.utilization_pct.toFixed(1) }}%
                         </span>
                       </td>
                     </ng-container>
-                    <tr mat-header-row *matHeaderRowDef="utilColumns" class="bg-slate-900/50"></tr>
-                    <tr mat-row *matRowDef="let row; columns: utilColumns;" class="border-slate-700 hover:bg-slate-700/40 transition-colors"></tr>
+                    <tr mat-header-row *matHeaderRowDef="utilColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: utilColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
                   </table>
                 </div>
               }
@@ -173,26 +173,26 @@ import {
               } @else if (wipRows().length === 0) {
                 <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'WIP data' }" />
               } @else {
-                <div class="overflow-x-auto rounded-lg border border-slate-700">
-                  <table mat-table [dataSource]="wipRows()" class="w-full bg-slate-800">
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="wipRows()" class="w-full bg-surface-raised">
                     <ng-container matColumnDef="project_name">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Project</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-medium">{{ row.project_name }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Project</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">{{ row.project_name }}</td>
                     </ng-container>
                     <ng-container matColumnDef="unbilled_hours">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Unbilled Hours</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-100 text-sm font-mono">{{ row.unbilled_hours }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Unbilled Hours</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.unbilled_hours }}</td>
                     </ng-container>
                     <ng-container matColumnDef="avg_rate">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">Avg Rate</th>
-                      <td mat-cell *matCellDef="let row" class="text-slate-300 text-sm font-mono">{{ row.avg_rate | money }}/h</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Avg Rate</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.avg_rate | money }}/h</td>
                     </ng-container>
                     <ng-container matColumnDef="wip_value">
-                      <th mat-header-cell *matHeaderCellDef class="text-slate-400 text-xs uppercase tracking-wide">WIP Value</th>
-                      <td mat-cell *matCellDef="let row" class="text-emerald-400 text-sm font-mono font-bold">{{ row.wip_value | money }}</td>
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">WIP Value</th>
+                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold">{{ row.wip_value | money }}</td>
                     </ng-container>
-                    <tr mat-header-row *matHeaderRowDef="wipColumns" class="bg-slate-900/50"></tr>
-                    <tr mat-row *matRowDef="let row; columns: wipColumns;" class="border-slate-700 hover:bg-slate-700/40 transition-colors"></tr>
+                    <tr mat-header-row *matHeaderRowDef="wipColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: wipColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
                   </table>
                 </div>
               }
@@ -207,10 +207,10 @@ import {
         <!-- ── Revenue ────────────────────────────────────────────────── -->
         <mat-tab label="Revenue">
           <div class="pt-4">
-            <div class="flex flex-col items-center justify-center h-64 text-center bg-slate-800 rounded-lg border border-slate-700">
-              <mat-icon class="text-slate-600 mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">bar_chart</mat-icon>
-              <p class="text-slate-400 font-medium">Revenue by Engagement</p>
-              <p class="text-slate-500 text-sm mt-1">Coming in the next release</p>
+            <div class="flex flex-col items-center justify-center h-64 text-center bg-surface-raised rounded-lg border border-border-default">
+              <mat-icon class="text-text-disabled mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">bar_chart</mat-icon>
+              <p class="text-text-muted font-medium">Revenue by Engagement</p>
+              <p class="text-text-disabled text-sm mt-1">Coming in the next release</p>
             </div>
           </div>
         </mat-tab>
@@ -222,26 +222,26 @@ import {
     <!-- Aging metric cards -->
     <ng-template #agingCards let-data>
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-          <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">0–30 days</p>
-          <p class="text-xl font-bold text-slate-100 font-mono">{{ data['0_30'] | money }}</p>
+        <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+          <p class="text-xs text-text-muted uppercase tracking-wide mb-1">0–30 days</p>
+          <p class="text-xl font-bold text-text-primary font-mono">{{ data['0_30'] | money }}</p>
         </div>
-        <div class="bg-slate-800 border border-amber-800/50 rounded-lg p-4">
-          <p class="text-xs text-amber-400 uppercase tracking-wide mb-1">31–60 days</p>
-          <p class="text-xl font-bold text-amber-400 font-mono">{{ data['31_60'] | money }}</p>
+        <div class="bg-surface-raised border border-confidence-med/40/50 rounded-lg p-4">
+          <p class="text-xs text-confidence-med uppercase tracking-wide mb-1">31–60 days</p>
+          <p class="text-xl font-bold text-confidence-med font-mono">{{ data['31_60'] | money }}</p>
         </div>
-        <div class="bg-slate-800 border border-orange-700/50 rounded-lg p-4">
+        <div class="bg-surface-raised border border-orange-700/50 rounded-lg p-4">
           <p class="text-xs text-orange-400 uppercase tracking-wide mb-1">61–90 days</p>
           <p class="text-xl font-bold text-orange-400 font-mono">{{ data['61_90'] | money }}</p>
         </div>
-        <div class="bg-slate-800 border border-red-700/50 rounded-lg p-4">
-          <p class="text-xs text-red-400 uppercase tracking-wide mb-1">90+ days</p>
-          <p class="text-xl font-bold text-red-400 font-mono">{{ data['over_90'] | money }}</p>
+        <div class="bg-surface-raised border border-red-700/50 rounded-lg p-4">
+          <p class="text-xs text-confidence-low uppercase tracking-wide mb-1">90+ days</p>
+          <p class="text-xl font-bold text-confidence-low font-mono">{{ data['over_90'] | money }}</p>
         </div>
       </div>
-      <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
-        <p class="text-sm text-slate-400 uppercase tracking-wide font-medium">Total Outstanding</p>
-        <p class="text-3xl font-bold text-slate-50 font-mono">{{ data.total | money }}</p>
+      <div class="bg-surface-raised border border-border-default rounded-lg p-4 flex items-center justify-between">
+        <p class="text-sm text-text-muted uppercase tracking-wide font-medium">Total Outstanding</p>
+        <p class="text-3xl font-bold text-text-primary font-mono">{{ data.total | money }}</p>
       </div>
     </ng-template>
 
@@ -249,27 +249,27 @@ import {
     <ng-template #agingSkeleton>
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6 animate-pulse">
         @for (i of [1, 2, 3, 4]; track i) {
-          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-            <div class="h-3 bg-slate-700 rounded w-16 mb-2"></div>
-            <div class="h-6 bg-slate-700 rounded w-24"></div>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <div class="h-3 bg-surface rounded w-16 mb-2"></div>
+            <div class="h-6 bg-surface rounded w-24"></div>
           </div>
         }
       </div>
-      <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 animate-pulse">
-        <div class="h-8 bg-slate-700 rounded w-40"></div>
+      <div class="bg-surface-raised border border-border-default rounded-lg p-4 animate-pulse">
+        <div class="h-8 bg-surface rounded w-40"></div>
       </div>
     </ng-template>
 
     <!-- Table skeleton -->
     <ng-template #tableSkeleton>
-      <div class="rounded-lg border border-slate-700 overflow-hidden animate-pulse">
-        <div class="h-10 bg-slate-900/50 border-b border-slate-700"></div>
+      <div class="rounded-lg border border-border-default overflow-hidden animate-pulse">
+        <div class="h-10 bg-surface-base/50 border-b border-border-default"></div>
         @for (i of [1, 2, 3, 4, 5]; track i) {
-          <div class="h-12 border-b border-slate-700/50 bg-slate-800 flex items-center px-4 gap-4">
-            <div class="h-3 bg-slate-700 rounded w-32"></div>
-            <div class="h-3 bg-slate-700 rounded w-20"></div>
-            <div class="h-3 bg-slate-700 rounded w-20"></div>
-            <div class="h-3 bg-slate-700 rounded w-16"></div>
+          <div class="h-12 border-b border-border-default/50 bg-surface-raised flex items-center px-4 gap-4">
+            <div class="h-3 bg-surface rounded w-32"></div>
+            <div class="h-3 bg-surface rounded w-20"></div>
+            <div class="h-3 bg-surface rounded w-20"></div>
+            <div class="h-3 bg-surface rounded w-16"></div>
           </div>
         }
       </div>
@@ -277,23 +277,23 @@ import {
 
     <!-- Empty state -->
     <ng-template #emptyState let-label>
-      <div class="flex flex-col items-center justify-center h-64 text-center bg-slate-800 rounded-lg border border-slate-700">
-        <mat-icon class="text-slate-600 mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">inbox</mat-icon>
-        <p class="text-slate-400 font-medium">No {{ label }} available</p>
-        <p class="text-slate-500 text-sm mt-1">Data will appear once transactions are recorded</p>
+      <div class="flex flex-col items-center justify-center h-64 text-center bg-surface-raised rounded-lg border border-border-default">
+        <mat-icon class="text-text-disabled mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">inbox</mat-icon>
+        <p class="text-text-muted font-medium">No {{ label }} available</p>
+        <p class="text-text-disabled text-sm mt-1">Data will appear once transactions are recorded</p>
       </div>
     </ng-template>
 
     <!-- Error state -->
     <ng-template #errorState let-label let-retry="retry">
-      <div class="flex flex-col items-center justify-center h-64 text-center bg-slate-800 rounded-lg border border-slate-700" role="alert">
-        <mat-icon class="text-red-400 mb-3" style="font-size:2rem;width:2rem;height:2rem;">error_outline</mat-icon>
-        <p class="text-slate-300 font-medium">Failed to load {{ label }}</p>
-        <p class="text-slate-500 text-sm mt-1 mb-4">Something went wrong. Please try again.</p>
+      <div class="flex flex-col items-center justify-center h-64 text-center bg-surface-raised rounded-lg border border-border-default" role="alert">
+        <mat-icon class="text-confidence-low mb-3" style="font-size:2rem;width:2rem;height:2rem;">error_outline</mat-icon>
+        <p class="text-text-secondary font-medium">Failed to load {{ label }}</p>
+        <p class="text-text-disabled text-sm mt-1 mb-4">Something went wrong. Please try again.</p>
         @if (retry) {
           <button
             (click)="retry()"
-            class="px-4 py-2 text-xs font-medium rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            class="px-4 py-2 text-xs font-medium rounded bg-surface hover:bg-surface-raised text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >Retry</button>
         }
       </div>
@@ -420,22 +420,22 @@ export class ReportsComponent implements OnInit {
   }
 
   marginAmountClass(pct: number): string {
-    if (pct > 30) return 'text-emerald-400';
-    if (pct >= 10) return 'text-amber-400';
-    return 'text-red-400';
+    if (pct > 30) return 'text-accent-light';
+    if (pct >= 10) return 'text-confidence-med';
+    return 'text-confidence-low';
   }
 
   marginPctClass(pct: number): string {
     const base = 'text-xs font-semibold px-2 py-0.5 rounded';
-    if (pct > 30) return `${base} bg-emerald-900 text-emerald-400`;
-    if (pct >= 10) return `${base} bg-amber-950 text-amber-400`;
-    return `${base} bg-red-950 text-red-400`;
+    if (pct > 30) return `${base} bg-accent/15 text-accent-light`;
+    if (pct >= 10) return `${base} bg-confidence-med/10 text-confidence-med`;
+    return `${base} bg-confidence-low/10 text-confidence-low`;
   }
 
   utilChipClass(pct: number): string {
     const base = 'text-xs font-semibold px-2 py-0.5 rounded';
-    if (pct > 70) return `${base} bg-emerald-900 text-emerald-400`;
-    if (pct >= 50) return `${base} bg-amber-950 text-amber-400`;
-    return `${base} bg-red-950 text-red-400`;
+    if (pct > 70) return `${base} bg-accent/15 text-accent-light`;
+    if (pct >= 50) return `${base} bg-confidence-med/10 text-confidence-med`;
+    return `${base} bg-confidence-low/10 text-confidence-low`;
   }
 }

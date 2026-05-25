@@ -23,35 +23,35 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
     MoneyPipe,
   ],
   template: `
-    <div class="min-h-full bg-slate-900 p-6">
+    <div class="min-h-full bg-surface-base p-6">
       <div class="max-w-3xl mx-auto">
-        <h1 class="text-2xl font-semibold text-slate-50 mb-6">Pay Bills</h1>
+        <h1 class="text-2xl font-semibold text-text-primary mb-6">Pay Bills</h1>
 
         @if (loadingBills()) {
           <div class="flex justify-center py-16">
             <mat-spinner diameter="40" />
           </div>
         } @else if (billsError()) {
-          <div class="flex flex-col items-center justify-center h-64 text-center bg-slate-800 rounded-lg border border-slate-700" role="alert">
-            <mat-icon class="text-red-400 mb-3" style="font-size:2rem;width:2rem;height:2rem;">error_outline</mat-icon>
-            <p class="text-slate-300 font-medium">Failed to load approved bills</p>
-            <p class="text-slate-500 text-sm mt-1 mb-4">Something went wrong. Please try again.</p>
+          <div class="flex flex-col items-center justify-center h-64 text-center bg-surface-raised rounded-lg border border-border-default" role="alert">
+            <mat-icon class="text-confidence-low mb-3" style="font-size:2rem;width:2rem;height:2rem;">error_outline</mat-icon>
+            <p class="text-text-secondary font-medium">Failed to load approved bills</p>
+            <p class="text-text-disabled text-sm mt-1 mb-4">Something went wrong. Please try again.</p>
             <button
               (click)="loadBills()"
-              class="px-4 py-2 text-xs font-medium rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+              class="px-4 py-2 text-xs font-medium rounded bg-surface hover:bg-surface-raised text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >Retry</button>
           </div>
         } @else {
-          <mat-stepper [linear]="true" orientation="horizontal" #stepper class="pay-bills-stepper bg-slate-800 rounded-xl border border-slate-700 p-6">
+          <mat-stepper [linear]="true" orientation="horizontal" #stepper class="pay-bills-stepper bg-surface-raised rounded-xl border border-border-default p-6">
 
             <!-- ── Step 1: Select Bills ─────────────────────────────────── -->
             <mat-step label="Select Bills" [completed]="step1Complete()">
               <div class="py-4">
                 @if (bills().length === 0) {
                   <div class="flex flex-col items-center justify-center h-48 text-center">
-                    <mat-icon class="text-slate-600 mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">check_circle</mat-icon>
-                    <p class="text-slate-400 font-medium">No approved bills</p>
-                    <p class="text-slate-500 text-sm mt-1">All bills have been paid or none are ready for payment.</p>
+                    <mat-icon class="text-text-disabled mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">check_circle</mat-icon>
+                    <p class="text-text-muted font-medium">No approved bills</p>
+                    <p class="text-text-disabled text-sm mt-1">All bills have been paid or none are ready for payment.</p>
                   </div>
                 } @else {
                   <!-- Select all / deselect all -->
@@ -62,7 +62,7 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                     >Select all</button>
                     <button
                       (click)="deselectAll()"
-                      class="text-xs text-slate-400 hover:text-slate-300 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 rounded"
+                      class="text-xs text-text-muted hover:text-text-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 rounded"
                     >Deselect all</button>
                   </div>
 
@@ -72,8 +72,8 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                       <label
                         class="flex items-center gap-4 p-3 rounded-lg border cursor-pointer transition-colors"
                         [class]="isSelected(bill.id)
-                          ? 'bg-slate-700 border-indigo-500/50'
-                          : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'"
+                          ? 'bg-surface border-indigo-500/50'
+                          : 'bg-surface-raised/50 border-border-default hover:border-border-strong'"
                       >
                         <mat-checkbox
                           [checked]="isSelected(bill.id)"
@@ -82,21 +82,21 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                           color="primary"
                         />
                         <div class="flex-1 grid grid-cols-3 gap-2 text-sm min-w-0">
-                          <span class="text-slate-300 truncate font-mono text-xs">{{ bill.bill_number }}</span>
-                          <span class="text-slate-400 text-xs text-center">{{ bill.client_id }}</span>
-                          <span class="text-xs text-slate-400 text-right">Due {{ bill.due_date | date:'mediumDate' }}</span>
+                          <span class="text-text-secondary truncate font-mono text-xs">{{ bill.bill_number }}</span>
+                          <span class="text-text-muted text-xs text-center">{{ bill.client_id }}</span>
+                          <span class="text-xs text-text-muted text-right">Due {{ bill.due_date | date:'mediumDate' }}</span>
                         </div>
-                        <span class="text-slate-100 font-semibold font-mono text-sm ml-2 flex-shrink-0">{{ bill.amount | money: bill.currency }}</span>
+                        <span class="text-text-primary font-semibold font-mono text-sm ml-2 flex-shrink-0">{{ bill.amount | money: bill.currency }}</span>
                       </label>
                     }
                   </div>
 
                   <!-- Running total -->
-                  <div class="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 flex items-center justify-between mb-6">
-                    <span class="text-sm text-slate-400">
-                      <span class="font-semibold text-slate-200">{{ selectedIds().size }}</span> bills selected
+                  <div class="bg-surface-base/50 border border-border-default rounded-lg px-4 py-3 flex items-center justify-between mb-6">
+                    <span class="text-sm text-text-muted">
+                      <span class="font-semibold text-text-primary">{{ selectedIds().size }}</span> bills selected
                     </span>
-                    <span class="text-slate-100 font-bold font-mono">
+                    <span class="text-text-primary font-bold font-mono">
                       Total: {{ runningTotal() | money }}
                     </span>
                   </div>
@@ -104,7 +104,7 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                   <button
                     matStepperNext
                     [disabled]="!step1Complete()"
-                    class="w-full sm:w-auto px-6 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                    class="w-full sm:w-auto px-6 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                   >Next: Batch Details</button>
                 }
               </div>
@@ -114,33 +114,33 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
             <mat-step label="Batch Details" [completed]="step2Complete()">
               <div class="py-4">
                 <!-- Total summary -->
-                <div class="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mb-6 text-center">
-                  <p class="text-xs text-slate-400 uppercase tracking-wide mb-1">Batch Total</p>
-                  <p class="text-4xl font-bold text-slate-50 font-mono">{{ runningTotal() | money }}</p>
-                  <p class="text-sm text-slate-400 mt-1">{{ selectedIds().size }} bills</p>
+                <div class="bg-surface-base/50 border border-border-default rounded-lg p-4 mb-6 text-center">
+                  <p class="text-xs text-text-muted uppercase tracking-wide mb-1">Batch Total</p>
+                  <p class="text-4xl font-bold text-text-primary font-mono">{{ runningTotal() | money }}</p>
+                  <p class="text-sm text-text-muted mt-1">{{ selectedIds().size }} bills</p>
                 </div>
 
                 <!-- Pay date -->
                 <div class="mb-4">
-                  <label for="pay-date" class="block text-sm font-medium text-slate-300 mb-1.5">Pay Date</label>
+                  <label for="pay-date" class="block text-sm font-medium text-text-secondary mb-1.5">Pay Date</label>
                   <input
                     id="pay-date"
                     type="date"
                     [(ngModel)]="payDate"
-                    class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    class="w-full bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     autocomplete="off"
                   />
                 </div>
 
                 <!-- Bank label -->
                 <div class="mb-6">
-                  <label for="bank-label" class="block text-sm font-medium text-slate-300 mb-1.5">Bank Account</label>
+                  <label for="bank-label" class="block text-sm font-medium text-text-secondary mb-1.5">Bank Account</label>
                   <input
                     id="bank-label"
                     type="text"
                     [(ngModel)]="bankLabel"
                     placeholder="e.g. Operating Account"
-                    class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    class="w-full bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     autocomplete="off"
                   />
                 </div>
@@ -148,20 +148,20 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                 <div class="flex gap-3">
                   <button
                     matStepperPrevious
-                    class="px-4 py-2.5 text-sm font-medium rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 hover:text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                    class="px-4 py-2.5 text-sm font-medium rounded-lg border border-border-strong text-text-secondary hover:border-slate-500 hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >Back</button>
 
                   <button
                     [disabled]="creatingBatch()"
                     (click)="createBatch(stepper)"
-                    class="flex-1 sm:flex-none px-6 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                    class="flex-1 sm:flex-none px-6 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                   >
                     @if (creatingBatch()) { Creating... } @else { Create Batch }
                   </button>
                 </div>
 
                 @if (batchError()) {
-                  <p class="mt-3 text-xs text-red-400" role="alert">Something went wrong creating the batch. Please try again.</p>
+                  <p class="mt-3 text-xs text-confidence-low" role="alert">Something went wrong creating the batch. Please try again.</p>
                 }
               </div>
             </mat-step>
@@ -169,14 +169,14 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
             <!-- ── Step 3: Export ─────────────────────────────────────── -->
             <mat-step label="Export">
               <div class="py-4">
-                <p class="text-sm text-slate-300 mb-1">Batch <span class="font-mono text-slate-100">{{ batchId() }}</span> created.</p>
-                <p class="text-xs text-slate-500 mb-6">Download your payment file before marking as sent.</p>
+                <p class="text-sm text-text-secondary mb-1">Batch <span class="font-mono text-text-primary">{{ batchId() }}</span> created.</p>
+                <p class="text-xs text-text-disabled mb-6">Download your payment file before marking as sent.</p>
 
                 <div class="flex flex-col sm:flex-row gap-3 mb-8">
                   <button
                     [disabled]="downloading()"
                     (click)="downloadNacha()"
-                    class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 border border-slate-600 hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                    class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
                     <mat-icon class="text-base" style="font-size:1.1rem;width:1.1rem;height:1.1rem;" aria-hidden="true">download</mat-icon>
                     Download NACHA
@@ -185,26 +185,26 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                   <button
                     [disabled]="downloading()"
                     (click)="downloadCsv()"
-                    class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 border border-slate-600 hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                    class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
                     <mat-icon class="text-base" style="font-size:1.1rem;width:1.1rem;height:1.1rem;" aria-hidden="true">table_view</mat-icon>
                     Download CSV
                   </button>
                 </div>
 
-                <div class="border-t border-slate-700 pt-6">
-                  <p class="text-xs text-slate-400 mb-4">Once you have uploaded the file to your bank's portal, mark the batch as sent.</p>
+                <div class="border-t border-border-default pt-6">
+                  <p class="text-xs text-text-muted mb-4">Once you have uploaded the file to your bank's portal, mark the batch as sent.</p>
                   <button
                     [disabled]="markingSent()"
                     (click)="markSent(stepper)"
-                    class="px-6 py-2.5 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                    class="px-6 py-2.5 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
                     @if (markingSent()) { Marking... } @else { Mark as Sent to Bank }
                   </button>
                 </div>
 
                 @if (markSentError()) {
-                  <p class="mt-3 text-xs text-red-400" role="alert">Something went wrong. Please try again.</p>
+                  <p class="mt-3 text-xs text-confidence-low" role="alert">Something went wrong. Please try again.</p>
                 }
               </div>
             </mat-step>
@@ -213,12 +213,12 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
             <mat-step label="Complete">
               <div class="py-8 flex flex-col items-center text-center">
                 <mat-icon
-                  class="text-emerald-400 mb-4"
+                  class="text-accent-light mb-4"
                   style="font-size:3rem;width:3rem;height:3rem;"
                   aria-hidden="true"
                 >check_circle</mat-icon>
-                <h2 class="text-xl font-semibold text-slate-50 mb-2">Batch sent to bank</h2>
-                <p class="text-sm text-slate-400 mb-6">Payment batch <span class="font-mono text-slate-200">{{ batchId() }}</span> has been marked as sent.</p>
+                <h2 class="text-xl font-semibold text-text-primary mb-2">Batch sent to bank</h2>
+                <p class="text-sm text-text-muted mb-6">Payment batch <span class="font-mono text-text-primary">{{ batchId() }}</span> has been marked as sent.</p>
                 <a
                   routerLink="/app/expenses"
                   class="text-sm text-indigo-400 hover:text-indigo-300 underline transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 rounded"

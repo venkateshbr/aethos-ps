@@ -10,14 +10,14 @@ import { MatIconModule } from '@angular/material/icon';
   standalone: true,
   imports: [MatIconModule],
   template: `
-    <div class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-12 text-center">
+    <div class="rounded-lg border border-border-default bg-surface-raised px-4 py-12 text-center">
       <mat-icon
-        class="text-4xl text-slate-500 mb-3 block"
+        class="text-4xl text-text-disabled mb-3 block"
         style="font-size:2.5rem;width:2.5rem;height:2.5rem;"
         aria-hidden="true"
       >{{ icon() }}</mat-icon>
-      <p class="text-slate-300 font-medium mb-1">{{ heading() }}</p>
-      <p class="text-slate-500 text-sm">{{ message() }}</p>
+      <p class="text-text-secondary font-medium mb-1">{{ heading() }}</p>
+      <p class="text-text-disabled text-sm">{{ message() }}</p>
     </div>
   `,
 })
