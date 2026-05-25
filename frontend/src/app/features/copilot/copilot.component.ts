@@ -49,18 +49,18 @@ export interface ChatThread {
     BillExtractedCardComponent,
   ],
   template: `
-    <div class="h-full flex bg-slate-900 text-slate-100">
+    <div class="h-full flex bg-surface-base text-text-primary">
 
       <!-- Thread sidebar -->
       <aside
-        class="hidden sm:flex flex-col w-48 flex-none bg-slate-800 border-r border-slate-700"
+        class="hidden sm:flex flex-col w-48 flex-none bg-surface border-r border-border-default"
         aria-label="Chat threads"
       >
-        <div class="p-3 border-b border-slate-700">
+        <div class="p-3 border-b border-border-default">
           <button
             class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium
-                   bg-emerald-600 hover:bg-emerald-500 text-white transition-colors
-                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                   bg-accent hover:bg-accent-hover text-accent-on transition-colors
+                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             (click)="newThread()"
             aria-label="Start new chat"
           >
@@ -71,14 +71,14 @@ export interface ChatThread {
 
         <div class="flex-1 overflow-y-auto py-2" role="list" aria-label="Thread history">
           @if (threads().length === 0) {
-            <p class="px-3 py-2 text-xs text-slate-500">No conversations yet.</p>
+            <p class="px-3 py-2 text-xs text-text-muted">No conversations yet.</p>
           }
           @for (thread of threads(); track thread.id) {
             <button
-              class="w-full text-left px-3 py-2 text-xs text-slate-400 hover:text-slate-100 hover:bg-slate-700
-                     truncate transition-colors focus-visible:outline-none focus-visible:bg-slate-700"
-              [class.bg-slate-700]="currentThreadId() === thread.id"
-              [class.text-slate-100]="currentThreadId() === thread.id"
+              class="w-full text-left px-3 py-2 text-xs text-text-muted hover:text-text-primary hover:bg-surface-raised
+                     truncate transition-colors focus-visible:outline-none focus-visible:bg-surface-raised"
+              [class.bg-surface-raised]="currentThreadId() === thread.id"
+              [class.text-text-primary]="currentThreadId() === thread.id"
               (click)="selectThread(thread)"
               [attr.aria-label]="'Open conversation: ' + thread.title"
               [attr.aria-current]="currentThreadId() === thread.id ? 'true' : null"
@@ -94,19 +94,19 @@ export interface ChatThread {
       <div class="flex-1 flex flex-col min-w-0">
 
         <!-- Header -->
-        <div class="flex-none px-4 py-3 border-b border-slate-700 flex items-center gap-3">
+        <div class="flex-none px-4 py-3 border-b border-border-default flex items-center gap-3">
           <!-- Mobile thread toggle (hidden sm+) -->
           <button
-            class="sm:hidden text-slate-400 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 rounded"
+            class="sm:hidden text-text-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
             (click)="newThread()"
             aria-label="New chat"
           >
             <mat-icon>add</mat-icon>
           </button>
-          <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center">
-            <mat-icon class="text-emerald-400 text-base leading-none">auto_awesome</mat-icon>
+          <div class="w-7 h-7 rounded-full bg-surface-raised flex items-center justify-center">
+            <mat-icon class="text-accent-light text-base leading-none">auto_awesome</mat-icon>
           </div>
-          <h1 class="text-sm font-semibold text-slate-100">Aethos Copilot</h1>
+          <h1 class="text-sm font-semibold text-text-primary">Aethos Copilot</h1>
         </div>
 
         <!-- Message list -->
@@ -120,22 +120,22 @@ export interface ChatThread {
           <!-- Welcome / empty state — shown on first use (no threads, no messages) -->
           @if (threads().length === 0 && messages().length === 0) {
             <div class="flex-1 flex flex-col items-center justify-center px-6 py-16 animate-fade-in">
-              <div class="w-14 h-14 rounded-full bg-emerald-900/40 border border-emerald-700/50 flex items-center justify-center mb-5">
-                <mat-icon class="text-emerald-400" style="font-size:1.75rem;width:1.75rem;height:1.75rem;">auto_awesome</mat-icon>
+              <div class="w-14 h-14 rounded-full bg-accent/15 border border-accent/40 flex items-center justify-center mb-5">
+                <mat-icon class="text-accent-light" style="font-size:1.75rem;width:1.75rem;height:1.75rem;">auto_awesome</mat-icon>
               </div>
-              <p class="text-slate-200 font-semibold text-base mb-2">Welcome to Aethos</p>
-              <p class="text-slate-400 text-sm text-center max-w-xs leading-relaxed mb-6">
+              <p class="text-text-primary font-semibold text-base mb-2">Welcome to Aethos</p>
+              <p class="text-text-muted text-sm text-center max-w-xs leading-relaxed mb-6">
                 Drop your most recent engagement letter or invoice and I'll set up your first client.
               </p>
               <div class="flex gap-3 flex-wrap justify-center">
                 <button
-                  class="px-4 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-emerald-600 hover:text-emerald-400 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                  class="px-4 py-2 text-xs rounded-lg bg-surface border border-border-default text-text-secondary hover:border-accent hover:text-accent-light transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   (click)="sendSuggestion('Drop engagement letter')"
                 >
                   Drop engagement letter
                 </button>
                 <button
-                  class="px-4 py-2 text-xs rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                  class="px-4 py-2 text-xs rounded-lg bg-surface border border-border-default text-text-secondary hover:border-border-strong transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
                   (click)="sendSuggestion('Create manually')"
                 >
                   Create manually
@@ -148,18 +148,18 @@ export interface ChatThread {
           @if (threads().length > 0 && messages().length === 0 && !streaming()) {
             <div class="flex-1 flex items-center justify-center">
               <div class="text-center max-w-sm">
-                <div class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center mx-auto mb-4">
-                  <mat-icon class="text-emerald-400">auto_awesome</mat-icon>
+                <div class="w-12 h-12 rounded-full bg-surface-raised flex items-center justify-center mx-auto mb-4">
+                  <mat-icon class="text-accent-light">auto_awesome</mat-icon>
                 </div>
-                <p class="text-slate-300 text-sm leading-relaxed">
+                <p class="text-text-secondary text-sm leading-relaxed">
                   How can I help you today?
                 </p>
                 <div class="flex flex-wrap gap-2 justify-center mt-4">
                   @for (suggestion of suggestions; track suggestion) {
                     <button
-                      class="px-3 py-1.5 rounded-md border border-slate-700 text-xs text-slate-400
-                             hover:border-slate-500 hover:text-slate-200 transition-colors
-                             focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                      class="px-3 py-1.5 rounded-md border border-border-default text-xs text-text-muted
+                             hover:border-border-strong hover:text-text-primary transition-colors
+                             focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                       (click)="sendSuggestion(suggestion)"
                     >
                       {{ suggestion }}
@@ -175,7 +175,7 @@ export interface ChatThread {
             @if (msg.role === 'user') {
               <!-- User bubble -->
               <div class="flex justify-end" [attr.aria-label]="'You: ' + msg.content">
-                <div class="bg-slate-700 text-slate-50 rounded-lg px-4 py-3 max-w-lg text-sm leading-relaxed whitespace-pre-wrap break-words">
+                <div class="bg-surface-raised text-text-primary rounded-lg px-4 py-3 max-w-lg text-sm leading-relaxed whitespace-pre-wrap break-words">
                   {{ msg.content }}
                 </div>
               </div>
@@ -185,13 +185,13 @@ export interface ChatThread {
                 @if (msg.toolName) {
                   <!-- Tool-call card -->
                   <div
-                    class="bg-slate-800/50 border border-slate-700 border-l-2 border-l-emerald-500 rounded px-3 py-2 text-xs text-slate-400"
+                    class="bg-surface/50 border border-border-default border-l-2 border-l-accent rounded px-3 py-2 text-xs text-text-muted"
                     [attr.aria-label]="msg.toolDone ? 'Tool completed: ' + msg.toolName : 'Running tool: ' + msg.toolName"
                   >
                     @if (!msg.toolDone) {
-                      <span class="inline-block w-3 h-3 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin mr-2 align-middle"></span>
+                      <span class="inline-block w-3 h-3 rounded-full border-2 border-accent-light border-t-transparent animate-spin mr-2 align-middle"></span>
                     } @else {
-                      <mat-icon class="text-emerald-400 text-xs align-middle mr-1 leading-none">check_circle</mat-icon>
+                      <mat-icon class="text-accent-light text-xs align-middle mr-1 leading-none">check_circle</mat-icon>
                     }
                     &#9889; {{ msg.toolName }}
                   </div>
@@ -235,12 +235,12 @@ export interface ChatThread {
 
                 @if (msg.content || msg.streaming) {
                   <div
-                    class="bg-slate-800 border border-slate-600 text-slate-100 rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
+                    class="bg-surface border border-border-strong text-text-primary rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
                     [attr.aria-label]="'Aethos: ' + msg.content"
                   >
                     {{ msg.content }}@if (msg.streaming) {
                       <span
-                        class="inline-block w-0.5 h-3.5 bg-emerald-400 ml-0.5 align-middle animate-blink"
+                        class="inline-block w-0.5 h-3.5 bg-accent-light ml-0.5 align-middle animate-blink"
                         aria-hidden="true"
                       ></span>
                     }
@@ -252,17 +252,17 @@ export interface ChatThread {
         </div>
 
         <!-- Composer -->
-        <div class="flex-none px-4 pb-4 pt-2 border-t border-slate-700">
+        <div class="flex-none px-4 pb-4 pt-2 border-t border-border-default">
           @if (error()) {
-            <div class="mb-2 px-3 py-2 rounded-md bg-red-950 border border-red-900 text-xs text-red-400" role="alert">
+            <div class="mb-2 px-3 py-2 rounded-md bg-confidence-low/10 border border-confidence-low/30 text-xs text-confidence-low" role="alert">
               <mat-icon class="text-xs align-middle mr-1">error_outline</mat-icon>
               {{ error() }}
             </div>
           }
           <div
-            class="flex items-end gap-2 bg-slate-800 border rounded-lg px-3 py-2 transition-colors"
-            [class.border-slate-600]="!composerFocused()"
-            [class.border-emerald-500]="composerFocused()"
+            class="flex items-end gap-2 bg-surface border rounded-lg px-3 py-2 transition-colors"
+            [class.border-border-strong]="!composerFocused()"
+            [class.border-accent]="composerFocused()"
           >
             <textarea
               #composer
@@ -274,7 +274,7 @@ export interface ChatThread {
               (blur)="composerFocused.set(false)"
               rows="1"
               placeholder="Message Aethos…"
-              class="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500
+              class="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-disabled
                      resize-none outline-none leading-relaxed min-h-[1.5rem] max-h-36 overflow-y-auto"
               [disabled]="streaming()"
               aria-label="Message input"
@@ -283,10 +283,10 @@ export interface ChatThread {
             ></textarea>
             <button
               class="flex-none p-1.5 rounded-md transition-colors
-                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               [class]="canSend()
-                ? 'text-emerald-500 hover:text-emerald-400'
-                : 'text-slate-600 cursor-not-allowed'"
+                ? 'text-accent hover:text-accent-light'
+                : 'text-text-disabled cursor-not-allowed'"
               [disabled]="!canSend()"
               (click)="sendFromComposer()"
               aria-label="Send message"
@@ -295,7 +295,7 @@ export interface ChatThread {
               <mat-icon class="text-xl leading-none">send</mat-icon>
             </button>
           </div>
-          <p class="text-xs text-slate-600 mt-1.5 text-center">
+          <p class="text-xs text-text-muted mt-1.5 text-center">
             Shift + Enter for new line &middot; Enter to send
           </p>
         </div>

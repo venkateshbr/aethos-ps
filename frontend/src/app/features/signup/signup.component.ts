@@ -44,9 +44,9 @@ import {
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink, ThemePickerComponent],
   template: `
-    <div class="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+    <div class="min-h-screen bg-surface-base text-text-primary flex flex-col">
       <!-- Header — keep parity with landing so the user feels they're in the same product -->
-      <header class="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
+      <header class="px-8 py-5 border-b border-border-subtle flex items-center justify-between">
         <a routerLink="/" aria-label="Aethos — for professional services">
           <img
             [src]="themeSvc.meta().lockupSrc"
@@ -56,7 +56,7 @@ import {
         </a>
         <div class="flex items-center gap-5">
           <app-theme-picker />
-          <a routerLink="/" class="text-sm text-slate-400 hover:text-slate-200 transition-colors">
+          <a routerLink="/" class="text-sm text-text-muted hover:text-text-primary transition-colors">
             Cancel
           </a>
         </div>
@@ -64,7 +64,7 @@ import {
 
       <!-- Step indicator -->
       <div class="px-8 py-6">
-        <ol class="flex items-center justify-center gap-3 text-xs text-slate-400" aria-label="Signup steps">
+        <ol class="flex items-center justify-center gap-3 text-xs text-text-muted" aria-label="Signup steps">
           @for (s of stepLabels; track s.idx) {
             <li class="flex items-center gap-3">
               <span
@@ -72,17 +72,17 @@ import {
                 [class.bg-accent]="step() === s.idx"
                 [class.text-accent-on]="step() === s.idx"
                 [class.border-accent]="step() === s.idx"
-                [class.bg-slate-800]="step() !== s.idx"
-                [class.border-slate-700]="step() !== s.idx && step() < s.idx"
+                [class.bg-surface]="step() !== s.idx"
+                [class.border-border-default]="step() !== s.idx && step() < s.idx"
                 [class.border-accent-light]="step() > s.idx"
                 [class.text-accent-light]="step() > s.idx"
                 [attr.aria-current]="step() === s.idx ? 'step' : null"
               >
                 {{ step() > s.idx ? '✓' : s.idx }}
               </span>
-              <span [class.text-slate-100]="step() === s.idx">{{ s.label }}</span>
+              <span [class.text-text-primary]="step() === s.idx">{{ s.label }}</span>
               @if (s.idx < 3) {
-                <span class="w-8 h-px bg-slate-700"></span>
+                <span class="w-8 h-px bg-border-default"></span>
               }
             </li>
           }
@@ -99,7 +99,7 @@ import {
         </div>
       </main>
 
-      <footer class="px-8 py-4 border-t border-slate-800 text-slate-500 text-xs text-center">
+      <footer class="px-8 py-4 border-t border-border-subtle text-text-muted text-xs text-center">
         14-day trial · Cancel anytime · Card kept on file via Stripe
       </footer>
     </div>
@@ -107,14 +107,14 @@ import {
     <!-- ── Step 1 · Account ───────────────────────────────────────────────── -->
     <ng-template #accountStep>
       <h1 class="text-2xl font-semibold mb-1">Create your firm</h1>
-      <p class="text-slate-400 text-sm mb-6">
+      <p class="text-text-muted text-sm mb-6">
         Two minutes. We'll provision your tenant and you'll pick a plan next.
       </p>
 
       <form [formGroup]="accountForm" (ngSubmit)="submitAccount()" class="space-y-4" novalidate>
         <!-- Firm name -->
         <div>
-          <label for="firm" class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+          <label for="firm" class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
             Firm name
           </label>
           <input
@@ -123,12 +123,12 @@ import {
             formControlName="tenant_name"
             autocomplete="organization"
             placeholder="Acme Advisory LLC"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm
-                   text-slate-100 placeholder-slate-500
+            class="w-full bg-surface border border-border-default rounded-lg px-3 py-2.5 text-sm
+                   text-text-primary placeholder-text-disabled
                    focus:outline-none focus:border-accent focus:shadow-accent-ring"
           />
           @if (shouldShowError('tenant_name')) {
-            <p class="text-xs text-red-400 mt-1">
+            <p class="text-xs text-confidence-low mt-1">
               Firm name must be 2–100 characters.
             </p>
           }
@@ -136,7 +136,7 @@ import {
 
         <!-- Email -->
         <div>
-          <label for="email" class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+          <label for="email" class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
             Work email
           </label>
           <input
@@ -145,18 +145,18 @@ import {
             formControlName="email"
             autocomplete="email"
             placeholder="you@firm.com"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm
-                   text-slate-100 placeholder-slate-500
+            class="w-full bg-surface border border-border-default rounded-lg px-3 py-2.5 text-sm
+                   text-text-primary placeholder-text-disabled
                    focus:outline-none focus:border-accent focus:shadow-accent-ring"
           />
           @if (shouldShowError('email')) {
-            <p class="text-xs text-red-400 mt-1">Enter a valid email address.</p>
+            <p class="text-xs text-confidence-low mt-1">Enter a valid email address.</p>
           }
         </div>
 
         <!-- Password + strength meter -->
         <div>
-          <label for="password" class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+          <label for="password" class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
             Password
           </label>
           <input
@@ -165,8 +165,8 @@ import {
             formControlName="password"
             autocomplete="new-password"
             placeholder="At least 8 characters"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm
-                   text-slate-100 placeholder-slate-500
+            class="w-full bg-surface border border-border-default rounded-lg px-3 py-2.5 text-sm
+                   text-text-primary placeholder-text-disabled
                    focus:outline-none focus:border-accent focus:shadow-accent-ring"
           />
           <!-- Strength meter — purely client-side hint, real check is server-side -->
@@ -174,39 +174,39 @@ import {
             @for (i of [1,2,3,4]; track i) {
               <div
                 class="h-1 flex-1 rounded-full transition-colors"
-                [class.bg-slate-700]="passwordStrength() < i"
-                [class.bg-red-500]="passwordStrength() >= i && passwordStrength() <= 1"
-                [class.bg-amber-500]="passwordStrength() >= i && passwordStrength() === 2"
+                [class.bg-border-default]="passwordStrength() < i"
+                [class.bg-confidence-low]="passwordStrength() >= i && passwordStrength() <= 1"
+                [class.bg-confidence-med]="passwordStrength() >= i && passwordStrength() === 2"
                 [class.bg-accent-light]="passwordStrength() >= i && passwordStrength() === 3"
                 [class.bg-accent]="passwordStrength() >= i && passwordStrength() >= 4"
               ></div>
             }
           </div>
-          <p class="text-xs mt-1.5" [class.text-slate-500]="passwordStrength() < 3" [class.text-accent-light]="passwordStrength() >= 3">
+          <p class="text-xs mt-1.5" [class.text-text-muted]="passwordStrength() < 3" [class.text-accent-light]="passwordStrength() >= 3">
             {{ passwordStrengthLabel() }}
           </p>
           @if (shouldShowError('password')) {
-            <p class="text-xs text-red-400 mt-1">Password must be at least 8 characters.</p>
+            <p class="text-xs text-confidence-low mt-1">Password must be at least 8 characters.</p>
           }
         </div>
 
         <!-- Country -->
         <div>
-          <label for="country" class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+          <label for="country" class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
             Country
           </label>
           <select
             id="country"
             formControlName="country"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm
-                   text-slate-100
+            class="w-full bg-surface border border-border-default rounded-lg px-3 py-2.5 text-sm
+                   text-text-primary
                    focus:outline-none focus:border-accent focus:shadow-accent-ring"
           >
             @for (c of countries; track c.code) {
               <option [value]="c.code">{{ c.label }} · {{ c.currency }}</option>
             }
           </select>
-          <p class="text-xs text-slate-500 mt-1">
+          <p class="text-xs text-text-muted mt-1">
             Sets your base currency and tax jurisdiction.
           </p>
         </div>
@@ -215,7 +215,7 @@ import {
         @if (serverError()) {
           <div
             role="alert"
-            class="text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2"
+            class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded-lg px-3 py-2"
           >
             {{ serverError() }}
           </div>
@@ -237,11 +237,11 @@ import {
           }
         </button>
 
-        <p class="text-xs text-slate-500 text-center">
+        <p class="text-xs text-text-muted text-center">
           By continuing you agree to the
-          <a class="text-slate-300 hover:text-white underline" href="#" target="_blank" rel="noopener">terms</a>
+          <a class="text-text-secondary hover:text-text-primary underline" href="#" target="_blank" rel="noopener">terms</a>
           and
-          <a class="text-slate-300 hover:text-white underline" href="#" target="_blank" rel="noopener">privacy notice</a>.
+          <a class="text-text-secondary hover:text-text-primary underline" href="#" target="_blank" rel="noopener">privacy notice</a>.
         </p>
       </form>
     </ng-template>
@@ -249,7 +249,7 @@ import {
     <!-- ── Step 2 · Plan ───────────────────────────────────────────────────── -->
     <ng-template #planStep>
       <h1 class="text-2xl font-semibold mb-1">Pick a plan</h1>
-      <p class="text-slate-400 text-sm mb-6">
+      <p class="text-text-muted text-sm mb-6">
         14-day trial on any plan. We'll only charge after the trial ends —
         cancel anytime from settings.
       </p>
@@ -259,22 +259,22 @@ import {
           <span class="w-6 h-6 border-2 border-accent border-r-transparent rounded-full animate-spin" aria-hidden="true"></span>
         </div>
       } @else if (pricesError()) {
-        <div role="alert" class="text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-3 mb-4">
+        <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded-lg px-3 py-3 mb-4">
           {{ pricesError() }}
           <button type="button" (click)="loadPrices()" class="ml-2 underline">Retry</button>
         </div>
       } @else if (prices() !== null) {
         <!-- Billing interval toggle -->
         <div class="flex items-center justify-center mb-5">
-          <div role="radiogroup" aria-label="Billing interval" class="inline-flex bg-slate-800 border border-slate-700 rounded-lg p-1 text-xs">
+          <div role="radiogroup" aria-label="Billing interval" class="inline-flex bg-surface border border-border-default rounded-lg p-1 text-xs">
             <button
               type="button"
               role="radio"
               [attr.aria-checked]="interval() === 'monthly'"
               (click)="interval.set('monthly')"
-              [class.bg-slate-700]="interval() === 'monthly'"
-              [class.text-slate-100]="interval() === 'monthly'"
-              [class.text-slate-400]="interval() !== 'monthly'"
+              [class.bg-surface-raised]="interval() === 'monthly'"
+              [class.text-text-primary]="interval() === 'monthly'"
+              [class.text-text-muted]="interval() !== 'monthly'"
               class="px-3 py-1.5 rounded-md transition-colors"
             >
               Monthly
@@ -284,9 +284,9 @@ import {
               role="radio"
               [attr.aria-checked]="interval() === 'annual'"
               (click)="interval.set('annual')"
-              [class.bg-slate-700]="interval() === 'annual'"
-              [class.text-slate-100]="interval() === 'annual'"
-              [class.text-slate-400]="interval() !== 'annual'"
+              [class.bg-surface-raised]="interval() === 'annual'"
+              [class.text-text-primary]="interval() === 'annual'"
+              [class.text-text-muted]="interval() !== 'annual'"
               class="px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
             >
               Annual
@@ -309,25 +309,25 @@ import {
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <span class="font-semibold text-slate-100 capitalize">{{ plan.tier }}</span>
+                    <span class="font-semibold text-text-primary capitalize">{{ plan.tier }}</span>
                     @if (plan.recommended) {
                       <span class="text-[10px] uppercase tracking-wider bg-accent text-accent-on px-1.5 py-0.5 rounded">
                         Recommended
                       </span>
                     }
                   </div>
-                  <p class="text-xs text-slate-400 mt-1">{{ plan.summary }}</p>
+                  <p class="text-xs text-text-muted mt-1">{{ plan.summary }}</p>
                 </div>
                 <div class="text-right shrink-0">
                   @if (plan.priceId) {
-                    <div class="text-base font-semibold text-slate-50">
-                      {{ prices()?.currency }} <span class="text-slate-300 text-xs">/ {{ interval() === 'monthly' ? 'mo' : 'yr' }}</span>
+                    <div class="text-base font-semibold text-text-primary">
+                      {{ prices()?.currency }} <span class="text-text-secondary text-xs">/ {{ interval() === 'monthly' ? 'mo' : 'yr' }}</span>
                     </div>
-                    <div class="text-[11px] text-slate-500" title="Stripe price id">
+                    <div class="text-[11px] text-text-muted" title="Stripe price id">
                       {{ plan.priceId | slice:0:14 }}…
                     </div>
                   } @else {
-                    <div class="text-xs text-slate-500">Not available in {{ prices()?.currency }}</div>
+                    <div class="text-xs text-text-muted">Not available in {{ prices()?.currency }}</div>
                   }
                 </div>
               </div>
@@ -336,7 +336,7 @@ import {
         </div>
 
         @if (serverError()) {
-          <div role="alert" class="mt-4 text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2">
+          <div role="alert" class="mt-4 text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded-lg px-3 py-2">
             {{ serverError() }}
           </div>
         }
@@ -345,7 +345,7 @@ import {
           <button
             type="button"
             (click)="step.set(1)"
-            class="text-sm text-slate-400 hover:text-slate-200"
+            class="text-sm text-text-muted hover:text-text-primary"
           >
             ← Back
           </button>
@@ -367,7 +367,7 @@ import {
     <!-- ── Step 3 · Card ───────────────────────────────────────────────────── -->
     <ng-template #cardStep>
       <h1 class="text-2xl font-semibold mb-1">Confirm your card</h1>
-      <p class="text-slate-400 text-sm mb-6">
+      <p class="text-text-muted text-sm mb-6">
         Card is required to start the trial — you won't be charged for 14 days.
         We use Stripe; your card number never touches our servers.
       </p>
@@ -375,44 +375,44 @@ import {
       <div class="space-y-4">
         <!-- Stripe Elements card mount point.  Stripe.js renders an iframe here. -->
         <div>
-          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+          <label class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
             Card details
           </label>
           <div
             #cardEl
-            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-3 min-h-[44px]
+            class="bg-surface border border-border-default rounded-lg px-3 py-3 min-h-[44px]
                    focus-within:border-accent focus-within:shadow-accent-ring transition-colors"
             aria-label="Card details"
           ></div>
           @if (cardError()) {
-            <p role="alert" class="text-xs text-red-400 mt-1.5">{{ cardError() }}</p>
+            <p role="alert" class="text-xs text-confidence-low mt-1.5">{{ cardError() }}</p>
           } @else {
-            <p class="text-xs text-slate-500 mt-1.5">
+            <p class="text-xs text-text-muted mt-1.5">
               Test mode — use 4242 4242 4242 4242 with any future date + any CVC.
             </p>
           }
         </div>
 
         <!-- Order summary -->
-        <div class="bg-slate-800/60 border border-slate-700 rounded-lg p-3 text-sm">
+        <div class="bg-surface/60 border border-border-default rounded-lg p-3 text-sm">
           <div class="flex items-center justify-between">
-            <span class="text-slate-400">Plan</span>
-            <span class="text-slate-100 capitalize">
+            <span class="text-text-muted">Plan</span>
+            <span class="text-text-primary capitalize">
               {{ selectedTier() }} · {{ interval() }}
             </span>
           </div>
           <div class="flex items-center justify-between mt-1.5">
-            <span class="text-slate-400">Today</span>
+            <span class="text-text-muted">Today</span>
             <span class="text-accent-light font-medium">{{ prices()?.currency }} 0.00</span>
           </div>
           <div class="flex items-center justify-between mt-1.5">
-            <span class="text-slate-400">After 14-day trial</span>
-            <span class="text-slate-300">Charged in {{ prices()?.currency }}</span>
+            <span class="text-text-muted">After 14-day trial</span>
+            <span class="text-text-secondary">Charged in {{ prices()?.currency }}</span>
           </div>
         </div>
 
         @if (serverError()) {
-          <div role="alert" class="text-sm text-red-300 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2">
+          <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded-lg px-3 py-2">
             {{ serverError() }}
           </div>
         }
@@ -422,7 +422,7 @@ import {
             type="button"
             (click)="goBackFromCard()"
             [disabled]="confirming()"
-            class="text-sm text-slate-400 hover:text-slate-200 disabled:opacity-50"
+            class="text-sm text-text-muted hover:text-text-primary disabled:opacity-50"
           >
             ← Back
           </button>
@@ -664,10 +664,10 @@ export class SignupComponent implements AfterViewInit {
       'w-full text-left rounded-lg border px-4 py-3 transition-colors block ' +
       'disabled:opacity-40 disabled:cursor-not-allowed';
     if (this.selectedTier() === plan.tier) {
-      return `${base} border-accent shadow-accent-ring bg-slate-800`;
+      return `${base} border-accent shadow-accent-ring bg-surface`;
     }
-    const hover = plan.priceId ? ' hover:border-slate-600' : '';
-    return `${base} border-slate-700 bg-slate-800/60${hover}`;
+    const hover = plan.priceId ? ' hover:border-border-strong' : '';
+    return `${base} border-border-default bg-surface/60${hover}`;
   }
 
   /** Tile click — only select if a price_id exists for this (tier, interval). */
