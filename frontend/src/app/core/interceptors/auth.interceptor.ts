@@ -26,6 +26,7 @@ import { catchError, throwError } from 'rxjs';
 
 // Module-level memory store — not accessible from JS outside this module.
 let _accessToken: string | null = null;
+let _tenantId: string | null = null;
 
 /** Called by AuthService after a successful login. */
 export function setAccessToken(token: string): void {
@@ -37,7 +38,18 @@ export function clearAccessToken(): void {
   _accessToken = null;
 }
 
+/** Called by AuthService when the tenant context is established (post-signup,
+ *  post-login, or restored from localStorage on app boot). */
+export function setTenantId(tenantId: string): void {
+  _tenantId = tenantId;
+}
+
+export function clearTenantId(): void {
+  _tenantId = null;
+}
+
 const STORAGE_KEY = 'aethos_token';
+const TENANT_STORAGE_KEY = 'aethos_tenant_id';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
@@ -47,9 +59,18 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     return next(req.clone({ headers: req.headers.delete('skip-auth') }));
   }
 
-  const forwarded = _accessToken
-    ? req.clone({ headers: req.headers.set('Authorization', `Bearer ${_accessToken}`) })
-    : req;
+  // Attach both Authorization and X-Tenant-ID when we have them. The backend's
+  // membership dependency (`get_tenant_id` per #90) requires X-Tenant-ID on
+  // every authenticated route — without it the API replies 403 "Tenant
+  // context missing".
+  let headers = req.headers;
+  if (_accessToken) {
+    headers = headers.set('Authorization', `Bearer ${_accessToken}`);
+  }
+  if (_tenantId && !req.headers.has('X-Tenant-ID')) {
+    headers = headers.set('X-Tenant-ID', _tenantId);
+  }
+  const forwarded = headers === req.headers ? req : req.clone({ headers });
 
   return next(forwarded).pipe(
     catchError((err: unknown) => {
@@ -59,8 +80,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         // AuthService) so the interceptor is self-contained and there is no
         // circular DI risk.
         _accessToken = null;
+        _tenantId = null;
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(TENANT_STORAGE_KEY);
         }
         // Avoid a navigation storm if multiple in-flight calls 401 at once —
         // only navigate when we're not already on the landing route.

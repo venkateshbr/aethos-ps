@@ -141,6 +141,11 @@ export class SignupService {
     }
 
     this.auth.setToken(data.session.access_token);
+    // Persist the tenant_id so the auth interceptor can attach X-Tenant-ID on
+    // subsequent calls (/billing/prices, /billing/start-trial). Without this
+    // those calls hit the membership-check dep and return 403 "Tenant context
+    // missing". See the Pick-a-plan error the Founder hit during dogfood.
+    this.auth.setTenantId(signupResp.tenant_id);
     return signupResp;
   }
 

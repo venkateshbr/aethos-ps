@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { setAccessToken, clearAccessToken } from '../interceptors/auth.interceptor';
+import { setAccessToken, clearAccessToken, setTenantId, clearTenantId } from '../interceptors/auth.interceptor';
 
 /**
  * AuthService — single source of truth for the access token lifecycle.
@@ -18,25 +18,30 @@ import { setAccessToken, clearAccessToken } from '../interceptors/auth.intercept
  */
 
 const STORAGE_KEY = 'aethos_token';
+const TENANT_STORAGE_KEY = 'aethos_tenant_id';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   /** Reactive token signal — components & guards read from here. */
   private _token = signal<string | null>(this.readFromStorage());
 
+  /** Reactive tenant_id signal — components read the current tenant. */
+  private _tenantId = signal<string | null>(this.readTenantFromStorage());
+
   /** Public read-only signal of the current access token (null when signed out). */
   readonly token = this._token.asReadonly();
+  readonly tenantId = this._tenantId.asReadonly();
 
   /** True when a token is present. Derived signal — use in templates & guards. */
   readonly isAuthenticated = computed(() => this._token() !== null);
 
   constructor() {
     // Sync the interceptor's in-memory cache with whatever we restored from
-    // storage so the very first HTTP call carries the bearer header.
+    // storage so the very first HTTP call carries both bearer + tenant headers.
     const t = this._token();
-    if (t) {
-      setAccessToken(t);
-    }
+    const tid = this._tenantId();
+    if (t) setAccessToken(t);
+    if (tid) setTenantId(tid);
   }
 
   /**
@@ -53,13 +58,16 @@ export class AuthService {
 
   /**
    * Clear the access token. Called on logout or when a 401 response indicates
-   * the session is no longer valid. Clears all three storage locations.
+   * the session is no longer valid. Clears all three storage locations + tenant.
    */
   clearToken(): void {
     this._token.set(null);
+    this._tenantId.set(null);
     clearAccessToken();
+    clearTenantId();
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(TENANT_STORAGE_KEY);
     }
   }
 
@@ -68,8 +76,30 @@ export class AuthService {
     return this._token();
   }
 
+  /**
+   * Set the tenant_id for the current session. Called by signup (after page 1
+   * returns tenant_id) and by login (after a tenant_users lookup). The
+   * interceptor attaches this as X-Tenant-ID on every authenticated request.
+   */
+  setTenantId(tenantId: string): void {
+    this._tenantId.set(tenantId);
+    setTenantId(tenantId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TENANT_STORAGE_KEY, tenantId);
+    }
+  }
+
+  getTenantId(): string | null {
+    return this._tenantId();
+  }
+
   private readFromStorage(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(STORAGE_KEY);
+  }
+
+  private readTenantFromStorage(): string | null {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(TENANT_STORAGE_KEY);
   }
 }

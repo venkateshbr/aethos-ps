@@ -157,6 +157,26 @@ export class LoginComponent {
         return;
       }
       this.auth.setToken(token);
+
+      // Resolve which tenant this user belongs to so the auth interceptor can
+      // attach X-Tenant-ID on subsequent calls. RLS on tenant_users (migration
+      // 0001) lets the authenticated user read only their own membership rows.
+      const userId = data.session?.user?.id;
+      if (userId) {
+        const { data: memberships, error: membershipErr } = await this.supabase()
+          .from('tenant_users')
+          .select('tenant_id')
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .limit(1);
+        if (membershipErr || !memberships?.length) {
+          this.error.set('Sign-in succeeded but no tenant is associated with this account. Contact support.');
+          this.auth.clearToken();
+          return;
+        }
+        this.auth.setTenantId(memberships[0].tenant_id);
+      }
+
       this.router.navigate(['/app/copilot']);
     } catch (err) {
       this.error.set('Could not reach the authentication server. Check your connection and try again.');
