@@ -25,6 +25,8 @@ export interface EngagementDetail extends EngagementSummary {
   description?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** Set when the engagement was materialised from an AI extraction (#127). */
+  source_document_id?: string | null;
 }
 
 export interface EngagementCreate {

@@ -8,6 +8,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { EngagementService, EngagementDetail } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { ProjectsListComponent } from '../projects/projects-list.component';
+import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { userMessageForError } from '../../core/utils/error-message';
 
 @Component({
@@ -20,6 +21,7 @@ import { userMessageForError } from '../../core/utils/error-message';
     MatChipsModule,
     MoneyPipe,
     ProjectsListComponent,
+    SourceDocumentLinkComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -62,6 +64,11 @@ import { userMessageForError } from '../../core/utils/error-message';
           <div>
             <h1 class="text-2xl font-bold text-text-primary">{{ engagement()!.name }}</h1>
             <p class="text-sm text-text-muted mt-1">{{ engagement()!.client_name ?? 'Client' }}</p>
+            @if (engagement()!.source_document_id) {
+              <div class="mt-2">
+                <app-source-document-link [documentId]="engagement()!.source_document_id!" />
+              </div>
+            }
           </div>
           <span
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
