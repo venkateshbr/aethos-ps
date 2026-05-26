@@ -7,6 +7,7 @@ import { ExpensesService, Expense } from '../../core/services/expenses.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
+import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 
 @Component({
   selector: 'app-expenses-list',
@@ -18,6 +19,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
     MoneyPipe,
     EmptyStateComponent,
     SkeletonRowsComponent,
+    SourceDocumentLinkComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -126,6 +128,25 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
               </td>
             </ng-container>
 
+            <!-- Receipt / source-document column (#127) -->
+            <ng-container matColumnDef="receipt">
+              <th mat-header-cell *matHeaderCellDef
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
+                Receipt
+              </th>
+              <td mat-cell *matCellDef="let row"
+                  class="px-4 py-3 border-b border-border-subtle">
+                @if (row.document_id) {
+                  <app-source-document-link
+                    [documentId]="row.document_id"
+                    label="View"
+                  />
+                } @else {
+                  <span class="text-xs text-text-disabled" aria-hidden="true">—</span>
+                }
+              </td>
+            </ng-container>
+
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"
                 class="hover:bg-surface-raised transition-colors"></tr>
@@ -154,7 +175,7 @@ export class ExpensesListComponent implements OnInit {
   error    = signal<string | null>(null);
   expenses = signal<Expense[]>([]);
 
-  displayedColumns = ['date', 'vendor', 'amount', 'category', 'billable'];
+  displayedColumns = ['date', 'vendor', 'amount', 'category', 'billable', 'receipt'];
 
   ngOnInit(): void {
     this.expensesService.getExpenses().subscribe({

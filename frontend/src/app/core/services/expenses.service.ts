@@ -13,6 +13,8 @@ export interface Expense {
   billable: boolean;
   description?: string;
   status?: string;
+  /** Set when the expense was materialised from a receipt extraction (#127). */
+  document_id?: string | null;
 }
 
 export interface ExpenseListResponse {
