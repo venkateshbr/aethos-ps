@@ -153,6 +153,19 @@ class Settings(BaseSettings):
     upstash_redis_url: str = ""
 
     # ------------------------------------------------------------------
+    # Document-extraction dispatch mode
+    # ------------------------------------------------------------------
+    # `sync`  → extraction runs INLINE in the upload request (blocks 5-30s
+    #           while the LLM extracts; user gets immediate feedback). No
+    #           Procrastinate worker required. Pilot default.
+    # `async` → extraction is deferred onto the Procrastinate queue and the
+    #           upload returns immediately. Requires DATABASE_URL set + a
+    #           running worker (`python -m procrastinate ... worker`).
+    # Defaults to `sync` so a fresh checkout works without queue setup;
+    # flip to `async` once the worker is operational.
+    extraction_mode: str = "sync"
+
+    # ------------------------------------------------------------------
     # CORS / runtime
     # ------------------------------------------------------------------
     # NoDecode → same reason as agent_models: tolerate shell-mangled list env vars.

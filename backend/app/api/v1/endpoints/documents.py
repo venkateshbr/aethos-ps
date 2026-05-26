@@ -174,23 +174,45 @@ async def upload_document(
         ) from exc
 
     # ------------------------------------------------------------------
-    # 6. Defer the Procrastinate extraction task.
-    # Degrade gracefully if the queue connector is unavailable (unit-test /
-    # dev environments may not have DATABASE_URL configured for the queue).
+    # 6. Dispatch extraction.
+    #
+    # Two modes, switched by `settings.extraction_mode`:
+    #
+    #   sync  — Pilot default. Run the extraction inline; the upload
+    #           response carries the result. Blocks the request for 5-30s
+    #           while the LLM extracts. No Procrastinate worker required.
+    #
+    #   async — Defer onto the Procrastinate queue; the upload returns
+    #           immediately and the worker processes the job out of band.
+    #           Requires DATABASE_URL + a running worker. The original
+    #           production design.
+    #
+    # In both modes, failures are swallowed at the upload layer (the file
+    # is already in Storage + the documents row exists; a manual re-queue
+    # or cron sweep can pick it up later). The extraction worker itself
+    # also has its own try/except that updates documents.status='failed'.
     # ------------------------------------------------------------------
+    from app.core.config import settings as _settings
+
     try:
         from app.workers.document_extraction import extract_document_worker
 
-        await extract_document_worker.defer_async(
-            document_id=document_id,
-            tenant_id=tenant_id,
-        )
+        if _settings.extraction_mode == "async":
+            await extract_document_worker.defer_async(
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+        else:
+            # Inline call — Procrastinate Task wraps the original function on
+            # `.func`. Direct invocation skips the queue entirely.
+            await extract_document_worker.func(
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
     except Exception as exc:
-        # Extraction is async and non-blocking — log the failure but don't
-        # roll back the upload. The document is safe in storage; a manual
-        # re-queue or cron sweep can pick it up later.
         logger.warning(
-            "Failed to defer extract_document_worker for %s: %s",
+            "Extraction dispatch (%s) failed for %s: %s",
+            _settings.extraction_mode,
             document_id,
             exc,
         )
