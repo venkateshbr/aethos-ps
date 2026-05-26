@@ -71,6 +71,30 @@ status:new → status:assigned → status:in-progress → status:in-qa → statu
 - Only Vishwa closes issues / merges PRs.
 - Only Aksha promotes `in-qa → in-review`.
 
+### Closure evidence requirements (added 2026-05-26 after #128 RCA)
+
+The Founder hit a P1 UI bug (#128 — auth interceptor missing `X-Tenant-ID`)
+that survived 394 passing tests + a 12/12 live-API smoke because EVERY
+test we ran injected the header manually via `httpx.post(headers={...})`,
+bypassing the SPA interceptor entirely. None of the tests exercised the
+code path a real user hits.
+
+To prevent recurrence:
+
+| Issue area | Evidence required to close |
+|---|---|
+| Backend API / service / repo / migration | Real-stack pytest run hitting `:8011` (not unit-only mocks). For RLS / tenant work: cross-tenant probe in both directions. |
+| **UI / frontend / interceptor / route / form** | **EITHER** a passing Playwright spec under `frontend/e2e/` that exercises the actual user flow through the actual interceptor, **OR** a Founder-confirmed browser walkthrough with screenshot attached to the issue. **Direct `curl` / `httpx` of the backend endpoint is NOT sufficient closure evidence for any UI-touching issue** — it bypasses the SPA's auth interceptor, routing, error handling, and UX. |
+| Infra / Cloud Run / Vercel / Supabase config | A deploy artifact (workflow run URL) or a working live endpoint screenshot. |
+| Test infra / SDET tooling | A green CI run after the change. |
+
+The rule covers Vishwa (orchestrator) too — when Vishwa closes an issue
+on Aksha's behalf during cap-strikes, the same evidence bar applies. If
+the only evidence at hand is a backend curl, set `status:in-qa` and
+leave the issue OPEN for Aksha. The cost of leaving an issue open one
+extra day is far smaller than the cost of the Founder finding it
+end-to-end broken under pilot traffic.
+
 ---
 
 ## CLI Quick Reference

@@ -65,6 +65,7 @@ frontend/src/app/
 - **95% confidence rule**: agents do not modify code until ≥ 95% confident; ask clarifying questions until that bar is met.
 - **Approval gates**: Vishwa seeks Founder approval before plans; all other agents seek Vishwa approval before execution.
 - Lifecycle: `triage → assigned → in-progress → in-qa → in-review → CLOSED`
+- **Closure evidence bar** (added 2026-05-26 after #128 RCA — see `docs/team/SDLC_PROTOCOL.md`): UI-touching issues require a passing Playwright spec under `frontend/e2e/` OR a Founder-confirmed browser walkthrough with screenshot. Backend `curl`/`httpx` proof is **not sufficient** for any UI-touching issue — it bypasses the SPA interceptor, routing, and error handling. Backend-only issues still close on real-stack pytest evidence. Applies to Vishwa-during-cap-strike closures too.
 - Role-gated issue creation: only Vishwa, Vastu, Netra create `type:feature`. Others create `type:bug`/`task`/`chore`/`spike`.
 
 ## Agent Team
