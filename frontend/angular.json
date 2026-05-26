@@ -21,7 +21,9 @@
             "outputPath": "dist/aethos-ps",
             "index": "src/index.html",
             "browser": "src/main.ts",
-            "polyfills": ["zone.js"],
+            "polyfills": [
+              "zone.js"
+            ],
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
@@ -34,7 +36,9 @@
                 "output": "/assets"
               }
             ],
-            "styles": ["src/styles.scss"],
+            "styles": [
+              "src/styles.scss"
+            ],
             "scripts": []
           },
           "configurations": {
@@ -80,7 +84,12 @@
           "defaultConfiguration": "development",
           "options": {
             "port": 4201,
-            "host": "0.0.0.0"
+            "host": "0.0.0.0",
+            "proxyConfig": "proxy.conf.json",
+            "allowedHosts": [
+              "aethos-dev.ishirock.com",
+              "localhost"
+            ]
           }
         },
         "extract-i18n": {
@@ -89,7 +98,10 @@
         "test": {
           "builder": "@angular-devkit/build-angular:karma",
           "options": {
-            "polyfills": ["zone.js", "zone.js/testing"],
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ],
             "tsConfig": "tsconfig.spec.json",
             "assets": [
               {
@@ -102,7 +114,9 @@
                 "output": "/assets"
               }
             ],
-            "styles": ["src/styles.scss"],
+            "styles": [
+              "src/styles.scss"
+            ],
             "scripts": []
           }
         }
