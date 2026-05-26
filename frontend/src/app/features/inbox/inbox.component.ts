@@ -362,6 +362,18 @@ export class InboxComponent implements OnInit {
     return `${base} bg-surface-raised text-text-muted`;
   }
 
+  /**
+   * Returns the source document id for extraction-driven cards so reviewers
+   * can open the original upload before approving. Non-extraction kinds
+   * (autonomy promotions, escalations, etc.) return null. (#127)
+   */
+  sourceDocId(task: HitlTask): string | null {
+    if (!EXTRACTION_KINDS.has(task.kind)) return null;
+    const p = task.suggestion_payload ?? {};
+    const id = p['original_document_id'];
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  }
+
   payloadSummary(task: HitlTask): { key: string; value: string }[] {
     const p = task.suggestion_payload ?? {};
     const entries: { key: string; value: string }[] = [];
