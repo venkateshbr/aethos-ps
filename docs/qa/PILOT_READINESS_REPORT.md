@@ -381,3 +381,67 @@ green the moment Price IDs are replaced.
 Verdict YELLOW-with-narrow-caveats; flips GREEN on backend restart (#108).
 Next regression run: the morning after pilot launch, to confirm no
 production-only regressions surfaced overnight.
+
+---
+
+## R-Real-4 — Inline sync extraction, full real-data UI-proxy smoke
+
+**Date**: 2026-05-26 · **Stack**: local backend :8011 + ng-serve :4201 (proxy `/api → :8011`) + real Supabase `glcljucaayeesvrsjths` + real Stripe sandbox + real OpenRouter
+
+### Operator changes since R3
+
+- Extraction dispatch is now configurable via `EXTRACTION_MODE=sync|async` (default `sync`).
+  Sync runs the LLM inline in the upload request (5–30 s block); async keeps the original
+  Procrastinate path for when a worker is wired post-pilot. `8fca632`.
+- Theme picker removed; carbon-amber locked across all 21 feature pages via semantic
+  Tailwind tokens (`24464ef` + `ef239e9`). 742 class replacements.
+- Frontend `proxy.conf.json` wired so a single Cloudflare tunnel can serve both surfaces
+  on one origin (`http://localhost:4201/api/*` → backend).
+- Migration `0019_source_document_links.sql` applied live — engagements + bills + project_expenses
+  now carry a FK to the source document.
+
+### Smoke transcript (12/12 PASS)
+
+```
+[1] signup 201 + ES256 JWT minted
+[2] engagement letter upload → inline sync extract → 201 + status=extracted
+    HITL task created (kind=create_engagement_draft) with original_document_id link
+    approve → engagement materialised with source_document_id populated
+[3] expense receipt upload → expense_extractor_agent fires → create_expense_draft HITL
+[4] vendor invoice upload → vendor_invoice_agent fires → create_bill_draft HITL
+    (#125 confirmed: 3 distinct filenames routed to 3 different agents)
+[5] presigned URL endpoint 200 → signed URL fetch 200 (3128 B)
+[6] cross-tenant: tenant B → tenant A doc → 404; tenant B engagements list = empty
+[7] /reports/wip 200 (#99 fix holds)
+```
+
+### Bugs CLOSED with live evidence this round
+
+| # | Severity | What |
+|---|---|---|
+| #99  | P1 | `/reports/wip` 200 |
+| #100 | P0 INFRA | Storage bucket provisioned + RLS holds |
+| #111 | P0 SEC | Auth guard on `/app/*` |
+| #112 | P1 | Sidebar nav routes (missing route causes) |
+| #113 | P1 | Per-status error copy in feature views |
+| #114 / #115 | P0 | Signup UI (3-step wizard, Stripe Elements) |
+| #118 | P2 | Change-password section |
+| #119 | P1 | `/login` page for returning users |
+| #120 | P1 | Theme propagation — resolved by removing picker + token migration |
+| #122 | P0 SEC | Signup RLS (sign_up session-hijack) |
+| #124 | P0 | JWT ES256 / JWKS support |
+| #125 | P1 | Document filename → classifier |
+| #126 | P1 | Inbox approve enum |
+| #127 | P1 | Source-document link on engagement/expense/bill + presigned URL + UI surfaces |
+
+### Verdict: **GREEN for pilot kickoff** (operator items only)
+
+What's between you and a pilot user signing up:
+
+1. **`cloudflared tunnel --url http://localhost:4201`** — emits `https://<random>.trycloudflare.com`. That URL serves frontend AND `/api/*` via the proxy. Single tunnel for everything. ~10 seconds.
+2. **CORS_ORIGINS** in `.env` may need to include `*.trycloudflare.com` — orchestrator will broaden it on request.
+3. **#95 Stripe Connect** — optional; pilot can ship PDF-only.
+
+Engineering surface is closed. The remaining 5 open P2/P3 are test infra (#103/#105/#109), an LLM-flake mitigation already in place (#106), and a UI E2E coverage gap (#110). None are user-visible.
+
+**Sign-off**: Orchestrator (Vishwa), R4. Aksha to ratify on her next cap cycle.
