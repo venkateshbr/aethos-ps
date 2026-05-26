@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { BillingRunsService, Bill } from '../../core/services/billing-runs.service';
+import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 
 @Component({
   selector: 'app-pay-bills',
@@ -21,6 +22,7 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
     MatIconModule,
     MatProgressSpinnerModule,
     MoneyPipe,
+    SourceDocumentLinkComponent,
   ],
   template: `
     <div class="min-h-full bg-surface-base p-6">
@@ -86,6 +88,11 @@ import { BillingRunsService, Bill } from '../../core/services/billing-runs.servi
                           <span class="text-text-muted text-xs text-center">{{ bill.client_id }}</span>
                           <span class="text-xs text-text-muted text-right">Due {{ bill.due_date | date:'mediumDate' }}</span>
                         </div>
+                        @if (bill.source_document_id) {
+                          <span class="ml-2 flex-shrink-0" (click)="$event.preventDefault(); $event.stopPropagation()">
+                            <app-source-document-link [documentId]="bill.source_document_id" label="Invoice" />
+                          </span>
+                        }
                         <span class="text-text-primary font-semibold font-mono text-sm ml-2 flex-shrink-0">{{ bill.amount | money: bill.currency }}</span>
                       </label>
                     }

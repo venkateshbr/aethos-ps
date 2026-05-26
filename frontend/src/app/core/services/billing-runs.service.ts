@@ -10,6 +10,8 @@ export interface Bill {
   currency: string;
   due_date: string;
   status: string;
+  /** Set when the bill was materialised from a vendor-invoice extraction (#127). */
+  source_document_id?: string | null;
 }
 
 export interface PaymentBatch {
