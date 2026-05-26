@@ -12,7 +12,6 @@ Signup creates real artifacts. We tag the tenant for cleanup.
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import httpx

@@ -10,9 +10,9 @@ import re
 from dataclasses import dataclass
 
 from openai import AsyncOpenAI, OpenAI
-from supabase import Client
 
 from app.core.config import settings
+from supabase import Client
 
 
 @dataclass

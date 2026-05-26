@@ -20,7 +20,6 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from app.domain.money import serialise_money
-
 from supabase import Client
 
 logger = logging.getLogger(__name__)

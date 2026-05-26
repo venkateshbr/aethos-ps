@@ -26,7 +26,7 @@ import pytest
 for _k in ("AGENT_MODELS", "CORS_ORIGINS"):
     os.environ.pop(_k, None)
 
-from tests.fixtures.scenarios import (
+from tests.fixtures.scenarios import (  # noqa: E402 — must follow the env pop above
     SeedWorld,
     auth_headers,
     seed_two_tenants,

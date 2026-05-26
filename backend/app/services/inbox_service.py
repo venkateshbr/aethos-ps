@@ -69,7 +69,9 @@ class InboxService:
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
         payload = task.get("suggestion_payload", {})
         kind = task.get("kind", "")
-        agent_name = task.get("agent_name", "unknown")
+        # `agent_name` was previously read here for the record_correction call
+        # that lived under the plain-approve path — removed in #126 because the
+        # agent_corrections table only accepts edit/reject correction_type.
 
         entity = await self._materialise(kind, payload)
 

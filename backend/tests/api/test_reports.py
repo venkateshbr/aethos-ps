@@ -12,8 +12,6 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from tests.fixtures.scenarios import SeedWorld
-
 pytestmark = [
     pytest.mark.api,
     pytest.mark.flow_reports,
@@ -48,7 +46,7 @@ def test_wip_report_returns_200(client_a: httpx.Client) -> None:
     assert r.status_code == 200, f"/reports/wip → {r.status_code} {r.text[:200]}"
 
 
-_AUTH_CHECK_ENDPOINTS = REPORT_ENDPOINTS + ["/api/v1/reports/wip"]
+_AUTH_CHECK_ENDPOINTS = [*REPORT_ENDPOINTS, "/api/v1/reports/wip"]
 
 
 @pytest.mark.parametrize("path", _AUTH_CHECK_ENDPOINTS)

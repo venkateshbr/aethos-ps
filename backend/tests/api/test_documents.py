@@ -11,8 +11,6 @@ import io
 import httpx
 import pytest
 
-from tests.fixtures.scenarios import SeedWorld
-
 pytestmark = [
     pytest.mark.api,
     pytest.mark.flow_hitl,

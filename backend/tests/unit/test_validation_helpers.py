@@ -15,11 +15,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 from fastapi import HTTPException
-
 
 pytestmark = pytest.mark.unit
 
@@ -43,19 +41,19 @@ class _FakeQuery:
     calls: list[tuple[str, tuple, dict]] = field(default_factory=list)
     soft_deleted_rows: list[dict] = field(default_factory=list)
 
-    def select(self, *a, **kw) -> "_FakeQuery":
+    def select(self, *a, **kw) -> _FakeQuery:
         self.calls.append(("select", a, kw))
         return self
 
-    def eq(self, *a, **kw) -> "_FakeQuery":
+    def eq(self, *a, **kw) -> _FakeQuery:
         self.calls.append(("eq", a, kw))
         return self
 
-    def limit(self, *a, **kw) -> "_FakeQuery":
+    def limit(self, *a, **kw) -> _FakeQuery:
         self.calls.append(("limit", a, kw))
         return self
 
-    def is_(self, *a, **kw) -> "_FakeQuery":
+    def is_(self, *a, **kw) -> _FakeQuery:
         self.calls.append(("is_", a, kw))
         if self.raise_on_is_null:
             raise RuntimeError("simulated: table has no deleted_at column")

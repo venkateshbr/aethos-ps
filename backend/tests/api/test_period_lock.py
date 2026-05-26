@@ -12,7 +12,6 @@ The reconciliation gap (F8) is tested with a documented xfail so the test fails
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import httpx
@@ -134,7 +133,6 @@ def test_period_lock_cross_tenant_isolation(
 
         # Tenant B locking the same period should succeed (different tenant)
         # We need an admin JWT for tenant B
-        from tests.fixtures.scenarios import auth_headers
 
         # Mint admin for tenant B owner
         admin_b_token = mint_jwt(

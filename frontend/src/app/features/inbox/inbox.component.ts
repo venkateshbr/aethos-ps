@@ -6,12 +6,16 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { HitlService, HitlTask } from '../../core/services/hitl.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
+import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { userMessageForError } from '../../core/utils/error-message';
+
+/** HITL task kinds that originate from an AI document extraction (#127). */
+const EXTRACTION_KINDS = new Set(['create_engagement', 'create_expense', 'create_bill', 'vendor_invoice']);
 
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, ConfidenceChipComponent, SkeletonRowsComponent],
+  imports: [CommonModule, FormsModule, MatIconModule, ConfidenceChipComponent, SkeletonRowsComponent, SourceDocumentLinkComponent],
   template: `
     <div class="h-full flex flex-col bg-surface-base text-text-primary outline-none"
          (keydown)="onKeydown($event)"
@@ -203,6 +207,13 @@ import { userMessageForError } from '../../core/utils/error-message';
                     </div>
                   }
                 </div>
+
+                <!-- Source document link (#127) — only on extraction-driven cards -->
+                @if (sourceDocId(task); as docId) {
+                  <div class="mb-3" (click)="$event.stopPropagation()">
+                    <app-source-document-link [documentId]="docId" label="View source" />
+                  </div>
+                }
 
                 <!-- Action buttons -->
                 <div class="flex items-center gap-2">

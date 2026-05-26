@@ -202,8 +202,9 @@ def test_list_engagements_excludes_soft_deleted(
 ) -> None:
     """The list endpoint must not return engagements with deleted_at set."""
     # Soft-delete one of the seeded engagements via service-role client
-    from tests.fixtures.scenarios import make_service_client
     from datetime import UTC, datetime
+
+    from tests.fixtures.scenarios import make_service_client
 
     eng_id = world.tenant_a.engagement_ids[0]
     db = make_service_client()

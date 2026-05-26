@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     queue_app = None
     if settings.database_url:
         try:
-            from app.workers.procrastinate_app import app as queue_app  # noqa: F811
+            from app.workers.procrastinate_app import app as queue_app
             await queue_app.open_async()
         except Exception as exc:
             import logging as _logging

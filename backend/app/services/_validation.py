@@ -19,6 +19,7 @@ import asyncio
 import logging
 
 from fastapi import HTTPException, status
+
 from supabase import Client
 
 logger = logging.getLogger(__name__)

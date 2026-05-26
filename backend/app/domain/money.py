@@ -73,8 +73,8 @@ def parse_money(value: str | int | float | Decimal | None, *, default: str = "0"
 
 __all__ = [
     "TWO_PLACES",
+    "parse_money",
+    "quantise_money",
     "serialise_money",
     "serialize_money",
-    "quantise_money",
-    "parse_money",
 ]
