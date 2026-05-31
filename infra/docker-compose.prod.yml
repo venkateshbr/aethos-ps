@@ -22,7 +22,7 @@ services:
     ports:
       - "8011:8080"      # host:container — Dockerfile exposes 8080
     env_file:
-      - .env             # loaded from repo root by start-prod.sh
+      - backend/.env     # relative to --project-directory (repo root)
     environment:
       - PORT=8080
       - ENVIRONMENT=production
