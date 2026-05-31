@@ -1,9 +1,11 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatButtonModule } from '@angular/material/button';
 import { HttpClient } from '@angular/common/http';
+import { AuthService } from '../../core/services/auth.service';
+import { SupabaseService } from '../../core/services/supabase.service';
 
 interface NavItem {
   label: string;
@@ -109,15 +111,31 @@ interface SubscriptionStatus {
             </div>
           }
 
-          <!-- Settings -->
-          <a
-            routerLink="/app/settings"
-            routerLinkActive="bg-surface-raised text-text-primary"
+          <!-- User menu — profile + settings + logout -->
+          <button
+            [matMenuTriggerFor]="userMenu"
             class="flex items-center justify-center w-8 h-8 text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            aria-label="Settings"
+            aria-label="Account menu"
+            title="Account"
           >
-            <mat-icon style="font-size:1.1rem;width:1.1rem;height:1.1rem;">settings</mat-icon>
-          </a>
+            <mat-icon style="font-size:1.2rem;width:1.2rem;height:1.2rem;">account_circle</mat-icon>
+          </button>
+
+          <mat-menu #userMenu="matMenu">
+            <a mat-menu-item [routerLink]="'/app/profile'" class="flex items-center gap-2 text-text-secondary hover:text-text-primary">
+              <mat-icon class="text-base flex-none text-text-muted">manage_accounts</mat-icon>
+              <span>Profile</span>
+            </a>
+            <a mat-menu-item [routerLink]="'/app/settings'" class="flex items-center gap-2 text-text-secondary hover:text-text-primary">
+              <mat-icon class="text-base flex-none text-text-muted">settings</mat-icon>
+              <span>Settings</span>
+            </a>
+            <div class="border-t border-border-default my-1"></div>
+            <button mat-menu-item (click)="logout()" class="flex items-center gap-2 text-confidence-low hover:text-confidence-low w-full">
+              <mat-icon class="text-base flex-none text-confidence-low">logout</mat-icon>
+              <span>Sign out</span>
+            </button>
+          </mat-menu>
 
         </div>
       </header>
@@ -148,8 +166,17 @@ interface SubscriptionStatus {
   `],
 })
 export class ShellComponent implements OnInit {
-  private http = inject(HttpClient);
+  private http  = inject(HttpClient);
+  private auth  = inject(AuthService);
+  private supa  = inject(SupabaseService);
+  private router = inject(Router);
   trialDaysLeft = signal<number | null>(null);
+
+  async logout() {
+    await this.supa.client.auth.signOut().catch(() => {});
+    this.auth.clearToken();
+    this.router.navigate(['/login']);
+  }
 
   /** Primary nav — always visible in the top bar (with icon + label on ≥md) */
   readonly primaryNav: NavItem[] = [

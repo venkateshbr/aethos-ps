@@ -268,3 +268,36 @@ def subscription_status(
         "trial_ends_at": t.get("trial_ends_at"),
         "plan_tier": t.get("plan_tier", "trial"),
     }
+
+
+@router.get(
+    "/profile",
+    summary="Return org profile (name, country, plan, status) for the profile page",
+)
+def get_profile(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> dict:
+    """Returns org details for the profile/account page.
+
+    Includes tenant name, country, plan tier, subscription status and
+    trial dates.  User email comes from the JWT (current_user.email).
+    """
+    tenant = db.table("tenants").select(
+        "name, country, plan_tier, status, stripe_subscription_status, "
+        "trial_ends_at, created_at"
+    ).eq("id", tenant_id).execute()
+    if not tenant.data:
+        return {"tenant_id": tenant_id, "email": current_user.email}
+    t = tenant.data[0]
+    return {
+        "tenant_id": tenant_id,
+        "email": current_user.email,
+        "org_name": t.get("name", ""),
+        "country": t.get("country", ""),
+        "plan_tier": t.get("plan_tier", "starter"),
+        "status": t.get("stripe_subscription_status", t.get("status", "unknown")),
+        "trial_ends_at": t.get("trial_ends_at"),
+        "member_since": t.get("created_at", "")[:10] if t.get("created_at") else "",
+    }

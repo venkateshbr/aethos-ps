@@ -103,6 +103,11 @@ export const routes: Routes = [
           import('./features/settings/settings.component').then(m => m.SettingsComponent),
       },
       {
+        path: 'profile',
+        loadComponent: () =>
+          import('./features/profile/profile.component').then(m => m.ProfileComponent),
+      },
+      {
         path: 'reports',
         loadComponent: () =>
           import('./features/reports/reports.component').then(m => m.ReportsComponent),
