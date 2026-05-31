@@ -120,6 +120,7 @@ export class ShellComponent implements OnInit {
 
   navItems: NavItem[] = [
     { label: 'Copilot',      icon: 'auto_awesome',    route: '/app/copilot' },
+    { label: 'Documents',    icon: 'upload_file',     route: '/app/documents' },
     { label: 'Inbox',        icon: 'inbox',           route: '/app/inbox' },
     { label: 'Engagements',  icon: 'work',            route: '/app/engagements' },
     { label: 'Projects',     icon: 'folder',          route: '/app/projects' },

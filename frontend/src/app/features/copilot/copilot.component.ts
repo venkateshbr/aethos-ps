@@ -259,11 +259,57 @@ export interface ChatThread {
               {{ error() }}
             </div>
           }
+
+          <!-- Document upload status banner -->
+          @if (uploadStatus()) {
+            <div
+              class="mb-2 px-3 py-2 rounded-md text-xs flex items-center gap-2"
+              [class]="uploadStatusClass()"
+              role="status"
+              aria-live="polite"
+            >
+              @if (uploadStatus() === 'uploading' || uploadStatus() === 'extracting') {
+                <span class="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin flex-none"></span>
+              }
+              @if (uploadStatus() === 'done') {
+                <mat-icon class="text-xs leading-none">check_circle</mat-icon>
+              }
+              @if (uploadStatus() === 'error') {
+                <mat-icon class="text-xs leading-none">error_outline</mat-icon>
+              }
+              {{ uploadStatusMessage() }}
+            </div>
+          }
+
           <div
             class="flex items-end gap-2 bg-surface border rounded-lg px-3 py-2 transition-colors"
             [class.border-border-strong]="!composerFocused()"
             [class.border-accent]="composerFocused()"
           >
+            <!-- Hidden file input; triggered by the label below -->
+            <input
+              #fileInput
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+              class="sr-only"
+              aria-label="Attach document"
+              (change)="onFileSelected($event)"
+            />
+
+            <!-- Attach button -->
+            <button
+              type="button"
+              class="flex-none p-1.5 rounded-md transition-colors text-text-muted hover:text-accent-light
+                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
+                     disabled:opacity-50 disabled:cursor-not-allowed"
+              [disabled]="uploading()"
+              (click)="fileInput.click()"
+              aria-label="Attach document"
+              matTooltip="Attach document (.pdf .png .jpg .webp .txt)"
+            >
+              <mat-icon class="text-xl leading-none">attach_file</mat-icon>
+            </button>
+
             <textarea
               #composer
               [ngModel]="composerText()"
@@ -296,7 +342,7 @@ export interface ChatThread {
             </button>
           </div>
           <p class="text-xs text-text-muted mt-1.5 text-center">
-            Shift + Enter for new line &middot; Enter to send
+            Shift + Enter for new line &middot; Enter to send &middot; Attach documents with the paperclip
           </p>
         </div>
       </div>
@@ -325,6 +371,30 @@ export class CopilotComponent implements OnInit {
   composerText = signal('');
 
   canSend = computed(() => this.composerText().trim().length > 0 && !this.streaming());
+
+  // --- Document upload ---
+  uploading     = signal(false);
+  uploadStatus  = signal<'uploading' | 'extracting' | 'done' | 'error' | null>(null);
+
+  uploadStatusMessage = computed(() => {
+    switch (this.uploadStatus()) {
+      case 'uploading':   return 'Uploading…';
+      case 'extracting':  return 'Extracting — this may take up to 30 seconds…';
+      case 'done':        return 'Done — check your Inbox for the extracted record.';
+      case 'error':       return 'Upload failed. Please check the file type/size and try again.';
+      default:            return '';
+    }
+  });
+
+  uploadStatusClass = computed(() => {
+    switch (this.uploadStatus()) {
+      case 'uploading':
+      case 'extracting': return 'bg-confidence-med/10 border border-confidence-med/30 text-confidence-med';
+      case 'done':       return 'bg-accent/10 border border-accent/30 text-accent-light';
+      case 'error':      return 'bg-confidence-low/10 border border-confidence-low/30 text-confidence-low';
+      default:           return '';
+    }
+  });
 
   /** Read token from localStorage — auth interceptor will set this in Week 3. */
   private token = signal<string | null>(
@@ -540,6 +610,91 @@ export class CopilotComponent implements OnInit {
         msgs.map(m => m.id === assistantId ? { ...m, streaming: false } : m)
       );
     }
+  }
+
+  // --- Document upload ---
+
+  /**
+   * Handle file selection from the hidden <input type="file">.
+   * POSTs as FormData to /api/v1/documents/upload — Angular's HttpClient
+   * lets the interceptor attach Authorization + X-Tenant-ID automatically.
+   * The sync extraction on the backend takes 5-30 s; we poll status via
+   * the upload 201 response and surface a Done banner when finished.
+   */
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be re-selected if needed
+    input.value = '';
+
+    this.uploading.set(true);
+    this.uploadStatus.set('uploading');
+
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+
+    this.http.post<{ id: string; status: string }>('/api/v1/documents/upload', fd).subscribe({
+      next: (doc) => {
+        // Backend returns 201 with status 'extracting' (sync extraction) or
+        // 'extracted' (if it completed synchronously).
+        if (doc.status === 'extracted') {
+          this.uploadStatus.set('done');
+        } else {
+          this.uploadStatus.set('extracting');
+          // Poll once after 15 s for the extracted status
+          this.pollDocumentStatus(doc.id);
+        }
+        this.uploading.set(false);
+        // Auto-clear the success banner after 8 s
+        setTimeout(() => {
+          if (this.uploadStatus() === 'done') this.uploadStatus.set(null);
+        }, 8000);
+      },
+      error: (err: { status?: number }) => {
+        this.uploading.set(false);
+        this.uploadStatus.set('error');
+        console.error('Document upload failed:', err.status);
+        // Clear error banner after 10 s
+        setTimeout(() => {
+          if (this.uploadStatus() === 'error') this.uploadStatus.set(null);
+        }, 10000);
+      },
+    });
+  }
+
+  /** Poll /api/v1/documents/:id after a short delay for the extracted status. */
+  private pollDocumentStatus(docId: string, attempt = 0): void {
+    const delay = attempt === 0 ? 15000 : 10000;
+    const maxAttempts = 5;
+    setTimeout(() => {
+      this.http.get<{ status: string }>(`/api/v1/documents/${docId}`).subscribe({
+        next: (doc) => {
+          if (doc.status === 'extracted') {
+            this.uploadStatus.set('done');
+            setTimeout(() => {
+              if (this.uploadStatus() === 'done') this.uploadStatus.set(null);
+            }, 8000);
+          } else if (doc.status === 'failed') {
+            this.uploadStatus.set('error');
+            setTimeout(() => {
+              if (this.uploadStatus() === 'error') this.uploadStatus.set(null);
+            }, 10000);
+          } else if (attempt < maxAttempts) {
+            this.pollDocumentStatus(docId, attempt + 1);
+          } else {
+            // Give up polling — show done (user can check Documents page)
+            this.uploadStatus.set('done');
+            setTimeout(() => { this.uploadStatus.set(null); }, 8000);
+          }
+        },
+        error: () => {
+          // Network error during polling — don't surface an error, just stop
+          this.uploadStatus.set(null);
+        },
+      });
+    }, delay);
   }
 
   // --- Card actions ---

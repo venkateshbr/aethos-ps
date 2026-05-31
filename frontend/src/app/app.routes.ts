@@ -112,6 +112,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/billing-runs/pay-bills.component').then(m => m.PayBillsComponent),
       },
+      {
+        path: 'documents',
+        loadComponent: () =>
+          import('./features/documents/documents-list.component').then(m => m.DocumentsListComponent),
+      },
       { path: '', redirectTo: 'copilot', pathMatch: 'full' },
     ],
   },
