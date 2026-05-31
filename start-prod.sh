@@ -15,22 +15,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKTREE="$REPO_ROOT/.claude/worktrees/compassionate-merkle-90c923"
-ENV_FILE="$WORKTREE/backend/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BACKEND_PORT=8011
 FRONTEND_PORT=4301
 
-# Resolve the env file — prefer worktree-specific, fall back to repo root
-if [ -f "$WORKTREE/.env" ]; then
-  ENV_FILE="$WORKTREE/.env"
-elif [ -f "$REPO_ROOT/.env" ]; then
-  ENV_FILE="$REPO_ROOT/.env"
-elif [ -f "$WORKTREE/backend/.env" ]; then
-  ENV_FILE="$WORKTREE/backend/.env"
+# .env lookup order: same dir as script → backend/ subdirectory
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  ENV_FILE="$SCRIPT_DIR/.env"
+elif [ -f "$SCRIPT_DIR/backend/.env" ]; then
+  ENV_FILE="$SCRIPT_DIR/backend/.env"
 else
-  echo "ERROR: .env not found. Copy backend/.env.example, fill in secrets, and place it at the repo root."
+  echo "ERROR: .env not found in $SCRIPT_DIR or $SCRIPT_DIR/backend/"
+  echo "Copy backend/.env.example, fill in secrets, and save as .env next to this script."
   exit 1
 fi
 
@@ -45,13 +42,13 @@ echo "  Frontend : http://localhost:$FRONTEND_PORT"
 echo ""
 
 # Stop any existing containers
-"$REPO_ROOT/stop-prod.sh" 2>/dev/null || true
+"$SCRIPT_DIR/stop-prod.sh" 2>/dev/null || true
 
 # Build + start
 echo "▶ Building Docker images (this may take a few minutes on first run)..."
 docker compose \
-  -f "$WORKTREE/infra/docker-compose.prod.yml" \
-  --project-directory "$WORKTREE" \
+  -f "$SCRIPT_DIR/infra/docker-compose.prod.yml" \
+  --project-directory "$SCRIPT_DIR" \
   --env-file "$ENV_FILE" \
   --project-name aethos-ps \
   up --build -d

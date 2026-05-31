@@ -7,16 +7,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKTREE="$REPO_ROOT/.claude/worktrees/compassionate-merkle-90c923"
-ENV_FILE="${WORKTREE}/backend/.env"
-[ -f "$REPO_ROOT/.env" ] && ENV_FILE="$REPO_ROOT/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/backend/.env"
+[ -f "$SCRIPT_DIR/.env" ] && ENV_FILE="$SCRIPT_DIR/.env"
 
 echo "Stopping Aethos PS production containers..."
 
 docker compose \
-  -f "$WORKTREE/infra/docker-compose.prod.yml" \
-  --project-directory "$WORKTREE" \
+  -f "$SCRIPT_DIR/infra/docker-compose.prod.yml" \
+  --project-directory "$SCRIPT_DIR" \
   --env-file "$ENV_FILE" \
   --project-name aethos-ps \
   down 2>/dev/null || true

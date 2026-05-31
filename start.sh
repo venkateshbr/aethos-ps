@@ -10,17 +10,29 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKTREE="$REPO_ROOT/.claude/worktrees/compassionate-merkle-90c923"
-BACKEND_DIR="$WORKTREE/backend"
-FRONTEND_DIR="$WORKTREE/frontend"
-ENV_FILE="$REPO_ROOT/.claude/worktrees/intelligent-saha-9ad2e3/backend/.env"
+# The script lives at the root of the aethos-ps worktree.
+# All paths are resolved relative to its own directory so it works
+# regardless of where you invoke it from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$SCRIPT_DIR/backend"
+FRONTEND_DIR="$SCRIPT_DIR/frontend"
+
+# .env lookup order: repo root → backend/ subdirectory
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  ENV_FILE="$SCRIPT_DIR/.env"
+elif [ -f "$BACKEND_DIR/.env" ]; then
+  ENV_FILE="$BACKEND_DIR/.env"
+else
+  echo "ERROR: .env not found in $SCRIPT_DIR or $BACKEND_DIR"
+  echo "Copy backend/.env.example, fill in secrets, and save as .env"
+  exit 1
+fi
 
 BACKEND_PORT=8010
 FRONTEND_PORT=4300
 
 # Stop any existing dev servers first
-"$REPO_ROOT/stop.sh" 2>/dev/null || true
+"$SCRIPT_DIR/stop.sh" 2>/dev/null || true
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
@@ -30,9 +42,7 @@ echo ""
 
 # ── Backend ──────────────────────────────────────────────────────────────────
 echo "▶ Starting backend on :$BACKEND_PORT ..."
-if [ ! -f "$ENV_FILE" ]; then
-  echo "  ⚠ .env not found at $ENV_FILE — backend may fail to start"
-fi
+echo "  Env file: $ENV_FILE"
 
 (
   cd "$BACKEND_DIR"
