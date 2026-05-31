@@ -32,8 +32,10 @@ function attachConsoleCollector(page: Page): ConsoleCollect {
 }
 
 test.describe('R-Real-5 · R2R — reports surface render check', () => {
-  test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run signup.spec.ts first');
   test.use({ storageState: STORAGE_PATH });
+  test.beforeEach(() => {
+    test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run 00-signup.spec.ts first');
+  });
 
   test('/app/reports mounts under the shell without console errors', async ({ page }) => {
     const consoleCollect = attachConsoleCollector(page);

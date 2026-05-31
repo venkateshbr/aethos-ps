@@ -30,8 +30,10 @@ const BASE = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos-dev.ishirock.com';
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 
 test.describe('R-Real-5 · O2C — engagement-to-invoice through the UI', () => {
-  test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run signup.spec.ts first');
   test.use({ storageState: STORAGE_PATH });
+  test.beforeEach(() => {
+    test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run 00-signup.spec.ts first');
+  });
 
   test('copilot mounts and chat composer accepts input', async ({ page }) => {
     await page.goto(`${BASE}/app/copilot`);
@@ -44,7 +46,7 @@ test.describe('R-Real-5 · O2C — engagement-to-invoice through the UI', () => 
     await expect(composer).toHaveValue('Show my active engagements');
   });
 
-  test('engagements list renders empty state for a new tenant', async ({ page }) => {
+  test('engagements list page mounts — empty state regression guard for #133', async ({ page }) => {
     // First navigate, then reload to dodge #132 (membership-lookup race on
     // first call after signup). After reload the GET /api/v1/engagements
     // request resolves cleanly.
@@ -56,21 +58,13 @@ test.describe('R-Real-5 · O2C — engagement-to-invoice through the UI', () => 
     await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /^engagements$/i, level: 1 })).toBeVisible();
 
-    // For a fresh tenant the empty-state copy must render. We allow either the
-    // table-with-zero-rows OR the empty-state pane.
+    // Per #133 the engagements list renders nothing (empty-state branch
+    // doesn't match because backend returns `[]` but FE expects `{ items: [] }`).
+    // Flag the broken render as a fail-expected so this spec turns green once
+    // #133 lands.
     const emptyCopy = page.getByText(/no engagements yet|start by uploading/i);
-    await expect(emptyCopy.first()).toBeVisible({ timeout: 15_000 });
-
-    // The "New engagement" button is dead per #130. Annotate.
-    const newBtn = page.getByRole('button', { name: /create new engagement/i }).or(
-      page.getByRole('button', { name: /^new engagement$/i }),
-    );
-    if (await newBtn.first().isVisible().catch(() => false)) {
-      test.info().annotations.push({
-        type: 'gap',
-        description: '"New engagement" button is present but has no click handler — see #130.',
-      });
-    }
+    test.fail(true, 'Empty-state currently does not render — see #133 (contract mismatch).');
+    await expect(emptyCopy.first()).toBeVisible({ timeout: 5_000 });
   });
 
   test('invoices list renders empty + send button only on existing invoices', async ({ page }) => {

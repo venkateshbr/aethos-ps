@@ -21,12 +21,14 @@ const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 
 test.describe('R-Real-5 · Change password (tunnel)', () => {
-  test.skip(
-    !fs.existsSync(STORAGE_PATH) || !fs.existsSync(META_PATH),
-    'no signed-in session — run signup.spec.ts first',
-  );
-
   test.use({ storageState: STORAGE_PATH });
+
+  test.beforeEach(() => {
+    test.skip(
+      !fs.existsSync(STORAGE_PATH) || !fs.existsSync(META_PATH),
+      'no signed-in session — run 00-signup.spec.ts first',
+    );
+  });
 
   test('settings page renders the change-password form with all required fields', async ({ page }) => {
     test.setTimeout(60_000);

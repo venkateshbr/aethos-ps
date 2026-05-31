@@ -23,8 +23,10 @@ const BASE = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos-dev.ishirock.com';
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 
 test.describe('R-Real-5 · P2P — vendor bill + expense + pay-bills', () => {
-  test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run signup.spec.ts first');
   test.use({ storageState: STORAGE_PATH });
+  test.beforeEach(() => {
+    test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run 00-signup.spec.ts first');
+  });
 
   test('inbox renders empty for fresh tenant (no extraction HITL tasks)', async ({ page }) => {
     await page.goto(`${BASE}/app/inbox`);
