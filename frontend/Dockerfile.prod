@@ -4,7 +4,7 @@
 #   1. builder — installs deps + runs ng build --configuration=production
 #   2. runtime — copies the compiled SPA into an Nginx Alpine image
 #
-# Port 80 inside the container, mapped to host 4301 by docker-compose.prod.yml.
+# Port 80 inside the container, mapped to host 4201 by docker-compose.prod.yml.
 
 # ── Stage 1: build ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
@@ -30,7 +30,9 @@ COPY --from=builder /app/dist/aethos-ps/browser /usr/share/nginx/html
 
 EXPOSE 80
 
+# curl resolves localhost → 127.0.0.1 (IPv4); busybox wget resolves it → ::1
+# (IPv6) which fails because nginx only binds 0.0.0.0:80. Use curl.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost/health.txt || exit 1
+    CMD curl -sf http://127.0.0.1/health.txt || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
