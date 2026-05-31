@@ -2,9 +2,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # start.sh — Aethos PS local development servers
 #
-# Frontend : http://localhost:4300  (ng serve with proxy to backend)
+# Frontend : http://localhost:4200  (ng serve with proxy to backend)
 # Backend  : http://localhost:8010  (uvicorn --reload)
-# Tunnel   : if cloudflared is configured, update its ingress to :4300/:8010
+# Tunnel   : if cloudflared is configured, update its ingress to :4200/:8010
 #
 # Usage: ./start.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ else
 fi
 
 BACKEND_PORT=8010
-FRONTEND_PORT=4300
+FRONTEND_PORT=4200
 
 # Stop any existing dev servers first
 "$SCRIPT_DIR/stop.sh" 2>/dev/null || true

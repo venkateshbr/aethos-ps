@@ -2,11 +2,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # stop.sh — Stop Aethos PS local development servers
 #
-# Kills anything on ports 4300 (frontend) and 8010 (backend).
+# Kills anything on ports 4200 (frontend) and 8010 (backend).
 # ─────────────────────────────────────────────────────────────────────────────
 
 BACKEND_PORT=8010
-FRONTEND_PORT=4300
+FRONTEND_PORT=4200
 
 echo "Stopping Aethos PS dev servers (ports $FRONTEND_PORT, $BACKEND_PORT)..."
 
