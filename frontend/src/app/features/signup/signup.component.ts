@@ -13,8 +13,10 @@ import { environment } from '../../../environments/environment';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { MatIconModule } from '@angular/material/icon';
 import { ThemeService } from '../../core/services/theme.service';
 import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
+import { AuthService } from '../../core/services/auth.service';
 import {
   BillingInterval,
   LAUNCH_COUNTRIES,
@@ -42,7 +44,7 @@ import {
 @Component({
   selector: 'app-signup',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, ThemePickerComponent],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, ThemePickerComponent, MatIconModule],
   template: `
     <div class="min-h-screen bg-surface-base text-text-primary flex flex-col">
       <!-- Header — keep parity with landing so the user feels they're in the same product -->
@@ -95,6 +97,7 @@ import {
             @case (1) { <ng-container *ngTemplateOutlet="accountStep" /> }
             @case (2) { <ng-container *ngTemplateOutlet="planStep" /> }
             @case (3) { <ng-container *ngTemplateOutlet="cardStep" /> }
+            @case (4) { <ng-container *ngTemplateOutlet="successStep" /> }
           }
         </div>
       </main>
@@ -187,6 +190,27 @@ import {
           </p>
           @if (shouldShowError('password')) {
             <p class="text-xs text-confidence-low mt-1">Password must be at least 8 characters.</p>
+          }
+        </div>
+
+        <!-- Confirm password -->
+        <div>
+          <label for="confirm_password" class="block text-xs uppercase tracking-wider text-text-muted mb-1.5">
+            Confirm password
+          </label>
+          <input
+            id="confirm_password"
+            type="password"
+            formControlName="confirm_password"
+            autocomplete="new-password"
+            placeholder="Re-enter your password"
+            class="w-full bg-surface border border-border-default rounded-lg px-3 py-2.5 text-sm
+                   text-text-primary placeholder-text-disabled
+                   focus:outline-none focus:border-accent focus:shadow-accent-ring"
+            [class.border-confidence-low]="accountForm.errors?.['passwordMismatch'] && accountForm.controls.confirm_password.dirty"
+          />
+          @if (accountForm.errors?.['passwordMismatch'] && accountForm.controls.confirm_password.dirty) {
+            <p class="text-xs text-confidence-low mt-1">Passwords don't match.</p>
           }
         </div>
 
@@ -445,6 +469,55 @@ import {
         </div>
       </div>
     </ng-template>
+
+    <!-- ── Step 4 — Success ─────────────────────────────────────────────── -->
+    <ng-template #successStep>
+      <div class="py-10 text-center space-y-6">
+
+        <!-- Checkmark -->
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-accent/15 border border-accent/40 mx-auto">
+          <mat-icon class="text-accent" style="font-size:2rem;width:2rem;height:2rem;">check_circle</mat-icon>
+        </div>
+
+        <div class="space-y-2">
+          <h2 class="text-2xl font-bold text-text-primary">You're in!</h2>
+          <p class="text-text-muted">Your 14-day trial has started.</p>
+        </div>
+
+        <!-- Plan summary card -->
+        <div class="bg-surface-raised border border-border-default rounded-xl p-5 text-left space-y-3 mx-auto max-w-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-text-muted uppercase tracking-wide">Plan</span>
+            <span class="text-sm font-semibold text-text-primary capitalize">{{ confirmedTier() }} · {{ confirmedInterval() }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-text-muted uppercase tracking-wide">Status</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-accent/15 text-accent-light font-medium">Trialing — 14 days free</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-text-muted uppercase tracking-wide">Firm</span>
+            <span class="text-sm text-text-primary">{{ accountForm.controls.tenant_name.value }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-text-muted uppercase tracking-wide">Email</span>
+            <span class="text-sm text-text-primary">{{ accountForm.controls.email.value }}</span>
+          </div>
+        </div>
+
+        <p class="text-sm text-text-muted max-w-xs mx-auto">
+          We've set up your account. Sign in to start extracting, proposing and posting.
+        </p>
+
+        <a
+          routerLink="/login"
+          class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-8 py-3 rounded-lg transition-colors text-sm"
+        >
+          Sign in to Aethos
+          <mat-icon style="font-size:1rem;width:1rem;height:1rem;">arrow_forward</mat-icon>
+        </a>
+
+      </div>
+    </ng-template>
   `,
 })
 export class SignupComponent implements AfterViewInit {
@@ -452,6 +525,7 @@ export class SignupComponent implements AfterViewInit {
   private fb = inject(FormBuilder);
   private signupSvc = inject(SignupService);
   private router = inject(Router);
+  private auth = inject(AuthService);
 
   /** Card mount node — only present in DOM when step() === 3. */
   protected cardEl = viewChild<ElementRef<HTMLDivElement>>('cardEl');
@@ -482,10 +556,15 @@ export class SignupComponent implements AfterViewInit {
     { idx: 1, label: 'Account' },
     { idx: 2, label: 'Plan' },
     { idx: 3, label: 'Card' },
+    { idx: 4, label: 'Done' },
   ];
 
   /** Active step (1-indexed). Drives the @switch above. */
-  protected step = signal<1 | 2 | 3>(1);
+  protected step = signal<1 | 2 | 3 | 4>(1);
+
+  /** Plan + interval selected, stored for the success screen. */
+  protected confirmedTier = signal<PlanTier | null>(null);
+  protected confirmedInterval = signal<BillingInterval | null>(null);
 
   /** Submission spinner state — disables the CTA so users don't double-submit. */
   protected submitting = signal(false);
@@ -568,8 +647,13 @@ export class SignupComponent implements AfterViewInit {
     tenant_name: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
+    confirm_password: ['', [Validators.required]],
     country: ['US' as LaunchCountry, [Validators.required]],
-  });
+  }, { validators: [(g) => {
+    const pw  = g.get('password')?.value ?? '';
+    const cpw = g.get('confirm_password')?.value ?? '';
+    return pw && cpw && pw !== cpw ? { passwordMismatch: true } : null;
+  }]});
 
   // ── Password strength heuristic (0–4) — purely a UI nudge ────────────────
   protected passwordStrength = computed(() => {
@@ -803,9 +887,12 @@ export class SignupComponent implements AfterViewInit {
         price_id: priceId,
       });
 
-      // 3. Land in the app. The auth-interceptor will attach the JWT we
-      //    stored in step 1, so /app/copilot loads authenticated.
-      await this.router.navigateByUrl('/app/copilot');
+      // 3. Show the success screen. Clear the JWT so the user must sign in
+      //    explicitly — they should not be auto-logged in after signup.
+      this.confirmedTier.set(this.selectedTier());
+      this.confirmedInterval.set(this.interval());
+      this.auth.clearToken();
+      this.step.set(4);
     } catch (err: unknown) {
       this.serverError.set(this.friendlyError(err));
     } finally {
