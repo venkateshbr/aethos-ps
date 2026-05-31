@@ -17,9 +17,49 @@
 // =====================================================================
 
 // ──────────────────────────────────────────────────────────────────────
-// Theme 1 — Slate + Emerald  (default, Direction A)
+// :root — Carbon + Amber  (pilot default for instant first-paint)
+//
+// Must mirror body[data-theme="carbon-amber"] exactly. Without this,
+// navigating to /login or /app/* shows a 1-frame blue flash because
+// :root previously held the slate-emerald values and ThemeService
+// runs after the first render. Setting :root to carbon-amber here
+// guarantees the correct palette from byte-one.
 // ──────────────────────────────────────────────────────────────────────
-:root,
+:root {
+  --t-bg-base:           22 21 20;
+  --t-bg-surface:        31 29 27;
+  --t-bg-surface-raised: 42 40 37;
+  --t-bg-surface-sunken: 14 13 12;
+  --t-bg-overlay:        rgba(22, 21, 20, 0.82);
+  --t-border-default: 58 55 51;
+  --t-border-subtle:  37 35 32;
+  --t-border-strong:  74 70 65;
+  --t-text-primary:   250 250 247;
+  --t-text-secondary: 214 211 209;
+  --t-text-muted:     168 162 158;
+  --t-text-disabled:  87 83 78;
+  --t-text-inverse:   22 21 20;
+  --brand-primary:        245 165 36;
+  --brand-primary-hover:  217 119 6;
+  --brand-primary-light:  251 191 36;
+  --brand-primary-subtle: 58 42 8;
+  --brand-on-primary:     22 21 20;
+  --t-accent:           var(--brand-primary);
+  --t-accent-hover:     var(--brand-primary-hover);
+  --t-accent-light:     var(--brand-primary-light);
+  --t-accent-subtle-bg: var(--brand-primary-subtle);
+  --t-accent-on-accent: var(--brand-on-primary);
+  --t-confidence-high:    132 204 22;
+  --t-confidence-high-bg: 26 46 5;
+  --t-confidence-med:     251 146 60;
+  --t-confidence-med-bg:  67 20 7;
+  --t-confidence-low:     239 68 68;
+  --t-confidence-low-bg:  69 10 10;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Theme 1 — Slate + Emerald  (Direction A — selectable via ThemeService)
+// ──────────────────────────────────────────────────────────────────────
 body[data-theme="slate-emerald"] {
   // Surface
   --t-bg-base:           15 23 42;    // #0f172a slate-900
