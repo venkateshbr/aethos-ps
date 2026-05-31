@@ -10,6 +10,7 @@ returning an error, supporting browser-refresh / retry scenarios gracefully.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -27,6 +28,63 @@ from supabase import Client
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Post-signup visibility confirm (bug #132)
+# ---------------------------------------------------------------------------
+#
+# After the signup endpoint inserts a tenant_users row and returns 201, the
+# Angular frontend immediately fires an authenticated API call.  On the
+# Supabase PostgREST layer (connection pooling, possible read-replica lag)
+# there is a ~50-200 ms window where the newly inserted row is not yet
+# visible to a fresh connection.  The first request therefore lands inside
+# that window and the membership check in get_tenant_id returns zero rows,
+# raising 404 "Tenant not found".
+#
+# Fix: before returning 201 from signup, do one extra read-back via the
+# service-role client to confirm the row is visible.  We retry up to 3 times
+# with 150 ms spacing (total budget ≤ 450 ms, negligible for a one-time
+# signup flow).  This keeps the retry logic off the hot path (every other
+# authenticated request goes through _is_active_member once, no retry).
+
+async def _confirm_tenant_user_visible(
+    db: Client,
+    *,
+    user_id: str,
+    tenant_id: str,
+    retries: int = 3,
+    delay: float = 0.15,
+) -> bool:
+    """Block until the tenant_users row is visible, or exhaust retries.
+
+    Uses asyncio.to_thread so the supabase-py sync client does not block the
+    event loop during the wait periods.
+    """
+
+    def _read() -> bool:
+        result = (
+            db.table("tenant_users")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("tenant_id", tenant_id)
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
+    for attempt in range(retries):
+        visible = await asyncio.to_thread(_read)
+        if visible:
+            return True
+        if attempt < retries - 1:
+            logger.debug(
+                "tenant_users row not yet visible — retrying",
+                extra={"attempt": attempt + 1, "user_id": user_id, "tenant_id": tenant_id},
+            )
+            await asyncio.sleep(delay)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +340,34 @@ async def signup(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to set up user permissions. Please contact support.",
             ) from exc
+
+        # 3c. Confirm tenant_users row is visible before returning 201.
+        #
+        # Bug #132: PostgREST connection-pool / read-replica lag creates a
+        # ~50-200 ms window where the just-inserted row is invisible to a fresh
+        # connection.  The Angular frontend fires its first authenticated API
+        # call immediately after the signup 201, landing inside this window and
+        # getting 404 "Tenant not found" from get_tenant_id.
+        #
+        # Chosen approach: signup-side confirm (single extra round-trip at
+        # signup time only) rather than retry in the get_tenant_id hot path.
+        # This keeps every other authenticated request at zero extra cost.
+        visible = await _confirm_tenant_user_visible(
+            db,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+        if not visible:
+            logger.error(
+                "tenant_users row not visible after retries — possible DB replication lag",
+                extra={"tenant_id": tenant_id, "user_id": user_id},
+            )
+            # Non-fatal: we raise 500 so the frontend retries the whole signup
+            # rather than silently returning 201 that will immediately 404.
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Provisioning delay — please retry in a moment.",
+            )
 
     # ------------------------------------------------------------------
     # 4. Create Stripe customer (if not already created)
