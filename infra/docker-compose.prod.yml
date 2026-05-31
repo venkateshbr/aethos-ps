@@ -2,7 +2,7 @@
 #
 # Services:
 #   api      — FastAPI backend  (host port 8011)
-#   frontend — Nginx-served SPA (host port 4301)
+#   frontend — Nginx-served SPA (host port 4201)
 #
 # Usage:
 #   ./start-prod.sh    ← builds + starts both containers
@@ -45,7 +45,7 @@ services:
     container_name: aethos-ps-frontend
     restart: unless-stopped
     ports:
-      - "4301:80"        # host:container — nginx serves on 80
+      - "4201:80"        # host:container — nginx serves on 80
     environment:
       # Angular compiled at build time; API_URL must match where the
       # api container is reachable from the browser (the host's IP/domain).

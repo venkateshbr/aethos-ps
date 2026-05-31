@@ -4,7 +4,7 @@
 #
 # Builds and starts two containers:
 #   aethos-ps-api       → backend  at http://localhost:8011
-#   aethos-ps-frontend  → frontend at http://localhost:4301
+#   aethos-ps-frontend  → frontend at http://localhost:4201
 #
 # Prerequisites:
 #   - Docker Desktop (or Docker Engine) running
@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BACKEND_PORT=8011
-FRONTEND_PORT=4301
+FRONTEND_PORT=4201
 
 # .env lookup order: same dir as script → backend/ subdirectory
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -78,7 +78,7 @@ echo ""
 
 # Tunnel note — cloudflared config points at 4201/8011.
 # If you want the tunnel to route to these prod containers, update
-# ~/.cloudflared/config.yml ingress to point at localhost:4301 / localhost:8011.
+# ~/.cloudflared/config.yml ingress to point at localhost:4201 / localhost:8011.
 echo "  ⚠ Cloudflare tunnel: if aethos-dev/aethos-api point at :4201/:8011,"
 echo "    update ~/.cloudflared/config.yml ingress to :$FRONTEND_PORT/:$BACKEND_PORT"
 echo "    and restart cloudflared."
