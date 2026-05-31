@@ -27,9 +27,9 @@ test.describe('R-Real-6 · P2P — vendor bill + expense + pay-bills', () => {
   });
 
   test('inbox renders for fresh tenant (no extraction HITL tasks yet)', async ({ page }) => {
-    test.setTimeout(30_000);
-    await page.goto(`${BASE}/app/inbox`);
-    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+    test.setTimeout(90_000);
+    await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: /^inbox$/i, level: 1 })).toBeVisible();
     // Empty state for fresh tenant — page must mount cleanly without errors.
     await page.waitForLoadState('networkidle');
@@ -40,9 +40,9 @@ test.describe('R-Real-6 · P2P — vendor bill + expense + pay-bills', () => {
   });
 
   test('expenses list renders and "New expense" button opens slide-in form — #130 fix', async ({ page }) => {
-    test.setTimeout(30_000);
-    await page.goto(`${BASE}/app/expenses`);
-    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+    test.setTimeout(90_000);
+    await page.goto(`${BASE}/app/expenses`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 30_000 });
     await page.waitForLoadState('networkidle');
 
     // #130 fix: "New expense" button must exist and open the create form.

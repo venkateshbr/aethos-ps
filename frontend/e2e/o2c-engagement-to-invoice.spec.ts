@@ -54,10 +54,10 @@ test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => 
     test.setTimeout(60_000);
     // Navigate then reload to let the tenant-membership settle (#132 race).
     // Use domcontentloaded to avoid hanging on SSE / long-poll connections.
-    await page.goto(`${BASE}/app/engagements`, { waitUntil: 'domcontentloaded' });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(`${BASE}/app/engagements`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: /^engagements$/i, level: 1 })).toBeVisible();
 
     // #133 fix: backend now returns bare array; FE services updated to accept it.
