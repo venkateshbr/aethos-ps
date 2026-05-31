@@ -1,0 +1,36 @@
+# frontend/Dockerfile.prod — Production Nginx container for Aethos PS frontend
+#
+# Multi-stage build:
+#   1. builder — installs deps + runs ng build --configuration=production
+#   2. runtime — copies the compiled SPA into an Nginx Alpine image
+#
+# Port 80 inside the container, mapped to host 4301 by docker-compose.prod.yml.
+
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy package files and install (using --legacy-peer-deps to match local setup)
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy full frontend source and build for production
+COPY . .
+RUN npx ng build --configuration=production --output-path=dist/aethos-ps
+
+# ── Stage 2: nginx runtime ───────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS runtime
+
+# Remove default nginx config and copy ours
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy compiled SPA from builder
+COPY --from=builder /app/dist/aethos-ps/browser /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget -qO- http://localhost/health.txt || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

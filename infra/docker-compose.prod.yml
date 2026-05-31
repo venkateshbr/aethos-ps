@@ -1,0 +1,62 @@
+# infra/docker-compose.prod.yml — Aethos PS production containers
+#
+# Services:
+#   api      — FastAPI backend  (host port 8011)
+#   frontend — Nginx-served SPA (host port 4301)
+#
+# Usage:
+#   ./start-prod.sh    ← builds + starts both containers
+#   ./stop-prod.sh     ← tears them down
+#
+# The compose file reads secrets from the .env file at the repo root
+# (passed via --env-file in the start script).
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: aethos-ps-api:latest
+    container_name: aethos-ps-api
+    restart: unless-stopped
+    ports:
+      - "8011:8080"      # host:container — Dockerfile exposes 8080
+    env_file:
+      - .env             # loaded from repo root by start-prod.sh
+    environment:
+      - PORT=8080
+      - ENVIRONMENT=production
+      - DEBUG=false
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - aethos-ps
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    image: aethos-ps-frontend:latest
+    container_name: aethos-ps-frontend
+    restart: unless-stopped
+    ports:
+      - "4301:80"        # host:container — nginx serves on 80
+    environment:
+      # Angular compiled at build time; API_URL must match where the
+      # api container is reachable from the browser (the host's IP/domain).
+      # Override at build time via --build-arg or bake into environment.prod.ts.
+      - API_URL=${API_URL:-https://aethos-api.ishirock.com}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - aethos-ps
+
+networks:
+  aethos-ps:
+    driver: bridge
