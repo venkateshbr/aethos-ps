@@ -2,9 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
+import { SupabaseService } from '../../core/services/supabase.service';
 
 /**
  * ChangePasswordComponent — Account / Security section of settings.
@@ -121,6 +120,7 @@ export class ChangePasswordComponent {
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private auth = inject(AuthService);
+  private supabaseSvc = inject(SupabaseService);
 
   protected form = this.fb.nonNullable.group(
     {
@@ -152,14 +152,6 @@ export class ChangePasswordComponent {
     return 'bg-accent';
   });
 
-  private _supabase: SupabaseClient | null = null;
-  private supabase(): SupabaseClient {
-    if (!this._supabase) {
-      this._supabase = createClient(environment.supabaseUrl, environment.supabaseAnonKey);
-    }
-    return this._supabase;
-  }
-
   async submit(): Promise<void> {
     this.error.set(null);
     this.success.set(false);
@@ -172,7 +164,7 @@ export class ChangePasswordComponent {
       const { current_password, new_password } = this.form.getRawValue();
 
       // 1. Pull the active user's email from the Supabase session
-      const session = await this.supabase().auth.getSession();
+      const session = await this.supabaseSvc.client.auth.getSession();
       const email = session.data.session?.user?.email;
       if (!email) {
         this.error.set('Your session is missing an email. Please sign in again.');
@@ -182,7 +174,7 @@ export class ChangePasswordComponent {
       }
 
       // 2. Verify current password by re-authenticating
-      const verify = await this.supabase().auth.signInWithPassword({
+      const verify = await this.supabaseSvc.client.auth.signInWithPassword({
         email,
         password: current_password,
       });
@@ -192,7 +184,7 @@ export class ChangePasswordComponent {
       }
 
       // 3. Update password on the active session
-      const update = await this.supabase().auth.updateUser({ password: new_password });
+      const update = await this.supabaseSvc.client.auth.updateUser({ password: new_password });
       if (update.error) {
         this.error.set(this.translateUpdateError(update.error.message, (update.error as { code?: string }).code));
         return;

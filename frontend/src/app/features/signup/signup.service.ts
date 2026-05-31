@@ -21,9 +21,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
+import { SupabaseService } from '../../core/services/supabase.service';
 
 // ── Public types ───────────────────────────────────────────────────────────
 
@@ -89,17 +89,10 @@ export const LAUNCH_COUNTRIES: Array<{ code: LaunchCountry; label: string; curre
 export class SignupService {
   private http = inject(HttpClient);
   private auth = inject(AuthService);
+  private supabaseSvc = inject(SupabaseService);
 
-  // Lazy-init the Supabase client — only the signup flow needs it today, so
-  // we avoid paying its bundle cost on the landing page.
-  private _supabase: SupabaseClient | null = null;
-  private supabase(): SupabaseClient {
-    if (!this._supabase) {
-      this._supabase = createClient(environment.supabaseUrl, environment.supabaseAnonKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-    }
-    return this._supabase;
+  private get supabaseClient() {
+    return this.supabaseSvc.client;
   }
 
   /**
@@ -122,7 +115,7 @@ export class SignupService {
     );
 
     // Mint a JWT via Supabase Auth so subsequent /billing calls authenticate.
-    const { data, error } = await this.supabase().auth.signInWithPassword({
+    const { data, error } = await this.supabaseClient.auth.signInWithPassword({
       email: payload.email,
       password: payload.password,
     });

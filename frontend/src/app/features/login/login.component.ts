@@ -1,11 +1,10 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { SupabaseService } from '../../core/services/supabase.service';
 
 /**
  * LoginComponent — sign in for returning pilot tenants.
@@ -119,6 +118,7 @@ export class LoginComponent {
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private auth = inject(AuthService);
+  private supabaseSvc = inject(SupabaseService);
 
   protected form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -127,15 +127,6 @@ export class LoginComponent {
 
   protected submitting = signal(false);
   protected error = signal<string | null>(null);
-
-  /** Lazy Supabase client (same approach as SignupService). */
-  private _supabase: SupabaseClient | null = null;
-  private supabase(): SupabaseClient {
-    if (!this._supabase) {
-      this._supabase = createClient(environment.supabaseUrl, environment.supabaseAnonKey);
-    }
-    return this._supabase;
-  }
 
   async submit(): Promise<void> {
     this.error.set(null);
@@ -146,7 +137,7 @@ export class LoginComponent {
     this.submitting.set(true);
     try {
       const { email, password } = this.form.getRawValue();
-      const { data, error } = await this.supabase().auth.signInWithPassword({ email, password });
+      const { data, error } = await this.supabaseSvc.client.auth.signInWithPassword({ email, password });
       if (error) {
         this.error.set(this.translateError(error.message, (error as { code?: string }).code));
         return;
@@ -163,7 +154,7 @@ export class LoginComponent {
       // 0001) lets the authenticated user read only their own membership rows.
       const userId = data.session?.user?.id;
       if (userId) {
-        const { data: memberships, error: membershipErr } = await this.supabase()
+        const { data: memberships, error: membershipErr } = await this.supabaseSvc.client
           .from('tenant_users')
           .select('tenant_id')
           .eq('user_id', userId)
