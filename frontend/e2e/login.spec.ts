@@ -66,10 +66,8 @@ test.describe('R-Real-5 · Login (tunnel)', () => {
     test.skip(!meta, 'no signup-created tenant meta — run signup.spec.ts first');
     if (!meta) return;
 
-    // Currently fails because the tenant_users RLS denies the membership
-    // lookup (#128 — newly filed P0). Mark as fail-expected so this spec
-    // remains a regression guard but doesn't dominate the suite verdict.
-    test.fail(true, 'Login currently blocked by #128 (tenant_users RLS) — when #128 lands, this assertion flips to passing and we remove test.fail.');
+    // R-Real-6: #128 is fixed (0020_tenant_users_self_read.sql). The anon-key
+    // client can now read its own tenant_users row. test.fail removed.
 
     await page.goto(`${BASE}/login`);
     await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();

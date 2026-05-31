@@ -51,40 +51,52 @@ test.describe('R-Real-5 · Change password (tunnel)', () => {
     await expect(submit).toBeVisible();
   });
 
-  test('attempting the change-password flow surfaces the session gap (P1 finding)', async ({ page }) => {
+  test('change-password form submits successfully and shows success message (#131 regression guard)', async ({ page }) => {
     test.setTimeout(60_000);
 
-    const meta = JSON.parse(fs.readFileSync(META_PATH, 'utf-8')) as { password: string };
-    const newPassword = `${meta.password}-rot`;
+    // R-Real-6: #131 is fixed — shared SupabaseService singleton means the
+    // session is now persisted across navigation. test.fail removed.
+    // We assert the success path: the success message renders and we do NOT
+    // bounce to /login.
+
+    const meta = JSON.parse(fs.readFileSync(META_PATH, 'utf-8')) as { password: string; password_rotated?: boolean };
+
+    // If the password was already rotated in a prior run, the current_password
+    // is the rotated one. Use the original + suffix pattern so we can run this
+    // test multiple times without locking ourselves out.
+    const currentPassword = meta.password_rotated
+      ? `${meta.password.replace(/-rot$/, '')}-rot`
+      : meta.password;
+    const newPassword = `${currentPassword.replace(/-rot$/, '')}-rot2`;
 
     await page.goto(`${BASE}/app/settings`);
     await expect(page.getByRole('heading', { name: /change password/i, level: 3 })).toBeVisible({ timeout: 15_000 });
 
-    await page.locator('#current_password').fill(meta.password);
+    await page.locator('#current_password').fill(currentPassword);
     await page.locator('#new_password').fill(newPassword);
     await page.locator('#confirm_password').fill(newPassword);
 
     await page.getByRole('button', { name: /update password/i }).click();
 
-    // Wait for one of: success (form clears), error toast, or bounce to login.
+    // R-Real-6 assertion: must NOT bounce to /login. #131 is the regression we guard.
     await page.waitForLoadState('networkidle', { timeout: 15_000 });
-
     const url = page.url();
-    if (url.includes('/login')) {
-      test.info().annotations.push({
-        type: 'finding',
-        description:
-          'Change-password component calls supabase.auth.getSession() but signup persists session=false (signup.service.ts:99). ' +
-          'When the user returns to /app/settings the Supabase localStorage entry is missing, so the component bounces to /login. ' +
-          'Filing as a P1 because change-password is broken for every fresh-signup tenant. Workaround: log in via /login (also broken — see #128).',
-      });
-      test.fail(true, 'Settings → change password bounces to /login because Supabase persistSession=false at signup. P1 — see annotation.');
-      return;
-    }
 
-    // If success path works (e.g., a logged-in-via-/login session), capture it.
-    await expect(page.getByRole('status').or(page.getByText(/password updated/i))).toBeVisible({ timeout: 5_000 });
+    test.info().annotations.push({
+      type: 'post-submit-url',
+      description: url,
+    });
 
+    // The fix (#131) means the Supabase session IS persisted after signup.
+    // So we should stay on /app/settings (not /login).
+    expect(url, '#131 regression guard: change-password must not redirect to /login').not.toContain('/login');
+
+    // Success toast / status message must be visible.
+    await expect(
+      page.getByRole('status').or(page.getByText(/password updated/i)).or(page.getByText(/success/i)),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Persist rotated password for potential downstream login re-test.
     const updated = { ...meta, password: newPassword, password_rotated: true };
     fs.writeFileSync(META_PATH, JSON.stringify(updated, null, 2));
   });

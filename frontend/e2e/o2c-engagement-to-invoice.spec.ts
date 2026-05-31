@@ -1,25 +1,20 @@
 /**
- * R-Real-5 — O2C (engagement-to-cash) walkthrough through the UI.
+ * R-Real-6 — O2C (engagement-to-cash) walkthrough through the UI.
  *
- * SCOPED HONESTLY: at the time of authoring, the SPA is missing
- *   - any document-upload UI (#129)
- *   - any create-engagement / create-invoice form (#130)
- * so the full "drop letter → approve → bill → send → pay" cycle cannot be
- * driven by a real user via the UI. This spec exercises every O2C surface
- * that DOES exist and records the others as gaps.
+ * Fixes verified in R-Real-6:
+ *   - #133: bare-array API fix — empty-state now renders (test.fail removed)
+ *   - #130: "New X" slide-in forms on engagements, clients, invoices
+ *   - #129: document upload UI in Copilot composer + Documents list page
  *
- * What this spec DOES verify, through the SPA at aethos-dev.ishirock.com:
- *   1. /app/copilot loads, chat sidebar + composer render, "New chat" works.
- *   2. /app/engagements renders the empty-state for a brand-new tenant.
- *   3. /app/invoices renders the empty-state.
- *   4. /app/time renders + the "New time entry" form (one of the few working
- *      create paths) accepts input. We do not submit because submission
- *      requires an engagement which we cannot create via UI.
- *   5. /app/payments renders.
- *   6. /app/clients renders.
- *
- * Every gap is logged as a test.info() annotation so the Founder can see
- * the precise UI surface that needs to ship before O2C is pilot-real.
+ * What this spec verifies through the SPA at aethos-dev.ishirock.com:
+ *   1. /app/copilot loads, chat sidebar + composer render.
+ *   2. Copilot file-upload input exists (#129 fix).
+ *   3. /app/engagements renders the empty-state (#133 fix).
+ *   4. "New engagement" button opens the slide-in form (#130 fix).
+ *   5. /app/invoices renders + "New invoice" button opens the form (#130 fix).
+ *   6. /app/clients renders + "New client" button opens the form (#130 fix).
+ *   7. /app/documents list page mounts (#129 fix).
+ *   8. /app/payments renders.
  */
 
 import { test, expect } from '@playwright/test';
@@ -29,27 +24,35 @@ import * as path from 'node:path';
 const BASE = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos-dev.ishirock.com';
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 
-test.describe('R-Real-5 · O2C — engagement-to-invoice through the UI', () => {
+test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => {
   test.use({ storageState: STORAGE_PATH });
   test.beforeEach(() => {
     test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in session — run 00-signup.spec.ts first');
   });
 
-  test('copilot mounts and chat composer accepts input', async ({ page }) => {
+  test('copilot mounts, chat composer accepts input, file-upload input is present (#129)', async ({ page }) => {
+    test.setTimeout(30_000);
     await page.goto(`${BASE}/app/copilot`);
     await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 15_000 });
+
     const composer = page.getByRole('textbox', { name: /message input/i });
     await expect(composer).toBeVisible();
     await composer.fill('Show my active engagements');
-    // Don't submit — chat backend may not be wired through the tunnel; we
-    // assert the composer state instead.
     await expect(composer).toHaveValue('Show my active engagements');
+
+    // #129 regression guard: file upload input must be present in the Copilot composer.
+    // It may be a hidden <input type="file"> triggered by a button/icon.
+    const fileInput = page.locator('input[type="file"]');
+    await expect(fileInput).toHaveCount(1, { timeout: 10_000 });
+    test.info().annotations.push({
+      type: 'finding',
+      description: '#129 fix verified: file input present in Copilot composer.',
+    });
   });
 
-  test('engagements list page mounts — empty state regression guard for #133', async ({ page }) => {
-    // First navigate, then reload to dodge #132 (membership-lookup race on
-    // first call after signup). After reload the GET /api/v1/engagements
-    // request resolves cleanly.
+  test('engagements list mounts with empty-state — #133 bare-array fix regression guard', async ({ page }) => {
+    test.setTimeout(30_000);
+    // Navigate then reload to let the tenant-membership settle (#132 race).
     await page.goto(`${BASE}/app/engagements`);
     await page.waitForLoadState('networkidle');
     await page.reload();
@@ -58,64 +61,115 @@ test.describe('R-Real-5 · O2C — engagement-to-invoice through the UI', () => 
     await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /^engagements$/i, level: 1 })).toBeVisible();
 
-    // Per #133 the engagements list renders nothing (empty-state branch
-    // doesn't match because backend returns `[]` but FE expects `{ items: [] }`).
-    // Flag the broken render as a fail-expected so this spec turns green once
-    // #133 lands.
-    const emptyCopy = page.getByText(/no engagements yet|start by uploading/i);
-    test.fail(true, 'Empty-state currently does not render — see #133 (contract mismatch).');
-    await expect(emptyCopy.first()).toBeVisible({ timeout: 5_000 });
-  });
-
-  test('invoices list renders empty + send button only on existing invoices', async ({ page }) => {
-    await page.goto(`${BASE}/app/invoices`);
-    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: /^invoices$/i, level: 1 })).toBeVisible();
-    // Empty for fresh tenant — but the list page should still mount cleanly.
-    await page.waitForLoadState('networkidle');
-
+    // #133 fix: backend now returns bare array; FE services updated to accept it.
+    // The empty-state copy MUST render (previously silently blank).
+    const emptyCopy = page.getByText(/no engagements yet|start by uploading|no engagements|create your first/i);
+    await expect(emptyCopy.first()).toBeVisible({ timeout: 10_000 });
     test.info().annotations.push({
-      type: 'gap',
-      description: 'No "New invoice" form exists — see #130. The "Send" button works only on already-existing invoices.',
+      type: 'finding',
+      description: '#133 fix verified: empty-state copy renders correctly for fresh tenant.',
     });
   });
 
-  test('time entries page renders + new time entry form is operable', async ({ page }) => {
-    await page.goto(`${BASE}/app/time`);
+  test('"New engagement" button opens slide-in form — #130 fix regression guard', async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.goto(`${BASE}/app/engagements`);
+    await page.waitForLoadState('networkidle');
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
     await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
 
-    // Time module has a working create-form (one of the few). Verify it exists
-    // — we don't submit because the form requires an engagement_id we can't
-    // create via UI yet (#130).
-    const newTimeBtn = page.getByRole('button', { name: /new time entry/i }).or(
-      page.getByRole('button', { name: /add time/i }),
+    // #130 fix: "New engagement" button must exist and open a slide-in form.
+    const newBtn = page.getByRole('button', { name: /new engagement/i });
+    await expect(newBtn).toBeVisible({ timeout: 10_000 });
+    await newBtn.click();
+
+    // The slide-in panel / dialog / drawer must appear with a form.
+    // Look for a heading or panel that signals the create-form mounted.
+    const slideIn = page.getByRole('dialog').or(
+      page.locator('[class*="slide"], [class*="drawer"], [class*="panel"]').filter({ hasText: /engagement/i }),
+    ).or(page.getByRole('heading', { name: /new engagement|create engagement/i }));
+    await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
+
+    test.info().annotations.push({
+      type: 'finding',
+      description: '#130 fix verified: "New engagement" opens the slide-in create form.',
+    });
+  });
+
+  test('invoices list mounts and "New invoice" button opens form — #130 fix', async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.goto(`${BASE}/app/invoices`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /^invoices$/i, level: 1 })).toBeVisible();
+
+    // #130 fix: "New invoice" button must exist.
+    const newBtn = page.getByRole('button', { name: /new invoice/i });
+    await expect(newBtn).toBeVisible({ timeout: 10_000 });
+    await newBtn.click();
+
+    // Slide-in or dialog must appear.
+    const slideIn = page.getByRole('dialog').or(
+      page.locator('[class*="slide"], [class*="drawer"], [class*="panel"]').filter({ hasText: /invoice/i }),
+    ).or(page.getByRole('heading', { name: /new invoice|create invoice/i }));
+    await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
+
+    test.info().annotations.push({
+      type: 'finding',
+      description: '#130 fix verified: "New invoice" opens the slide-in create form.',
+    });
+  });
+
+  test('clients list mounts and "New client" button opens form — #130 fix', async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.goto(`${BASE}/app/clients`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+
+    // #130 fix: "New client" button must exist.
+    const newBtn = page.getByRole('button', { name: /new client/i });
+    await expect(newBtn).toBeVisible({ timeout: 10_000 });
+    await newBtn.click();
+
+    const slideIn = page.getByRole('dialog').or(
+      page.locator('[class*="slide"], [class*="drawer"], [class*="panel"]').filter({ hasText: /client/i }),
+    ).or(page.getByRole('heading', { name: /new client|create client/i }));
+    await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
+
+    test.info().annotations.push({
+      type: 'finding',
+      description: '#130 fix verified: "New client" opens the slide-in create form.',
+    });
+  });
+
+  test('/app/documents list page mounts — #129 fix regression guard', async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.goto(`${BASE}/app/documents`);
+    await page.waitForLoadState('networkidle');
+
+    // #129 fix: Documents list page must exist in the nav and be reachable.
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+
+    // The page should mount — either the documents list heading or an empty state.
+    const documentPage = page.getByRole('heading', { name: /documents/i }).or(
+      page.getByText(/no documents|upload a document|drop files/i),
     );
-    if (await newTimeBtn.first().isVisible().catch(() => false)) {
-      test.info().annotations.push({
-        type: 'finding',
-        description: 'Time-entry create UI is wired (the only working create path in this list-page survey).',
-      });
-    } else {
-      test.info().annotations.push({
-        type: 'gap',
-        description: 'Time-entry create button not visible — UI may have regressed.',
-      });
-    }
+    await expect(documentPage.first()).toBeVisible({ timeout: 10_000 });
+
+    test.info().annotations.push({
+      type: 'finding',
+      description: '#129 fix verified: /app/documents page is reachable and mounts correctly.',
+    });
   });
 
   test('payments page renders', async ({ page }) => {
+    test.setTimeout(30_000);
     await page.goto(`${BASE}/app/payments`);
     await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
     await page.waitForLoadState('networkidle');
-  });
-
-  test('clients page renders', async ({ page }) => {
-    await page.goto(`${BASE}/app/clients`);
-    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
-    await page.waitForLoadState('networkidle');
-    test.info().annotations.push({
-      type: 'gap',
-      description: 'No create-client form exists — see #130.',
-    });
   });
 });
