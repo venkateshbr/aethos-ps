@@ -1,0 +1,13 @@
+{
+  "/api": {
+    "target": "http://localhost:8011",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "warn"
+  },
+  "/health": {
+    "target": "http://localhost:8011",
+    "secure": false,
+    "changeOrigin": true
+  }
+}
