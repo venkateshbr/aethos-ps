@@ -1,5 +1,6 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -36,9 +37,20 @@ type InvoiceListResponse = InvoiceSummary[];
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
-      <div class="mb-6">
-        <h1 class="text-2xl font-bold text-text-primary">Invoices</h1>
-        <p class="text-sm text-text-muted mt-1">Review and send client invoices.</p>
+      <div class="mb-6 flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold text-text-primary">Invoices</h1>
+          <p class="text-sm text-text-muted mt-1">Review and send client invoices.</p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label="Create new invoice — go to Engagements to draft"
+          (click)="goToNewInvoice()"
+        >
+          <mat-icon class="text-base leading-none">add</mat-icon>
+          New invoice
+        </button>
       </div>
 
       <!-- Send confirmation toast -->
@@ -213,6 +225,7 @@ type InvoiceListResponse = InvoiceSummary[];
 })
 export class InvoicesListComponent implements OnInit {
   private http = inject(HttpClient);
+  private router = inject(Router);
 
   loading     = signal(true);
   error       = signal<string | null>(null);
@@ -287,5 +300,13 @@ export class InvoicesListComponent implements OnInit {
       void:     'Void',
     };
     return labels[status] ?? status;
+  }
+
+  /**
+   * Invoices are generated from engagements — navigate there to start the
+   * draft-invoice flow rather than opening a standalone create form.
+   */
+  goToNewInvoice(): void {
+    this.router.navigate(['/app/engagements']);
   }
 }

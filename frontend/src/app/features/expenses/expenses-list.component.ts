@@ -1,9 +1,13 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { TitleCasePipe } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
 
 import { ExpensesService, Expense } from '../../core/services/expenses.service';
+import { EngagementService, ProjectSummary } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
@@ -14,8 +18,10 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
   standalone: true,
   imports: [
     TitleCasePipe,
+    ReactiveFormsModule,
     MatTableModule,
     MatIconModule,
+    MatButtonModule,
     MoneyPipe,
     EmptyStateComponent,
     SkeletonRowsComponent,
@@ -24,9 +30,20 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
-      <div class="mb-6">
-        <h1 class="text-2xl font-bold text-text-primary">Expenses</h1>
-        <p class="text-sm text-text-muted mt-1">Track and review project expenses.</p>
+      <div class="mb-6 flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold text-text-primary">Expenses</h1>
+          <p class="text-sm text-text-muted mt-1">Track and review project expenses.</p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label="Log new expense"
+          (click)="openCreateForm()"
+        >
+          <mat-icon class="text-base leading-none">add</mat-icon>
+          Log expense
+        </button>
       </div>
 
       <!-- Loading skeleton -->
@@ -158,6 +175,104 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
         </p>
       }
     </div>
+
+    <!-- Create expense slide-in panel -->
+    @if (showCreateForm()) {
+      <div class="fixed inset-0 bg-black/50 z-40" (click)="closeCreateForm()" aria-hidden="true"></div>
+      <aside class="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border-default z-50 flex flex-col shadow-2xl"
+        role="dialog" aria-modal="true" aria-labelledby="create-expense-title">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
+          <h2 id="create-expense-title" class="text-base font-semibold text-text-primary">Log expense</h2>
+          <button class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded" (click)="closeCreateForm()" aria-label="Close panel">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <form [formGroup]="createForm" (ngSubmit)="submitCreate()" class="flex-1 overflow-y-auto px-6 py-5 space-y-5" novalidate>
+          <!-- Project -->
+          <div>
+            <label for="exp-project" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Project</label>
+            <select id="exp-project" formControlName="project_id"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm">
+              <option value="">No project (general)</option>
+              @for (p of availableProjects(); track p.id) {
+                <option [value]="p.id">{{ p.name }}</option>
+              }
+            </select>
+          </div>
+          <!-- Description -->
+          <div>
+            <label for="exp-desc" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Description *</label>
+            <input id="exp-desc" type="text" formControlName="description"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              placeholder="e.g. Client dinner — Acme Q3 kickoff" />
+            @if (createForm.controls.description.touched && createForm.controls.description.errors) {
+              <p class="text-xs text-confidence-low mt-1">Description is required.</p>
+            }
+          </div>
+          <!-- Date -->
+          <div>
+            <label for="exp-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Date *</label>
+            <input id="exp-date" type="date" formControlName="expense_date"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm" />
+            @if (createForm.controls.expense_date.touched && createForm.controls.expense_date.errors) {
+              <p class="text-xs text-confidence-low mt-1">Date is required.</p>
+            }
+          </div>
+          <!-- Amount + Currency (side by side) -->
+          <div class="flex gap-3">
+            <div class="flex-1">
+              <label for="exp-amount" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Amount *</label>
+              <input id="exp-amount" type="text" formControlName="amount"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                placeholder="0.00" />
+              @if (createForm.controls.amount.touched && createForm.controls.amount.errors) {
+                <p class="text-xs text-confidence-low mt-1">Amount is required.</p>
+              }
+            </div>
+            <div class="w-28">
+              <label for="exp-currency" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Currency</label>
+              <select id="exp-currency" formControlName="currency"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm">
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+                <option value="SGD">SGD</option>
+                <option value="INR">INR</option>
+                <option value="AUD">AUD</option>
+              </select>
+            </div>
+          </div>
+          <!-- Category -->
+          <div>
+            <label for="exp-category" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Category *</label>
+            <select id="exp-category" formControlName="category"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm">
+              <option value="">Select…</option>
+              <option value="travel">Travel</option>
+              <option value="meals">Meals &amp; Entertainment</option>
+              <option value="software">Software</option>
+              <option value="hardware">Hardware</option>
+              <option value="office">Office supplies</option>
+              <option value="professional">Professional services</option>
+              <option value="other">Other</option>
+            </select>
+            @if (createForm.controls.category.touched && createForm.controls.category.errors) {
+              <p class="text-xs text-confidence-low mt-1">Category is required.</p>
+            }
+          </div>
+          @if (createError()) {
+            <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">{{ createError() }}</div>
+          }
+        </form>
+        <div class="flex-none px-6 py-4 border-t border-border-default flex items-center justify-end gap-3">
+          <button type="button" class="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded" (click)="closeCreateForm()">Cancel</button>
+          <button type="button"
+            class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [disabled]="createForm.invalid || creating()" (click)="submitCreate()">
+            @if (creating()) { Saving… } @else { Log expense }
+          </button>
+        </div>
+      </aside>
+    }
   `,
   styles: [`
     :host { display: block; }
@@ -170,10 +285,27 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
 })
 export class ExpensesListComponent implements OnInit {
   private expensesService = inject(ExpensesService);
+  private engagementService = inject(EngagementService);
+  private http = inject(HttpClient);
+  private fb = inject(FormBuilder);
 
   loading  = signal(true);
   error    = signal<string | null>(null);
   expenses = signal<Expense[]>([]);
+
+  // Create form state
+  showCreateForm = signal(false);
+  creating = signal(false);
+  createError = signal<string | null>(null);
+  availableProjects = signal<ProjectSummary[]>([]);
+  createForm = this.fb.nonNullable.group({
+    project_id:   [''],
+    description:  ['', [Validators.required]],
+    expense_date: ['', [Validators.required]],
+    amount:       ['', [Validators.required]],
+    currency:     ['USD'],
+    category:     ['', [Validators.required]],
+  });
 
   displayedColumns = ['date', 'vendor', 'amount', 'category', 'billable', 'receipt'];
 
@@ -183,7 +315,7 @@ export class ExpensesListComponent implements OnInit {
         this.expenses.set(res);
         this.loading.set(false);
       },
-      error: (e) => {
+      error: (e: { status?: number }) => {
         if (e.status === 404) {
           // Endpoint not yet implemented — treat as empty gracefully
           this.expenses.set([]);
@@ -191,6 +323,57 @@ export class ExpensesListComponent implements OnInit {
           this.error.set('Failed to load');
         }
         this.loading.set(false);
+      },
+    });
+  }
+
+  openCreateForm(): void {
+    const today = new Date().toISOString().split('T')[0];
+    this.createForm.reset({ project_id: '', description: '', expense_date: today, amount: '', currency: 'USD', category: '' });
+    this.createError.set(null);
+    // Load projects for the dropdown
+    this.engagementService.getProjects().subscribe({
+      next: (list) => this.availableProjects.set(list),
+      error: () => this.availableProjects.set([]),
+    });
+    this.showCreateForm.set(true);
+  }
+
+  closeCreateForm(): void {
+    this.showCreateForm.set(false);
+  }
+
+  submitCreate(): void {
+    if (this.createForm.invalid) {
+      this.createForm.markAllAsTouched();
+      return;
+    }
+    this.creating.set(true);
+    this.createError.set(null);
+    const v = this.createForm.getRawValue();
+    const projectId = v.project_id || null;
+    const endpoint = projectId
+      ? `/api/v1/projects/${projectId}/expenses`
+      : '/api/v1/expenses';
+    this.http.post<Expense>(endpoint, {
+      description:  v.description,
+      amount:       v.amount,
+      currency:     v.currency,
+      category:     v.category,
+      expense_date: v.expense_date,
+      billable:     true,
+    }).subscribe({
+      next: (newExp) => {
+        this.expenses.update(list => [newExp, ...list]);
+        this.creating.set(false);
+        this.closeCreateForm();
+      },
+      error: (err: { error?: { detail?: string } }) => {
+        this.creating.set(false);
+        const detail = err?.error?.detail;
+        this.createError.set(
+          typeof detail === 'string' ? detail : 'Could not log expense. Please try again.'
+        );
       },
     });
   }
