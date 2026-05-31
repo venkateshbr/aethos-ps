@@ -17,10 +17,8 @@ export interface Expense {
   document_id?: string | null;
 }
 
-export interface ExpenseListResponse {
-  items: Expense[];
-  total: number;
-}
+// Backend returns a bare array (not a paginated wrapper).
+export type ExpenseListResponse = Expense[];
 
 export interface ExpenseFilters {
   project_id?: string;

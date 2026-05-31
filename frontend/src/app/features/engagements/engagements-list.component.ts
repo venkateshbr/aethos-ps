@@ -236,7 +236,7 @@ export class EngagementsListComponent implements OnInit {
   ngOnInit(): void {
     this.engagementService.getEngagements().subscribe({
       next: (res) => {
-        this.engagements.set(res.items);
+        this.engagements.set(res);
         this.loading.set(false);
       },
       error: (err: unknown) => {

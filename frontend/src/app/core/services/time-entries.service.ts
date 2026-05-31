@@ -13,10 +13,8 @@ export interface TimeEntry {
   billing_status: string; // 'unbilled' | 'billed' | 'non_billable'
 }
 
-export interface TimeEntryListResponse {
-  items: TimeEntry[];
-  total: number;
-}
+// Backend returns a bare array (not a paginated wrapper).
+export type TimeEntryListResponse = TimeEntry[];
 
 export interface TimeEntryCreate {
   project_id?: string;

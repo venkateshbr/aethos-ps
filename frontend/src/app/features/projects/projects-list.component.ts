@@ -137,7 +137,7 @@ export class ProjectsListComponent implements OnInit {
     const id = this.engagementId();
     this.engagementService.getProjects(id ? { engagement_id: id } : undefined).subscribe({
       next: (res) => {
-        this.projects.set(res.items);
+        this.projects.set(res);
         this.loading.set(false);
       },
       error: (err: unknown) => {

@@ -20,10 +20,8 @@ export interface InvoiceSummary {
   payment_link_url?: string | null;
 }
 
-interface InvoiceListResponse {
-  items: InvoiceSummary[];
-  total: number;
-}
+// Backend returns a bare array (not a paginated wrapper).
+type InvoiceListResponse = InvoiceSummary[];
 
 @Component({
   selector: 'app-invoices-list',
@@ -227,7 +225,7 @@ export class InvoicesListComponent implements OnInit {
   ngOnInit(): void {
     this.http.get<InvoiceListResponse>('/api/v1/invoices').subscribe({
       next: (res) => {
-        this.invoices.set(res.items);
+        this.invoices.set(res);
         this.loading.set(false);
       },
       error: (err: unknown) => {

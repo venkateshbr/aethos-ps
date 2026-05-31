@@ -16,10 +16,8 @@ export interface EngagementSummary {
   end_date?: string | null;
 }
 
-export interface EngagementListResponse {
-  items: EngagementSummary[];
-  total: number;
-}
+// Backend returns a bare array (not a paginated wrapper).
+export type EngagementListResponse = EngagementSummary[];
 
 export interface EngagementDetail extends EngagementSummary {
   description?: string | null;
@@ -49,10 +47,8 @@ export interface ProjectSummary {
   status: string;
 }
 
-export interface ProjectListResponse {
-  items: ProjectSummary[];
-  total: number;
-}
+// Backend returns a bare array (not a paginated wrapper).
+export type ProjectListResponse = ProjectSummary[];
 
 @Injectable({ providedIn: 'root' })
 export class EngagementService {

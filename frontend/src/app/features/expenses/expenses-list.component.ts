@@ -180,7 +180,7 @@ export class ExpensesListComponent implements OnInit {
   ngOnInit(): void {
     this.expensesService.getExpenses().subscribe({
       next: (res) => {
-        this.expenses.set(res.items);
+        this.expenses.set(res);
         this.loading.set(false);
       },
       error: (e) => {

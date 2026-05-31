@@ -293,7 +293,7 @@ export class TimeEntriesListComponent implements OnInit {
     this.error.set(null);
     this.timeEntriesService.getEntries().subscribe({
       next: (res) => {
-        this.entries.set(res.items);
+        this.entries.set(res);
         this.loading.set(false);
       },
       error: () => {
