@@ -445,3 +445,59 @@ What's between you and a pilot user signing up:
 Engineering surface is closed. The remaining 5 open P2/P3 are test infra (#103/#105/#109), an LLM-flake mitigation already in place (#106), and a UI E2E coverage gap (#110). None are user-visible.
 
 **Sign-off**: Orchestrator (Vishwa), R4. Aksha to ratify on her next cap cycle.
+
+---
+
+## R-Real-5 — UI-driven, tunnel-served, full cycle pass — **VERDICT: 🔴 RED**
+
+**Date**: 2026-05-26 · **Stack**: `https://aethos-dev.ishirock.com` → `https://aethos-api.ishirock.com` (Cloudflare tunnel) → local backend + Supabase + Stripe sandbox + OpenRouter
+**Driver**: Aksha (SDET), driving the SPA via Playwright — NO direct API calls (the bypass that hid #128 is now banned per `docs/team/SDLC_PROTOCOL.md`).
+
+### Verdict
+
+**🔴 RED — pilot launch is blocked.** Aksha's UI-driven walk surfaced 6 real bugs the prior 394-passing tests and my own R-Real-4 smoke had missed because every prior test injected headers manually via `httpx`, bypassing the SPA entirely. The R-Real-4 GREEN verdict was wrong — withdrawn.
+
+### Bugs filed in R-Real-5 (gating list for pilot)
+
+| # | Sev | What | Owner |
+|---|---|---|---|
+| #128 | **P0** | Login fails for ALL returning users — `tenant_users` RLS denies the membership lookup the LoginComponent now makes to populate `aethos_tenant_id`. The anon-key Supabase client doesn't have permission to read its own tenant_users row. | Karya / Prahari |
+| #129 | **P0** | **No document-upload UI anywhere in the SPA**. The entire AI-extraction value prop (engagement letter / receipt / vendor invoice → agent extraction → HITL approval) is unreachable to a real user. Backend works (verified live in R-Real-4 via `httpx`) but no frontend surface invokes it. | Rupa |
+| #130 | **P0** | "+ Create" buttons on engagements / projects / clients / expenses / invoices have no click handlers — pure dead UI. A user can sign up and land in /app/copilot but cannot create a single piece of data through the SPA. | Rupa |
+| #131 | P1 | Change-password bounces to /login for every fresh-signup tenant. Supabase session isn't being persisted after signup, so `getSession()` returns null inside ChangePasswordComponent's submit handler. | Rupa (signup flow needs to persist Supabase session) |
+| #132 | P1 | Backend tenant-membership check returns 404 "Tenant not found" on the first request after signup, then 200 on retry. Race between the `auth.signup` → `tenant_users` insert and the membership-dep read in `get_tenant_id`. Caused the inbox 0-tasks flake I dismissed in R-Real-4 as "transaction visibility". It's a real bug. | Karya |
+| #133 | P1 | `/api/v1/engagements` contract mismatch — backend returns a bare `[...]` array, frontend `EngagementService` expects `{ items: [...] }`. Engagements list renders empty even when rows exist. Probably others (`/clients`, `/projects`) have the same shape mismatch. | Karya |
+
+### What the R-Real-5 specs DID cover
+
+All 8 Playwright specs landed on disk (commits `f2f30bb` + `f343862`):
+
+  - `00-signup.spec.ts` — 3-step wizard, `aethos_token` + `aethos_tenant_id` storage assertions (the #128-from-yesterday regression guard)
+  - `login.spec.ts` — credential signin + tenant_users lookup
+  - `change-password.spec.ts` — current-pw verify + update flow
+  - `o2c-engagement-to-invoice.spec.ts` — the Order-to-Cash cycle
+  - `p2p-vendor-bill.spec.ts` — Procure-to-Pay cycle
+  - `r2r-reports-render.spec.ts` — all 6 reports tabs
+  - `multi-tenant-isolation.spec.ts` — cross-tenant 404 in both directions
+  - `auth-guard.spec.ts` — incognito → `/app/inbox` → redirect
+
+The specs themselves are permanent regression tests. When the 6 bugs land fixes, re-running the suite is the proof.
+
+### Why R-Real-4 (and earlier) got it wrong
+
+Every prior test — Aksha's 394 API tests, my R-Real-4 12/12 smoke — used the same shape:
+
+```python
+H = {"Authorization": f"Bearer {jwt}", "X-Tenant-ID": tenant_id}
+httpx.get(f"{BASE}/api/v1/...", headers=H)
+```
+
+Direct backend calls with both headers injected. **None of them exercised the SPA's interceptor, route guard, or component lifecycle.** The interceptor was missing `X-Tenant-ID` attachment entirely (fixed in `9361331` yesterday); the SPA was missing entire create flows (#129, #130); the login flow was hitting RLS-denied queries (#128); the change-password component was reading a session that was never persisted (#131).
+
+The new `docs/team/SDLC_PROTOCOL.md` closure-evidence rule (commit `a820de6`) prevents this class of false-green from recurring: UI-touching issues now require a Playwright pass OR a Founder browser walkthrough, not a backend curl.
+
+### Sign-off
+
+Aksha, SDET (cap-killed at 177 tool uses; the bug filings and spec scaffolds are her work product, this verdict block written by Vishwa).
+Verdict: 🔴 RED, blocked on #128–#133. Estimated to GREEN: 1 Karya wave + 1 Rupa wave + Aksha re-run.
+
