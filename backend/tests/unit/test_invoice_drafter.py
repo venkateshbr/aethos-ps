@@ -16,6 +16,13 @@ from app.agents.invoice_drafter_agent import InvoiceDraft, draft_invoice
 
 pytestmark = pytest.mark.unit
 
+# Patch _apply_tax to be a no-op so tax-rate DB queries never fire.
+# This avoids mock-chain collisions between the engagement query and tax queries
+# (both use .eq().eq().limit() on different tables, but MagicMock can't
+# distinguish table names, so the last .data assignment wins).
+_NO_TAX = patch("app.agents.invoice_drafter_agent._apply_tax",
+                side_effect=lambda lines, deps, currency: lines)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,35 +47,33 @@ def _engagement(billing_arrangement: str, billing_terms: dict | None = None) -> 
 
 
 def _configure_no_tax(db: MagicMock) -> None:
-    """Ensure ALL tax-rate query paths return empty data.
+    """No-op: tax is patched out directly in each test via _NO_TAX_PATCHES below."""
 
-    _apply_tax has two query paths:
-    1. Tenant-specific: .eq("tenant_id").eq("is_default").limit(1)
-    2. Fallback global:  .is_("tenant_id","null").eq("country").eq("is_default").limit(1)
-    Both must return [] so the agent returns lines untaxed.
+
+def _set_engagement_mock(db: MagicMock, eng: dict) -> None:
+    """Wire the db mock for the engagement query path used by invoice_drafter.
+    The drafter now uses .eq().eq().limit(1).execute() → returns list.
     """
-    # Path 1 — .eq().eq().limit()
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
-    # Path 2 — .is_().eq().eq().limit()
-    db.table.return_value.select.return_value.is_.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
-    # Tenant country lookup — .eq().single()
-    db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {"country": "US"}
+    db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [eng]
 
 
 def _make_db_for_fixed_fee(amount: str = "5000.00") -> MagicMock:
     """DB that returns a fixed-fee engagement and no tax rates."""
     db = MagicMock()
     eng = _engagement("fixed_fee", {"fixed_fee_amount": amount})
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = eng
+    # _configure_no_tax must come BEFORE _set_engagement_mock — both set the
+    # same mock chain and the last write wins.  Engagement mock is the one
+    # that must survive (it is read first by draft_invoice).
     _configure_no_tax(db)
+    _set_engagement_mock(db, eng)
     return db
 
 
 def _make_db_for_retainer(monthly: str = "3000.00") -> MagicMock:
     db = MagicMock()
     eng = _engagement("retainer", {"retainer_monthly_amount": monthly})
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = eng
     _configure_no_tax(db)
+    _set_engagement_mock(db, eng)
     return db
 
 
@@ -82,7 +87,8 @@ def test_draft_fixed_fee_returns_correct_amount() -> None:
     db = _make_db_for_fixed_fee("5000.00")
     deps = _make_deps(db)
 
-    draft = draft_invoice("eng-1", deps)
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
 
     assert isinstance(draft, InvoiceDraft)
     assert draft.billing_arrangement == "fixed_fee"
@@ -103,7 +109,8 @@ def test_draft_retainer_returns_monthly_amount() -> None:
     db = _make_db_for_retainer("3000.00")
     deps = _make_deps(db)
 
-    draft = draft_invoice("eng-1", deps)
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
 
     assert isinstance(draft, InvoiceDraft)
     assert draft.billing_arrangement == "retainer"
@@ -126,11 +133,11 @@ def test_draft_milestone_returns_one_line_per_milestone() -> None:
     ]
     db = MagicMock()
     eng = _engagement("milestone", {"milestones": milestones})
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = eng
-    _configure_no_tax(db)
+    _set_engagement_mock(db, eng)
 
     deps = _make_deps(db)
-    draft = draft_invoice("eng-1", deps)
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
 
     assert draft.billing_arrangement == "milestone"
     assert len(draft.lines) == 2
@@ -149,14 +156,13 @@ def test_draft_tm_with_no_entries_returns_empty_lines() -> None:
     """T&M draft with no unbilled time or expenses should have no lines."""
     db = MagicMock()
     eng = _engagement("time_and_materials")
-    # Engagement query
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = eng
-    # Projects under engagement — empty (also covers tax rate tenant-specific query)
+    _set_engagement_mock(db, eng)
+    # Projects under engagement — empty list
     db.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
-    _configure_no_tax(db)
 
     deps = _make_deps(db)
-    draft = draft_invoice("eng-1", deps)
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
 
     assert draft.billing_arrangement == "time_and_materials"
     assert len(draft.lines) == 0
@@ -176,8 +182,7 @@ def test_draft_capped_tm_applies_cap_adjustment() -> None:
     eng = _engagement("capped_tm", billing_terms)
     eng["rate_card_id"] = "rc-1"
 
-    # Engagement single query
-    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value.data = eng
+    _set_engagement_mock(db, eng)
 
     # We need to return projects, then time_entries, then project_assignments, then expenses
     # The mock chains make this tricky — use side_effect on table() calls
@@ -194,7 +199,7 @@ def test_draft_capped_tm_applies_cap_adjustment() -> None:
     ]
 
     with patch("app.agents.invoice_drafter_agent._draft_tm_lines", return_value=high_value_lines), \
-         patch("app.agents.invoice_drafter_agent._apply_tax", side_effect=lambda lines, deps, currency: lines):
+         _NO_TAX:
         deps = _make_deps(db)
         draft = draft_invoice("eng-1", deps)
 

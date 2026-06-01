@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     health_check,
     inbox,
     invoices,
+    payments,
     projects,
     rate_cards,
     reports,
@@ -53,4 +54,5 @@ api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"]
 api_router.include_router(invoices.public_router, prefix="/public/invoices", tags=["public"])
 api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"])
 api_router.include_router(bill_payments.router, prefix="/bill-payments", tags=["bill-payments"])
+api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])

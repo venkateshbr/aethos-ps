@@ -177,7 +177,9 @@ def test_utilization_pct_calculated(mock_db: MagicMock) -> None:
 
 def test_wip_value_is_hours_times_rate(mock_db: MagicMock) -> None:
     """WIP value must equal unbilled_hours * avg_rate."""
-    projects = [{"id": "proj-2", "name": "Beta", "engagement_id": "eng-2", "rate_card_id": "rc-1"}]
+    # Projects query now embeds the engagement to pick up rate_card_id
+    projects = [{"id": "proj-2", "name": "Beta", "engagement_id": "eng-2",
+                 "engagements": {"rate_card_id": "rc-1"}}]
     time_entries = [{"hours": "5.0"}, {"hours": "3.0"}]
     rate_lines = [{"rate": "150.00"}]
 

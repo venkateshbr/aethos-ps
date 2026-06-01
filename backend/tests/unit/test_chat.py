@@ -122,6 +122,7 @@ def test_thread_response_model_fields():
 
     resp = ThreadResponse(
         id="abc",
+        tenant_id="tenant-1",
         title="My thread",
         created_at="2026-01-01T00:00:00Z",
         updated_at="2026-01-01T00:00:00Z",
@@ -136,6 +137,7 @@ def test_thread_response_title_optional():
 
     resp = ThreadResponse(
         id="abc",
+        tenant_id="tenant-1",
         title=None,
         created_at="2026-01-01T00:00:00Z",
         updated_at="2026-01-01T00:00:00Z",
