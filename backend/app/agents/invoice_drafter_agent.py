@@ -237,14 +237,17 @@ def _draft_tm_lines(
     if not project_ids:
         return []
 
-    # Fetch unbilled, billable time entries
+    # Fetch unbilled, billable, APPROVED time entries.
+    # The approval gate (issue #134) means only manager-approved hours can be
+    # billed — draft/submitted/rejected time is excluded from invoicing.
     q = (
         db.table("time_entries")
-        .select("id, project_id, employee_id, hours, date, description, billing_status")
+        .select("id, project_id, employee_id, hours, date, description, billing_status, status")
         .eq("tenant_id", tenant_id)
         .in_("project_id", project_ids)
         .eq("billing_status", "unbilled")
         .eq("billable", True)
+        .eq("status", "approved")
         .is_("deleted_at", "null")
     )
     if period_start:
