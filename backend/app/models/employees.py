@@ -92,3 +92,23 @@ class EmployeeResponse(BaseModel):
 class EmployeeListResponse(BaseModel):
     items: list[EmployeeResponse]
     total: int
+
+
+class EmployeeInviteRequest(BaseModel):
+    # Optional admin-set initial password. When omitted, a strong temporary
+    # password is generated and returned once (pilot: no email is sent).
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class EmployeeInviteResponse(BaseModel):
+    employee_id: str
+    user_id: str
+    tenant_user_id: str
+    email: str
+    role: str = "employee"
+    # One-time set-password (recovery) link the admin shares with the employee.
+    # Null if Supabase could not mint one (the temp_password is then the fallback).
+    set_password_url: str | None = None
+    # Temporary password shown ONCE (pilot only — Resend email not yet wired).
+    temp_password: str | None = None
+

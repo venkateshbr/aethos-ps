@@ -9,11 +9,15 @@ Validation rules:
 from __future__ import annotations
 
 import logging
+import secrets
 
 from fastapi import HTTPException, status
+from supabase_auth.errors import AuthApiError
 
 from app.models.employees import (
     EmployeeCreate,
+    EmployeeInviteRequest,
+    EmployeeInviteResponse,
     EmployeeListResponse,
     EmployeeResponse,
     EmployeeUpdate,
@@ -142,6 +146,82 @@ class EmployeesService:
         await self._repo.soft_delete(employee_id)
 
     # ------------------------------------------------------------------
+    # Invite — turn an employee into a Timesheet-Portal login (#134 P3)
+    # ------------------------------------------------------------------
+
+    async def invite_employee(
+        self, employee_id: str, data: EmployeeInviteRequest
+    ) -> EmployeeInviteResponse:
+        emp = await self._repo.get(employee_id)
+        if emp is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Employee {employee_id!r} not found",
+            )
+        if emp.get("user_id"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This employee already has portal access.",
+            )
+        email = emp["email"]
+        password = data.password or _generate_temp_password()
+
+        # 1. Create the Supabase auth user via the admin API (does NOT mutate the
+        #    service-role session — the #121 / signup pattern).
+        try:
+            admin_response = self._db.auth.admin.create_user(
+                {"email": email, "password": password, "email_confirm": True}
+            )
+        except AuthApiError as exc:
+            # Most common: the email already has an auth account.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Could not create a login for {email}: {exc.message}",
+            ) from exc
+        user = admin_response.user if hasattr(admin_response, "user") else admin_response
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable. Please try again.",
+            )
+        user_id = user.id
+
+        # 2. Membership row with the narrow 'employee' role.
+        tu = (
+            self._db.table("tenant_users")
+            .insert({"tenant_id": self._tenant_id, "user_id": user_id, "role": "employee"})
+            .execute()
+        )
+        tenant_user_id = str(tu.data[0]["id"])
+
+        # 3. Link the employee record to the login.
+        await self._repo.update(
+            employee_id, {"user_id": user_id, "tenant_user_id": tenant_user_id}
+        )
+
+        # 4. Mint a one-time recovery (set-password) link to share. Email send is
+        #    not wired for the pilot, so we return the link + the temp password.
+        set_password_url: str | None = None
+        try:
+            link = self._db.auth.admin.generate_link(
+                {"type": "recovery", "email": email}
+            )
+            props = getattr(link, "properties", None)
+            set_password_url = getattr(props, "action_link", None) if props else None
+        except Exception:
+            # Link generation is best-effort; the temp password is the fallback.
+            logger.warning("Could not generate recovery link for employee invite", exc_info=True)
+
+        return EmployeeInviteResponse(
+            employee_id=employee_id,
+            user_id=user_id,
+            tenant_user_id=tenant_user_id,
+            email=email,
+            set_password_url=set_password_url,
+            temp_password=None if data.password else password,
+        )
+
+    # ------------------------------------------------------------------
     # Private
     # ------------------------------------------------------------------
 
@@ -151,6 +231,11 @@ class EmployeesService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Manager {manager_id!r} not found",
             )
+
+
+def _generate_temp_password() -> str:
+    """A strong URL-safe temporary password (pilot invite fallback)."""
+    return secrets.token_urlsafe(12) + "aA1!"
 
 
 def _row_to_response(row: dict) -> EmployeeResponse:

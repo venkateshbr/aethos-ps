@@ -33,6 +33,12 @@ interface EmployeeListResponse {
   total: number;
 }
 
+interface InviteResult {
+  email: string;
+  set_password_url?: string | null;
+  temp_password?: string | null;
+}
+
 const EMPLOYMENT_LABELS: Record<string, string> = {
   full_time: 'Full-time',
   part_time: 'Part-time',
@@ -111,6 +117,13 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
                     <p class="text-xs text-text-secondary mt-0.5">{{ e.default_bill_rate_currency || '' }} {{ e.default_bill_rate }}/h</p>
                   }
                 </div>
+                @if (!e.has_login) {
+                  <button type="button"
+                    class="text-text-muted hover:text-accent-light transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded p-1"
+                    aria-label="Invite to timesheet portal" title="Invite to timesheet portal" (click)="invite(e)">
+                    <mat-icon class="text-base leading-none">person_add</mat-icon>
+                  </button>
+                }
                 <button type="button"
                   class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded p-1"
                   aria-label="Edit employee" (click)="openEdit(e)">
@@ -211,6 +224,47 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
           </button>
         </div>
       </aside>
+    }
+
+    <!-- Invite result modal -->
+    @if (inviteResult(); as inv) {
+      <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" (click)="dismissInvite()" aria-hidden="true"></div>
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div class="w-full max-w-md bg-surface border border-border-default rounded-xl shadow-2xl pointer-events-auto" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+          <div class="px-6 py-4 border-b border-border-default flex items-center gap-2">
+            <mat-icon class="text-confidence-high">check_circle</mat-icon>
+            <h2 id="invite-title" class="text-base font-semibold text-text-primary">Portal access granted</h2>
+          </div>
+          <div class="px-6 py-5 space-y-4 text-sm">
+            <p class="text-text-secondary">
+              <span class="font-medium text-text-primary">{{ inv.email }}</span> can now sign in to the
+              Timesheet Portal. Share the link below so they can set their own password.
+            </p>
+            @if (inv.set_password_url) {
+              <div>
+                <label class="block text-xs uppercase tracking-wide text-text-muted mb-1">Set-password link</label>
+                <div class="flex gap-2">
+                  <input readonly [value]="inv.set_password_url" class="flex-1 px-3 py-2 bg-surface-base border border-border-default rounded text-text-secondary text-xs font-mono truncate" />
+                  <button type="button" class="px-3 py-2 bg-surface-raised hover:bg-surface-base border border-border-default rounded text-xs text-text-primary" (click)="copy(inv.set_password_url!)">Copy</button>
+                </div>
+              </div>
+            }
+            @if (inv.temp_password) {
+              <div>
+                <label class="block text-xs uppercase tracking-wide text-text-muted mb-1">Temporary password (shown once)</label>
+                <div class="flex gap-2">
+                  <input readonly [value]="inv.temp_password" class="flex-1 px-3 py-2 bg-surface-base border border-border-default rounded text-text-secondary text-xs font-mono" />
+                  <button type="button" class="px-3 py-2 bg-surface-raised hover:bg-surface-base border border-border-default rounded text-xs text-text-primary" (click)="copy(inv.temp_password!)">Copy</button>
+                </div>
+                <p class="text-xs text-text-muted mt-1">Pilot only — email delivery is not yet enabled.</p>
+              </div>
+            }
+          </div>
+          <div class="px-6 py-4 border-t border-border-default flex justify-end">
+            <button type="button" class="px-4 py-2 text-sm bg-accent hover:bg-accent-hover text-accent-on rounded font-medium" (click)="dismissInvite()">Done</button>
+          </div>
+        </div>
+      </div>
     }
   `,
 })
@@ -351,6 +405,33 @@ export class PeopleListComponent implements OnInit {
     this.panelError.set(
       typeof detail === 'string' ? detail : 'Could not save. Please check the fields and try again.'
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Invite to portal (issue #134, Phase 3)
+  // -------------------------------------------------------------------------
+  inviteResult = signal<InviteResult | null>(null);
+
+  invite(e: Employee): void {
+    if (!confirm(`Grant ${e.first_name} ${e.last_name} access to the Timesheet Portal?`)) return;
+    this.http.post<InviteResult>(`/api/v1/employees/${e.id}/invite`, {}).subscribe({
+      next: (res) => {
+        this.inviteResult.set(res);
+        this.employees.update((list) => list.map((x) => (x.id === e.id ? { ...x, has_login: true } : x)));
+      },
+      error: (err: { error?: { detail?: unknown } }) => {
+        const detail = err?.error?.detail;
+        this.error.set(typeof detail === 'string' ? detail : 'Could not grant portal access.');
+      },
+    });
+  }
+
+  dismissInvite(): void {
+    this.inviteResult.set(null);
+  }
+
+  copy(text: string): void {
+    navigator.clipboard?.writeText(text).catch(() => { /* clipboard may be blocked */ });
   }
 
   remove(e: Employee): void {

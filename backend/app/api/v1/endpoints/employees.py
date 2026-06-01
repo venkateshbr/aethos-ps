@@ -19,6 +19,8 @@ from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.employees import (
     EmployeeCreate,
+    EmployeeInviteRequest,
+    EmployeeInviteResponse,
     EmployeeListResponse,
     EmployeeResponse,
     EmployeeUpdate,
@@ -87,3 +89,19 @@ async def delete_employee(
     svc: EmployeesService = Depends(_service),  # noqa: B008
 ) -> None:
     await svc.delete_employee(id)
+
+
+@router.post("/{id}/invite", response_model=EmployeeInviteResponse)
+async def invite_employee(
+    id: str,
+    payload: EmployeeInviteRequest,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: EmployeesService = Depends(_service),  # noqa: B008
+) -> EmployeeInviteResponse:
+    """Grant an employee Timesheet-Portal access (admin+).
+
+    Creates a Supabase auth user, a tenant_users row with the narrow 'employee'
+    role, links the employee record, and returns a one-time set-password link
+    (+ a temp password for the pilot, since email send is not yet wired).
+    """
+    return await svc.invite_employee(id, payload)
