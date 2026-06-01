@@ -27,7 +27,7 @@ def list_payments(
     rows = (
         db.table("payments")
         .select("id, invoice_id, amount, currency, base_amount, paid_at, notes, "
-                "invoices(number, status)")
+                "invoices(invoice_number, status)")
         .eq("tenant_id", tenant_id)
         .order("paid_at", desc=True)
         .limit(limit)
@@ -42,7 +42,7 @@ def list_payments(
         items.append({
             "id": r["id"],
             "invoice_id": r["invoice_id"],
-            "invoice_number": inv.get("number") if isinstance(inv, dict) else None,
+            "invoice_number": inv.get("invoice_number") if isinstance(inv, dict) else None,
             "amount": str(r["amount"]),
             "currency": r["currency"],
             "base_amount": str(r["base_amount"]),
