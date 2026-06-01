@@ -105,6 +105,9 @@ class TimeEntriesService:
             "description": data.description,
             "billable": data.billable,
             "billing_status": "unbilled" if data.billable else "non_billable",
+            # Time logged from the main ERP (manager on-behalf) is authoritative
+            # and skips the portal submit→approve cycle (issue #134, P7).
+            "status": "approved",
         }
         if data.phase_id is not None:
             payload["phase_id"] = data.phase_id
@@ -191,6 +194,7 @@ def _row_to_response(row: dict) -> TimeEntryResponse:
         description=row.get("description") or "",
         billable=bool(row.get("billable", True)),
         billing_status=row.get("billing_status", "unbilled"),
+        status=row.get("status", "approved"),
         phase_id=str(row["phase_id"]) if row.get("phase_id") else None,
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]) if row.get("updated_at") else None,

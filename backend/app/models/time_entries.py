@@ -40,6 +40,7 @@ class TimeEntryResponse(BaseModel):
     description: str
     billable: bool
     billing_status: str
+    status: str = "approved"  # approval lifecycle (migration 0021)
     phase_id: str | None = None
     created_at: str
     updated_at: str | None = None

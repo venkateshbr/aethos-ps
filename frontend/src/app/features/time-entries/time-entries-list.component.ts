@@ -1,6 +1,6 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -19,7 +19,6 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
   selector: 'app-time-entries-list',
   standalone: true,
   imports: [
-    SlicePipe,
     FormsModule,
     MatTableModule,
     MatIconModule,
@@ -45,6 +44,38 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
           class="flex flex-wrap gap-3 items-end"
           aria-label="New time entry form"
         >
+          <div class="flex flex-col gap-1 min-w-44">
+            <label for="entry-project" class="text-xs text-text-muted">Project</label>
+            <select
+              id="entry-project"
+              [(ngModel)]="newProjectId"
+              name="entry-project"
+              required
+              class="bg-surface border border-border-strong rounded px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="">Select project…</option>
+              @for (p of projects(); track p.id) {
+                <option [value]="p.id">{{ p.code ? p.code + ' · ' : '' }}{{ p.name }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="flex flex-col gap-1 min-w-44">
+            <label for="entry-employee" class="text-xs text-text-muted">Employee</label>
+            <select
+              id="entry-employee"
+              [(ngModel)]="newEmployeeId"
+              name="entry-employee"
+              required
+              class="bg-surface border border-border-strong rounded px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="">Select employee…</option>
+              @for (e of employees(); track e.id) {
+                <option [value]="e.id">{{ e.first_name }} {{ e.last_name }}</option>
+              }
+            </select>
+          </div>
+
           <div class="flex flex-col gap-1">
             <label for="entry-date" class="text-xs text-text-muted">Date</label>
             <input
@@ -173,15 +204,27 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
               </td>
             </ng-container>
 
-            <!-- Employee column (placeholder — employee lookup not wired yet) -->
+            <!-- Project column -->
+            <ng-container matColumnDef="project">
+              <th mat-header-cell *matHeaderCellDef
+                  class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
+                Project
+              </th>
+              <td mat-cell *matCellDef="let row"
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle">
+                {{ projectLabel(row.project_id) }}
+              </td>
+            </ng-container>
+
+            <!-- Employee column -->
             <ng-container matColumnDef="employee">
               <th mat-header-cell *matHeaderCellDef
                   class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
                 Employee
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-text-muted text-sm px-4 py-3 border-b border-border-subtle font-mono">
-                {{ row.employee_id | slice:0:8 }}…
+                  class="text-text-secondary text-sm px-4 py-3 border-b border-border-subtle">
+                {{ employeeLabel(row.employee_id) }}
               </td>
             </ng-container>
 
@@ -269,23 +312,42 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 })
 export class TimeEntriesListComponent implements OnInit {
   private timeEntriesService = inject(TimeEntriesService);
+  private http = inject(HttpClient);
 
   loading    = signal(true);
   error      = signal<string | null>(null);
   entries    = signal<TimeEntry[]>([]);
   addingEntry = signal(false);
   addError   = signal<string | null>(null);
+  projects   = signal<{ id: string; name: string; code?: string | null }[]>([]);
+  employees  = signal<{ id: string; first_name: string; last_name: string }[]>([]);
 
   // Quick-add form state
+  newProjectId   = '';
+  newEmployeeId  = '';
   newDate        = new Date().toISOString().split('T')[0];
   newHours       = '';
   newDescription = '';
   newBillable    = true;
 
-  displayedColumns = ['date', 'employee', 'hours', 'description', 'billable', 'billing_status'];
+  displayedColumns = ['date', 'project', 'employee', 'hours', 'description', 'billable', 'billing_status'];
 
   ngOnInit(): void {
     this.loadEntries();
+    this.http.get<{ id: string; name: string; code?: string | null }[]>('/api/v1/projects')
+      .subscribe({ next: (list) => this.projects.set(list ?? []), error: () => {} });
+    this.http.get<{ items: { id: string; first_name: string; last_name: string }[] }>('/api/v1/employees')
+      .subscribe({ next: (res) => this.employees.set(res.items ?? []), error: () => {} });
+  }
+
+  projectLabel(id: string): string {
+    const p = this.projects().find((x) => x.id === id);
+    return p ? `${p.code ? p.code + ' · ' : ''}${p.name}` : '—';
+  }
+
+  employeeLabel(id: string): string {
+    const e = this.employees().find((x) => x.id === id);
+    return e ? `${e.first_name} ${e.last_name}` : '—';
   }
 
   private loadEntries(): void {
@@ -306,12 +368,17 @@ export class TimeEntriesListComponent implements OnInit {
   submitEntry(): void {
     const hours = this.newHours.trim();
     const description = this.newDescription.trim();
-    if (!this.newDate || !hours || !description) return;
+    if (!this.newProjectId || !this.newEmployeeId || !this.newDate || !hours || !description) {
+      this.addError.set('Project, employee, date, hours and description are all required.');
+      return;
+    }
 
     this.addingEntry.set(true);
     this.addError.set(null);
 
     const payload: TimeEntryCreate = {
+      project_id: this.newProjectId,
+      employee_id: this.newEmployeeId,
       date: this.newDate,
       hours,
       description,
@@ -321,8 +388,8 @@ export class TimeEntriesListComponent implements OnInit {
     // Optimistic update — prepend a placeholder immediately
     const optimisticEntry: TimeEntry = {
       id: `optimistic-${Date.now()}`,
-      project_id: '',
-      employee_id: '',
+      project_id: this.newProjectId,
+      employee_id: this.newEmployeeId,
       date: this.newDate,
       hours,
       description,
@@ -342,11 +409,14 @@ export class TimeEntriesListComponent implements OnInit {
         this.newHours = '';
         this.newDescription = '';
       },
-      error: () => {
+      error: (err: { error?: { detail?: unknown } }) => {
         // Roll back the optimistic update
         this.entries.set(this.entries().filter(e => e.id !== optimisticEntry.id));
         this.addingEntry.set(false);
-        this.addError.set('Could not save the entry. Please try again.');
+        const detail = err?.error?.detail;
+        this.addError.set(
+          typeof detail === 'string' ? detail : 'Could not save the entry. Please try again.'
+        );
       },
     });
   }

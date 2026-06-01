@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 export interface TimeEntry {
   id: string;
@@ -11,13 +12,18 @@ export interface TimeEntry {
   description: string;
   billable: boolean;
   billing_status: string; // 'unbilled' | 'billed' | 'non_billable'
+  status?: string;        // approval lifecycle (migration 0021)
 }
 
-// Backend returns a bare array (not a paginated wrapper).
-export type TimeEntryListResponse = TimeEntry[];
+// Backend returns a paginated wrapper { items, total }.
+export interface TimeEntryListResponse {
+  items: TimeEntry[];
+  total: number;
+}
 
 export interface TimeEntryCreate {
-  project_id?: string;
+  project_id: string;
+  employee_id: string;
   date: string;
   hours: string;
   description: string;
@@ -35,12 +41,14 @@ export class TimeEntriesService {
   private http = inject(HttpClient);
   private base = '/api/v1';
 
-  getEntries(filters?: TimeEntryFilters): Observable<TimeEntryListResponse> {
+  getEntries(filters?: TimeEntryFilters): Observable<TimeEntry[]> {
     let params = new HttpParams();
     if (filters?.project_id) params = params.set('project_id', filters.project_id);
     if (filters?.date_from)  params = params.set('date_from', filters.date_from);
     if (filters?.date_to)    params = params.set('date_to', filters.date_to);
-    return this.http.get<TimeEntryListResponse>(`${this.base}/time-entries`, { params });
+    return this.http
+      .get<TimeEntryListResponse>(`${this.base}/time-entries`, { params })
+      .pipe(map((res) => res.items ?? []));
   }
 
   createEntry(data: TimeEntryCreate): Observable<TimeEntry> {
