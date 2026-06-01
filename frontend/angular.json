@@ -192,7 +192,8 @@
               "buildTarget": "timesheet:build:production"
             },
             "development": {
-              "buildTarget": "timesheet:build:development"
+              "buildTarget": "timesheet:build:development",
+              "proxyConfig": "proxy-timesheet.conf.json"
             }
           },
           "defaultConfiguration": "development"

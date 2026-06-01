@@ -45,6 +45,13 @@ def get_anon_client() -> Client:
 def get_service_role_client() -> Client:
     """FastAPI dependency: return the service-role supabase client.
 
+    NOTE: We return a FRESH client per-request (not the singleton) to avoid
+    thread-safety issues when many concurrent requests share the same
+    supabase-py Client under load.  The singleton is still used for signup
+    and webhook paths (low-concurrency, already correct).  High-concurrency
+    authenticated routes inject a fresh client each request; the overhead is
+    acceptable (TLS connection pooling is handled by httpx).
+
     Use sparingly.  Document every call-site that uses this.
     """
-    return _service_role_client()
+    return create_client(settings.supabase_url, settings.supabase_service_role_key)

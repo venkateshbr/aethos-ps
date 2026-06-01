@@ -1,5 +1,6 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
 import { setAccessToken, clearAccessToken, setTenantId, clearTenantId } from '../interceptors/auth.interceptor';
+import { SupabaseService } from './supabase.service';
 
 /**
  * AuthService — single source of truth for the access token lifecycle.
@@ -35,6 +36,8 @@ export class AuthService {
   /** True when a token is present. Derived signal — use in templates & guards. */
   readonly isAuthenticated = computed(() => this._token() !== null);
 
+  private readonly supa = inject(SupabaseService);
+
   constructor() {
     // Sync the interceptor's in-memory cache with whatever we restored from
     // storage so the very first HTTP call carries both bearer + tenant headers.
@@ -42,6 +45,21 @@ export class AuthService {
     const tid = this._tenantId();
     if (t) setAccessToken(t);
     if (tid) setTenantId(tid);
+
+    // Keep aethos_token in sync when Supabase silently refreshes the JWT.
+    // This prevents the interceptor carrying a stale token after a background
+    // token rotation — especially visible in long-running E2E test sessions.
+    this.supa.client.auth.onAuthStateChange((_event, session) => {
+      const freshToken = session?.access_token;
+      if (freshToken && this._token() !== null) {
+        // Only update if we are currently signed in (don't re-set after logout)
+        this._token.set(freshToken);
+        setAccessToken(freshToken);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, freshToken);
+        }
+      }
+    });
   }
 
   /**
