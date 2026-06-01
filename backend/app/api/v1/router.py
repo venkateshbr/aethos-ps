@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     chat,
     clients,
     documents,
+    employees,
     engagements,
     health_check,
     inbox,
@@ -44,6 +45,7 @@ api_router.include_router(projects.router, prefix="/projects", tags=["projects"]
 api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
+api_router.include_router(employees.router, prefix="/employees", tags=["employees"])
 api_router.include_router(time_entries.router, prefix="/time-entries", tags=["time-entries"])
 api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 api_router.include_router(invoices.public_router, prefix="/public/invoices", tags=["public"])

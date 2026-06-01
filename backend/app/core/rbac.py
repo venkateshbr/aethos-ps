@@ -1,7 +1,14 @@
 """Role-Based Access Control for Aethos PS.
 
 Roles mirror the ``user_role`` enum in the DB (migration 0001).
-The hierarchy is ordinal: owner > admin > manager > member > viewer.
+The hierarchy is ordinal: owner > admin > manager > member > viewer > employee.
+
+``employee`` is the narrow Timesheet-Portal role (migration 0021). It sits at the
+BOTTOM of the hierarchy so an employee JWT is rejected by every ``require_role``
+gate in the ERP (the lowest ERP gate is ``viewer``). Timesheet endpoints do NOT
+use ``require_role`` — they use the ``get_current_employee`` dependency, which
+resolves the caller's ``employees`` row. This firewalls portal logins out of all
+ERP data (defence in depth).
 
 Usage
 -----
@@ -29,6 +36,7 @@ class UserRole(StrEnum):
     manager = "manager"
     member = "member"
     viewer = "viewer"
+    employee = "employee"
 
 
 ROLE_HIERARCHY: dict[UserRole, int] = {
@@ -37,6 +45,7 @@ ROLE_HIERARCHY: dict[UserRole, int] = {
     UserRole.manager: 3,
     UserRole.member: 2,
     UserRole.viewer: 1,
+    UserRole.employee: 0,
 }
 
 
