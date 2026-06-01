@@ -14,7 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class EmploymentType(StrEnum):
@@ -87,6 +87,12 @@ class EmployeeResponse(BaseModel):
         if v is None:
             return None
         return str(v)
+
+    @model_validator(mode="after")
+    def _derive_has_login(self) -> EmployeeResponse:
+        """has_login always reflects whether a Supabase auth user is linked."""
+        object.__setattr__(self, "has_login", bool(self.user_id))
+        return self
 
 
 class EmployeeListResponse(BaseModel):
