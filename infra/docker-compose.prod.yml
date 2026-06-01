@@ -1,9 +1,14 @@
 # infra/docker-compose.prod.yml — Aethos PS production containers
 #
 # Services:
-#   api       — FastAPI backend       (host port 8011)
-#   frontend  — Nginx-served main SPA (host port 4201)
-#   timesheet — Nginx-served portal   (host port 4202)
+#   api       — FastAPI backend             (host port 8011)
+#   worker    — Procrastinate task worker   (no port — internal only)
+#   frontend  — Nginx-served main SPA       (host port 4201)
+#   timesheet — Nginx-served portal         (host port 4202)
+#
+# The worker reuses the same aethos-ps-api image (no extra build) and runs
+# the Procrastinate worker process instead of uvicorn.  It needs DATABASE_URL
+# in the env file to connect directly to Postgres for the job queue.
 #
 # Usage:
 #   ./start-prod.sh    ← builds + starts all containers
@@ -55,6 +60,37 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - aethos-ps
+
+  # Procrastinate background worker — same image as api, different entrypoint.
+  # Handles: document extraction, billing-run jobs, collections, FX refresh.
+  # Requires DATABASE_URL in the env file for direct Postgres queue access.
+  worker:
+    image: aethos-ps-api:latest   # built by the api service above — no extra build
+    container_name: aethos-ps-worker
+    restart: unless-stopped
+    command: >
+      python -m procrastinate
+      --app=app.workers.procrastinate_app.app
+      worker
+      --queues=default,extractions,billing,fx
+      --concurrency=4
+    env_file:
+      - backend/.env
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import psycopg, os; psycopg.connect(os.environ['DATABASE_URL']).close()"]
+      interval: 60s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
     networks:
       - aethos-ps
 
