@@ -1,0 +1,32 @@
+# frontend/Dockerfile.timesheet.prod — Nginx container for the Timesheet Portal
+#
+# The portal is a second project in the same Angular workspace (projects/timesheet),
+# so it shares this frontend/ build context and node_modules but compiles to its
+# own bundle (dist/timesheet). Served by the same nginx.conf (SPA + /api proxy).
+#
+# Port 80 inside the container, mapped to host 4202 by docker-compose.prod.yml.
+
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY . .
+RUN npx ng build timesheet --configuration=production --output-path=dist/timesheet
+
+# ── Stage 2: nginx runtime ───────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS runtime
+
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=builder /app/dist/timesheet/browser /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -sf http://127.0.0.1/health.txt || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

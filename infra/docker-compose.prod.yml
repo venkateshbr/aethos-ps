@@ -1,11 +1,12 @@
 # infra/docker-compose.prod.yml — Aethos PS production containers
 #
 # Services:
-#   api      — FastAPI backend  (host port 8011)
-#   frontend — Nginx-served SPA (host port 4201)
+#   api       — FastAPI backend       (host port 8011)
+#   frontend  — Nginx-served main SPA (host port 4201)
+#   timesheet — Nginx-served portal   (host port 4202)
 #
 # Usage:
-#   ./start-prod.sh    ← builds + starts both containers
+#   ./start-prod.sh    ← builds + starts all containers
 #   ./stop-prod.sh     ← tears them down
 #
 # The compose file reads secrets from the .env file at the repo root
@@ -51,6 +52,22 @@ services:
       # api container is reachable from the browser (the host's IP/domain).
       # Override at build time via --build-arg or bake into environment.prod.ts.
       - API_URL=${API_URL:-https://aethos-api.ishirock.com}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - aethos-ps
+
+  # Employee Timesheet Portal — separate SPA, same backend (issue #134).
+  timesheet:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.timesheet.prod
+    image: aethos-ps-timesheet:latest
+    container_name: aethos-ps-timesheet
+    restart: unless-stopped
+    ports:
+      - "4202:80"        # host:container — nginx serves on 80
     depends_on:
       api:
         condition: service_healthy

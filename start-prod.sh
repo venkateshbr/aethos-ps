@@ -19,6 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BACKEND_PORT=8011
 FRONTEND_PORT=4201
+TIMESHEET_PORT=4202
 
 # .env lookup order: same dir as script → backend/ subdirectory
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -36,9 +37,10 @@ echo "╔═══════════════════════�
 echo "║      Aethos PS — Production Docker Launch        ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
-echo "  Env file : $ENV_FILE"
-echo "  Backend  : http://localhost:$BACKEND_PORT"
-echo "  Frontend : http://localhost:$FRONTEND_PORT"
+echo "  Env file  : $ENV_FILE"
+echo "  Backend   : http://localhost:$BACKEND_PORT"
+echo "  Frontend  : http://localhost:$FRONTEND_PORT"
+echo "  Timesheet : http://localhost:$TIMESHEET_PORT"
 echo ""
 
 # Stop any existing containers
@@ -68,12 +70,17 @@ echo ""
 
 echo "┌──────────────────────────────────────────────────┐"
 echo "│  Aethos PS (prod) is running                     │"
-echo "│  Frontend : http://localhost:$FRONTEND_PORT              │"
-echo "│  Backend  : http://localhost:$BACKEND_PORT              │"
-echo "│  Logs     : docker logs -f aethos-ps-api         │"
-echo "│             docker logs -f aethos-ps-frontend    │"
-echo "│  Stop     : ./stop-prod.sh                       │"
+echo "│  Frontend  : http://localhost:$FRONTEND_PORT             │"
+echo "│  Timesheet : http://localhost:$TIMESHEET_PORT             │"
+echo "│  Backend   : http://localhost:$BACKEND_PORT             │"
+echo "│  Logs      : docker logs -f aethos-ps-api        │"
+echo "│              docker logs -f aethos-ps-frontend   │"
+echo "│              docker logs -f aethos-ps-timesheet  │"
+echo "│  Stop      : ./stop-prod.sh                      │"
 echo "└──────────────────────────────────────────────────┘"
+echo ""
+echo "  ⚠ Timesheet Portal tunnel: add a cloudflared ingress hostname"
+echo "    (e.g. aethos-time.ishirock.com) → http://localhost:$TIMESHEET_PORT"
 echo ""
 
 # Tunnel note — cloudflared config points at 4201/8011.

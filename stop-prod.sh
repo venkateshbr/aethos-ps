@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # stop-prod.sh — Stop Aethos PS production Docker containers
 #
-# Tears down the aethos-ps-api and aethos-ps-frontend containers.
+# Tears down the aethos-ps-api, aethos-ps-frontend and aethos-ps-timesheet containers.
 # Does NOT remove the built images (use --rmi all to also purge images).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
