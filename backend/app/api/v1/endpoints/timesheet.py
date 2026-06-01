@@ -20,10 +20,17 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client
 from app.core.employee import get_current_employee
+from app.core.rbac import UserRole, require_role
+from app.core.tenant import get_tenant_id
 from app.models.timesheet import (
+    ApprovalActionResponse,
+    ApprovalListResponse,
+    ApproveRequest,
     MyProjectListResponse,
+    RejectRequest,
     SubmitWeekRequest,
     SubmitWeekResponse,
     TimesheetEntryCreate,
@@ -31,6 +38,7 @@ from app.models.timesheet import (
     TimesheetEntryResponse,
     TimesheetEntryUpdate,
 )
+from app.services.timesheet_approvals_service import TimesheetApprovalsService
 from app.services.timesheet_service import TimesheetService
 from supabase import Client
 
@@ -106,3 +114,42 @@ async def submit_week(
     svc: TimesheetService = Depends(_service),  # noqa: B008
 ) -> SubmitWeekResponse:
     return await svc.submit_week(payload.week_start)
+
+
+# ---------------------------------------------------------------------------
+# Approvals (manager+) — issue #134, P5. These run in the main ERP, gated by
+# require_role(manager), NOT get_current_employee.
+# ---------------------------------------------------------------------------
+
+
+def _approvals_service(
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> TimesheetApprovalsService:
+    return TimesheetApprovalsService(db, tenant_id)
+
+
+@router.get("/approvals", response_model=ApprovalListResponse)
+async def list_pending_approvals(
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+) -> ApprovalListResponse:
+    return await svc.list_pending()
+
+
+@router.post("/approvals/approve", response_model=ApprovalActionResponse)
+async def approve_entries(
+    payload: ApproveRequest,
+    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+) -> ApprovalActionResponse:
+    return await svc.approve(payload.entry_ids, current_user.user_id)
+
+
+@router.post("/approvals/reject", response_model=ApprovalActionResponse)
+async def reject_entries(
+    payload: RejectRequest,
+    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+) -> ApprovalActionResponse:
+    return await svc.reject(payload.entry_ids, payload.reason, current_user.user_id)

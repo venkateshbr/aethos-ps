@@ -195,6 +195,7 @@ export class ShellComponent implements OnInit {
     { label: 'Billing Runs', icon: 'payments',        route: '/app/billing-runs' },
     { label: 'Expenses',     icon: 'receipt_long',    route: '/app/expenses' },
     { label: 'Time',         icon: 'schedule',        route: '/app/time' },
+    { label: 'Approvals',    icon: 'fact_check',      route: '/app/approvals' },
     { label: 'Payments',     icon: 'account_balance', route: '/app/payments' },
     { label: 'People',       icon: 'badge',           route: '/app/people' },
   ];

@@ -83,3 +83,41 @@ class SubmitWeekResponse(BaseModel):
     submitted: int
     week_start: str
     week_end: str
+
+
+# --- Approvals (manager side, P5) -------------------------------------------
+
+
+class ApprovalEntry(BaseModel):
+    id: str
+    employee_id: str
+    employee_name: str | None = None
+    project_id: str
+    project_code: str | None = None
+    date: str
+    hours: str
+    description: str
+    billable: bool
+
+    @field_validator("hours", mode="before")
+    @classmethod
+    def hours_to_str(cls, v: object) -> str:
+        return "0" if v is None else str(v)
+
+
+class ApprovalListResponse(BaseModel):
+    items: list[ApprovalEntry]
+    total: int
+
+
+class ApproveRequest(BaseModel):
+    entry_ids: list[str] = Field(..., min_length=1)
+
+
+class RejectRequest(BaseModel):
+    entry_ids: list[str] = Field(..., min_length=1)
+    reason: str = Field(default="", max_length=500)
+
+
+class ApprovalActionResponse(BaseModel):
+    updated: int

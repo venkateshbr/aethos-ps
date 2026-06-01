@@ -113,6 +113,12 @@ export const routes: Routes = [
           import('./features/reports/reports.component').then(m => m.ReportsComponent),
       },
       {
+        // #134 — manager timesheet approval queue.
+        path: 'approvals',
+        loadComponent: () =>
+          import('./features/approvals/approvals.component').then(m => m.ApprovalsComponent),
+      },
+      {
         path: 'billing-runs',
         loadComponent: () =>
           import('./features/billing-runs/pay-bills.component').then(m => m.PayBillsComponent),
