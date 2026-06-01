@@ -80,6 +80,7 @@ class EngagementResponse(BaseModel):
     id: str
     tenant_id: str
     client_id: str
+    code: str | None = None  # human-readable ENG-0001 (migration 0021)
     name: str
     billing_arrangement: str
     currency: str
@@ -106,6 +107,7 @@ class EngagementResponse(BaseModel):
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
             client_id=str(row["client_id"]),
+            code=row.get("code"),
             name=row["name"],
             billing_arrangement=row["billing_arrangement"],
             currency=row["currency"],

@@ -31,6 +31,7 @@ class ProjectResponse(BaseModel):
     id: str
     tenant_id: str
     engagement_id: str
+    code: str | None = None  # human-readable PRJ-0001 (migration 0021)
     name: str
     currency: str
     budget: str | None  # Decimal serialised as string
@@ -43,6 +44,7 @@ class ProjectResponse(BaseModel):
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
             engagement_id=str(row["engagement_id"]),
+            code=row.get("code"),
             name=row["name"],
             currency=row["currency"],
             budget=serialise_money(row.get("budget")),

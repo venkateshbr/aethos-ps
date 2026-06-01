@@ -15,7 +15,13 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
+from app.models.assignments import (
+    AssignmentCreate,
+    AssignmentListResponse,
+    AssignmentResponse,
+)
 from app.models.projects import ProjectCreate, ProjectResponse
+from app.services.assignments_service import AssignmentsService
 from app.services.projects_service import ProjectService
 from supabase import Client
 
@@ -29,6 +35,13 @@ def _service(
     tenant_id: str = Depends(get_tenant_id),
 ) -> ProjectService:
     return ProjectService(db, tenant_id)
+
+
+def _assignments_service(
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> AssignmentsService:
+    return AssignmentsService(db, tenant_id)
 
 
 @router.get("", response_model=list[ProjectResponse])
@@ -69,3 +82,44 @@ async def get_project(
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+# ---------------------------------------------------------------------------
+# Project assignments (issue #134, Phase 2) — the project "team".
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{id}/assignments", response_model=AssignmentListResponse)
+async def list_assignments(
+    id: str,
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+) -> AssignmentListResponse:
+    return await svc.list_for_project(id)
+
+
+@router.post(
+    "/{id}/assignments",
+    response_model=AssignmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_assignment(
+    id: str,
+    payload: AssignmentCreate,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+) -> AssignmentResponse:
+    return await svc.create(id, payload)
+
+
+@router.delete(
+    "/{id}/assignments/{assignment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_assignment(
+    id: str,
+    assignment_id: str,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+) -> None:
+    await svc.delete(id, assignment_id)
