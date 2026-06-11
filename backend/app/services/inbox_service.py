@@ -202,12 +202,18 @@ class InboxService:
         return task
 
     async def _materialise(self, kind: str, payload: dict) -> dict:
-        """Route materialisation by kind.  Returns entity_type + entity_id."""
-        if kind == "create_engagement":
+        """Route materialisation by kind.  Returns entity_type + entity_id.
+
+        The extraction worker emits the ``*_draft`` kinds; earlier kinds without
+        the suffix are accepted too for backward-compatibility. Before this fix
+        the dispatch only matched the suffix-less names, so every approval fell
+        through to the no-op branch and silently created nothing (#146 follow-up).
+        """
+        if kind in ("create_engagement", "create_engagement_draft"):
             return await self._materialise_engagement(payload)
-        elif kind == "create_expense":
+        elif kind in ("create_expense", "create_expense_draft"):
             return await self._materialise_expense(payload)
-        elif kind in ("create_bill", "vendor_invoice"):
+        elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
             return await self._materialise_bill(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)

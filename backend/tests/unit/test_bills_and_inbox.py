@@ -301,3 +301,50 @@ def test_missing_task_raises_404() -> None:
             raise HTTPException(status_code=404, detail="Task not found")
 
     assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# InboxService._materialise — kind routing (#146 follow-up)
+#
+# The extraction worker emits *_draft kinds. The dispatch previously only
+# matched the suffix-less names, so every approval fell through to the no-op
+# branch and created nothing. These verify the draft kinds route correctly.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_method"),
+    [
+        ("create_engagement_draft", "_materialise_engagement"),
+        ("create_expense_draft", "_materialise_expense"),
+        ("create_bill_draft", "_materialise_bill"),
+        # backward-compat: suffix-less + legacy aliases still route
+        ("create_engagement", "_materialise_engagement"),
+        ("vendor_invoice", "_materialise_bill"),
+    ],
+)
+async def test_materialise_routes_draft_kinds(kind: str, expected_method: str) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)  # bypass __init__ (no DB needed)
+    for m in ("_materialise_engagement", "_materialise_expense", "_materialise_bill"):
+        setattr(svc, m, AsyncMock(return_value={"entity_type": "x", "entity_id": "1"}))
+
+    await svc._materialise(kind, {"client_name": "Acme"})
+
+    getattr(svc, expected_method).assert_awaited_once()
+    others = {"_materialise_engagement", "_materialise_expense", "_materialise_bill"} - {expected_method}
+    for m in others:
+        getattr(svc, m).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_materialise_unknown_kind_is_noop() -> None:
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)
+    result = await svc._materialise("something_else", {})
+    assert result["entity_id"] is None
