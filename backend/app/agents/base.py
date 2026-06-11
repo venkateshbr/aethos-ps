@@ -6,6 +6,7 @@ Never send un-masked text to an external LLM API.
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
 
@@ -38,6 +39,52 @@ def make_sync_llm_client() -> OpenAI:
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
     )
+
+
+def build_document_content(prompt: str, document_bytes: bytes, mime_type: str) -> list[dict]:
+    """Build the chat-message ``content`` array for a document extraction call.
+
+    Routes by MIME type so every extraction agent handles documents identically:
+
+    - ``application/pdf`` → sent natively via OpenRouter's ``file`` content type.
+      Models with native PDF support (Claude, Gemini) read it directly; others
+      fall back to OpenRouter's file-parser. This reads BOTH text and scanned
+      PDFs — the old path decoded raw PDF bytes as UTF-8, which produced binary
+      garbage and silently broke every PDF upload (#146).
+    - ``image/*`` → base64 vision (``image_url``).
+    - everything else → decode to text, mask PII, truncate to 8000 chars.
+
+    Note: PDFs and images are sent to the LLM un-masked (PII masking only runs
+    on the text path). This matches the pre-existing vision behaviour; masking
+    inside binary documents is tracked separately.
+    """
+    if mime_type == "application/pdf":
+        encoded = base64.standard_b64encode(document_bytes).decode()
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "filename": "document.pdf",
+                    "file_data": f"data:application/pdf;base64,{encoded}",
+                },
+            },
+            {"type": "text", "text": prompt},
+        ]
+
+    if mime_type.startswith("image/"):
+        encoded = base64.standard_b64encode(document_bytes).decode()
+        media_type = mime_type.replace("image/jpg", "image/jpeg")
+        return [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{encoded}"}},
+            {"type": "text", "text": prompt},
+        ]
+
+    try:
+        text = document_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        text = document_bytes.decode("latin-1", errors="replace")
+    text = mask_pii(text)
+    return [{"type": "text", "text": prompt + f"\n\nDocument text:\n{text[:8000]}"}]
 
 
 def mask_pii(text: str) -> str:

@@ -12,6 +12,48 @@ import { userMessageForError } from '../../core/utils/error-message';
 /** HITL task kinds that originate from an AI document extraction (#127). */
 const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_draft', 'create_bill_draft']);
 
+interface EditField {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'date' | 'select' | 'textarea';
+  options?: string[];
+}
+
+const CURRENCIES = ['USD', 'GBP', 'SGD', 'INR', 'AUD'];
+const BILLING_ARRANGEMENTS = ['time_and_materials', 'fixed_fee', 'retainer', 'retainer_draw', 'milestone', 'capped_tm'];
+const EXPENSE_CATEGORIES = ['meals_and_entertainment', 'transport', 'accommodation', 'software', 'other'];
+
+/** Editable fields per task kind, driving the edit drawer form (#146). */
+const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
+  create_engagement_draft: [
+    { key: 'client_name', label: 'Client name', type: 'text' },
+    { key: 'billing_arrangement', label: 'Billing arrangement', type: 'select', options: BILLING_ARRANGEMENTS },
+    { key: 'currency', label: 'Currency', type: 'select', options: CURRENCIES },
+    { key: 'total_value', label: 'Total value', type: 'number' },
+    { key: 'start_date', label: 'Start date', type: 'date' },
+    { key: 'end_date', label: 'End date', type: 'date' },
+    { key: 'scope_summary', label: 'Scope summary', type: 'textarea' },
+  ],
+  create_expense_draft: [
+    { key: 'vendor', label: 'Vendor', type: 'text' },
+    { key: 'amount', label: 'Amount', type: 'number' },
+    { key: 'currency', label: 'Currency', type: 'select', options: CURRENCIES },
+    { key: 'category', label: 'Category', type: 'select', options: EXPENSE_CATEGORIES },
+    { key: 'expense_date', label: 'Expense date', type: 'date' },
+    { key: 'description', label: 'Description', type: 'textarea' },
+  ],
+  create_bill_draft: [
+    { key: 'vendor_name', label: 'Vendor name', type: 'text' },
+    { key: 'vendor_invoice_number', label: 'Invoice number', type: 'text' },
+    { key: 'currency', label: 'Currency', type: 'select', options: CURRENCIES },
+    { key: 'subtotal', label: 'Subtotal', type: 'number' },
+    { key: 'tax_total', label: 'Tax total', type: 'number' },
+    { key: 'total', label: 'Total', type: 'number' },
+    { key: 'issue_date', label: 'Issue date', type: 'date' },
+    { key: 'due_date', label: 'Due date', type: 'date' },
+  ],
+};
+
 @Component({
   selector: 'app-inbox',
   standalone: true,
@@ -258,6 +300,93 @@ const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_dra
           }
         }
       </div>
+
+      <!-- Edit drawer (#146) — correct an extraction before approving -->
+      @if (editingTask(); as task) {
+        <div
+          class="fixed inset-0 z-40 bg-black/50 animate-fade-in"
+          (click)="cancelEdit()"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-surface-base border-l border-border-default shadow-xl flex flex-col drawer-slide-in"
+          role="dialog"
+          aria-modal="true"
+          [attr.aria-label]="'Edit ' + task.title"
+        >
+          <!-- Drawer header -->
+          <div class="px-5 py-4 border-b border-border-default flex items-center justify-between flex-none">
+            <div>
+              <h2 class="text-sm font-semibold text-text-primary">Edit before approving</h2>
+              <p class="text-xs text-text-muted mt-0.5">{{ task.agent_name | titlecase }}</p>
+            </div>
+            <button
+              (click)="cancelEdit()"
+              class="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              aria-label="Close editor"
+            >
+              <mat-icon class="text-xl leading-none">close</mat-icon>
+            </button>
+          </div>
+
+          <!-- Drawer body -->
+          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            @for (f of editFields(); track f.key) {
+              <div>
+                <label [attr.for]="'edit-' + f.key" class="block text-xs font-medium text-text-secondary mb-1">
+                  {{ f.label }}
+                </label>
+                @if (f.type === 'select') {
+                  <select
+                    [id]="'edit-' + f.key"
+                    [ngModel]="fieldValue(f.key)"
+                    (ngModelChange)="setField(f.key, $event)"
+                    class="w-full bg-surface border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+                  >
+                    @for (opt of f.options ?? []; track opt) {
+                      <option [value]="opt">{{ opt.replace('_', ' ') | titlecase }}</option>
+                    }
+                  </select>
+                } @else if (f.type === 'textarea') {
+                  <textarea
+                    [id]="'edit-' + f.key"
+                    [ngModel]="fieldValue(f.key)"
+                    (ngModelChange)="setField(f.key, $event)"
+                    rows="3"
+                    class="w-full bg-surface border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none resize-none"
+                  ></textarea>
+                } @else {
+                  <input
+                    [id]="'edit-' + f.key"
+                    [type]="f.type"
+                    [ngModel]="fieldValue(f.key)"
+                    (ngModelChange)="setField(f.key, $event)"
+                    class="w-full bg-surface border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+                  />
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Drawer footer -->
+          <div class="px-5 py-4 border-t border-border-default flex items-center gap-2 flex-none">
+            <button
+              (click)="saveEdit()"
+              [disabled]="savingEdit()"
+              class="flex-1 px-4 py-2 text-sm font-medium rounded bg-accent hover:bg-accent-hover text-accent-on transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              @if (savingEdit()) { Saving... } @else { Save & approve }
+            </button>
+            <button
+              (click)="cancelEdit()"
+              [disabled]="savingEdit()"
+              class="px-4 py-2 text-sm font-medium rounded border border-border-strong text-text-secondary hover:text-text-primary transition-colors disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -270,6 +399,13 @@ const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_dra
     .task-removing {
       animation: fade-out 0.2s ease-out forwards;
     }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    .animate-fade-in { animation: fade-in 0.15s ease-out; }
+    @keyframes drawer-slide-in {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(0); }
+    }
+    .drawer-slide-in { animation: drawer-slide-in 0.2s ease-out; }
   `],
 })
 export class InboxComponent implements OnInit {
@@ -285,6 +421,11 @@ export class InboxComponent implements OnInit {
   kindFilter = signal<string>('all');
   focusedIdx = signal(0);
   actioning = signal<string | null>(null);
+
+  // Edit drawer state (#146)
+  editingTask = signal<HitlTask | null>(null);
+  editForm = signal<Record<string, unknown>>({});
+  savingEdit = signal(false);
 
   readonly kindFilters = [
     { value: 'all',               label: 'All' },
@@ -477,9 +618,55 @@ export class InboxComponent implements OnInit {
 
   startEdit(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
-    // Week 4: open inline edit drawer with corrected_payload form.
-    // For now, approve as-is to unblock the review queue.
-    this.approve(task, e);
+    // Open the edit drawer seeded with a copy of the extracted payload. The
+    // user corrects fields then Save → approve-with-edits. (Previously this
+    // stub just called approve(), which silently approved the raw extraction
+    // and made the card "disappear" — #146.)
+    this.editForm.set({ ...(task.suggestion_payload ?? {}) });
+    this.editingTask.set(task);
+  }
+
+  cancelEdit(): void {
+    if (this.savingEdit()) return;
+    this.editingTask.set(null);
+    this.editForm.set({});
+  }
+
+  /** Editable fields for the drawer, keyed off the task kind. */
+  editFields(): EditField[] {
+    const task = this.editingTask();
+    if (!task) return [];
+    return EDIT_FIELD_SCHEMA[task.kind] ?? [];
+  }
+
+  fieldValue(key: string): unknown {
+    const v = this.editForm()[key];
+    return v ?? '';
+  }
+
+  setField(key: string, value: unknown): void {
+    this.editForm.update(f => ({ ...f, [key]: value }));
+  }
+
+  saveEdit(): void {
+    const task = this.editingTask();
+    if (!task || this.savingEdit()) return;
+    this.savingEdit.set(true);
+    // Merge edits over the original payload so internal fields (confidence,
+    // original_document_id, etc.) the form doesn't expose are preserved.
+    const corrected = { ...(task.suggestion_payload ?? {}), ...this.editForm() };
+    this.hitlSvc.approveWithEdits(task.id, corrected).subscribe({
+      next: () => {
+        this.savingEdit.set(false);
+        this.editingTask.set(null);
+        this.editForm.set({});
+        this.removeTask(task.id);
+      },
+      error: () => {
+        console.error(`Failed to save edits for task ${task.id}`);
+        this.savingEdit.set(false);
+      },
+    });
   }
 
   approveAll(): void {

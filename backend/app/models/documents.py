@@ -27,6 +27,10 @@ class DocumentSummary(BaseModel):
     id: str = Field(..., description="UUID of the documents row")
     filename: str = Field(..., description="Original filename as uploaded")
     mime_type: str = Field(..., description="MIME type of the uploaded file")
+    document_type: str = Field(
+        default="vendor_invoice",
+        description="Classified type: engagement_letter | expense | vendor_invoice",
+    )
     status: str = Field(
         ...,
         description="Extraction status: uploaded | extracting | extracted | failed",

@@ -8,7 +8,6 @@ PII masking is applied to all text content before sending to the LLM.
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import re
@@ -16,7 +15,7 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
+from app.agents.base import AgentDeps, build_document_content, make_async_llm_client
 from app.agents.schemas import ProjectExpenseDraft
 from app.core.config import settings
 
@@ -76,28 +75,7 @@ async def run_expense_extractor_agent(
 
     prompt = EXPENSE_EXTRACTOR_PROMPT.format(schema=json.dumps(schema, indent=2))
 
-    if mime_type.startswith("image/"):
-        encoded = base64.standard_b64encode(document_bytes).decode()
-        media_type = mime_type.replace("image/jpg", "image/jpeg")
-        content: list[dict] = [
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:{media_type};base64,{encoded}"},
-            },
-            {"type": "text", "text": prompt},
-        ]
-    else:
-        try:
-            text = document_bytes.decode("utf-8", errors="replace")
-        except Exception:
-            text = document_bytes.decode("latin-1", errors="replace")
-        text = mask_pii(text)
-        content = [
-            {
-                "type": "text",
-                "text": prompt + f"\n\nDocument text:\n{text[:8000]}",
-            }
-        ]
+    content = build_document_content(prompt, document_bytes, mime_type)
 
     logger.info(
         "expense_extractor_agent: starting",
