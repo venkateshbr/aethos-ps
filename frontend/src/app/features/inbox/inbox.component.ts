@@ -10,7 +10,7 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
 import { userMessageForError } from '../../core/utils/error-message';
 
 /** HITL task kinds that originate from an AI document extraction (#127). */
-const EXTRACTION_KINDS = new Set(['create_engagement', 'create_expense', 'create_bill', 'vendor_invoice']);
+const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_draft', 'create_bill_draft']);
 
 @Component({
   selector: 'app-inbox',
@@ -288,9 +288,9 @@ export class InboxComponent implements OnInit {
 
   readonly kindFilters = [
     { value: 'all',               label: 'All' },
-    { value: 'create_engagement', label: 'Engagements' },
-    { value: 'create_expense',    label: 'Expenses' },
-    { value: 'create_bill',       label: 'Bills' },
+    { value: 'create_engagement_draft', label: 'Engagements' },
+    { value: 'create_expense_draft',    label: 'Expenses' },
+    { value: 'create_bill_draft',       label: 'Bills' },
   ] as const;
 
   tasks = computed(() => {

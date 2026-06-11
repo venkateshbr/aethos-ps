@@ -19,3 +19,16 @@ class DocumentResponse(BaseModel):
         description="Extraction status: uploaded | extracting | extracted | failed",
     )
     created_at: str = Field(..., description="ISO 8601 creation timestamp")
+
+
+class DocumentSummary(BaseModel):
+    """One row in the tenant's document inventory (GET /documents)."""
+
+    id: str = Field(..., description="UUID of the documents row")
+    filename: str = Field(..., description="Original filename as uploaded")
+    mime_type: str = Field(..., description="MIME type of the uploaded file")
+    status: str = Field(
+        ...,
+        description="Extraction status: uploaded | extracting | extracted | failed",
+    )
+    created_at: str = Field(..., description="ISO 8601 creation timestamp")

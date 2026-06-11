@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.tenant import get_tenant_id
-from app.models.documents import DocumentResponse
+from app.models.documents import DocumentResponse, DocumentSummary
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -230,6 +230,50 @@ async def upload_document(
         status=saved_row.get("status", "uploaded"),
         created_at=saved_row.get("created_at", now_iso),
     )
+
+
+# ---------------------------------------------------------------------------
+# List endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("", response_model=list[DocumentSummary])
+async def list_documents(
+    tenant_id: str = Depends(get_tenant_id),
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> list[DocumentSummary]:
+    """Return the tenant's uploaded documents, newest first (capped at 200).
+
+    Backs the Documents page. Tenant scoping is enforced here (service-role
+    client bypasses RLS, same pattern as the rest of this router).
+    """
+    try:
+        result = (
+            db.table("documents")
+            .select("id, original_filename, mime_type, status, created_at")
+            .eq("tenant_id", tenant_id)
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("Document list query failed for tenant %s: %s", tenant_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while listing documents.",
+        ) from exc
+
+    return [
+        DocumentSummary(
+            id=row["id"],
+            filename=row.get("original_filename") or "untitled",
+            mime_type=row["mime_type"],
+            status=row["status"],
+            created_at=row["created_at"],
+        )
+        for row in (result.data or [])
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 export interface HitlTask {
   id: string;
@@ -22,7 +22,8 @@ export class HitlService {
   getTasks(status = 'open', kind?: string): Observable<HitlTask[]> {
     let url = `${this.base}/tasks?status=${status}`;
     if (kind) url += `&kind=${kind}`;
-    return this.http.get<HitlTask[]>(url);
+    // Backend wraps the list: GET /inbox/tasks → { items: HitlTask[] }.
+    return this.http.get<{ items: HitlTask[] }>(url).pipe(map(r => r.items ?? []));
   }
 
   approve(taskId: string): Observable<unknown> {
