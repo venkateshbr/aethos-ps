@@ -131,7 +131,7 @@ export interface ChatThread {
               <div class="flex gap-3 flex-wrap justify-center">
                 <button
                   class="px-4 py-2 text-xs rounded-lg bg-surface border border-border-default text-text-secondary hover:border-accent hover:text-accent-light transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  (click)="sendSuggestion('Drop engagement letter')"
+                  (click)="fileInput.click()"
                 >
                   Drop engagement letter
                 </button>
