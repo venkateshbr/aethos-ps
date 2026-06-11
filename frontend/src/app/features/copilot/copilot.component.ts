@@ -13,6 +13,7 @@ import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { AuthService } from '../../core/services/auth.service';
 import { EngagementDraftCardComponent, EngagementDraftPayload } from './cards/engagement-draft-card.component';
 import { ExpenseExtractedCardComponent, ExpenseExtractedPayload } from './cards/expense-extracted-card.component';
 import { BillExtractedCardComponent, BillExtractedPayload } from './cards/bill-extracted-card.component';
@@ -396,10 +397,22 @@ export class CopilotComponent implements OnInit {
     }
   });
 
-  /** Read token from localStorage — auth interceptor will set this in Week 3. */
-  private token = signal<string | null>(
-    typeof localStorage !== 'undefined' ? localStorage.getItem('aethos_token') : null
-  );
+  private auth = inject(AuthService);
+
+  /**
+   * Headers for the raw fetch() calls below. SSE streaming forces fetch over
+   * HttpClient, which bypasses the auth interceptor — so we must attach BOTH
+   * Authorization and X-Tenant-ID here ourselves. The backend's membership
+   * dependency 403s ("Tenant context missing") without the tenant header.
+   */
+  private apiHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const tok = this.auth.getToken();
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+    const tid = this.auth.getTenantId();
+    if (tid) headers['X-Tenant-ID'] = tid;
+    return headers;
+  }
 
   suggestions = [
     'Show my active engagements',
@@ -440,13 +453,9 @@ export class CopilotComponent implements OnInit {
 
   private async createThread(): Promise<string | null> {
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const tok = this.token();
-      if (tok) headers['Authorization'] = `Bearer ${tok}`;
-
       const res = await fetch('/api/v1/chat/threads', {
         method: 'POST',
-        headers,
+        headers: this.apiHeaders(),
         body: JSON.stringify({ title: 'New conversation' }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -513,13 +522,9 @@ export class CopilotComponent implements OnInit {
     this.streaming.set(true);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const tok = this.token();
-      if (tok) headers['Authorization'] = `Bearer ${tok}`;
-
       const response = await fetch(
         `/api/v1/chat/threads/${threadId}/messages`,
-        { method: 'POST', headers, body: JSON.stringify({ content }) }
+        { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content }) }
       );
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
