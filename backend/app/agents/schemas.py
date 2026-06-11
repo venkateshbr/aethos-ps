@@ -10,7 +10,30 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class _DropNoneForDefaults(BaseModel):
+    """Base that drops explicit ``null`` values for fields that have a default.
+
+    LLMs frequently return ``"client_name": null`` rather than omitting the key.
+    For a field typed ``str`` (not ``str | None``) that would raise a
+    ValidationError and, in the extraction worker, nuke the entire draft to a
+    0%-confidence empty result (#146). Stripping ``None`` for fields that carry
+    a non-None default lets the default apply instead — a missing field degrades
+    that one field, not the whole extraction.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_none_with_defaults(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        cleaned = dict(data)
+        for name, field in cls.model_fields.items():
+            if cleaned.get(name) is None and field.default is not None and field.is_required() is False:
+                cleaned.pop(name, None)
+        return cleaned
 
 
 class RateCardHint(BaseModel):
@@ -20,7 +43,7 @@ class RateCardHint(BaseModel):
     rate: Decimal
 
 
-class EngagementDraft(BaseModel):
+class EngagementDraft(_DropNoneForDefaults):
     """Output of the engagement_letter_agent."""
 
     client_name: str = ""
@@ -35,7 +58,7 @@ class EngagementDraft(BaseModel):
     suspected_injection: bool = False
 
 
-class ProjectExpenseDraft(BaseModel):
+class ProjectExpenseDraft(_DropNoneForDefaults):
     """Output of the expense_extractor_agent."""
 
     vendor: str
@@ -48,7 +71,7 @@ class ProjectExpenseDraft(BaseModel):
     suspected_injection: bool = False
 
 
-class BillDraft(BaseModel):
+class BillDraft(_DropNoneForDefaults):
     """Output of the vendor_invoice_agent."""
 
     vendor_name: str
