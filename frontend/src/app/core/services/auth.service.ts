@@ -60,6 +60,44 @@ export class AuthService {
         }
       }
     });
+
+    // Self-heal sessions created before the X-Tenant-ID rollout (#90): a token
+    // restored from storage with no tenant_id means every API call 403s with
+    // "Tenant context missing". Re-resolve the membership the same way login
+    // does instead of leaving the user in a half-broken session.
+    if (t && !tid) {
+      void this.resolveTenantFromMembership();
+    }
+  }
+
+  /**
+   * Look up the signed-in user's tenant membership and store it. Used to
+   * backfill tenant_id for sessions that predate the tenant-header rollout.
+   * If the lookup fails (expired Supabase session, no membership), clear the
+   * session entirely — a token without a tenant cannot make any API call.
+   */
+  private async resolveTenantFromMembership(): Promise<void> {
+    try {
+      const { data: userData } = await this.supa.client.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId) {
+        this.clearToken();
+        return;
+      }
+      const { data: memberships, error } = await this.supa.client
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .limit(1);
+      if (error || !memberships?.length) {
+        this.clearToken();
+        return;
+      }
+      this.setTenantId(memberships[0].tenant_id as string);
+    } catch {
+      this.clearToken();
+    }
   }
 
   /**
