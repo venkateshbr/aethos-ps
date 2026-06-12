@@ -449,7 +449,12 @@ async def _handle_checkout_session_completed(
             description=f"Payment received for invoice {invoice_number}",
             entry_date=datetime.date.today().isoformat(),
             reference_type="payment",
-            reference_id=payment_intent_id or invoice_id,
+            # reference_id is a UUID column. payment_intent_id is a Stripe id
+            # (pi_xxx) — would raise "invalid input syntax for type uuid" and
+            # silently drop the offsetting journal again. Always use the
+            # invoice UUID; the link to the Stripe payment_intent is preserved
+            # on the payments.stripe_payment_intent_id column.
+            reference_id=invoice_id,
             lines=journal_lines,
         )
     except Exception:
