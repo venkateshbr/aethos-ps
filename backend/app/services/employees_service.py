@@ -173,10 +173,10 @@ class EmployeesService:
                 {"email": email, "password": password, "email_confirm": True}
             )
         except AuthApiError as exc:
-            # Most common: the email already has an auth account.
+            logger.warning("Failed to create auth user for employee: %s", exc.message)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Could not create a login for {email}: {exc.message}",
+                detail="Could not create employee login. Please check the email and try again.",
             ) from exc
         user = admin_response.user if hasattr(admin_response, "user") else admin_response
         if not user:
