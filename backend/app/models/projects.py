@@ -16,7 +16,11 @@ from app.domain.money import serialise_money
 class ProjectCreate(BaseModel):
     engagement_id: str
     name: str = Field(..., min_length=1, max_length=300)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    # None → inherit from the parent engagement at create time (#160). The
+    # frontend create form has no currency field, so callers that don't ship
+    # one get the engagement's currency. Explicit 3-letter ISO is still
+    # accepted for callers that need to override.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     budget: Decimal | None = None
 
     @field_validator("budget", mode="before")
