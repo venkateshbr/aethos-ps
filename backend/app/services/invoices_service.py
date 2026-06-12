@@ -6,6 +6,7 @@ Issue #50: Invoice send + Stripe Payment Link
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -227,6 +228,24 @@ class InvoicesService:
             raise HTTPException(status_code=404, detail="Invoice not found after update")
 
         invoice_lines = await self._repo.list_lines(invoice_id)
+
+        # Back-link time entries — billing_status flips to "billed" the moment
+        # the invoice is approved so reports/queries that filter on unbilled
+        # time stop double-counting work that's already been invoiced.
+        te_ids = [
+            line["time_entry_id"]
+            for line in invoice_lines
+            if line.get("time_entry_id")
+        ]
+        if te_ids:
+            await asyncio.to_thread(
+                lambda: self.db.table("time_entries")
+                .update({"invoice_id": invoice_id, "billing_status": "billed"})
+                .in_("id", te_ids)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
+
         return InvoiceResponse.from_db(updated, invoice_lines)
 
     async def send_invoice(self, invoice_id: str, sent_by: str) -> InvoiceResponse:
