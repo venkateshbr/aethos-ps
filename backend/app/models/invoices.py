@@ -76,6 +76,22 @@ class InvoiceCreate(BaseModel):
     lines: list[InvoiceLineCreate] = Field(default_factory=list)
 
 
+class ManualPaymentCreate(BaseModel):
+    """Body for POST /invoices/{id}/payments — a payment received outside Stripe."""
+
+    amount: str = Field(..., description="Decimal string, e.g. '700.00'")
+    currency: str | None = Field(
+        default=None,
+        description="3-letter ISO; defaults to the invoice currency",
+        min_length=3, max_length=3,
+    )
+    paid_at: str | None = Field(
+        default=None,
+        description="ISO 8601 timestamp; defaults to now",
+    )
+    notes: str | None = Field(default=None, max_length=1000)
+
+
 class InvoiceResponse(BaseModel):
     id: str
     tenant_id: str

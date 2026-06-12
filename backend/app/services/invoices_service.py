@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import UTC, date
+from datetime import datetime as _dt
 from decimal import Decimal, InvalidOperation
 
 import stripe
@@ -247,6 +248,134 @@ class InvoicesService:
             )
 
         return InvoiceResponse.from_db(updated, invoice_lines)
+
+    async def record_manual_payment(
+        self,
+        invoice_id: str,
+        amount: Decimal,
+        currency: str | None,
+        paid_at_iso: str | None,
+        notes: str | None,
+        recorded_by: str,
+    ) -> InvoiceResponse:
+        """Record a payment received outside of Stripe (wire, cheque, cash, etc.).
+
+        Mirrors the Stripe-webhook code path so accounting comes out identical:
+        1. Validate the invoice exists, is approved/sent, and isn't already paid.
+        2. Insert a payments row (no stripe_payment_intent_id).
+        3. Update invoice → paid + set paid_at.
+        4. Back-link any line.time_entry_id → time_entries.invoice_id/billing_status='billed'.
+        5. Post the offsetting journal: DR 1100 Bank / CR 1200 AR.
+
+        Currency defaults to the invoice currency; paid_at defaults to now.
+        """
+        row = await self._repo.get_by_id(invoice_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if row.get("status") == "paid":
+            raise HTTPException(status_code=409, detail="Invoice is already paid")
+        if row.get("status") not in ("approved", "sent"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot record payment on invoice with status={row.get('status')!r}; "
+                    "approve or send the invoice first."
+                ),
+            )
+
+        if amount <= 0:
+            raise HTTPException(status_code=422, detail="Payment amount must be > 0")
+
+        invoice_currency = row.get("currency", "USD")
+        pay_currency = (currency or invoice_currency).upper()
+        paid_at = paid_at_iso or _dt.now(tz=UTC).isoformat()
+        invoice_number = row.get("invoice_number", invoice_id[:8])
+
+        # 1. payments row
+        payment_data: dict = {
+            "tenant_id": self.tenant_id,
+            "invoice_id": invoice_id,
+            "amount": str(amount),
+            "currency": pay_currency,
+            # FX conversion deferred to fx_refresh_worker — for same-currency
+            # base it's a passthrough.
+            "base_amount": str(amount),
+            "paid_at": paid_at,
+        }
+        if notes:
+            payment_data["notes"] = notes
+
+        await asyncio.to_thread(
+            lambda: self.db.table("payments").insert(payment_data).execute()
+        )
+
+        # 2. invoice → paid
+        await asyncio.to_thread(
+            lambda: self.db.table("invoices")
+            .update({"status": "paid", "paid_at": paid_at})
+            .eq("id", invoice_id)
+            .eq("tenant_id", self.tenant_id)
+            .execute()
+        )
+
+        # 3. back-link invoiced time entries
+        line_rows = await asyncio.to_thread(
+            lambda: self.db.table("invoice_lines")
+            .select("time_entry_id")
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+        te_ids = [r["time_entry_id"] for r in line_rows if r.get("time_entry_id")]
+        if te_ids:
+            await asyncio.to_thread(
+                lambda: self.db.table("time_entries")
+                .update({"invoice_id": invoice_id, "billing_status": "billed"})
+                .in_("id", te_ids)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
+
+        # 4. journal: DR 1100 Bank / CR 1200 AR
+        acct_map = await self._repo.get_account_ids_by_codes(["1100", "1200"])
+        journal_lines = [
+            JournalLineSpec(
+                direction="DR",
+                account_code="1100",
+                amount=amount,
+                description=f"Payment received for invoice {invoice_number}",
+                account_id=acct_map.get("1100"),
+                currency=pay_currency,
+            ),
+            JournalLineSpec(
+                direction="CR",
+                account_code="1200",
+                amount=amount,
+                description=f"Payment received for invoice {invoice_number}",
+                account_id=acct_map.get("1200"),
+                currency=pay_currency,
+            ),
+        ]
+        try:
+            post_journal(
+                db=self.db,
+                tenant_id=self.tenant_id,
+                created_by=recorded_by,
+                description=f"Payment received for invoice {invoice_number}",
+                entry_date=date.today().isoformat(),
+                reference_type="payment",
+                reference_id=invoice_id,
+                lines=journal_lines,
+            )
+        except ValueError as exc:
+            # accounting_guardian rejection — the payment row is already in,
+            # surface a clear 422 so the caller knows the journal didn't land.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        updated = await self._repo.get_by_id(invoice_id)
+        invoice_lines = await self._repo.list_lines(invoice_id)
+        return InvoiceResponse.from_db(updated or row, invoice_lines)
 
     async def send_invoice(self, invoice_id: str, sent_by: str) -> InvoiceResponse:
         """Send invoice: create Stripe Payment Link and update invoice status.
