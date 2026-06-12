@@ -46,10 +46,26 @@ class ProjectService:
             not_found_detail="Engagement not found",
         )
 
+        # #160 — inherit currency from the parent engagement when the caller
+        # didn't ship one. Previously the model defaulted to "USD", which
+        # silently mis-stamped projects on SGD/GBP/etc. engagements.
+        currency = data.currency
+        if not currency:
+            import asyncio
+            eng_row = await asyncio.to_thread(
+                lambda: self._db.table("engagements")
+                .select("currency")
+                .eq("id", data.engagement_id)
+                .eq("tenant_id", self._tenant_id)
+                .single()
+                .execute()
+            )
+            currency = (eng_row.data or {}).get("currency") or "USD"
+
         payload: dict = {
             "engagement_id": data.engagement_id,
             "name": data.name,
-            "currency": data.currency,
+            "currency": currency,
             "status": "planning",
         }
         if data.budget is not None:

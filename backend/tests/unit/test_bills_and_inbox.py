@@ -348,3 +348,63 @@ async def test_materialise_unknown_kind_is_noop() -> None:
     svc = InboxService.__new__(InboxService)
     result = await svc._materialise("something_else", {})
     assert result["entity_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Engagement materialisation also creates a default "General" project so the
+# Founder can log time immediately without a manual project-create step.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_materialise_engagement_creates_default_project() -> None:
+    """Approving an extracted engagement also inserts a 'General' project."""
+    from unittest.mock import MagicMock
+
+    from app.services.inbox_service import InboxService
+
+    inserts: list[tuple[str, dict]] = []
+
+    def _table(name: str):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.ilike.return_value = chain
+        chain.limit.return_value = chain
+        # clients lookup returns empty so insert path runs
+        chain.execute.return_value = MagicMock(data=[])
+
+        def _insert(row: dict):
+            inserts.append((name, row))
+            ret = MagicMock()
+            ret.execute.return_value = MagicMock(data=[{"id": f"{name}-id"}])
+            return ret
+
+        chain.insert.side_effect = _insert
+        return chain
+
+    db = MagicMock()
+    db.table.side_effect = _table
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = db
+    svc._tenant_id = "tenant-1"
+
+    payload = {
+        "client_name": "Lumera Technologies",
+        "currency": "SGD",
+        "billing_arrangement": "fixed_fee",
+        "total_value": "44500",
+    }
+    result = await svc._materialise_engagement(payload)
+
+    assert result["entity_type"] == "engagement"
+    inserted_tables = [t for t, _ in inserts]
+    assert "clients" in inserted_tables
+    assert "engagements" in inserted_tables
+    assert "projects" in inserted_tables, "default project must be auto-created"
+
+    project_row = next(row for t, row in inserts if t == "projects")
+    assert project_row["name"] == "General"
+    assert project_row["currency"] == "SGD"  # inherited from engagement
+    assert project_row["status"] == "planning"

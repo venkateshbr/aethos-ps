@@ -259,6 +259,7 @@ class InboxService:
             )
             client_id = client_row.data[0]["id"]
 
+        engagement_currency = payload.get("currency", "USD")
         eng_row = await asyncio.to_thread(
             lambda: self._db.table("engagements")
             .insert(
@@ -267,7 +268,7 @@ class InboxService:
                     "client_id": client_id,
                     "name": payload.get("engagement_name") or f"{client_name} Engagement",
                     "billing_arrangement": payload.get("billing_arrangement", "time_and_materials"),
-                    "currency": payload.get("currency", "USD"),
+                    "currency": engagement_currency,
                     "total_value": (
                         str(Decimal(str(payload["total_value"])))
                         if payload.get("total_value")
@@ -279,7 +280,36 @@ class InboxService:
             )
             .execute()
         )
-        return {"entity_type": "engagement", "entity_id": str(eng_row.data[0]["id"])}
+        engagement_id = str(eng_row.data[0]["id"])
+
+        # Auto-create a default "General" project so the user can log time
+        # against the engagement immediately, without a manual project-create
+        # step. Without this the time-entries quick-add was blocked behind an
+        # extra trip to /app/projects every time. Failures here are non-fatal:
+        # the engagement is already materialised; the user can still create
+        # projects manually from the engagement detail page.
+        try:
+            await asyncio.to_thread(
+                lambda: self._db.table("projects")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "engagement_id": engagement_id,
+                        "name": "General",
+                        "currency": engagement_currency,
+                        "status": "planning",
+                    }
+                )
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning(
+                "Auto-create default project failed for engagement %s: %s",
+                engagement_id,
+                exc,
+            )
+
+        return {"entity_type": "engagement", "entity_id": engagement_id}
 
     async def _materialise_expense(self, payload: dict) -> dict:
         import asyncio
