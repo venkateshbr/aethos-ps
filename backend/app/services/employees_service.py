@@ -61,7 +61,7 @@ class EmployeesService:
             "department": data.department,
             "employment_type": data.employment_type.value,
             "default_bill_rate": str(data.default_bill_rate) if data.default_bill_rate is not None else None,
-            "default_bill_rate_currency": data.default_bill_rate_currency,
+            "default_bill_rate_currency": data.default_bill_rate_currency or ("USD" if data.default_bill_rate is not None else None),
             "cost_rate": str(data.cost_rate) if data.cost_rate is not None else None,
             "available_hours_per_week": (
                 str(data.available_hours_per_week)
@@ -116,6 +116,8 @@ class EmployeesService:
             patch["employment_type"] = data.employment_type.value
         if data.default_bill_rate is not None:
             patch["default_bill_rate"] = str(data.default_bill_rate)
+            if data.default_bill_rate_currency is None and not existing.get("default_bill_rate_currency"):
+                patch["default_bill_rate_currency"] = "USD"
         if data.default_bill_rate_currency is not None:
             patch["default_bill_rate_currency"] = data.default_bill_rate_currency
         if data.cost_rate is not None:

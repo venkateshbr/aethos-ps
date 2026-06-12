@@ -84,10 +84,10 @@ async def list_time_entries(
 @router.post("", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
 async def create_time_entry(
     payload: TimeEntryCreate,
-    _current_user: CurrentUser = require_role(UserRole.member),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.member),  # noqa: B008
     svc: TimeEntriesService = Depends(_service),  # noqa: B008
 ) -> TimeEntryResponse:
-    return await svc.create_entry(payload)
+    return await svc.create_entry(payload, approved_by=current_user.user_id)
 
 
 @router.get("/{id}", response_model=TimeEntryResponse)

@@ -105,3 +105,44 @@ def test_time_entry_response_preserves_decimal_precision() -> None:
     assert resp.hours == "8.25"
     # Ensure it round-trips cleanly to Decimal
     assert Decimal(resp.hours) == Decimal("8.25")
+
+
+# ---------------------------------------------------------------------------
+# Test 4: approved_by / approved_at audit fields on response
+# ---------------------------------------------------------------------------
+
+
+def test_time_entry_response_carries_audit_fields() -> None:
+    resp = TimeEntryResponse(
+        id="entry-3",
+        tenant_id="tenant-1",
+        project_id="proj-1",
+        employee_id="emp-1",
+        date="2026-05-01",
+        hours="4.00",
+        description="",
+        billable=True,
+        billing_status="unbilled",
+        approved_by="user-abc",
+        approved_at="2026-05-01T12:00:00+00:00",
+        created_at="2026-05-01T09:00:00Z",
+    )
+    assert resp.approved_by == "user-abc"
+    assert resp.approved_at == "2026-05-01T12:00:00+00:00"
+
+
+def test_time_entry_response_audit_fields_default_none() -> None:
+    resp = TimeEntryResponse(
+        id="entry-4",
+        tenant_id="tenant-1",
+        project_id="proj-1",
+        employee_id="emp-1",
+        date="2026-05-01",
+        hours="2.00",
+        description="",
+        billable=True,
+        billing_status="unbilled",
+        created_at="2026-05-01T09:00:00Z",
+    )
+    assert resp.approved_by is None
+    assert resp.approved_at is None

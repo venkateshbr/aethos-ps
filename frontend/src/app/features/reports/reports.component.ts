@@ -10,6 +10,7 @@ import {
   PnlRow,
   UtilRow,
   WipRow,
+  RevenueRow,
 } from '../../core/services/reports.service';
 
 @Component({
@@ -207,11 +208,34 @@ import {
         <!-- ── Revenue ────────────────────────────────────────────────── -->
         <mat-tab label="Revenue">
           <div class="pt-4">
-            <div class="flex flex-col items-center justify-center h-64 text-center bg-surface-raised rounded-lg border border-border-default">
-              <mat-icon class="text-text-disabled mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">bar_chart</mat-icon>
-              <p class="text-text-muted font-medium">Revenue by Engagement</p>
-              <p class="text-text-disabled text-sm mt-1">Coming in the next release</p>
-            </div>
+            @defer (on viewport) {
+              @if (revLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (revError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Revenue', retry: loadRevenue.bind(this) }" />
+              } @else if (revRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'revenue data' }" />
+              } @else {
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="revRows()" class="w-full bg-surface-raised">
+                    <ng-container matColumnDef="engagement_id">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Engagement</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">{{ row.engagement_name ?? row.engagement_id }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="total_invoiced">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Total Invoiced</th>
+                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold text-right tabular-nums">{{ row.total_invoiced | money }}</td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="revColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: revColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                  </table>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
           </div>
         </mat-tab>
       </mat-tab-group>
@@ -362,9 +386,15 @@ export class ReportsComponent implements OnInit {
   wipError = signal(false);
   wipRows = signal<WipRow[]>([]);
 
+  // Revenue
+  revLoading = signal(false);
+  revError = signal(false);
+  revRows = signal<RevenueRow[]>([]);
+
   readonly pnlColumns = ['project_name', 'revenue', 'direct_cost', 'gross_margin', 'gross_margin_pct'];
   readonly utilColumns = ['employee_id', 'total_hours', 'billable_hours', 'utilization_pct'];
   readonly wipColumns = ['project_name', 'unbilled_hours', 'avg_rate', 'wip_value'];
+  readonly revColumns = ['engagement_id', 'total_invoiced'];
 
   ngOnInit(): void {
     this.loadAr();
@@ -372,6 +402,7 @@ export class ReportsComponent implements OnInit {
     this.loadPnl();
     this.loadUtil();
     this.loadWip();
+    this.loadRevenue();
   }
 
   loadAr(): void {
@@ -416,6 +447,15 @@ export class ReportsComponent implements OnInit {
     this.svc.getWip().subscribe({
       next: rows => { this.wipRows.set(rows); this.wipLoading.set(false); },
       error: () => { this.wipError.set(true); this.wipLoading.set(false); },
+    });
+  }
+
+  loadRevenue(): void {
+    this.revLoading.set(true);
+    this.revError.set(false);
+    this.svc.getRevenueByEngagement().subscribe({
+      next: rows => { this.revRows.set(rows); this.revLoading.set(false); },
+      error: () => { this.revError.set(true); this.revLoading.set(false); },
     });
   }
 

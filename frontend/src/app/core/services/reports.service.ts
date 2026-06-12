@@ -35,6 +35,13 @@ export interface WipRow {
   wip_value: string;
 }
 
+export interface RevenueRow {
+  engagement_id: string;
+  engagement_name?: string;
+  total_invoiced: string;
+  currency?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private http = inject(HttpClient);
@@ -54,4 +61,7 @@ export class ReportsService {
 
   getWip = (): Observable<WipRow[]> =>
     this.http.get<WipRow[]>(`${this.base}/wip`);
+
+  getRevenueByEngagement = (): Observable<RevenueRow[]> =>
+    this.http.get<RevenueRow[]>(`${this.base}/revenue-by-engagement`);
 }

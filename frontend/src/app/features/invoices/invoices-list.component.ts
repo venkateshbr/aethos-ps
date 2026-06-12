@@ -234,7 +234,8 @@ type InvoiceListResponse = InvoiceSummary[];
 
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns"
-                class="hover:bg-surface-raised transition-colors"></tr>
+                class="hover:bg-surface-raised transition-colors cursor-pointer"
+                (click)="viewInvoice(row)"></tr>
           </table>
         </div>
 
@@ -478,6 +479,10 @@ export class InvoicesListComponent implements OnInit {
    * Invoices are generated from engagements — navigate there to start the
    * draft-invoice flow rather than opening a standalone create form.
    */
+  viewInvoice(invoice: InvoiceSummary): void {
+    this.router.navigate(['/app/invoices', invoice.id]);
+  }
+
   goToNewInvoice(): void {
     this.router.navigate(['/app/engagements']);
   }

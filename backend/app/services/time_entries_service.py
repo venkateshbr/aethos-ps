@@ -11,7 +11,7 @@ Validation rules:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import HTTPException, status
 
@@ -72,7 +72,7 @@ class TimeEntriesService:
     # Create
     # ------------------------------------------------------------------
 
-    async def create_entry(self, data: TimeEntryCreate) -> TimeEntryResponse:
+    async def create_entry(self, data: TimeEntryCreate, *, approved_by: str | None = None) -> TimeEntryResponse:
         # Validate project belongs to tenant
         if not await self._repo.project_belongs_to_tenant(data.project_id):
             raise HTTPException(
@@ -105,9 +105,9 @@ class TimeEntriesService:
             "description": data.description,
             "billable": data.billable,
             "billing_status": "unbilled" if data.billable else "non_billable",
-            # Time logged from the main ERP (manager on-behalf) is authoritative
-            # and skips the portal submit→approve cycle (issue #134, P7).
             "status": "approved",
+            "approved_by": approved_by,
+            "approved_at": datetime.now(UTC).isoformat(),
         }
         if data.phase_id is not None:
             payload["phase_id"] = data.phase_id
@@ -195,6 +195,8 @@ def _row_to_response(row: dict) -> TimeEntryResponse:
         billable=bool(row.get("billable", True)),
         billing_status=row.get("billing_status", "unbilled"),
         status=row.get("status", "approved"),
+        approved_by=str(row["approved_by"]) if row.get("approved_by") else None,
+        approved_at=str(row["approved_at"]) if row.get("approved_at") else None,
         phase_id=str(row["phase_id"]) if row.get("phase_id") else None,
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]) if row.get("updated_at") else None,

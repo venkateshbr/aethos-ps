@@ -343,4 +343,25 @@ class ReportsService:
             eid = inv["engagement_id"]
             by_eng[eid] = by_eng.get(eid, Decimal("0")) + Decimal(str(inv.get("total", "0")))
 
-        return [{"engagement_id": k, "total_invoiced": str(v)} for k, v in by_eng.items()]
+        if not by_eng:
+            return []
+
+        eng_rows = (
+            self.db.table("engagements")
+            .select("id, name")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", list(by_eng.keys()))
+            .execute()
+            .data
+            or []
+        )
+        name_map = {e["id"]: e["name"] for e in eng_rows}
+
+        return [
+            {
+                "engagement_id": k,
+                "engagement_name": name_map.get(k, k),
+                "total_invoiced": str(v),
+            }
+            for k, v in by_eng.items()
+        ]

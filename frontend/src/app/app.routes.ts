@@ -68,6 +68,11 @@ export const routes: Routes = [
           import('./features/invoices/invoices-list.component').then(m => m.InvoicesListComponent),
       },
       {
+        path: 'invoices/:id',
+        loadComponent: () =>
+          import('./features/invoices/invoice-detail.component').then(m => m.InvoiceDetailComponent),
+      },
+      {
         // #112 — without this route, the Clients sidebar link hit the `**`
         // wildcard and redirected to '/'. Placeholder until the full Clients
         // CRUD ships.
