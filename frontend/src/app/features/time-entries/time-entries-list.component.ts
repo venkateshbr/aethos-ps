@@ -405,8 +405,12 @@ export class TimeEntriesListComponent implements OnInit {
   }
 
   submitEntry(): void {
-    const hours = this.newHours.trim();
-    const description = this.newDescription.trim();
+    // The Hours input is type="number", so ngModel hands us a number (or null).
+    // String("…").trim() coerces both number and string safely; the original
+    // `this.newHours.trim()` threw TypeError on every submit because the actual
+    // value was a number, so the form has been broken since landing.
+    const hours = String(this.newHours ?? '').trim();
+    const description = String(this.newDescription ?? '').trim();
     if (!this.newProjectId || !this.newEmployeeId || !this.newDate || !hours || !description) {
       this.addError.set('Project, employee, date, hours and description are all required.');
       return;
