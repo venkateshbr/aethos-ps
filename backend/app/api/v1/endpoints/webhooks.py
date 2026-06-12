@@ -345,12 +345,40 @@ async def _handle_checkout_session_completed(
     await asyncio.to_thread(_insert_payment)
 
     # ------------------------------------------------------------------
-    # Mark invoice as paid
+    # Mark invoice as paid + back-link the invoiced time entries.
+    # The invoice-create path already stamps invoice_line.time_entry_id, but
+    # time_entries.invoice_id / billing_status were never updated — the
+    # "what's still unbilled?" view kept returning already-billed rows.
     # ------------------------------------------------------------------
+    paid_at_iso = datetime.datetime.now(datetime.UTC).isoformat()
+
     def _mark_paid() -> None:
-        db.table("invoices").update({"status": "paid"}).eq("id", invoice_id).execute()
+        db.table("invoices").update(
+            {"status": "paid", "paid_at": paid_at_iso}
+        ).eq("id", invoice_id).execute()
 
     await asyncio.to_thread(_mark_paid)
+
+    def _backlink_time_entries() -> None:
+        line_rows = (
+            db.table("invoice_lines")
+            .select("time_entry_id")
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+        te_ids = [r["time_entry_id"] for r in line_rows if r.get("time_entry_id")]
+        if te_ids:
+            (
+                db.table("time_entries")
+                .update({"invoice_id": invoice_id, "billing_status": "billed"})
+                .in_("id", te_ids)
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+
+    await asyncio.to_thread(_backlink_time_entries)
 
     # ------------------------------------------------------------------
     # Post journal: DR 1100 Bank / CR 1200 AR
@@ -387,15 +415,46 @@ async def _handle_checkout_session_completed(
         ),
     ]
 
+    # journal_entries.created_by is a UUID NOT NULL — the previous literal
+    # "system" string raised `invalid input syntax for type uuid: "system"` at
+    # insert time, the webhook caught it, and silently dropped the offsetting
+    # journal. Payments came in, AR never cleared, Bank never grew. Fall back
+    # to a tenant_user UUID so the post lands. (Future: dedicated system actor.)
+    def _system_actor() -> str | None:
+        result = (
+            db.table("tenant_users")
+            .select("user_id")
+            .eq("tenant_id", tenant_id)
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]["user_id"]
+        return None
+
+    actor_uuid = await asyncio.to_thread(_system_actor)
+    if actor_uuid is None:
+        logger.error(
+            "No tenant_users actor found — cannot post payment journal; payment row exists",
+            extra={"invoice_id": invoice_id, "tenant_id": tenant_id},
+        )
+        return
+
     try:
         post_journal(
             db=db,
             tenant_id=tenant_id,
-            created_by="system",
+            created_by=actor_uuid,
             description=f"Payment received for invoice {invoice_number}",
             entry_date=datetime.date.today().isoformat(),
             reference_type="payment",
-            reference_id=payment_intent_id or invoice_id,
+            # reference_id is a UUID column. payment_intent_id is a Stripe id
+            # (pi_xxx) — would raise "invalid input syntax for type uuid" and
+            # silently drop the offsetting journal again. Always use the
+            # invoice UUID; the link to the Stripe payment_intent is preserved
+            # on the payments.stripe_payment_intent_id column.
+            reference_id=invoice_id,
             lines=journal_lines,
         )
     except Exception:

@@ -76,6 +76,22 @@ class InvoiceCreate(BaseModel):
     lines: list[InvoiceLineCreate] = Field(default_factory=list)
 
 
+class ManualPaymentCreate(BaseModel):
+    """Body for POST /invoices/{id}/payments — a payment received outside Stripe."""
+
+    amount: str = Field(..., description="Decimal string, e.g. '700.00'")
+    currency: str | None = Field(
+        default=None,
+        description="3-letter ISO; defaults to the invoice currency",
+        min_length=3, max_length=3,
+    )
+    paid_at: str | None = Field(
+        default=None,
+        description="ISO 8601 timestamp; defaults to now",
+    )
+    notes: str | None = Field(default=None, max_length=1000)
+
+
 class InvoiceResponse(BaseModel):
     id: str
     tenant_id: str
@@ -100,6 +116,12 @@ class InvoiceResponse(BaseModel):
     lines: list[InvoiceLineResponse] = Field(default_factory=list)
     # Populated when sending — not persisted, returned in-response
     payment_link_url: str | None = None
+    # List-view conveniences — populated by InvoicesService.list_invoices via
+    # an embedded join. The frontend list table renders these directly so it
+    # does not have to fetch each client by id (previously the Invoices page
+    # showed blank Client + "—" Total).
+    client_name: str | None = None
+    total_amount: str | None = None
 
     @classmethod
     def from_db(
@@ -107,6 +129,16 @@ class InvoiceResponse(BaseModel):
         row: dict,
         lines: list[dict] | None = None,
     ) -> InvoiceResponse:
+        # Joined-row convention: clients is either {"name": "..."} or a list
+        # with one dict (PostgREST returns a list when the FK is reverse).
+        client_join = row.get("clients")
+        client_name: str | None = None
+        if isinstance(client_join, dict):
+            client_name = client_join.get("name")
+        elif isinstance(client_join, list) and client_join:
+            client_name = (client_join[0] or {}).get("name")
+        total_str = serialise_money(row.get("total") or "0") or "0.00"
+
         return cls(
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
@@ -116,7 +148,7 @@ class InvoiceResponse(BaseModel):
             currency=row.get("currency", "USD"),
             subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
             tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
-            total=serialise_money(row.get("total") or "0") or "0.00",
+            total=total_str,
             status=row.get("status", "draft"),
             issue_date=row.get("issue_date"),
             due_date=row.get("due_date"),
@@ -127,6 +159,8 @@ class InvoiceResponse(BaseModel):
             sent_at=row.get("sent_at"),
             notes=row.get("notes"),
             created_at=row["created_at"],
+            client_name=client_name,
+            total_amount=total_str,
             updated_at=row["updated_at"],
             lines=[InvoiceLineResponse.from_db(ln) for ln in (lines or [])],
             payment_link_url=row.get("payment_link_url"),

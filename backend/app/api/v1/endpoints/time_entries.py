@@ -68,7 +68,7 @@ async def list_time_entries(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid date format: {exc}",
+            detail="Invalid date format — expected YYYY-MM-DD",
         ) from exc
 
     return await svc.list_entries(

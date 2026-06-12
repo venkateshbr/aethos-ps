@@ -1,4 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
@@ -28,6 +29,7 @@ type InvoiceListResponse = InvoiceSummary[];
   selector: 'app-invoices-list',
   standalone: true,
   imports: [
+    FormsModule,
     MatTableModule,
     MatButtonModule,
     MatIconModule,
@@ -174,31 +176,59 @@ type InvoiceListResponse = InvoiceSummary[];
                 Actions
               </th>
               <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
-                @if (row.status === 'approved') {
-                  <button
-                    (click)="sendInvoice(row)"
-                    [disabled]="sendingId() === row.id"
-                    mat-stroked-button
-                    class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    matTooltip="Send this invoice to the client"
-                    [attr.aria-label]="'Send invoice ' + (row.invoice_number)"
-                  >
-                    <mat-icon class="text-sm">send</mat-icon>
-                    @if (sendingId() === row.id) { Sending… } @else { Send }
-                  </button>
-                }
-                @if (row.status === 'sent' && row.payment_link_url) {
-                  <a
-                    [href]="row.payment_link_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent-light transition-colors"
-                    [attr.aria-label]="'Open payment link for ' + (row.invoice_number)"
-                  >
-                    <mat-icon class="text-sm">open_in_new</mat-icon>
-                    Payment link
-                  </a>
-                }
+                <div class="flex flex-wrap items-center gap-2">
+                  @if (row.status === 'draft') {
+                    <button
+                      (click)="approveInvoice(row)"
+                      [disabled]="actioningId() === row.id"
+                      mat-stroked-button
+                      class="text-xs text-accent-light border-accent/40 hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      matTooltip="Approve — posts AR journal"
+                      [attr.aria-label]="'Approve invoice ' + (row.invoice_number)"
+                    >
+                      <mat-icon class="text-sm">task_alt</mat-icon>
+                      @if (actioningId() === row.id) { Approving… } @else { Approve }
+                    </button>
+                  }
+                  @if (row.status === 'approved') {
+                    <button
+                      (click)="sendInvoice(row)"
+                      [disabled]="actioningId() === row.id"
+                      mat-stroked-button
+                      class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      matTooltip="Send this invoice to the client"
+                      [attr.aria-label]="'Send invoice ' + (row.invoice_number)"
+                    >
+                      <mat-icon class="text-sm">send</mat-icon>
+                      @if (actioningId() === row.id) { Sending… } @else { Send }
+                    </button>
+                  }
+                  @if (row.status === 'sent' && row.payment_link_url) {
+                    <a
+                      [href]="row.payment_link_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent-light transition-colors"
+                      [attr.aria-label]="'Open payment link for ' + (row.invoice_number)"
+                    >
+                      <mat-icon class="text-sm">open_in_new</mat-icon>
+                      Payment link
+                    </a>
+                  }
+                  @if (row.status === 'approved' || row.status === 'sent') {
+                    <button
+                      (click)="openMarkPaid(row)"
+                      [disabled]="actioningId() === row.id"
+                      mat-stroked-button
+                      class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      matTooltip="Record a payment received outside Stripe"
+                      [attr.aria-label]="'Mark invoice ' + (row.invoice_number) + ' paid'"
+                    >
+                      <mat-icon class="text-sm">payments</mat-icon>
+                      Mark paid
+                    </button>
+                  }
+                </div>
               </td>
             </ng-container>
 
@@ -212,6 +242,64 @@ type InvoiceListResponse = InvoiceSummary[];
         <p class="text-xs text-text-disabled mt-3 text-right">
           {{ invoices().length }} {{ invoices().length === 1 ? 'invoice' : 'invoices' }}
         </p>
+      }
+
+      <!-- Mark paid modal -->
+      @if (payingInvoice(); as inv) {
+        <div class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4 animate-fade-in"
+             (click)="closeMarkPaid()">
+          <div class="bg-surface-base border border-border-default rounded-lg shadow-xl max-w-md w-full p-5"
+               (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="mark-paid-title">
+            <h2 id="mark-paid-title" class="text-sm font-semibold text-text-primary mb-2">
+              Mark {{ inv.invoice_number }} paid
+            </h2>
+            <p class="text-xs text-text-muted mb-4">
+              {{ inv.client_name }} · {{ inv.currency }} {{ inv.total_amount }}
+            </p>
+
+            <div class="space-y-3 mb-4">
+              <div>
+                <label for="pay-amount" class="block text-xs uppercase tracking-wide text-text-muted mb-1">
+                  Amount received ({{ inv.currency }})
+                </label>
+                <input id="pay-amount" type="number" min="0.01" step="0.01"
+                  [(ngModel)]="payAmount" name="pay-amount"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              </div>
+              <div>
+                <label for="pay-date" class="block text-xs uppercase tracking-wide text-text-muted mb-1">
+                  Received date
+                </label>
+                <input id="pay-date" type="date" [(ngModel)]="payDate" name="pay-date"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              </div>
+              <div>
+                <label for="pay-notes" class="block text-xs uppercase tracking-wide text-text-muted mb-1">
+                  Notes (optional)
+                </label>
+                <input id="pay-notes" type="text" [(ngModel)]="payNotes" name="pay-notes"
+                  placeholder="e.g. Wire ref 1234567890"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              </div>
+              @if (payError()) {
+                <div role="alert" class="text-xs text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
+                  {{ payError() }}
+                </div>
+              }
+            </div>
+
+            <div class="flex items-center justify-end gap-2">
+              <button (click)="closeMarkPaid()" [disabled]="actioningId() === inv.id"
+                class="px-4 py-2 text-sm text-text-muted hover:text-text-primary rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50">
+                Cancel
+              </button>
+              <button (click)="submitMarkPaid()" [disabled]="actioningId() === inv.id"
+                class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                @if (actioningId() === inv.id) { Recording… } @else { Record payment }
+              </button>
+            </div>
+          </div>
+        </div>
       }
     </div>
   `,
@@ -231,8 +319,16 @@ export class InvoicesListComponent implements OnInit {
   loading     = signal(true);
   error       = signal<string | null>(null);
   invoices    = signal<InvoiceSummary[]>([]);
-  sendingId   = signal<string | null>(null);
+  /** Generic in-flight signal used by Approve / Send / Mark paid actions. */
+  actioningId = signal<string | null>(null);
   sentMessage = signal<string | null>(null);
+
+  // -------- Mark paid modal state --------
+  payingInvoice = signal<InvoiceSummary | null>(null);
+  payAmount = '';
+  payDate = new Date().toISOString().split('T')[0];
+  payNotes = '';
+  payError = signal<string | null>(null);
 
   displayedColumns = ['invoice_number', 'client_name', 'status', 'total_amount', 'due_date', 'actions'];
 
@@ -250,31 +346,107 @@ export class InvoicesListComponent implements OnInit {
     });
   }
 
+  approveInvoice(invoice: InvoiceSummary): void {
+    this.actioningId.set(invoice.id);
+    this.sentMessage.set(null);
+    this.http.patch<{ status: string }>(`/api/v1/invoices/${invoice.id}/approve`, {}).subscribe({
+      next: () => {
+        this.invoices.set(
+          this.invoices().map(inv =>
+            inv.id === invoice.id ? { ...inv, status: 'approved' } : inv,
+          ),
+        );
+        this.actioningId.set(null);
+        this.sentMessage.set(`Invoice ${invoice.invoice_number} approved — AR journal posted.`);
+        setTimeout(() => this.sentMessage.set(null), 6000);
+      },
+      error: () => {
+        this.actioningId.set(null);
+        this.sentMessage.set('Could not approve the invoice. Please try again.');
+      },
+    });
+  }
+
   sendInvoice(invoice: InvoiceSummary): void {
-    this.sendingId.set(invoice.id);
+    this.actioningId.set(invoice.id);
     this.sentMessage.set(null);
 
-    this.http.post<{ payment_link_url?: string }>(`/api/v1/invoices/${invoice.id}/send`, {}).subscribe({
+    this.http.post<{ payment_link_url?: string; stripe_payment_link_url?: string | null }>(
+      `/api/v1/invoices/${invoice.id}/send`, {},
+    ).subscribe({
       next: (res) => {
-        // Update invoice status and payment link in-place
+        // Backend send response uses `payment_link_url` (transient) but the
+        // list reload re-reads `payment_link_url` from the row which is null
+        // for persisted records. Use whichever field came back populated.
+        const link = res.payment_link_url || res.stripe_payment_link_url || null;
         this.invoices.set(
           this.invoices().map(inv =>
             inv.id === invoice.id
-              ? { ...inv, status: 'sent', payment_link_url: res.payment_link_url ?? null }
-              : inv
-          )
+              ? { ...inv, status: 'sent', payment_link_url: link }
+              : inv,
+          ),
         );
-        this.sendingId.set(null);
-        const msg = res.payment_link_url
-          ? `Invoice sent. Payment link: ${res.payment_link_url}`
-          : 'Invoice sent successfully.';
-        this.sentMessage.set(msg);
-        // Auto-dismiss after 8 seconds
+        this.actioningId.set(null);
+        this.sentMessage.set(
+          link ? `Invoice sent. Payment link: ${link}` : 'Invoice sent successfully.',
+        );
         setTimeout(() => this.sentMessage.set(null), 8000);
       },
       error: () => {
-        this.sendingId.set(null);
+        this.actioningId.set(null);
         this.sentMessage.set(null);
+      },
+    });
+  }
+
+  openMarkPaid(invoice: InvoiceSummary): void {
+    this.payingInvoice.set(invoice);
+    this.payAmount = invoice.total_amount ?? '';
+    this.payDate = new Date().toISOString().split('T')[0];
+    this.payNotes = '';
+    this.payError.set(null);
+  }
+
+  closeMarkPaid(): void {
+    if (this.actioningId() === this.payingInvoice()?.id) return;
+    this.payingInvoice.set(null);
+  }
+
+  submitMarkPaid(): void {
+    const invoice = this.payingInvoice();
+    if (!invoice) return;
+    const amount = String(this.payAmount ?? '').trim();
+    if (!amount || Number(amount) <= 0) {
+      this.payError.set('Enter a positive payment amount.');
+      return;
+    }
+    this.actioningId.set(invoice.id);
+    this.payError.set(null);
+
+    const body: Record<string, unknown> = { amount };
+    if (this.payDate) body['paid_at'] = new Date(this.payDate).toISOString();
+    if (this.payNotes.trim()) body['notes'] = this.payNotes.trim();
+
+    this.http.post<{ status: string }>(`/api/v1/invoices/${invoice.id}/payments`, body).subscribe({
+      next: () => {
+        this.invoices.set(
+          this.invoices().map(inv =>
+            inv.id === invoice.id ? { ...inv, status: 'paid' } : inv,
+          ),
+        );
+        this.actioningId.set(null);
+        this.payingInvoice.set(null);
+        this.sentMessage.set(
+          `Payment of ${invoice.currency} ${amount} recorded for ${invoice.invoice_number} — Bank journal posted.`,
+        );
+        setTimeout(() => this.sentMessage.set(null), 8000);
+      },
+      error: (err: { error?: { detail?: unknown }; status?: number }) => {
+        this.actioningId.set(null);
+        const detail = err?.error?.detail;
+        this.payError.set(
+          typeof detail === 'string' ? detail : 'Could not record the payment. Please try again.',
+        );
       },
     });
   }

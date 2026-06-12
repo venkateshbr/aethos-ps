@@ -1,6 +1,7 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,6 +28,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
     MatTooltipModule,
     EmptyStateComponent,
     SkeletonRowsComponent,
+    RouterLink,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -39,6 +41,21 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
       <!-- Quick-add row -->
       <div class="bg-surface-raised border border-border-default rounded-lg p-4 mb-6" role="region" aria-label="Add time entry">
         <h2 class="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Quick Add</h2>
+
+        <!-- Prerequisites banner — without a project or employee the form is unusable. -->
+        @if (!loadingPrereqs() && missingPrereqs().length > 0) {
+          <div class="mb-3 rounded-md border border-confidence-med/30 bg-confidence-med/10 px-4 py-3 text-sm text-confidence-med" role="status">
+            <p class="font-medium mb-1">You can't log time yet.</p>
+            <p class="text-text-secondary mb-2">
+              You need at least one
+              @for (p of missingPrereqs(); track p.route; let last = $last) {
+                <a [routerLink]="p.route" class="text-accent-light underline hover:text-accent">{{ p.label }}</a>@if (!last) { <span> and one </span> }
+              }
+              before adding entries.
+            </p>
+          </div>
+        }
+
         <form
           (ngSubmit)="submitEntry()"
           class="flex flex-wrap gap-3 items-end"
@@ -140,7 +157,7 @@ import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.com
 
           <button
             type="submit"
-            [disabled]="addingEntry()"
+            [disabled]="addingEntry() || missingPrereqs().length > 0"
             mat-flat-button
             class="bg-indigo-600 hover:bg-indigo-500 text-text-primary text-sm font-medium px-4 py-1.5 rounded
                    disabled:opacity-50 disabled:cursor-not-allowed transition-colors
@@ -322,6 +339,17 @@ export class TimeEntriesListComponent implements OnInit {
   projects   = signal<{ id: string; name: string; code?: string | null }[]>([]);
   employees  = signal<{ id: string; first_name: string; last_name: string }[]>([]);
 
+  /** True until both /projects and /employees have responded; lets the banner avoid flickering on first paint. */
+  loadingPrereqs = signal(true);
+
+  /** Surfaces what's missing so the form isn't silently unusable. */
+  missingPrereqs = computed<{ label: string; route: string }[]>(() => {
+    const out: { label: string; route: string }[] = [];
+    if (this.projects().length === 0) out.push({ label: 'project', route: '/app/projects' });
+    if (this.employees().length === 0) out.push({ label: 'employee', route: '/app/people' });
+    return out;
+  });
+
   // Quick-add form state
   newProjectId   = '';
   newEmployeeId  = '';
@@ -334,10 +362,21 @@ export class TimeEntriesListComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadEntries();
+    let pending = 2;
+    const settle = () => {
+      pending -= 1;
+      if (pending <= 0) this.loadingPrereqs.set(false);
+    };
     this.http.get<{ id: string; name: string; code?: string | null }[]>('/api/v1/projects')
-      .subscribe({ next: (list) => this.projects.set(list ?? []), error: () => {} });
+      .subscribe({
+        next: (list) => { this.projects.set(list ?? []); settle(); },
+        error: () => settle(),
+      });
     this.http.get<{ items: { id: string; first_name: string; last_name: string }[] }>('/api/v1/employees')
-      .subscribe({ next: (res) => this.employees.set(res.items ?? []), error: () => {} });
+      .subscribe({
+        next: (res) => { this.employees.set(res.items ?? []); settle(); },
+        error: () => settle(),
+      });
   }
 
   projectLabel(id: string): string {
@@ -366,8 +405,12 @@ export class TimeEntriesListComponent implements OnInit {
   }
 
   submitEntry(): void {
-    const hours = this.newHours.trim();
-    const description = this.newDescription.trim();
+    // The Hours input is type="number", so ngModel hands us a number (or null).
+    // String("…").trim() coerces both number and string safely; the original
+    // `this.newHours.trim()` threw TypeError on every submit because the actual
+    // value was a number, so the form has been broken since landing.
+    const hours = String(this.newHours ?? '').trim();
+    const description = String(this.newDescription ?? '').trim();
     if (!this.newProjectId || !this.newEmployeeId || !this.newDate || !hours || !description) {
       this.addError.set('Project, employee, date, hours and description are all required.');
       return;

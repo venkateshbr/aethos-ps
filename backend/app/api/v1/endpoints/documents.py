@@ -56,6 +56,21 @@ _MIME_TO_EXT: dict[str, str] = {
 }
 
 
+def _classify_document_type(filename: str) -> str:
+    """Classify a document by filename keyword. Mirrors the extraction worker.
+
+    Persisted on the row at upload time so the Documents page can group by type
+    immediately (before extraction completes). Returns one of:
+    ``engagement_letter`` | ``expense`` | ``vendor_invoice``.
+    """
+    lower = (filename or "").lower()
+    if "engagement" in lower or "letter" in lower or "sow" in lower:
+        return "engagement_letter"
+    if "receipt" in lower or "expense" in lower or "reimbursement" in lower:
+        return "expense"
+    return "vendor_invoice"
+
+
 # ---------------------------------------------------------------------------
 # Upload endpoint
 # ---------------------------------------------------------------------------
@@ -149,6 +164,7 @@ async def upload_document(
         # name instead of the {uuid}.{ext} storage_path tail and defaulting
         # every upload to vendor_invoice.
         "original_filename": file.filename or "untitled",
+        "document_type": _classify_document_type(file.filename or ""),
         "storage_path": storage_path,
         "mime_type": content_type,
         "file_size_bytes": len(content),
@@ -251,7 +267,7 @@ async def list_documents(
     try:
         result = (
             db.table("documents")
-            .select("id, original_filename, mime_type, status, created_at")
+            .select("id, original_filename, mime_type, document_type, status, created_at")
             .eq("tenant_id", tenant_id)
             .order("created_at", desc=True)
             .limit(200)
@@ -269,11 +285,82 @@ async def list_documents(
             id=row["id"],
             filename=row.get("original_filename") or "untitled",
             mime_type=row["mime_type"],
+            document_type=row.get("document_type") or "vendor_invoice",
             status=row["status"],
             created_at=row["created_at"],
         )
         for row in (result.data or [])
     ]
+
+
+# ---------------------------------------------------------------------------
+# Delete endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> None:
+    """Delete a document — removes the storage object and the DB row.
+
+    Tenant-scoped: a document the caller's tenant does not own yields 404 (same
+    information-hiding pattern as the rest of this router). The storage object
+    is best-effort removed first; the row delete is the source of truth.
+    """
+    try:
+        existing = (
+            db.table("documents")
+            .select("id, storage_path")
+            .eq("id", document_id)
+            .eq("tenant_id", tenant_id)
+            .single()
+            .execute()
+        )
+    except Exception as exc:
+        # .single() raises when no row matches — treat as not-found.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.") from exc
+
+    row = existing.data
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    # Unlink any agent_suggestions that point at this document. The FK
+    # (agent_suggestions.original_document_id → documents.id) is RESTRICT, so a
+    # row delete would otherwise fail for any extracted document. Nulling the
+    # reference preserves the suggestion + its HITL task (the review queue stays
+    # intact); only the "View source" link goes away.
+    try:
+        (
+            db.table("agent_suggestions")
+            .update({"original_document_id": None})
+            .eq("original_document_id", document_id)
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("Unlinking suggestions for document %s failed: %s", document_id, exc)
+
+    storage_path = row.get("storage_path")
+    if storage_path:
+        try:
+            db.storage.from_(_STORAGE_BUCKET).remove([storage_path])
+        except Exception as exc:
+            # Non-fatal — the row delete below is what removes it from the user's
+            # view; an orphaned storage object can be swept later.
+            logger.warning("Storage object delete failed for %s: %s", document_id, exc)
+
+    try:
+        db.table("documents").delete().eq("id", document_id).eq("tenant_id", tenant_id).execute()
+    except Exception as exc:
+        logger.error("Document row delete failed for %s: %s", document_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while deleting the document.",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

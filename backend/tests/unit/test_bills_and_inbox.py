@@ -301,3 +301,110 @@ def test_missing_task_raises_404() -> None:
             raise HTTPException(status_code=404, detail="Task not found")
 
     assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# InboxService._materialise — kind routing (#146 follow-up)
+#
+# The extraction worker emits *_draft kinds. The dispatch previously only
+# matched the suffix-less names, so every approval fell through to the no-op
+# branch and created nothing. These verify the draft kinds route correctly.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_method"),
+    [
+        ("create_engagement_draft", "_materialise_engagement"),
+        ("create_expense_draft", "_materialise_expense"),
+        ("create_bill_draft", "_materialise_bill"),
+        # backward-compat: suffix-less + legacy aliases still route
+        ("create_engagement", "_materialise_engagement"),
+        ("vendor_invoice", "_materialise_bill"),
+    ],
+)
+async def test_materialise_routes_draft_kinds(kind: str, expected_method: str) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)  # bypass __init__ (no DB needed)
+    for m in ("_materialise_engagement", "_materialise_expense", "_materialise_bill"):
+        setattr(svc, m, AsyncMock(return_value={"entity_type": "x", "entity_id": "1"}))
+
+    await svc._materialise(kind, {"client_name": "Acme"})
+
+    getattr(svc, expected_method).assert_awaited_once()
+    others = {"_materialise_engagement", "_materialise_expense", "_materialise_bill"} - {expected_method}
+    for m in others:
+        getattr(svc, m).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_materialise_unknown_kind_is_noop() -> None:
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)
+    result = await svc._materialise("something_else", {})
+    assert result["entity_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Engagement materialisation also creates a default "General" project so the
+# Founder can log time immediately without a manual project-create step.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_materialise_engagement_creates_default_project() -> None:
+    """Approving an extracted engagement also inserts a 'General' project."""
+    from unittest.mock import MagicMock
+
+    from app.services.inbox_service import InboxService
+
+    inserts: list[tuple[str, dict]] = []
+
+    def _table(name: str):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.ilike.return_value = chain
+        chain.limit.return_value = chain
+        # clients lookup returns empty so insert path runs
+        chain.execute.return_value = MagicMock(data=[])
+
+        def _insert(row: dict):
+            inserts.append((name, row))
+            ret = MagicMock()
+            ret.execute.return_value = MagicMock(data=[{"id": f"{name}-id"}])
+            return ret
+
+        chain.insert.side_effect = _insert
+        return chain
+
+    db = MagicMock()
+    db.table.side_effect = _table
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = db
+    svc._tenant_id = "tenant-1"
+
+    payload = {
+        "client_name": "Lumera Technologies",
+        "currency": "SGD",
+        "billing_arrangement": "fixed_fee",
+        "total_value": "44500",
+    }
+    result = await svc._materialise_engagement(payload)
+
+    assert result["entity_type"] == "engagement"
+    inserted_tables = [t for t, _ in inserts]
+    assert "clients" in inserted_tables
+    assert "engagements" in inserted_tables
+    assert "projects" in inserted_tables, "default project must be auto-created"
+
+    project_row = next(row for t, row in inserts if t == "projects")
+    assert project_row["name"] == "General"
+    assert project_row["currency"] == "SGD"  # inherited from engagement
+    assert project_row["status"] == "planning"

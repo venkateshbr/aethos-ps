@@ -32,7 +32,10 @@ class InvoicesRepository:
         def _list() -> list[dict]:
             q = (
                 self.db.table("invoices")
-                .select("*")
+                # Embed client.name so the Invoices list table can render it
+                # without an N+1 per-row lookup. PostgREST returns the nested
+                # object under the relation name "clients".
+                .select("*, clients(name)")
                 .eq("tenant_id", self.tenant_id)
                 .is_("deleted_at", "null")
                 .order("created_at", desc=True)

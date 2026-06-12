@@ -22,7 +22,12 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
-from app.models.invoices import InvoiceCreate, InvoiceResponse, PublicInvoiceResponse
+from app.models.invoices import (
+    InvoiceCreate,
+    InvoiceResponse,
+    ManualPaymentCreate,
+    PublicInvoiceResponse,
+)
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services.invoices_service import InvoicesService
 from supabase import Client
@@ -96,6 +101,34 @@ async def send_invoice(
     svc: InvoicesService = Depends(_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.send_invoice(invoice_id, sent_by=current_user.user_id)
+
+
+@router.post("/{invoice_id}/payments", response_model=InvoiceResponse)
+async def record_manual_payment(
+    invoice_id: str,
+    payload: ManualPaymentCreate,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: InvoicesService = Depends(_service),  # noqa: B008
+) -> InvoiceResponse:
+    """Record a payment received outside of Stripe (wire/cheque/cash/etc.).
+
+    Same accounting outcome as the Stripe checkout webhook: inserts a payments
+    row, marks the invoice paid, back-links invoiced time entries, and posts
+    DR 1100 Bank / CR 1200 AR.
+    """
+    from decimal import Decimal, InvalidOperation
+    try:
+        amount = Decimal(payload.amount)
+    except InvalidOperation as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid amount: {payload.amount!r}") from exc
+    return await svc.record_manual_payment(
+        invoice_id=invoice_id,
+        amount=amount,
+        currency=payload.currency,
+        paid_at_iso=payload.paid_at,
+        notes=payload.notes,
+        recorded_by=current_user.user_id,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -129,7 +129,29 @@ Triggered on every PR that touches:
 - `engagements.py` — safe 404 message for invoice drafting errors
 - `bill_payments_service.py` — `datetime.utcnow()` replaced with `datetime.now(UTC)` (4 locations)
 
+## Re-audit — 2026-06-12 (Issue #72 closure)
+
+**Reviewer**: Prahari (automated)
+**Scope**: Delta review since 2026-05-23 audit, plus resolution of deferred items.
+
+### New findings (all fixed)
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| R-001 | Medium | `code_sequences` table missing RLS (has tenant_id) | FIXED — migration 0022 |
+| R-002 | Low | `fx_rates` table missing RLS (global data) | FIXED — migration 0022 (read-only for auth users) |
+| R-003 | Low | `procrastinate_*` tables missing RLS | FIXED — migration 0022 (deny-all restrictive) |
+| R-004 | Low | Date parse errors leaked in HTTP responses | FIXED — generic messages |
+| R-005 | Medium | Employee service leaks email + auth error in response body | FIXED — generic message, log internally |
+| R-006 | Medium | No security response headers (HSTS, X-Frame-Options) | FIXED — SecurityHeadersMiddleware in main.py |
+
+### Still deferred (acceptable pre-launch)
+
+1. No application-level rate limiting on `/auth/signup` or `/public/invoices/{token}`. Mitigated by Supabase Auth rate limiting and 192-bit public tokens.
+2. Service-role client used on all endpoints. Mitigated by application-layer tenant_id filter in every repository. Architectural change planned post-launch.
+
 ## Changelog
 
 ### [2026-05-19] — Skeleton created.
 ### [2026-05-23] — Pre-launch full audit completed (issue #72). 8 findings — 2 critical/high, 2 medium, 4 low/warn. All critical and medium fixed inline; 4 deferred to Week 6.
+### [2026-06-12] — Re-audit and closure. 6 additional findings found and fixed. 2 items deferred as acceptable pre-launch risk. SecurityHeadersMiddleware added. RLS hardening migration 0022 for 3 tables.

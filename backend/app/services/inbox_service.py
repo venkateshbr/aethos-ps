@@ -202,12 +202,18 @@ class InboxService:
         return task
 
     async def _materialise(self, kind: str, payload: dict) -> dict:
-        """Route materialisation by kind.  Returns entity_type + entity_id."""
-        if kind == "create_engagement":
+        """Route materialisation by kind.  Returns entity_type + entity_id.
+
+        The extraction worker emits the ``*_draft`` kinds; earlier kinds without
+        the suffix are accepted too for backward-compatibility. Before this fix
+        the dispatch only matched the suffix-less names, so every approval fell
+        through to the no-op branch and silently created nothing (#146 follow-up).
+        """
+        if kind in ("create_engagement", "create_engagement_draft"):
             return await self._materialise_engagement(payload)
-        elif kind == "create_expense":
+        elif kind in ("create_expense", "create_expense_draft"):
             return await self._materialise_expense(payload)
-        elif kind in ("create_bill", "vendor_invoice"):
+        elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
             return await self._materialise_bill(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
@@ -253,6 +259,7 @@ class InboxService:
             )
             client_id = client_row.data[0]["id"]
 
+        engagement_currency = payload.get("currency", "USD")
         eng_row = await asyncio.to_thread(
             lambda: self._db.table("engagements")
             .insert(
@@ -261,7 +268,7 @@ class InboxService:
                     "client_id": client_id,
                     "name": payload.get("engagement_name") or f"{client_name} Engagement",
                     "billing_arrangement": payload.get("billing_arrangement", "time_and_materials"),
-                    "currency": payload.get("currency", "USD"),
+                    "currency": engagement_currency,
                     "total_value": (
                         str(Decimal(str(payload["total_value"])))
                         if payload.get("total_value")
@@ -273,7 +280,36 @@ class InboxService:
             )
             .execute()
         )
-        return {"entity_type": "engagement", "entity_id": str(eng_row.data[0]["id"])}
+        engagement_id = str(eng_row.data[0]["id"])
+
+        # Auto-create a default "General" project so the user can log time
+        # against the engagement immediately, without a manual project-create
+        # step. Without this the time-entries quick-add was blocked behind an
+        # extra trip to /app/projects every time. Failures here are non-fatal:
+        # the engagement is already materialised; the user can still create
+        # projects manually from the engagement detail page.
+        try:
+            await asyncio.to_thread(
+                lambda: self._db.table("projects")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "engagement_id": engagement_id,
+                        "name": "General",
+                        "currency": engagement_currency,
+                        "status": "planning",
+                    }
+                )
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning(
+                "Auto-create default project failed for engagement %s: %s",
+                engagement_id,
+                exc,
+            )
+
+        return {"entity_type": "engagement", "entity_id": engagement_id}
 
     async def _materialise_expense(self, payload: dict) -> dict:
         import asyncio

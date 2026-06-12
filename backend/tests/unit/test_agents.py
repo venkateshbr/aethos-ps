@@ -15,10 +15,66 @@ from decimal import Decimal
 
 import pytest
 
-from app.agents.base import mask_pii
+from app.agents.base import build_document_content, mask_pii
 from app.agents.schemas import BillDraft, EngagementDraft, ProjectExpenseDraft
 
 pytestmark = pytest.mark.unit
+
+
+# ---------------------------------------------------------------------------
+# build_document_content — MIME routing (#146)
+# ---------------------------------------------------------------------------
+
+
+def test_build_content_pdf_uses_native_file_type() -> None:
+    content = build_document_content("PROMPT", b"%PDF-1.3 fake bytes", "application/pdf")
+    assert content[0]["type"] == "file"
+    assert content[0]["file"]["file_data"].startswith("data:application/pdf;base64,")
+    assert content[1]["text"] == "PROMPT"
+
+
+def test_build_content_image_uses_vision() -> None:
+    content = build_document_content("PROMPT", b"\x89PNG fake", "image/png")
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_build_content_text_masks_and_truncates() -> None:
+    content = build_document_content("PROMPT", b"contact a@b.com here", "text/plain")
+    assert content[0]["type"] == "text"
+    assert "[REDACTED]@b.com" in content[0]["text"]  # PII masked
+    assert "PROMPT" in content[0]["text"]
+
+
+def test_build_content_pdf_not_decoded_as_text() -> None:
+    # Regression for #146: PDF bytes must NOT be utf-8 decoded into the prompt.
+    content = build_document_content("PROMPT", b"%PDF-1.3\nstream\xff\xfe garbage", "application/pdf")
+    assert content[0]["type"] == "file"  # native, not a text blob of garbage
+
+
+# ---------------------------------------------------------------------------
+# Schema null-tolerance — LLM returns explicit null for a defaulted field (#146)
+# ---------------------------------------------------------------------------
+
+
+def test_engagement_draft_null_client_name_falls_back_to_default() -> None:
+    d = EngagementDraft(client_name=None, scope_summary="Audit FY26", confidence=0.7)
+    assert d.client_name == ""  # default applied, no ValidationError
+    assert d.scope_summary == "Audit FY26"
+
+
+def test_engagement_draft_null_currency_and_billing_fall_back() -> None:
+    d = EngagementDraft(currency=None, billing_arrangement=None, confidence=0.6)
+    assert d.currency == "USD"
+    assert d.billing_arrangement == "time_and_materials"
+
+
+def test_expense_draft_required_fields_still_enforced() -> None:
+    # The null-drop base must NOT mask genuinely required fields.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ProjectExpenseDraft(vendor=None, amount=None, category=None, confidence=0.5)
 
 
 # ---------------------------------------------------------------------------
