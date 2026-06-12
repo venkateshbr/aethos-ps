@@ -118,7 +118,7 @@ async function portalLogin(page: Page, context: BrowserContext, email: string, p
 test.beforeAll(async ({ request }) => {
   const { test_email, password, tenant_id, project_id, employees } = seed();
   const bob = employees[0];
-  const API = 'http://localhost:8010';
+  const API = 'http://localhost:8011';
 
   // 1. Sign in to get a JWT
   const signinResp = await request.post(`${API}/api/v1/auth/signin`, {
@@ -207,7 +207,7 @@ test.describe('S0 · Login sessions', () => {
     if (freshToken) {
       const { tenant_id, project_id, employees } = seed();
       const bob = employees[0];
-      const baseUrl = `http://localhost:8010`;
+      const baseUrl = `http://localhost:8011`;
       // Fetch the last 60 days worth of entries for Bob on this project
       const resp = await page.request.get(
         `${baseUrl}/api/v1/time-entries?employee_id=${bob.id}&project_id=${project_id}&limit=200`,
@@ -869,7 +869,7 @@ test.describe('S6 · Billing gate — approved-only via API', () => {
 
     // Direct API call: count approved+billable+unbilled entries for our project
     const resp = await request.get(
-      `http://localhost:8010/api/v1/time-entries?project_id=${project_id}`,
+      `http://localhost:8011/api/v1/time-entries?project_id=${project_id}`,
       { headers: { 'Authorization': `Bearer ${token}`, 'X-Tenant-ID': tenant_id } }
     );
     expect(resp.ok()).toBeTruthy();
