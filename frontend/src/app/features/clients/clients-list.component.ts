@@ -163,9 +163,9 @@ export class ClientsListComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    this.http.get<ClientSummary[]>('/api/v1/clients').subscribe({
-      next: (list) => {
-        this.clients.set(list);
+    this.http.get<{ items: ClientSummary[]; total: number }>('/api/v1/clients').subscribe({
+      next: (res) => {
+        this.clients.set(res.items ?? []);
         this.loading.set(false);
       },
       error: (err: { status?: number }) => {
