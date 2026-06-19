@@ -21,6 +21,7 @@ class BillingRunResponse(BaseModel):
     period_start: str
     period_end: str
     status: str
+    engagement_filter: dict[str, Any] | None
     created_by_agent: str | None
     summary: dict[str, Any] | None
     created_at: str
@@ -34,6 +35,7 @@ class BillingRunResponse(BaseModel):
             period_start=str(row["period_start"]),
             period_end=str(row["period_end"]),
             status=row["status"],
+            engagement_filter=row.get("engagement_filter"),
             created_by_agent=row.get("created_by_agent"),
             summary=row.get("summary"),
             created_at=str(row["created_at"]),

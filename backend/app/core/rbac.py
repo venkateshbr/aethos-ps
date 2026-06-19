@@ -25,9 +25,11 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.db import get_service_role_client
+from supabase import Client
 
 
 class UserRole(StrEnum):
@@ -49,6 +51,44 @@ ROLE_HIERARCHY: dict[UserRole, int] = {
 }
 
 
+def _resolve_role(current_user: CurrentUser, request: Request, db: Client) -> UserRole:
+    """Return the effective UserRole for this request.
+
+    Primary source: ``app_metadata.role`` in the JWT (set by Supabase JWT hook).
+    Fallback: DB lookup from ``tenant_users`` using X-Tenant-ID header.
+
+    The fallback handles accounts created via admin APIs (e.g. e2e test setup)
+    that bypass the JWT hook, as well as environments where the hook is not yet
+    configured.
+    """
+    try:
+        return UserRole(current_user.role)
+    except ValueError:
+        pass
+
+    # JWT role is absent or unrecognised — fall back to tenant_users table.
+    raw_tenant_id = request.headers.get("X-Tenant-ID", "").strip()
+    if not raw_tenant_id:
+        return UserRole.viewer
+
+    try:
+        result = (
+            db.table("tenant_users")
+            .select("role")
+            .eq("user_id", current_user.user_id)
+            .eq("tenant_id", raw_tenant_id)
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return UserRole(result.data[0]["role"])
+    except Exception:
+        pass
+
+    return UserRole.viewer
+
+
 def require_role(minimum: UserRole) -> CurrentUser:
     """Dependency factory: raise 403 if the caller's role is below ``minimum``.
 
@@ -64,12 +104,12 @@ def require_role(minimum: UserRole) -> CurrentUser:
             ...
     """
 
-    def _check(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:  # noqa: B008
-        try:
-            user_role = UserRole(current_user.role)
-        except ValueError:
-            # Unknown role — treat as lowest privilege
-            user_role = UserRole.viewer
+    def _check(
+        request: Request,
+        current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+        db: Client = Depends(get_service_role_client),  # noqa: B008
+    ) -> CurrentUser:
+        user_role = _resolve_role(current_user, request, db)
 
         if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[minimum]:
             raise HTTPException(

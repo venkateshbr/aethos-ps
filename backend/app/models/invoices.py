@@ -73,7 +73,7 @@ class InvoiceCreate(BaseModel):
     issue_date: date | None = None
     due_date: date | None = None
     notes: str | None = Field(default=None, max_length=4000)
-    lines: list[InvoiceLineCreate] = Field(default_factory=list)
+    lines: list[InvoiceLineCreate] = Field(default_factory=list, min_length=1)
 
 
 class ManualPaymentCreate(BaseModel):

@@ -40,6 +40,7 @@ class EngagementCreate(BaseModel):
         "retainer_draw",
         "milestone",
         "capped_tm",
+        "mixed",
     ]
     currency: str = Field(default="USD", min_length=3, max_length=3)
     total_value: Decimal | None = None
