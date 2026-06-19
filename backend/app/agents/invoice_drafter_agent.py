@@ -1,13 +1,14 @@
 """invoice_drafter_agent — calculates invoice lines from engagement data.
 
 Not a prompt-based agent for core arithmetic — numbers come from the DB.
-All five billing arrangements are supported:
+All six billing arrangements are supported:
   - time_and_materials: sum unbilled time entries x rate, pass through expenses
   - fixed_fee: single line from billing_terms.fixed_fee_amount
   - milestone: one line per milestone in billing_terms
   - retainer: monthly_amount from billing_terms
   - retainer_draw: T&M with retainer offset
   - capped_tm: T&M capped at billing_terms.cap_amount
+  - mixed: fixed_fee base + T&M overage lines in one invoice (#176)
 
 Tax is applied per-line using the tenant's default tax rate.
 
@@ -209,9 +210,35 @@ def _draft_invoice_inner(
                     amount=-overflow,
                 )
             )
+            # Mark overflow time entries as non_billable in the DB (#175)
+            _mark_capped_overflow_non_billable(
+                deps=deps,
+                eng=eng,
+                cap=cap,
+                period_start=period_start,
+                period_end=period_end,
+            )
 
     elif arrangement == "milestone":
         lines = _draft_milestone_lines(billing)
+
+    elif arrangement == "mixed":
+        # Mixed model (#176): fixed base fee + T&M overage on one invoice.
+        # The fixed base comes from billing_terms.fixed_fee_amount; then any
+        # unbilled time entries/expenses above the base are added as T&M lines.
+        fixed_amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
+        if fixed_amount > Decimal("0"):
+            lines = [
+                InvoiceLineItem(
+                    description=f"Fixed fee — {eng.get('name', 'engagement')}",
+                    unit_price=fixed_amount,
+                    amount=fixed_amount,
+                )
+            ]
+        else:
+            lines = []
+        # Append T&M lines for any unbilled work in the period
+        lines.extend(_draft_tm_lines(eng, deps, period_start, period_end))
 
     else:
         logger.warning(
@@ -390,6 +417,125 @@ def _draft_tm_lines(
         )
 
     return lines
+
+
+def _mark_capped_overflow_non_billable(
+    *,
+    deps: AgentDeps,
+    eng: dict,
+    cap: Decimal,
+    period_start: date | None,
+    period_end: date | None,
+) -> None:
+    """Mark time entries beyond the cap as non_billable (#175).
+
+    Fetches all unbilled, billable, approved entries for the engagement sorted
+    by date ascending. Accumulates amounts against the cap; entries that exceed
+    the cap are updated to billing_status=non_billable.
+
+    This is a best-effort write — failures are logged and do not abort the draft.
+    """
+    db = deps.db
+    tenant_id = deps.tenant_id
+    engagement_id = eng["id"]
+
+    projects_result = (
+        db.table("projects")
+        .select("id")
+        .eq("engagement_id", engagement_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+    project_ids = [p["id"] for p in (projects_result.data or [])]
+    if not project_ids:
+        return
+
+    q = (
+        db.table("time_entries")
+        .select("id, employee_id, project_id, hours")
+        .eq("tenant_id", tenant_id)
+        .in_("project_id", project_ids)
+        .eq("billing_status", "unbilled")
+        .eq("billable", True)
+        .eq("status", "approved")
+        .is_("deleted_at", "null")
+        .order("date", desc=False)
+    )
+    if period_start:
+        q = q.gte("date", period_start.isoformat())
+    if period_end:
+        q = q.lte("date", period_end.isoformat())
+
+    entries = q.execute().data or []
+
+    # Resolve rate card
+    rate_card_id = eng.get("rate_card_id")
+    rates: dict[str, Decimal] = {}
+    if rate_card_id:
+        rc_lines = (
+            db.table("rate_card_lines")
+            .select("role, rate")
+            .eq("rate_card_id", rate_card_id)
+            .execute()
+            .data or []
+        )
+        rates = {r["role"]: Decimal(str(r["rate"])) for r in rc_lines}
+
+    # Build role map
+    if entries:
+        employee_ids = list({e["employee_id"] for e in entries})
+        assignments = (
+            db.table("project_assignments")
+            .select("employee_id, project_id, role")
+            .eq("tenant_id", tenant_id)
+            .in_("project_id", project_ids)
+            .in_("employee_id", employee_ids)
+            .execute()
+            .data or []
+        )
+        role_map: dict[tuple[str, str], str] = {
+            (a["project_id"], a["employee_id"]): (a["role"] or "Consultant")
+            for a in assignments
+        }
+    else:
+        return
+
+    cumulative = Decimal("0")
+    overflow_ids: list[str] = []
+
+    for entry in entries:
+        role = role_map.get((entry["project_id"], entry["employee_id"]), "Consultant")
+        rate = rates.get(role, Decimal("0"))
+        entry_amount = (Decimal(str(entry["hours"])) * rate).quantize(Decimal("0.01"))
+        if cumulative >= cap:
+            overflow_ids.append(entry["id"])
+        else:
+            remaining = cap - cumulative
+            if entry_amount > remaining:
+                overflow_ids.append(entry["id"])
+            cumulative += entry_amount
+
+    if overflow_ids:
+        try:
+            (
+                db.table("time_entries")
+                .update({"billing_status": "non_billable"})
+                .in_("id", overflow_ids)
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+            logger.info(
+                "invoice_drafter: marked %d time entries as non_billable (cap=%s) for engagement %s",
+                len(overflow_ids),
+                cap,
+                engagement_id,
+            )
+        except Exception:
+            logger.error(
+                "invoice_drafter: failed to mark overflow entries as non_billable for engagement %s",
+                engagement_id,
+                exc_info=True,
+            )
 
 
 def _draft_milestone_lines(billing: dict) -> list[InvoiceLineItem]:

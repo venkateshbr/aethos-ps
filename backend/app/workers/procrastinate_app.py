@@ -38,5 +38,6 @@ app = App(
         "app.workers.collections",
         "app.workers.autonomy_promoter",
         "app.workers.stripe_reconcile_worker",
+        "app.workers.billing_run_worker",
     ],
 )
