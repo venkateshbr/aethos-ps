@@ -378,10 +378,11 @@ class InvoicesService:
         return InvoiceResponse.from_db(updated or row, invoice_lines)
 
     async def send_invoice(self, invoice_id: str, sent_by: str) -> InvoiceResponse:
-        """Send invoice: create Stripe Payment Link and update invoice status.
+        """Send invoice: create Stripe Payment Link or fall back to PDF-only.
 
-        The tenant's Stripe Connect account is used if connected and
-        charges_enabled — otherwise the platform account is used.
+        If Stripe Connect is not configured for this tenant (#178), marks the
+        invoice as 'sent' without a payment link so the user can share the
+        public PDF URL directly.
 
         Security: Payment Link metadata is validated server-side.
         The public_token on the invoice is used for the redirect URL.
@@ -402,6 +403,19 @@ class InvoicesService:
 
         # Fetch tenant connect info
         tenant = await self._repo.get_tenant()
+        stripe_secret_configured = bool(settings.stripe_secret_key)
+
+        # PDF-only path (#178): skip Stripe when secret key is absent.
+        if not stripe_secret_configured:
+            logger.info(
+                "Invoice sent via PDF-only path (Stripe not configured)",
+                extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
+            )
+            updated = await self._repo.update(invoice_id, {"status": "sent"})
+            if updated is None:
+                raise HTTPException(status_code=404, detail="Invoice not found after update")
+            invoice_lines = await self._repo.list_lines(invoice_id)
+            return InvoiceResponse.from_db(updated, invoice_lines)
 
         try:
             # Create ephemeral Stripe Product + Price for this invoice

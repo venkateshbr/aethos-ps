@@ -37,5 +37,6 @@ app = App(
         "app.workers.fx_refresh",
         "app.workers.collections",
         "app.workers.autonomy_promoter",
+        "app.workers.stripe_reconcile_worker",
     ],
 )

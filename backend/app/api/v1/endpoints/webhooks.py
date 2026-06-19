@@ -38,6 +38,7 @@ from app.core.stripe_deps import get_stripe_service
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService
+from app.services.fx_gain_loss_service import post_fx_gain_loss_if_needed
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -468,6 +469,22 @@ async def _handle_checkout_session_completed(
                 "tenant_id": tenant_id,
                 "payment_intent_id": payment_intent_id,
             },
+        )
+
+    # Post FX gain/loss journal if this was a cross-currency payment (#191)
+    try:
+        await post_fx_gain_loss_if_needed(
+            db=db,
+            tenant_id=tenant_id,
+            invoice=invoice,
+            payment_amount=amount_received,
+            payment_currency=currency,
+        )
+    except Exception:
+        logger.error(
+            "Failed to post FX gain/loss journal — payment journal already posted",
+            exc_info=True,
+            extra={"invoice_id": invoice_id, "tenant_id": tenant_id},
         )
 
     logger.info(

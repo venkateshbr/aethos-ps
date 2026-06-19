@@ -153,7 +153,10 @@ def test_send_invoice_returns_payment_link_url(
         patch("stripe.Product.create", return_value=fake_product),
         patch("stripe.Price.create", return_value=fake_price),
         patch("stripe.PaymentLink.create", return_value=fake_payment_link),
+        patch("app.services.invoices_service.settings") as mock_settings,
     ):
+        mock_settings.stripe_secret_key = "sk_test_placeholder"
+        mock_settings.frontend_base_url = "https://app.aethos.test"
         result = asyncio.run(svc.send_invoice(invoice_id, sent_by="user-uuid-001"))
 
     assert result.payment_link_url == "https://buy.stripe.com/test_001"
@@ -246,7 +249,10 @@ def test_send_invoice_routes_through_connect_when_enabled(
         patch("stripe.Product.create", return_value=fake_product),
         patch("stripe.Price.create", return_value=fake_price),
         patch("stripe.PaymentLink.create", side_effect=capture_pl_create),
+        patch("app.services.invoices_service.settings") as mock_settings,
     ):
+        mock_settings.stripe_secret_key = "sk_test_placeholder"
+        mock_settings.frontend_base_url = "https://app.aethos.test"
         asyncio.run(svc.send_invoice(invoice_id, sent_by="user-uuid-001"))
 
     assert captured_kwargs.get("on_behalf_of") == "acct_connect_001"
