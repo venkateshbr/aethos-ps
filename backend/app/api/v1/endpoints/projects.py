@@ -84,6 +84,16 @@ async def get_project(
     return project
 
 
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    id: str,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: ProjectService = Depends(_service),  # noqa: B008
+) -> None:
+    """Soft-delete a project. Returns 409 if unbilled time entries exist."""
+    await svc.delete_project(id)
+
+
 # ---------------------------------------------------------------------------
 # Project assignments (issue #134, Phase 2) — the project "team".
 # ---------------------------------------------------------------------------

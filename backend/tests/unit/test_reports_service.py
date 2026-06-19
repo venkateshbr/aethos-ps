@@ -213,7 +213,12 @@ def test_revenue_by_engagement_groups(mock_db: MagicMock) -> None:
         {"engagement_id": "eng-A", "total": "3000.00", "currency": "USD", "status": "sent", "issue_date": "2026-02-10"},
         {"engagement_id": "eng-B", "total": "8000.00", "currency": "USD", "status": "paid", "issue_date": "2026-03-05"},
     ]
-    mock_db.table.return_value = _chain(invoices)
+    engagements = [
+        {"id": "eng-A", "name": "Engagement A"},
+        {"id": "eng-B", "name": "Engagement B"},
+    ]
+    # revenue_by_engagement makes two db.table() calls: invoices then engagements
+    mock_db.table.side_effect = [_chain(invoices), _chain(engagements)]
 
     svc = _make_svc(mock_db)
     result = svc.revenue_by_engagement()

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+
+from fastapi import HTTPException
 
 from app.domain.money import serialise_money
 from app.models.projects import ProjectCreate, ProjectResponse
@@ -51,7 +54,6 @@ class ProjectService:
         # silently mis-stamped projects on SGD/GBP/etc. engagements.
         currency = data.currency
         if not currency:
-            import asyncio
             eng_row = await asyncio.to_thread(
                 lambda: self._db.table("engagements")
                 .select("currency")
@@ -72,3 +74,38 @@ class ProjectService:
             payload["budget"] = serialise_money(data.budget)
         row = await self._repo.create(payload)
         return ProjectResponse.from_db(row)
+
+    async def delete_project(self, project_id: str) -> None:
+        """Soft-delete a project. Blocks if unbilled time entries exist."""
+        import datetime
+
+        row = await self._repo.get(project_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Guard: refuse deletion while unbilled/approved time entries remain
+        unbilled_result = await asyncio.to_thread(
+            lambda: self._db.table("time_entries")
+            .select("id", count="exact")
+            .eq("project_id", project_id)
+            .eq("tenant_id", self._tenant_id)
+            .in_("billing_status", ["unbilled", "approved"])
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        if (unbilled_result.count or 0) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot delete project: {unbilled_result.count} unbilled "
+                    "time entries must be invoiced or marked non-billable first."
+                ),
+            )
+
+        await asyncio.to_thread(
+            lambda: self._db.table("projects")
+            .update({"deleted_at": datetime.datetime.now(datetime.UTC).isoformat()})
+            .eq("id", project_id)
+            .eq("tenant_id", self._tenant_id)
+            .execute()
+        )
