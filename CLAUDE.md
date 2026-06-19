@@ -98,7 +98,21 @@ cd frontend && ng lint
 
 # Workers
 cd backend && uv run python -m procrastinate --app=app.workers.procrastinate_app.app worker
+
+# E2E (Playwright) — run from repo root
+make e2e                      # headless, chromium only (default local ports)
+make e2e-headed               # headed with slow-mo for local debugging
+
+# Override target URLs if needed:
+# AETHOS_PS_WEB_URL=http://staging.example.com make e2e
 ```
+
+Environment variables for e2e specs:
+| Variable | Default | Purpose |
+|---|---|---|
+| `AETHOS_PS_WEB_URL` | `http://localhost:4201` | Angular frontend URL |
+| `AETHOS_PS_API_URL` | `http://localhost:8011` | FastAPI backend URL |
+| `AETHOS_TS_WEB_URL` | `http://localhost:4202` | Timesheets frontend URL |
 
 *(Ports 8011 / 4201 chosen to avoid collision with aethos erpcore's 8010 / 4200.)*
 

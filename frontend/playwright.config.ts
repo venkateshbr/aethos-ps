@@ -7,6 +7,11 @@ import * as path from 'node:path';
 // bootstrap step is purely to keep the loader from ENOENT-ing on a fresh
 // checkout / cleaned worktree where e2e/.auth/storage-state.json does not
 // yet exist. See e2e/global.setup.ts for the real session bootstrap.
+// Apply local-dev defaults for env vars that specs read directly.
+// CI overrides these via the shell environment; local runs just work without extra setup.
+process.env.AETHOS_PS_WEB_URL ??= 'http://localhost:4201';
+process.env.AETHOS_PS_API_URL ??= 'http://localhost:8011';
+
 const STORAGE_STATE = path.join(__dirname, 'e2e', '.auth', 'storage-state.json');
 if (!fs.existsSync(STORAGE_STATE)) {
   fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
