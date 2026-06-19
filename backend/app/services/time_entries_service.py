@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 
@@ -23,6 +24,7 @@ from app.models.time_entries import (
 )
 from app.repositories.time_entries_repo import TimeEntriesRepository
 from app.services._validation import assert_belongs_to_tenant
+from app.services.period_lock_service import assert_period_open
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,14 @@ class TimeEntriesService:
     # ------------------------------------------------------------------
 
     async def create_entry(self, data: TimeEntryCreate, *, approved_by: str | None = None) -> TimeEntryResponse:
+        # Period lock check — reject if the entry's date falls in a locked period (#168)
+        await assert_period_open(self._db, self._tenant_id, data.date)
+
+        # DST sanity check (#195): warn if date falls on a DST transition in the
+        # entry's timezone.  Does not block creation — only logs a warning so
+        # data-quality issues can be investigated without interrupting the user.
+        _warn_if_dst_transition(data.date, data.timezone)
+
         # Validate project belongs to tenant
         if not await self._repo.project_belongs_to_tenant(data.project_id):
             raise HTTPException(
@@ -105,10 +115,15 @@ class TimeEntriesService:
             "description": data.description,
             "billable": data.billable,
             "billing_status": "unbilled" if data.billable else "non_billable",
+            # Time logged from the main ERP (manager on-behalf) is authoritative
+            # and skips the portal submit→approve cycle (issue #134, P7).
             "status": "approved",
             "approved_by": approved_by,
             "approved_at": datetime.now(UTC).isoformat(),
+            # IANA timezone stored for display conversion (#190)
+            "timezone": data.timezone,
         }
+
         if data.phase_id is not None:
             payload["phase_id"] = data.phase_id
 
@@ -183,6 +198,58 @@ class TimeEntriesService:
 # ---------------------------------------------------------------------------
 
 
+def _warn_if_dst_transition(entry_date: date, tz_str: str) -> None:
+    """Log a warning if entry_date falls on a DST transition in the given timezone.
+
+    Checks two cases:
+    1. Spring-forward (gap): the 2:00 AM hour does not exist; fold=False but the
+       wall-clock jumps, creating a non-existent hour.
+    2. Fall-back (fold): the 1:00 AM hour occurs twice; fold=True detects this.
+
+    UTC has no DST transitions and is fast-pathed to avoid unnecessary work.
+
+    Args:
+        entry_date: The date of the time entry.
+        tz_str: IANA timezone string (e.g. 'America/New_York').
+    """
+    if tz_str in ("UTC", "utc", ""):
+        return
+
+    try:
+        tz = ZoneInfo(tz_str)
+    except (ZoneInfoNotFoundError, KeyError):
+        logger.warning(
+            "DST check skipped — unrecognised timezone %r for date %s", tz_str, entry_date
+        )
+        return
+
+    year, month, day = entry_date.year, entry_date.month, entry_date.day
+
+    # Fall-back (fold): does the 1:00 AM hour repeat?
+    dt_fold0 = datetime(year, month, day, 1, 0, 0, tzinfo=tz, fold=0)
+    dt_fold1 = datetime(year, month, day, 1, 0, 0, tzinfo=tz, fold=1)
+    if dt_fold0.utcoffset() != dt_fold1.utcoffset():
+        logger.warning(
+            "DST transition (fall-back/fold) detected for date %s in timezone %r — "
+            "the 1:00 AM hour is repeated; time entry hours may be ambiguous.",
+            entry_date,
+            tz_str,
+        )
+        return
+
+    # Spring-forward (gap): does 2:00 AM not exist?
+    # A DST gap means the UTC offset changes between midnight and 3:00 AM.
+    dt_midnight = datetime(year, month, day, 0, 0, 0, tzinfo=tz)
+    dt_3am = datetime(year, month, day, 3, 0, 0, tzinfo=tz)
+    if dt_midnight.utcoffset() != dt_3am.utcoffset():
+        logger.warning(
+            "DST transition (spring-forward/gap) detected for date %s in timezone %r — "
+            "the 2:00 AM hour does not exist; time entry date may straddle a clock change.",
+            entry_date,
+            tz_str,
+        )
+
+
 def _row_to_response(row: dict) -> TimeEntryResponse:
     return TimeEntryResponse(
         id=str(row["id"]),
@@ -198,6 +265,7 @@ def _row_to_response(row: dict) -> TimeEntryResponse:
         approved_by=str(row["approved_by"]) if row.get("approved_by") else None,
         approved_at=str(row["approved_at"]) if row.get("approved_at") else None,
         phase_id=str(row["phase_id"]) if row.get("phase_id") else None,
+        timezone=row.get("timezone") or "UTC",
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
     )

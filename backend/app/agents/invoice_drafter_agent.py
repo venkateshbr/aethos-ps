@@ -61,6 +61,7 @@ class InvoiceDraft(BaseModel):
     billing_arrangement: str
     summary: str = ""
     confidence: float = Field(default=0.95, ge=0.0, le=1.0)
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -84,10 +85,45 @@ def draft_invoice(
 
     Returns:
         InvoiceDraft with all lines, totals, and tax applied.
+        On unexpected failure, returns a zero-value draft with ``error`` set
+        so callers can degrade gracefully without raising HTTP 500.
 
     Raises:
         ValueError: If the engagement is not found or is not accessible.
     """
+    try:
+        return _draft_invoice_inner(engagement_id, deps, period_start, period_end)
+    except ValueError:
+        # Re-raise — callers translate ValueError to HTTP 404.
+        raise
+    except Exception as exc:
+        logger.warning(
+            "invoice_drafter_agent: unexpected error — returning empty draft: %s",
+            exc,
+            exc_info=True,
+        )
+        return InvoiceDraft(
+            engagement_id=engagement_id,
+            client_id="",
+            currency="USD",
+            lines=[],
+            subtotal=Decimal("0"),
+            tax_total=Decimal("0"),
+            total=Decimal("0"),
+            billing_arrangement="unknown",
+            summary="AI drafting temporarily unavailable. Please complete the invoice manually.",
+            confidence=0.0,
+            error=str(exc),
+        )
+
+
+def _draft_invoice_inner(
+    engagement_id: str,
+    deps: AgentDeps,
+    period_start: date | None = None,
+    period_end: date | None = None,
+) -> InvoiceDraft:
+    """Internal implementation — raises on any error."""
     db = deps.db
 
     # Fetch engagement + billing terms + client in one query.
@@ -150,13 +186,13 @@ def draft_invoice(
 
     elif arrangement == "retainer_draw":
         lines = _draft_tm_lines(eng, deps, period_start, period_end)
-        retainer_balance = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
-        if retainer_balance > Decimal("0"):
+        draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        if draw_amount > Decimal("0"):
             lines.append(
                 InvoiceLineItem(
                     description="Retainer applied",
-                    unit_price=-retainer_balance,
-                    amount=-retainer_balance,
+                    unit_price=-draw_amount,
+                    amount=-draw_amount,
                 )
             )
 
@@ -192,6 +228,25 @@ def draft_invoice(
     tax_total = sum(line.tax_amount for line in lines)
     total = subtotal + tax_total
 
+    # Build base summary
+    summary = f"{arrangement.replace('_', ' ').title()} invoice for {eng['name']}"
+
+    # Retainer-draw floor alert (#177): warn when post-draw balance falls below the
+    # configured floor.  Does NOT block the draft — warning appended to summary only.
+    if arrangement == "retainer_draw":
+        retainer_floor = Decimal(str(billing.get("retainer_floor") or "0"))
+        if retainer_floor > Decimal("0"):
+            draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+            current_balance = Decimal(
+                str(billing.get("retainer_current_balance") or draw_amount)
+            )
+            balance_after_draw = current_balance - draw_amount
+            if balance_after_draw < retainer_floor:
+                summary = (
+                    f"{summary}. Warning: retainer balance will fall below floor "
+                    f"(floor={retainer_floor}, remaining={balance_after_draw})"
+                )
+
     return InvoiceDraft(
         engagement_id=engagement_id,
         client_id=client_id,
@@ -203,7 +258,7 @@ def draft_invoice(
         period_start=period_start.isoformat() if period_start else None,
         period_end=period_end.isoformat() if period_end else None,
         billing_arrangement=arrangement,
-        summary=f"{arrangement.replace('_', ' ').title()} invoice for {eng['name']}",
+        summary=summary,
         confidence=0.95,
     )
 

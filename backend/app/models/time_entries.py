@@ -13,6 +13,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
+# NUMERIC(15,2) maximum — enforced on Decimal fields (#194)
+_NUMERIC_15_2_MAX = Decimal("999999999999999.99")
+
 
 class TimeEntryCreate(BaseModel):
     project_id: str = Field(..., min_length=1, max_length=36)
@@ -22,6 +25,25 @@ class TimeEntryCreate(BaseModel):
     description: str = Field(default="", max_length=1000)
     billable: bool = True
     phase_id: str | None = Field(default=None, max_length=36)
+    timezone: str = Field(
+        default="UTC",
+        description="IANA timezone string (e.g. 'America/New_York'). Stored with the entry for display conversion.",
+    )
+
+    @field_validator("hours", mode="before")
+    @classmethod
+    def check_precision(cls, v: object) -> Decimal:
+        d = Decimal(str(v))
+        if d > _NUMERIC_15_2_MAX:
+            raise ValueError(f"Amount exceeds maximum allowed value ({_NUMERIC_15_2_MAX})")
+        return d
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("timezone must be a non-empty string")
+        return v
 
 
 class TimeEntryUpdate(BaseModel):
@@ -44,6 +66,7 @@ class TimeEntryResponse(BaseModel):
     approved_by: str | None = None
     approved_at: str | None = None
     phase_id: str | None = None
+    timezone: str = "UTC"  # IANA timezone string for display conversion (#190)
     created_at: str
     updated_at: str | None = None
 
