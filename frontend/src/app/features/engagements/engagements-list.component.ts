@@ -1,5 +1,6 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { TitleCasePipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
@@ -13,6 +14,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { userMessageForError } from '../../core/utils/error-message';
+
+interface ClientOption { id: string; name: string; }
 
 function formatBillingArrangement(arrangement: string): string {
   const map: Record<string, string> = {
@@ -263,6 +266,24 @@ function formatBillingArrangement(arrangement: string): string {
             }
           </div>
 
+          <!-- Client -->
+          <div>
+            <label for="eng-client" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Client *</label>
+            <select
+              id="eng-client"
+              formControlName="client_id"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            >
+              <option value="">Select client…</option>
+              @for (c of clients(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            @if (createForm.controls.client_id.touched && createForm.controls.client_id.errors) {
+              <p class="text-xs text-confidence-low mt-1">Client is required.</p>
+            }
+          </div>
+
           <!-- Billing arrangement -->
           <div>
             <label for="eng-billing" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Billing arrangement *</label>
@@ -362,6 +383,7 @@ function formatBillingArrangement(arrangement: string): string {
 })
 export class EngagementsListComponent implements OnInit {
   private engagementService = inject(EngagementService);
+  private http = inject(HttpClient);
   private router = inject(Router);
   private fb = inject(FormBuilder);
 
@@ -373,8 +395,10 @@ export class EngagementsListComponent implements OnInit {
   showCreateForm = signal(false);
   creating = signal(false);
   createError = signal<string | null>(null);
+  clients = signal<ClientOption[]>([]);
   createForm = this.fb.nonNullable.group({
     name:                ['', [Validators.required]],
+    client_id:           ['', [Validators.required]],
     billing_arrangement: ['', [Validators.required]],
     currency:            ['', [Validators.required]],
     total_value:         [''],
@@ -425,9 +449,17 @@ export class EngagementsListComponent implements OnInit {
   }
 
   openCreateForm(): void {
-    this.createForm.reset({ name: '', billing_arrangement: '', currency: '', total_value: '' });
+    this.createForm.reset({ name: '', client_id: '', billing_arrangement: '', currency: '', total_value: '' });
     this.createError.set(null);
     this.showCreateForm.set(true);
+    // Load clients for the dropdown (API returns { items: [...] } or bare array)
+    this.http.get<{ items?: { id: string; name: string }[] } | { id: string; name: string }[]>('/api/v1/clients').subscribe({
+      next: (res) => {
+        const list = Array.isArray(res) ? res : (res as { items?: { id: string; name: string }[] }).items ?? [];
+        this.clients.set(list.map(c => ({ id: c.id, name: c.name })));
+      },
+      error: () => this.clients.set([]),
+    });
   }
 
   closeCreateForm(): void {
@@ -444,7 +476,7 @@ export class EngagementsListComponent implements OnInit {
     const v = this.createForm.getRawValue();
     this.engagementService.createEngagement({
       name:                v.name,
-      client_id:           '', // optional — will be set later in the engagement detail
+      client_id:           v.client_id,
       billing_arrangement: v.billing_arrangement,
       currency:            v.currency,
       total_value:         v.total_value || null,

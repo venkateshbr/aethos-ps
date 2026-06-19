@@ -262,17 +262,17 @@ interface EmployeeMeta {
             <!-- Optional extra line -->
             <div>
               <label class="flex items-center gap-2 text-xs uppercase tracking-wide text-text-muted mb-2">
-                <input type="checkbox" [(ngModel)]="includeExtra" name="inv-extra-on"
+                <input type="checkbox" [ngModel]="includeExtra()" (ngModelChange)="includeExtra.set($event)" name="inv-extra-on"
                   class="w-4 h-4 rounded border-border-strong bg-surface text-accent focus:ring-accent" />
                 Add a manual line
               </label>
-              @if (includeExtra) {
+              @if (includeExtra()) {
                 <div class="grid grid-cols-12 gap-2">
-                  <input type="text" placeholder="Description" [(ngModel)]="extraDescription" name="inv-extra-desc"
+                  <input type="text" placeholder="Description" [ngModel]="extraDescription()" (ngModelChange)="extraDescription.set($event)" name="inv-extra-desc"
                     class="col-span-7 px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent" />
-                  <input type="number" min="0" step="0.01" placeholder="Qty" [(ngModel)]="extraQty" name="inv-extra-qty"
+                  <input type="number" min="0" step="0.01" placeholder="Qty" [ngModel]="extraQty()" (ngModelChange)="extraQty.set($event)" name="inv-extra-qty"
                     class="col-span-2 px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent" />
-                  <input type="number" min="0" step="0.01" placeholder="Unit price" [(ngModel)]="extraUnitPrice" name="inv-extra-price"
+                  <input type="number" min="0" step="0.01" placeholder="Unit price" [ngModel]="extraUnitPrice()" (ngModelChange)="extraUnitPrice.set($event)" name="inv-extra-price"
                     class="col-span-3 px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent" />
                 </div>
               }
@@ -342,13 +342,13 @@ export class EngagementDetailComponent implements OnInit {
   submitting = signal(false);
   drawerError = signal<string | null>(null);
 
-  // Form fields
+  // Form fields — signals so computed() tracks them correctly
   issueDate = this.todayIso();
   dueDate = this.thirtyDaysIso();
-  includeExtra = false;
-  extraDescription = '';
-  extraQty: number | string = '';
-  extraUnitPrice: number | string = '';
+  includeExtra = signal(false);
+  extraDescription = signal('');
+  extraQty = signal<number | string>('');
+  extraUnitPrice = signal<number | string>('');
 
   allSelected = computed(() => {
     const list = this.unbilledEntries();
@@ -360,9 +360,9 @@ export class EngagementDetailComponent implements OnInit {
     for (const e of this.unbilledEntries()) {
       if (this.selectedIds().has(e.id)) sum += this.lineAmountNumeric(e);
     }
-    if (this.includeExtra) {
-      const q = Number(this.extraQty ?? 0);
-      const p = Number(this.extraUnitPrice ?? 0);
+    if (this.includeExtra()) {
+      const q = Number(this.extraQty() ?? 0);
+      const p = Number(this.extraUnitPrice() ?? 0);
       if (Number.isFinite(q) && Number.isFinite(p)) sum += q * p;
     }
     return sum.toFixed(2);
@@ -370,10 +370,10 @@ export class EngagementDetailComponent implements OnInit {
 
   canSubmit = computed(() => {
     if (this.selectedIds().size > 0) return true;
-    if (this.includeExtra) {
-      const q = Number(this.extraQty ?? 0);
-      const p = Number(this.extraUnitPrice ?? 0);
-      const desc = String(this.extraDescription ?? '').trim();
+    if (this.includeExtra()) {
+      const q = Number(this.extraQty() ?? 0);
+      const p = Number(this.extraUnitPrice() ?? 0);
+      const desc = String(this.extraDescription() ?? '').trim();
       return desc.length > 0 && q > 0 && p >= 0;
     }
     return false;
@@ -443,10 +443,10 @@ export class EngagementDetailComponent implements OnInit {
     this.drawerOpen.set(true);
     this.drawerError.set(null);
     this.selectedIds.set(new Set());
-    this.includeExtra = false;
-    this.extraDescription = '';
-    this.extraQty = '';
-    this.extraUnitPrice = '';
+    this.includeExtra.set(false);
+    this.extraDescription.set('');
+    this.extraQty.set('');
+    this.extraUnitPrice.set('');
     this.issueDate = this.todayIso();
     this.dueDate = this.thirtyDaysIso();
     void this.loadDrawerData(eng.id);
@@ -568,11 +568,11 @@ export class EngagementDetailComponent implements OnInit {
         time_entry_id: entry.id,
       });
     }
-    if (this.includeExtra) {
+    if (this.includeExtra()) {
       lines.push({
-        description: String(this.extraDescription ?? '').trim(),
-        quantity: String(this.extraQty ?? '0'),
-        unit_price: String(this.extraUnitPrice ?? '0'),
+        description: String(this.extraDescription() ?? '').trim(),
+        quantity: String(this.extraQty() ?? '0'),
+        unit_price: String(this.extraUnitPrice() ?? '0'),
       });
     }
 
