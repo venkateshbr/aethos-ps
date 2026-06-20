@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 
 _TABLE = "clients"
 
+# Contacts with these kinds are valid in AR (invoice) contexts.
+CUSTOMER_KINDS: tuple[str, ...] = ("customer", "both")
+# Contacts with these kinds are valid in AP (bill) contexts.
+VENDOR_KINDS: tuple[str, ...] = ("vendor", "both")
+
 
 class ClientRepository:
     def __init__(self, db: Client, tenant_id: str) -> None:
@@ -40,7 +45,16 @@ class ClientRepository:
     ) -> list[dict]:
         query = self._base_query()
         if kind:
-            query = query.eq("kind", kind)
+            # A contact with kind='both' appears in both customer and vendor
+            # filtered views.  Use an IN filter so 'both' contacts are always
+            # included when the caller asks for 'customer' or 'vendor'.
+            if kind == "customer":
+                query = query.in_("kind", list(CUSTOMER_KINDS))
+            elif kind == "vendor":
+                query = query.in_("kind", list(VENDOR_KINDS))
+            else:
+                # Exact match for 'both' or any future kind value
+                query = query.eq("kind", kind)
         if q:
             query = query.ilike("name", f"%{q}%")
         result = await asyncio.to_thread(lambda: query.execute())
