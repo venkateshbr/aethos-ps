@@ -60,7 +60,7 @@ export const routes: Routes = [
       {
         path: 'projects',
         loadComponent: () =>
-          import('./features/projects/projects-list.component').then(m => m.ProjectsListComponent),
+          import('./features/projects/projects-standalone.component').then(m => m.ProjectsStandaloneComponent),
       },
       {
         path: 'invoices',
@@ -79,6 +79,12 @@ export const routes: Routes = [
         path: 'clients',
         loadComponent: () =>
           import('./features/clients/clients-list.component').then(m => m.ClientsListComponent),
+      },
+      {
+        // #212 — contact detail and edit page.
+        path: 'clients/:id',
+        loadComponent: () =>
+          import('./features/clients/client-detail.component').then(m => m.ClientDetailComponent),
       },
       {
         // #112 — placeholder, see comment on /clients above.
@@ -124,6 +130,16 @@ export const routes: Routes = [
           import('./features/approvals/approvals.component').then(m => m.ApprovalsComponent),
       },
       {
+        path: 'bills',
+        loadComponent: () =>
+          import('./features/bills/bills-list.component').then(m => m.BillsListComponent),
+      },
+      {
+        path: 'bills/:id',
+        loadComponent: () =>
+          import('./features/bills/bill-detail.component').then(m => m.BillDetailComponent),
+      },
+      {
         path: 'billing-runs',
         loadComponent: () =>
           import('./features/billing-runs/pay-bills.component').then(m => m.PayBillsComponent),
@@ -132,6 +148,12 @@ export const routes: Routes = [
         path: 'documents',
         loadComponent: () =>
           import('./features/documents/documents-list.component').then(m => m.DocumentsListComponent),
+      },
+      {
+        // #208 — Manual Journal Entry UI (Accounting section)
+        path: 'accounting/journals',
+        loadComponent: () =>
+          import('./features/accounting/journal-entries-list.component').then(m => m.JournalEntriesListComponent),
       },
       { path: '', redirectTo: 'copilot', pathMatch: 'full' },
     ],

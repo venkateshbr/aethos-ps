@@ -6,6 +6,7 @@
  */
 import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -107,7 +108,12 @@ interface ClientSummary {
         <div class="flex-1 overflow-y-auto p-6">
           <div class="space-y-2">
             @for (contact of filteredContacts(); track contact.id) {
-              <div class="flex items-center gap-4 bg-surface border border-border-default rounded-lg px-4 py-3 hover:border-border-strong transition-colors">
+              <button
+                type="button"
+                class="w-full flex items-center gap-4 bg-surface border border-border-default rounded-lg px-4 py-3 hover:border-border-strong hover:bg-surface-raised transition-colors text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                [attr.aria-label]="'View ' + contact.name"
+                (click)="navigateToContact(contact.id)"
+              >
                 <div class="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center flex-none">
                   <mat-icon class="text-accent-light text-base leading-none">
                     {{ contact.kind === 'vendor' ? 'storefront' : contact.kind === 'both' ? 'swap_horiz' : 'person' }}
@@ -124,7 +130,8 @@ interface ClientSummary {
                     >{{ kindLabel(contact.kind) }}</span>
                   </div>
                 </div>
-              </div>
+                <mat-icon class="text-text-disabled text-base flex-none" aria-hidden="true">chevron_right</mat-icon>
+              </button>
             }
           </div>
           <p class="text-xs text-text-disabled mt-3">
@@ -187,8 +194,9 @@ interface ClientSummary {
   `,
 })
 export class ClientsListComponent implements OnInit {
-  private http = inject(HttpClient);
-  private fb = inject(FormBuilder);
+  private http   = inject(HttpClient);
+  private fb     = inject(FormBuilder);
+  private router = inject(Router);
 
   loading = signal(true);
   error = signal<string | null>(null);
@@ -254,6 +262,10 @@ export class ClientsListComponent implements OnInit {
       case 'vendor':   return 'bg-amber-500/20 text-amber-300';
       case 'both':     return 'bg-purple-500/20 text-purple-300';
     }
+  }
+
+  navigateToContact(id: string): void {
+    this.router.navigate(['/app/clients', id]);
   }
 
   openCreateForm(): void {
