@@ -266,15 +266,15 @@ function formatBillingArrangement(arrangement: string): string {
             }
           </div>
 
-          <!-- Client -->
+          <!-- Customer (contacts filtered to kind=customer|both) -->
           <div>
-            <label for="eng-client" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Client *</label>
+            <label for="eng-client" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Customer *</label>
             <select
               id="eng-client"
               formControlName="client_id"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
             >
-              <option value="">Select client…</option>
+              <option value="">Select customer…</option>
               @for (c of clients(); track c.id) {
                 <option [value]="c.id">{{ c.name }}</option>
               }
@@ -452,8 +452,9 @@ export class EngagementsListComponent implements OnInit {
     this.createForm.reset({ name: '', client_id: '', billing_arrangement: '', currency: '', total_value: '' });
     this.createError.set(null);
     this.showCreateForm.set(true);
-    // Load clients for the dropdown (API returns { items: [...] } or bare array)
-    this.http.get<{ items?: { id: string; name: string }[] } | { id: string; name: string }[]>('/api/v1/clients').subscribe({
+    // Load customers for the dropdown — filter to kind=customer (includes 'both').
+    // The backend accepts ?kind=customer and returns contacts where kind IN ('customer','both').
+    this.http.get<{ items?: { id: string; name: string }[] } | { id: string; name: string }[]>('/api/v1/clients?kind=customer').subscribe({
       next: (res) => {
         const list = Array.isArray(res) ? res : (res as { items?: { id: string; name: string }[] }).items ?? [];
         this.clients.set(list.map(c => ({ id: c.id, name: c.name })));

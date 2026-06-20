@@ -191,7 +191,7 @@ export class ShellComponent implements OnInit {
   /** Secondary nav — behind the "More" overflow menu */
   readonly secondaryNav: NavItem[] = [
     { label: 'Projects',     icon: 'folder',          route: '/app/projects' },
-    { label: 'Clients',      icon: 'people',          route: '/app/clients' },
+    { label: 'Contacts',      icon: 'people',          route: '/app/clients' },
     { label: 'Billing Runs', icon: 'payments',        route: '/app/billing-runs' },
     { label: 'Expenses',     icon: 'receipt_long',    route: '/app/expenses' },
     { label: 'Time',         icon: 'schedule',        route: '/app/time' },

@@ -1,19 +1,22 @@
 /**
- * ClientsListComponent — client list with inline create form.
+ * ClientsListComponent — contact list with inline create form.
  *
- * Previously a placeholder (#112). Now shows a "New client" panel
- * so pilot users can add clients before uploading an engagement letter.
+ * Issue #201: rename "Clients" → "Contacts" in UI; add kind=both support;
+ * add type badge (Customer / Vendor / Both) and kind filter chips.
  */
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 
+type ContactKind = 'customer' | 'vendor' | 'both';
+type KindFilter  = 'all' | 'customer' | 'vendor';
+
 interface ClientSummary {
   id: string;
   name: string;
-  kind: 'customer' | 'vendor';
+  kind: ContactKind;
   created_at?: string;
 }
 
@@ -25,24 +28,41 @@ interface ClientSummary {
     <section class="h-full flex flex-col bg-surface-base text-text-primary">
       <header class="px-6 py-4 border-b border-border-default flex items-center justify-between flex-none">
         <div>
-          <h1 class="text-2xl font-bold text-text-primary">Clients</h1>
+          <h1 class="text-2xl font-bold text-text-primary">Contacts</h1>
           <p class="text-sm text-text-muted mt-0.5">Companies and individuals you work with.</p>
         </div>
         <button
           type="button"
           class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          aria-label="Create new client"
+          aria-label="Create new contact"
           (click)="openCreateForm()"
         >
           <mat-icon class="text-base leading-none">add</mat-icon>
-          New client
+          New contact
         </button>
       </header>
+
+      <!-- Kind filter chips -->
+      <div class="px-6 pt-4 pb-2 flex items-center gap-2 flex-none" role="group" aria-label="Filter by contact type">
+        @for (chip of filterChips; track chip.value) {
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [class]="kindFilter() === chip.value
+              ? 'bg-accent/20 text-accent-light border border-accent/40'
+              : 'bg-surface-raised text-text-muted border border-border-default hover:border-border-strong hover:text-text-secondary'"
+            [attr.aria-pressed]="kindFilter() === chip.value"
+            (click)="setFilter(chip.value)"
+          >
+            {{ chip.label }}
+          </button>
+        }
+      </div>
 
       <!-- Loading -->
       @if (loading()) {
         <div class="flex items-center justify-center py-16">
-          <div class="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-label="Loading clients"></div>
+          <div class="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-label="Loading contacts"></div>
         </div>
       }
 
@@ -55,55 +75,75 @@ interface ClientSummary {
       }
 
       <!-- Empty state -->
-      @if (!loading() && !error() && clients().length === 0) {
+      @if (!loading() && !error() && filteredContacts().length === 0) {
         <div class="flex-1 flex flex-col items-center justify-center text-center px-6">
           <mat-icon class="text-text-disabled mb-3" style="font-size:2.5rem;width:2.5rem;height:2.5rem;" aria-hidden="true">people_outline</mat-icon>
-          <p class="text-text-secondary font-medium">No clients yet</p>
-          <p class="text-text-disabled text-sm mt-1 max-w-md">
-            Add a client manually or upload an engagement letter via Copilot and Aethos will create one for you.
-          </p>
-          <button
-            type="button"
-            class="mt-5 inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            (click)="openCreateForm()"
-          >
-            <mat-icon class="text-base leading-none">add</mat-icon>
-            Add first client
-          </button>
+          @if (contacts().length === 0) {
+            <p class="text-text-secondary font-medium">No contacts yet</p>
+            <p class="text-text-disabled text-sm mt-1 max-w-md">
+              Add a contact manually or upload an engagement letter via Copilot and Aethos will create one for you.
+            </p>
+            <button
+              type="button"
+              class="mt-5 inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              (click)="openCreateForm()"
+            >
+              <mat-icon class="text-base leading-none">add</mat-icon>
+              Add first contact
+            </button>
+          } @else {
+            <p class="text-text-secondary font-medium">No contacts match this filter</p>
+            <button
+              type="button"
+              class="mt-3 text-sm text-accent-light hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+              (click)="setFilter('all')"
+            >Show all contacts</button>
+          }
         </div>
       }
 
-      <!-- Client list -->
-      @if (!loading() && !error() && clients().length > 0) {
+      <!-- Contact list -->
+      @if (!loading() && !error() && filteredContacts().length > 0) {
         <div class="flex-1 overflow-y-auto p-6">
           <div class="space-y-2">
-            @for (client of clients(); track client.id) {
+            @for (contact of filteredContacts(); track contact.id) {
               <div class="flex items-center gap-4 bg-surface border border-border-default rounded-lg px-4 py-3 hover:border-border-strong transition-colors">
                 <div class="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center flex-none">
                   <mat-icon class="text-accent-light text-base leading-none">
-                    {{ client.kind === 'vendor' ? 'storefront' : 'person' }}
+                    {{ contact.kind === 'vendor' ? 'storefront' : contact.kind === 'both' ? 'swap_horiz' : 'person' }}
                   </mat-icon>
                 </div>
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-text-primary truncate">{{ client.name }}</p>
-                  <p class="text-xs text-text-muted mt-0.5 capitalize">{{ client.kind }}</p>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <p class="text-sm font-medium text-text-primary truncate">{{ contact.name }}</p>
+                    <!-- Type badge -->
+                    <span
+                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-none"
+                      [class]="kindBadgeClass(contact.kind)"
+                      [attr.aria-label]="'Type: ' + kindLabel(contact.kind)"
+                    >{{ kindLabel(contact.kind) }}</span>
+                  </div>
                 </div>
               </div>
             }
           </div>
+          <p class="text-xs text-text-disabled mt-3">
+            {{ filteredContacts().length }} contact{{ filteredContacts().length !== 1 ? 's' : '' }}
+            @if (kindFilter() !== 'all') { (filtered) }
+          </p>
         </div>
       }
     </section>
 
-    <!-- Create client slide-in panel -->
+    <!-- Create contact slide-in panel -->
     @if (showCreateForm()) {
       <div class="fixed inset-0 bg-black/50 z-40" (click)="closeCreateForm()" aria-hidden="true"></div>
       <aside
         class="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border-default z-50 flex flex-col shadow-2xl"
-        role="dialog" aria-modal="true" aria-labelledby="create-client-title"
+        role="dialog" aria-modal="true" aria-labelledby="create-contact-title"
       >
         <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
-          <h2 id="create-client-title" class="text-base font-semibold text-text-primary">New client</h2>
+          <h2 id="create-contact-title" class="text-base font-semibold text-text-primary">New contact</h2>
           <button class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
             (click)="closeCreateForm()" aria-label="Close panel">
             <mat-icon>close</mat-icon>
@@ -112,21 +152,22 @@ interface ClientSummary {
         <form [formGroup]="createForm" (ngSubmit)="submitCreate()" class="flex-1 overflow-y-auto px-6 py-5 space-y-5" novalidate>
           <!-- Name -->
           <div>
-            <label for="client-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
-            <input id="client-name" type="text" formControlName="name"
+            <label for="contact-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
+            <input id="contact-name" type="text" formControlName="name"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
               placeholder="e.g. Acme Corp" />
             @if (createForm.controls.name.touched && createForm.controls.name.errors) {
               <p class="text-xs text-confidence-low mt-1">Name is required.</p>
             }
           </div>
-          <!-- Kind -->
+          <!-- Contact Type -->
           <div>
-            <label for="client-kind" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Type *</label>
-            <select id="client-kind" formControlName="kind"
+            <label for="contact-kind" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Contact Type *</label>
+            <select id="contact-kind" formControlName="kind"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm">
               <option value="customer">Customer (client you bill)</option>
               <option value="vendor">Vendor (supplier you pay)</option>
+              <option value="both">Both (Customer &amp; Vendor)</option>
             </select>
           </div>
           @if (createError()) {
@@ -138,7 +179,7 @@ interface ClientSummary {
           <button type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             [disabled]="createForm.invalid || creating()" (click)="submitCreate()">
-            @if (creating()) { Creating… } @else { Create client }
+            @if (creating()) { Creating… } @else { Create contact }
           </button>
         </div>
       </aside>
@@ -151,7 +192,27 @@ export class ClientsListComponent implements OnInit {
 
   loading = signal(true);
   error = signal<string | null>(null);
-  clients = signal<ClientSummary[]>([]);
+  contacts = signal<ClientSummary[]>([]);
+  kindFilter = signal<KindFilter>('all');
+
+  /** Filter chips shown above the list. */
+  readonly filterChips: { label: string; value: KindFilter }[] = [
+    { label: 'All',       value: 'all' },
+    { label: 'Customers', value: 'customer' },
+    { label: 'Vendors',   value: 'vendor' },
+  ];
+
+  /**
+   * Client-side filter: "customer" shows customer + both;
+   * "vendor" shows vendor + both; "all" shows everything.
+   */
+  filteredContacts = computed(() => {
+    const filter = this.kindFilter();
+    if (filter === 'all') return this.contacts();
+    return this.contacts().filter(c =>
+      c.kind === filter || c.kind === 'both',
+    );
+  });
 
   // Create form state
   showCreateForm = signal(false);
@@ -159,24 +220,40 @@ export class ClientsListComponent implements OnInit {
   createError = signal<string | null>(null);
   createForm = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
-    kind: ['customer' as 'customer' | 'vendor', [Validators.required]],
+    kind: ['customer' as ContactKind, [Validators.required]],
   });
 
   ngOnInit(): void {
     this.http.get<{ items: ClientSummary[]; total: number }>('/api/v1/clients').subscribe({
       next: (res) => {
-        this.clients.set(res.items ?? []);
+        this.contacts.set(res.items ?? []);
         this.loading.set(false);
       },
       error: (err: { status?: number }) => {
         if (err.status === 404) {
-          this.clients.set([]);
+          this.contacts.set([]);
         } else {
-          this.error.set('Could not load clients. Please refresh to try again.');
+          this.error.set('Could not load contacts. Please refresh to try again.');
         }
         this.loading.set(false);
       },
     });
+  }
+
+  setFilter(value: KindFilter): void {
+    this.kindFilter.set(value);
+  }
+
+  kindLabel(kind: ContactKind): string {
+    return kind === 'both' ? 'Both' : kind === 'vendor' ? 'Vendor' : 'Customer';
+  }
+
+  kindBadgeClass(kind: ContactKind): string {
+    switch (kind) {
+      case 'customer': return 'bg-blue-500/20 text-blue-300';
+      case 'vendor':   return 'bg-amber-500/20 text-amber-300';
+      case 'both':     return 'bg-purple-500/20 text-purple-300';
+    }
   }
 
   openCreateForm(): void {
@@ -198,8 +275,8 @@ export class ClientsListComponent implements OnInit {
     this.createError.set(null);
     const v = this.createForm.getRawValue();
     this.http.post<ClientSummary>('/api/v1/clients', { name: v.name, kind: v.kind }).subscribe({
-      next: (newClient) => {
-        this.clients.update(list => [newClient, ...list]);
+      next: (newContact) => {
+        this.contacts.update(list => [newContact, ...list]);
         this.creating.set(false);
         this.closeCreateForm();
       },
@@ -207,7 +284,7 @@ export class ClientsListComponent implements OnInit {
         this.creating.set(false);
         const detail = err?.error?.detail;
         this.createError.set(
-          typeof detail === 'string' ? detail : 'Could not create client. Please try again.'
+          typeof detail === 'string' ? detail : 'Could not create contact. Please try again.'
         );
       },
     });
