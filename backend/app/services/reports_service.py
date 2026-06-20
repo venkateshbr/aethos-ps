@@ -3,21 +3,24 @@
 All monetary values use Decimal internally; serialised as strings in the
 returned dicts so JSON consumers receive exact values without float drift.
 
-Six report methods:
+Seven report methods:
   1. ar_aging              — AR aging buckets (0-30 / 31-60 / 61-90 / 90+)
   2. ap_aging              — AP aging buckets
   3. project_pnl           — revenue vs cost per project
   4. utilization           — billable-hour utilisation per employee
   5. wip                   — unbilled hours x rate (Work In Progress)
   6. revenue_by_engagement — total invoiced per engagement in a period
+  7. trial_balance         — DR/CR totals per account, optionally cumulative to period
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from app.domain.money import serialise_money
+from app.models.reports import TrialBalanceLine, TrialBalanceReport
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -365,3 +368,110 @@ class ReportsService:
             }
             for k, v in by_eng.items()
         ]
+
+    # ------------------------------------------------------------------
+    # 7. Trial Balance
+    # ------------------------------------------------------------------
+
+    def trial_balance(self, as_of_period: str | None = None) -> TrialBalanceReport:
+        """Aggregate posted journal_lines by account, returning DR/CR totals.
+
+        Uses ``base_amount`` (tenant base currency) so multi-currency entries
+        are always comparable on a single scale.
+
+        If ``as_of_period`` is supplied (format ``YYYY-MM``) only journal
+        entries whose ``period`` is <= that value are included — giving a
+        cumulative-to-date view. If omitted, all posted entries are included.
+
+        Accounts are sorted by ``code`` ascending.  Only accounts that have
+        at least one journal line are returned (zero-balance accounts are
+        omitted — they would add noise without information).
+
+        Raises no exceptions on an empty tenant: returns an empty ``lines``
+        list with ``is_balanced=True`` and zero grand totals.
+        """
+        # ------------------------------------------------------------------
+        # Step 1 — fetch all journal_lines for this tenant joined with
+        # journal_entries (for period filtering) and accounts (for metadata).
+        # Supabase-py uses PostgREST foreign-key embedding.
+        #
+        # PostgREST embed: journal_lines has a FK to journal_entries
+        # (journal_entry_id) and to accounts (account_id).  We embed both.
+        # ------------------------------------------------------------------
+        lines_q = (
+            self.db.table("journal_lines")
+            .select(
+                "direction, base_amount, "
+                "journal_entries!journal_entry_id(period, posted_at), "
+                "accounts!account_id(code, name, account_type)"
+            )
+            .eq("tenant_id", self.tenant_id)
+        )
+        raw_lines: list[dict] = lines_q.execute().data or []
+
+        # ------------------------------------------------------------------
+        # Step 2 — Python-side aggregation (avoids complex GROUP BY via RPC
+        # and keeps the service layer testable with MagicMock).
+        # Filter to posted entries only (posted_at IS NOT NULL).
+        # Optionally filter to period <= as_of_period.
+        # ------------------------------------------------------------------
+        # Per account accumulate DR and CR base amounts.
+        # key: (code, name, account_type)  value: {"DR": Decimal, "CR": Decimal}
+        agg: dict[tuple[str, str, str], dict[str, Decimal]] = {}
+
+        for row in raw_lines:
+            je = row.get("journal_entries") or {}
+            # Skip unposted / draft entries
+            if not je.get("posted_at"):
+                continue
+
+            period = je.get("period", "")
+            if as_of_period and period > as_of_period:
+                continue
+
+            account = row.get("accounts") or {}
+            code: str = account.get("code", "")
+            name: str = account.get("name", "")
+            acct_type: str = account.get("account_type", "")
+            direction: str = row.get("direction", "DR")
+            base_amt = Decimal(str(row.get("base_amount", "0")))
+
+            key = (code, name, acct_type)
+            if key not in agg:
+                agg[key] = {"DR": Decimal("0"), "CR": Decimal("0")}
+            agg[key][direction] += base_amt
+
+        # ------------------------------------------------------------------
+        # Step 3 — build sorted line list and compute grand totals.
+        # ------------------------------------------------------------------
+        tb_lines: list[TrialBalanceLine] = []
+        grand_dr = Decimal("0")
+        grand_cr = Decimal("0")
+
+        for (code, name, acct_type), totals in sorted(agg.items(), key=lambda x: x[0][0]):
+            total_dr = totals["DR"]
+            total_cr = totals["CR"]
+            net = total_dr - total_cr
+            grand_dr += total_dr
+            grand_cr += total_cr
+            tb_lines.append(
+                TrialBalanceLine(
+                    account_code=code,
+                    account_name=name,
+                    account_type=acct_type,
+                    total_dr=serialise_money(total_dr),  # type: ignore[arg-type]
+                    total_cr=serialise_money(total_cr),  # type: ignore[arg-type]
+                    net=serialise_money(net),  # type: ignore[arg-type]
+                )
+            )
+
+        is_balanced = abs(grand_dr - grand_cr) <= Decimal("0.01")
+
+        return TrialBalanceReport(
+            as_of_period=as_of_period,
+            lines=tb_lines,
+            grand_total_dr=serialise_money(grand_dr),  # type: ignore[arg-type]
+            grand_total_cr=serialise_money(grand_cr),  # type: ignore[arg-type]
+            is_balanced=is_balanced,
+            generated_at=datetime.now(tz=UTC),
+        )

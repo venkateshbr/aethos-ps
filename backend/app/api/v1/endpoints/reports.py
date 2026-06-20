@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
+from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
+from app.models.reports import TrialBalanceReport
 from app.services.reports_service import ReportsService
 from supabase import Client
 
@@ -95,3 +97,25 @@ def revenue_by_engagement(
         period_start=period_start,
         period_end=period_end,
     )
+
+
+@router.get("/trial-balance", response_model=TrialBalanceReport)
+def get_trial_balance(
+    as_of_period: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Cumulative through this accounting period (YYYY-MM). Omit for all-time.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> TrialBalanceReport:
+    """Cumulative trial balance through the specified period (or all-time if omitted).
+
+    Returns one row per account that has at least one posted journal line,
+    sorted by account code ascending. ``is_balanced`` is True when the
+    absolute difference between grand DR and grand CR totals is within ±0.01
+    (the accounting_guardian guarantees this for any validly-posted tenant).
+
+    RBAC: viewer+ (same as other read-only reports).
+    """
+    return svc.trial_balance(as_of_period=as_of_period)
