@@ -475,3 +475,304 @@ class ReportsService:
             is_balanced=is_balanced,
             generated_at=datetime.now(tz=UTC),
         )
+
+    # ------------------------------------------------------------------
+    # 8. Revenue by Service Line
+    # ------------------------------------------------------------------
+
+    def revenue_by_service_line(self, period: str | None = None) -> list[dict]:
+        """Revenue grouped by service line.
+
+        Sources: invoice_lines joined to service_catalogue for the primary
+        service_line.  Falls back to engagements.service_line for lines that
+        have no catalogue entry attached.  Lines with no service_line on
+        either path are bucketed as ``unclassified``.
+
+        ``period`` is ``YYYY-MM``; when supplied only invoices whose
+        ``issue_date`` falls in that month are included.
+
+        Returns: [{service_line, label, total_revenue, pct}]
+        All monetary amounts serialised as strings.
+        """
+        _SERVICE_LINE_LABELS = {
+            "accounting": "Accounting",
+            "tax": "Tax",
+            "cosec": "Company Secretarial",
+            "payroll": "Payroll",
+            "advisory": "Advisory",
+            "other": "Other",
+            "unclassified": "Unclassified",
+        }
+
+        # Build date range from YYYY-MM
+        date_start: str | None = None
+        date_end: str | None = None
+        if period:
+            try:
+                year, month = int(period[:4]), int(period[5:7])
+                import calendar as _calendar
+                last_day = _calendar.monthrange(year, month)[1]
+                date_start = f"{year:04d}-{month:02d}-01"
+                date_end = f"{year:04d}-{month:02d}-{last_day:02d}"
+            except (ValueError, IndexError):
+                pass  # ignore malformed period — treat as all-time
+
+        # Fetch invoice_lines joined to invoices (for status + date) and
+        # optionally to service_catalogue and engagements.
+        # We fetch the raw rows and do grouping in Python (same pattern as
+        # trial_balance, avoids complex PostgREST GROUP BY).
+        inv_q = (
+            self.db.table("invoice_lines")
+            .select(
+                "amount, "
+                "service_catalogue_id, "
+                "invoices!invoice_id(status, issue_date, engagement_id, deleted_at)"
+            )
+            .eq("tenant_id", self.tenant_id)
+        )
+        raw_lines: list[dict] = inv_q.execute().data or []
+
+        # Gather all engagement_ids we need to resolve service_line from.
+        engagement_ids_needed: set[str] = set()
+        for line in raw_lines:
+            inv = line.get("invoices") or {}
+            if isinstance(inv, list):
+                inv = inv[0] if inv else {}
+            if not inv.get("engagement_id"):
+                continue
+            engagement_ids_needed.add(str(inv["engagement_id"]))
+
+        # Fetch engagement service_lines in one round-trip.
+        eng_service_line: dict[str, str] = {}
+        if engagement_ids_needed:
+            eng_rows = (
+                self.db.table("engagements")
+                .select("id, service_line")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(engagement_ids_needed))
+                .execute()
+                .data
+                or []
+            )
+            eng_service_line = {
+                str(e["id"]): str(e["service_line"])
+                for e in eng_rows
+                if e.get("service_line")
+            }
+
+        # Fetch service_catalogue service_lines in one round-trip.
+        svc_ids_needed: set[str] = {
+            str(ln["service_catalogue_id"])
+            for ln in raw_lines
+            if ln.get("service_catalogue_id")
+        }
+        svc_service_line: dict[str, str] = {}
+        if svc_ids_needed:
+            svc_rows = (
+                self.db.table("service_catalogue")
+                .select("id, service_line")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(svc_ids_needed))
+                .execute()
+                .data
+                or []
+            )
+            svc_service_line = {str(s["id"]): str(s["service_line"]) for s in svc_rows}
+
+        # Aggregate revenue by service_line.
+        by_line: dict[str, Decimal] = {}
+        for line in raw_lines:
+            inv = line.get("invoices") or {}
+            if isinstance(inv, list):
+                inv = inv[0] if inv else {}
+
+            # Skip voided / draft invoices and deleted invoices.
+            if inv.get("deleted_at") or inv.get("status") in ("voided", "draft"):
+                continue
+
+            # Apply period filter.
+            issue_date = str(inv.get("issue_date", "") or "")
+            if date_start and issue_date < date_start:
+                continue
+            if date_end and issue_date > date_end:
+                continue
+
+            # Resolve service_line: catalogue > engagement > unclassified.
+            svc_cat_id = str(line["service_catalogue_id"]) if line.get("service_catalogue_id") else None
+            eng_id = str(inv.get("engagement_id")) if inv.get("engagement_id") else None
+            svc_line = (
+                svc_service_line.get(svc_cat_id)
+                if svc_cat_id
+                else None
+            ) or (
+                eng_service_line.get(eng_id)
+                if eng_id
+                else None
+            ) or "unclassified"
+
+            amount = Decimal(str(line.get("amount", "0")))
+            by_line[svc_line] = by_line.get(svc_line, Decimal("0")) + amount
+
+        grand_total = sum(by_line.values(), Decimal("0"))
+
+        return [
+            {
+                "service_line": sl,
+                "label": _SERVICE_LINE_LABELS.get(sl, sl.title()),
+                "total_revenue": str(total.quantize(Decimal("0.01"))),
+                "pct": round(float(total / grand_total * 100), 1) if grand_total else 0.0,
+            }
+            for sl, total in sorted(by_line.items())
+        ]
+
+    # ------------------------------------------------------------------
+    # 9. Cost by Service Line
+    # ------------------------------------------------------------------
+
+    def cost_by_service_line(self, period: str | None = None) -> list[dict]:
+        """Labour cost (hours x cost_rate) grouped by service_line.
+
+        Service_line is resolved from engagements via projects → time_entries.
+        cost_rate is taken from employees.cost_rate (the internal cost of the
+        employee's time, not their bill rate).
+
+        Returns: [{service_line, label, total_cost, total_hours}]
+        """
+        _SERVICE_LINE_LABELS = {
+            "accounting": "Accounting",
+            "tax": "Tax",
+            "cosec": "Company Secretarial",
+            "payroll": "Payroll",
+            "advisory": "Advisory",
+            "other": "Other",
+            "unclassified": "Unclassified",
+        }
+
+        date_start: str | None = None
+        date_end: str | None = None
+        if period:
+            try:
+                year, month = int(period[:4]), int(period[5:7])
+                import calendar as _calendar
+                last_day = _calendar.monthrange(year, month)[1]
+                date_start = f"{year:04d}-{month:02d}-01"
+                date_end = f"{year:04d}-{month:02d}-{last_day:02d}"
+            except (ValueError, IndexError):
+                pass
+
+        te_q = (
+            self.db.table("time_entries")
+            .select("hours, employee_id, project_id")
+            .eq("tenant_id", self.tenant_id)
+            .eq("billable", True)
+            .is_("deleted_at", "null")
+        )
+        if date_start:
+            te_q = te_q.gte("date", date_start)
+        if date_end:
+            te_q = te_q.lte("date", date_end)
+        entries: list[dict] = te_q.execute().data or []
+
+        if not entries:
+            return []
+
+        # Project → engagement → service_line map.
+        project_ids = {str(e["project_id"]) for e in entries if e.get("project_id")}
+        proj_to_line: dict[str, str] = {}
+        if project_ids:
+            proj_rows = (
+                self.db.table("projects")
+                .select("id, engagements!engagement_id(service_line)")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(project_ids))
+                .execute()
+                .data
+                or []
+            )
+            for pr in proj_rows:
+                eng_embed = pr.get("engagements")
+                if isinstance(eng_embed, list):
+                    eng_embed = eng_embed[0] if eng_embed else None
+                sl = (eng_embed or {}).get("service_line") or "unclassified"
+                proj_to_line[str(pr["id"])] = str(sl)
+
+        # Employee → cost_rate map.
+        emp_ids = {str(e["employee_id"]) for e in entries if e.get("employee_id")}
+        emp_cost_rate: dict[str, Decimal] = {}
+        if emp_ids:
+            emp_rows = (
+                self.db.table("employees")
+                .select("id, cost_rate")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(emp_ids))
+                .execute()
+                .data
+                or []
+            )
+            for em in emp_rows:
+                if em.get("cost_rate") is not None:
+                    emp_cost_rate[str(em["id"])] = Decimal(str(em["cost_rate"]))
+
+        # Aggregate hours and cost by service_line.
+        by_line_hours: dict[str, Decimal] = {}
+        by_line_cost: dict[str, Decimal] = {}
+
+        for e in entries:
+            pid = str(e.get("project_id") or "")
+            eid = str(e.get("employee_id") or "")
+            sl = proj_to_line.get(pid, "unclassified")
+            hours = Decimal(str(e.get("hours", "0")))
+            rate = emp_cost_rate.get(eid, Decimal("0"))
+            cost = (hours * rate).quantize(Decimal("0.01"))
+
+            by_line_hours[sl] = by_line_hours.get(sl, Decimal("0")) + hours
+            by_line_cost[sl] = by_line_cost.get(sl, Decimal("0")) + cost
+
+        return [
+            {
+                "service_line": sl,
+                "label": _SERVICE_LINE_LABELS.get(sl, sl.title()),
+                "total_cost": str(by_line_cost.get(sl, Decimal("0")).quantize(Decimal("0.01"))),
+                "total_hours": str(by_line_hours.get(sl, Decimal("0")).quantize(Decimal("0.01"))),
+            }
+            for sl in sorted(by_line_hours)
+        ]
+
+    # ------------------------------------------------------------------
+    # 10. Margin by Service Line
+    # ------------------------------------------------------------------
+
+    def margin_by_service_line(self, period: str | None = None) -> list[dict]:
+        """Gross margin by service line = revenue - labour cost.
+
+        Combines revenue_by_service_line and cost_by_service_line.
+        Returns: [{service_line, label, revenue, cost, gross_margin, margin_pct}]
+        """
+        rev_rows = {r["service_line"]: r for r in self.revenue_by_service_line(period)}
+        cost_rows = {c["service_line"]: c for c in self.cost_by_service_line(period)}
+
+        all_lines = sorted(set(rev_rows) | set(cost_rows))
+
+        result: list[dict] = []
+        for sl in all_lines:
+            revenue = Decimal(rev_rows[sl]["total_revenue"]) if sl in rev_rows else Decimal("0")
+            cost = Decimal(cost_rows[sl]["total_cost"]) if sl in cost_rows else Decimal("0")
+            gross_margin = revenue - cost
+            margin_pct = (
+                round(float(gross_margin / revenue * 100), 1)
+                if revenue > Decimal("0")
+                else 0.0
+            )
+            label = rev_rows.get(sl, cost_rows.get(sl, {})).get("label", sl.title())
+            result.append(
+                {
+                    "service_line": sl,
+                    "label": label,
+                    "revenue": str(revenue.quantize(Decimal("0.01"))),
+                    "cost": str(cost.quantize(Decimal("0.01"))),
+                    "gross_margin": str(gross_margin.quantize(Decimal("0.01"))),
+                    "margin_pct": margin_pct,
+                }
+            )
+
+        return result

@@ -30,6 +30,11 @@ class BillingTerms(BaseModel):
         return Decimal(str(v))
 
 
+_SERVICE_LINE_VALUES = frozenset(
+    {"accounting", "tax", "cosec", "payroll", "advisory", "other"}
+)
+
+
 class EngagementCreate(BaseModel):
     client_id: str
     name: str = Field(..., min_length=1, max_length=300)
@@ -48,6 +53,19 @@ class EngagementCreate(BaseModel):
     end_date: date | None = None
     rate_card_id: str | None = None
     billing_terms: BillingTerms | None = None
+    service_line: str | None = None
+    service_catalogue_id: str | None = None  # links to service_catalogue (migration 0033)
+
+    @field_validator("service_line", mode="before")
+    @classmethod
+    def validate_service_line(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if str(v) not in _SERVICE_LINE_VALUES:
+            raise ValueError(
+                f"service_line must be one of {sorted(_SERVICE_LINE_VALUES)}, got {v!r}"
+            )
+        return str(v)
 
     @field_validator("total_value", mode="before")
     @classmethod
@@ -91,6 +109,8 @@ class EngagementResponse(BaseModel):
     end_date: str | None
     created_at: str
     billing_terms: EngagementBillingTermsResponse | None = None
+    service_line: str | None = None
+    service_catalogue_id: str | None = None  # migration 0033
 
     @field_validator("total_value", mode="before")
     @classmethod
@@ -122,4 +142,30 @@ class EngagementResponse(BaseModel):
                 if billing_terms_row
                 else None
             ),
+            service_line=row.get("service_line"),
+            service_catalogue_id=str(row["service_catalogue_id"]) if row.get("service_catalogue_id") else None,
         )
+
+
+# ---------------------------------------------------------------------------
+# Engagement financial summary
+# ---------------------------------------------------------------------------
+
+
+class EngagementSummary(BaseModel):
+    """Financial health snapshot for a single engagement.
+
+    All monetary amounts are Decimal-accurate strings (2 dp).
+    """
+
+    engagement_id: str
+    engagement_name: str
+    total_value: str | None  # fixed-fee baseline; None for pure T&M
+    currency: str
+    billed_to_date: str       # sum of approved/sent/paid invoice totals
+    billed_pct: float | None  # billed_to_date / total_value * 100
+    wip_hours: float          # unbilled billable hours
+    wip_value: str            # wip_hours x avg rate-card rate
+    remaining_value: str | None  # total_value - billed_to_date (fixed fee only)
+    invoice_count: int
+    last_invoice_date: str | None

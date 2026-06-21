@@ -99,6 +99,48 @@ def revenue_by_engagement(
     )
 
 
+@router.get("/revenue-by-service-line")
+def revenue_by_service_line(
+    period: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting month (YYYY-MM). Omit for all-time.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Revenue grouped by service line, optionally filtered to a single month."""
+    return svc.revenue_by_service_line(period=period)
+
+
+@router.get("/cost-by-service-line")
+def cost_by_service_line(
+    period: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting month (YYYY-MM). Omit for all-time.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Labour cost grouped by service line, optionally filtered to a single month."""
+    return svc.cost_by_service_line(period=period)
+
+
+@router.get("/margin-by-service-line")
+def margin_by_service_line(
+    period: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting month (YYYY-MM). Omit for all-time.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Gross margin by service line (revenue - labour cost), optionally filtered to a month."""
+    return svc.margin_by_service_line(period=period)
+
+
 @router.get("/trial-balance", response_model=TrialBalanceReport)
 def get_trial_balance(
     as_of_period: str | None = Query(
