@@ -220,6 +220,20 @@ def practice_dashboard(
     )
 
 
+@router.get("/pricing-staffing-recommendations")
+def pricing_staffing_recommendations(
+    period_start: str | None = Query(None, description="Recommendation window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Recommendation window to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Evidence-backed pricing and staffing recommendations."""
+    return svc.pricing_staffing_recommendations(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @router.get("/trial-balance", response_model=TrialBalanceReport)
 def get_trial_balance(
     as_of_period: str | None = Query(

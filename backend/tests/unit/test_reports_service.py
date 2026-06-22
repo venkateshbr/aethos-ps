@@ -759,3 +759,129 @@ def test_practice_dashboard_combines_financial_health_and_capacity(
     assert row["capacity_status_counts"]["overallocated"] == 1
     assert "Escalate delivery risk." in row["recommended_actions"]
     assert "Rebalance overallocated staff before accepting new work." in row["recommended_actions"]
+
+
+def test_pricing_staffing_recommendations_composes_margin_health_and_capacity(
+    mock_db: MagicMock,
+) -> None:
+    """Recommendations stay evidence-backed by composing existing reports."""
+    svc = _make_svc(mock_db)
+    svc.client_profitability = MagicMock(
+        return_value=[
+            {
+                "client_id": "client-acme",
+                "client_name": "Acme Corp",
+                "service_lines": ["advisory"],
+                "revenue": "10000.00",
+                "total_cost": "9000.00",
+                "gross_margin_pct": 10.0,
+                "labor_hours": "50.00",
+            },
+            {
+                "client_id": "client-healthy",
+                "client_name": "Healthy Co",
+                "service_lines": ["tax"],
+                "revenue": "20000.00",
+                "total_cost": "9000.00",
+                "gross_margin_pct": 55.0,
+                "labor_hours": "30.00",
+            },
+        ]
+    )
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "project_name": "Risky Project",
+                "service_line": "advisory",
+                "health_score": 45,
+                "risk_level": "critical",
+                "drivers": [
+                    {
+                        "code": "low_margin",
+                        "severity": "critical",
+                        "summary": "Project margin is below target.",
+                    },
+                    {
+                        "code": "scope_creep",
+                        "severity": "watch",
+                        "summary": "Recent non-billable time is high.",
+                    },
+                ],
+            }
+        ]
+    )
+    svc.capacity_planning = MagicMock(
+        return_value=[
+            {
+                "employee_id": "emp-over",
+                "employee_name": "Asha Rao",
+                "practice_area": "advisory",
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "capacity_hours": "40.00",
+                "logged_hours": "52.00",
+                "billable_hours": "50.00",
+                "utilization_pct": 130.0,
+                "billable_utilization_pct": 125.0,
+                "capacity_status": "overallocated",
+            },
+            {
+                "employee_id": "emp-under",
+                "employee_name": "Ben Low",
+                "practice_area": "advisory",
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "capacity_hours": "40.00",
+                "logged_hours": "10.00",
+                "billable_hours": "8.00",
+                "utilization_pct": 25.0,
+                "billable_utilization_pct": 20.0,
+                "capacity_status": "underutilized",
+            },
+        ]
+    )
+    svc.practice_dashboard = MagicMock(
+        return_value=[
+            {
+                "practice_key": "advisory",
+                "practice_label": "Advisory",
+                "gross_margin_pct": 18.0,
+                "critical_project_count": 1,
+                "capacity_status_counts": {"overallocated": 1},
+                "avg_project_health_score": 45.0,
+                "billable_utilization_pct": 98.0,
+            }
+        ]
+    )
+
+    result = svc.pricing_staffing_recommendations(
+        period_start="2026-06-01",
+        period_end="2026-06-30",
+    )
+
+    by_id = {row["recommendation_id"]: row for row in result}
+    client = by_id["pricing:client:client-acme"]
+    assert client["priority"] == "critical"
+    assert client["metrics"]["pricing_gap_to_target"] == "5000.00"
+    assert client["metrics"]["current_effective_rate"] == "200.00"
+    assert client["metrics"]["target_effective_rate"] == "300.00"
+    assert client["metrics"]["required_rate_uplift_pct"] == 50.0
+    assert "pricing:client:client-healthy" not in by_id
+
+    project = by_id["pricing:project:proj-risk"]
+    assert project["priority"] == "critical"
+    assert project["metrics"]["driver_codes"] == ["low_margin"]
+
+    staffing = by_id["staffing:employee:emp-over"]
+    assert staffing["priority"] == "critical"
+    assert staffing["metrics"]["overload_hours"] == "12.00"
+    assert staffing["metrics"]["candidate_names"] == ["Ben Low"]
+
+    bench = by_id["staffing:bench:emp-under"]
+    assert bench["priority"] == "medium"
+    assert bench["metrics"]["available_hours"] == "30.00"
+
+    practice = by_id["practice:advisory"]
+    assert practice["priority"] == "critical"
+    assert practice["metrics"]["critical_project_count"] == 1

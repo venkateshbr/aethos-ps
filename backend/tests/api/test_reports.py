@@ -28,6 +28,7 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/client-profitability",
     "/api/v1/reports/segment-profitability",
     "/api/v1/reports/practice-dashboard",
+    "/api/v1/reports/pricing-staffing-recommendations",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -189,3 +190,27 @@ def test_practice_dashboard_report_shape(client_a: httpx.Client) -> None:
             "recommended_actions",
         } <= set(row)
         assert isinstance(row["recommended_actions"], list)
+
+
+def test_pricing_staffing_recommendations_report_shape(client_a: httpx.Client) -> None:
+    """Pricing/staffing recommendations return auditable evidence and metrics."""
+    r = client_a.get("/api/v1/reports/pricing-staffing-recommendations")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "recommendation_id",
+            "recommendation_type",
+            "priority",
+            "entity_type",
+            "entity_id",
+            "entity_name",
+            "evidence",
+            "metrics",
+            "recommended_action",
+        } <= set(row)
+        assert row["priority"] in {"critical", "high", "medium", "low"}
+        assert isinstance(row["evidence"], list)
+        assert isinstance(row["metrics"], dict)

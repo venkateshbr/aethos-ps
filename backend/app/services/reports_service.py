@@ -19,6 +19,7 @@ Report methods:
   13. practice_dashboard
   14. project_health_scores
   15. capacity_planning
+  16. pricing_staffing_recommendations
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 _FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
 _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
+_TARGET_GROSS_MARGIN_PCT = Decimal("40")
 _SERVICE_LINE_LABELS = {
     "accounting": "Accounting",
     "tax": "Tax",
@@ -995,6 +997,341 @@ class ReportsService:
                 str(row["practice_label"]),
             ),
         )
+
+    # ------------------------------------------------------------------
+    # 14. Pricing & Staffing Recommendations
+    # ------------------------------------------------------------------
+
+    def pricing_staffing_recommendations(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        """Deterministic pricing and staffing recommendations.
+
+        This composes existing profitability, project health, capacity, and
+        practice dashboard reports. It intentionally returns evidence-backed
+        recommendations only; no ML prediction or speculative backlog model is
+        implied until allocation forecast tables exist.
+        """
+        recommendations: list[dict] = []
+        recommendations.extend(
+            self._client_pricing_recommendations(
+                period_start=period_start,
+                period_end=period_end,
+            )
+        )
+        recommendations.extend(
+            self._project_pricing_recommendations(
+                period_start=period_start,
+                period_end=period_end,
+            )
+        )
+        recommendations.extend(
+            self._staffing_recommendations(
+                period_start=period_start,
+                period_end=period_end,
+            )
+        )
+        recommendations.extend(
+            self._practice_recommendations(
+                period_start=period_start,
+                period_end=period_end,
+            )
+        )
+
+        return sorted(
+            recommendations,
+            key=lambda row: (
+                _recommendation_priority_rank(str(row["priority"])),
+                str(row["recommendation_type"]),
+                str(row["entity_name"]),
+            ),
+        )
+
+    def _client_pricing_recommendations(
+        self,
+        *,
+        period_start: str | None,
+        period_end: str | None,
+    ) -> list[dict]:
+        rows: list[dict] = []
+        for client in self.client_profitability(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            margin_pct = Decimal(str(client.get("gross_margin_pct") or "0"))
+            if margin_pct >= Decimal("30"):
+                continue
+            revenue = _decimal(client.get("revenue")) or Decimal("0")
+            total_cost = _decimal(client.get("total_cost")) or Decimal("0")
+            labor_hours = _decimal(client.get("labor_hours")) or Decimal("0")
+            pricing_gap = _target_margin_gap(revenue, total_cost)
+            current_rate = _rate_per_hour(revenue, labor_hours)
+            target_rate = _rate_per_hour(
+                _target_revenue_for_margin(total_cost),
+                labor_hours,
+            )
+
+            rows.append(
+                _recommendation(
+                    recommendation_id=f"pricing:client:{client['client_id']}",
+                    recommendation_type="pricing",
+                    priority="critical" if margin_pct < Decimal("20") else "high",
+                    entity_type="client",
+                    entity_id=str(client["client_id"]),
+                    entity_name=str(client.get("client_name") or client["client_id"]),
+                    service_line=", ".join(client.get("service_lines") or []) or None,
+                    period_start=period_start,
+                    period_end=period_end,
+                    evidence=[
+                        f"Gross margin is {margin_pct}% against a 30% watch threshold.",
+                        (
+                            f"Revenue {serialise_money(revenue) or '0.00'} vs total "
+                            f"cost {serialise_money(total_cost) or '0.00'}."
+                        ),
+                    ],
+                    metrics={
+                        "revenue": serialise_money(revenue) or "0.00",
+                        "total_cost": serialise_money(total_cost) or "0.00",
+                        "gross_margin_pct": float(margin_pct),
+                        "target_gross_margin_pct": float(_TARGET_GROSS_MARGIN_PCT),
+                        "pricing_gap_to_target": serialise_money(pricing_gap) or "0.00",
+                        "labor_hours": str(labor_hours.quantize(Decimal("0.01"))),
+                        "current_effective_rate": (
+                            serialise_money(current_rate) if current_rate is not None else None
+                        ),
+                        "target_effective_rate": (
+                            serialise_money(target_rate) if target_rate is not None else None
+                        ),
+                        "required_rate_uplift_pct": _rate_uplift_pct(current_rate, target_rate),
+                    },
+                    recommended_action=(
+                        "Reprice the client, narrow scope, or change staffing mix "
+                        "before approving additional work."
+                    ),
+                )
+            )
+        return rows
+
+    def _project_pricing_recommendations(
+        self,
+        *,
+        period_start: str | None,
+        period_end: str | None,
+    ) -> list[dict]:
+        rows: list[dict] = []
+        pricing_driver_codes = {"low_margin", "cap_drawdown", "budget_hours_burn"}
+        for project in self.project_health_scores(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            drivers = [
+                driver
+                for driver in project.get("drivers") or []
+                if driver.get("code") in pricing_driver_codes
+            ]
+            if not drivers:
+                continue
+            priority = (
+                "critical"
+                if project.get("risk_level") == "critical"
+                or any(driver.get("severity") == "critical" for driver in drivers)
+                else "high"
+            )
+            rows.append(
+                _recommendation(
+                    recommendation_id=f"pricing:project:{project['project_id']}",
+                    recommendation_type="pricing",
+                    priority=priority,
+                    entity_type="project",
+                    entity_id=str(project["project_id"]),
+                    entity_name=str(project.get("project_name") or project["project_id"]),
+                    service_line=str(project.get("service_line") or "unclassified"),
+                    period_start=period_start,
+                    period_end=period_end,
+                    evidence=[
+                        str(driver.get("summary") or driver.get("label") or "")
+                        for driver in drivers
+                        if driver.get("summary") or driver.get("label")
+                    ],
+                    metrics={
+                        "health_score": project.get("health_score"),
+                        "risk_level": project.get("risk_level"),
+                        "driver_codes": [driver.get("code") for driver in drivers],
+                    },
+                    recommended_action=(
+                        "Review the project quote, cap, and staffing mix before "
+                        "the next billing approval."
+                    ),
+                )
+            )
+        return rows
+
+    def _staffing_recommendations(
+        self,
+        *,
+        period_start: str | None,
+        period_end: str | None,
+    ) -> list[dict]:
+        capacity_rows = self.capacity_planning(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        underutilized = [
+            row for row in capacity_rows if row.get("capacity_status") == "underutilized"
+        ]
+        under_by_practice: dict[str, list[dict]] = {}
+        for employee in underutilized:
+            practice = str(employee.get("practice_area") or "unclassified")
+            under_by_practice.setdefault(practice, []).append(employee)
+        for employees in under_by_practice.values():
+            employees.sort(
+                key=lambda row: (
+                    float(row.get("billable_utilization_pct") or 0),
+                    str(row.get("employee_name") or ""),
+                )
+            )
+
+        rows: list[dict] = []
+        for employee in capacity_rows:
+            status = str(employee.get("capacity_status") or "")
+            if status == "overallocated":
+                practice = str(employee.get("practice_area") or "unclassified")
+                logged_hours = _decimal(employee.get("logged_hours")) or Decimal("0")
+                capacity_hours = _decimal(employee.get("capacity_hours")) or Decimal("0")
+                overload_hours = max(Decimal("0"), logged_hours - capacity_hours)
+                candidates = [
+                    candidate
+                    for candidate in under_by_practice.get(practice, [])
+                    if candidate.get("employee_id") != employee.get("employee_id")
+                ][:3]
+                rows.append(
+                    _recommendation(
+                        recommendation_id=f"staffing:employee:{employee['employee_id']}",
+                        recommendation_type="staffing",
+                        priority=(
+                            "critical"
+                            if float(employee.get("utilization_pct") or 0) >= 125
+                            else "high"
+                        ),
+                        entity_type="employee",
+                        entity_id=str(employee["employee_id"]),
+                        entity_name=str(employee.get("employee_name") or employee["employee_id"]),
+                        service_line=practice,
+                        period_start=employee.get("period_start") or period_start,
+                        period_end=employee.get("period_end") or period_end,
+                        evidence=[
+                            (
+                                f"Utilization is {employee.get('utilization_pct')}% "
+                                "against a 110% overallocated threshold."
+                            ),
+                            _candidate_evidence(candidates),
+                        ],
+                        metrics={
+                            "capacity_hours": employee.get("capacity_hours"),
+                            "logged_hours": employee.get("logged_hours"),
+                            "billable_hours": employee.get("billable_hours"),
+                            "overload_hours": str(overload_hours.quantize(Decimal("0.01"))),
+                            "candidate_count": len(candidates),
+                            "candidate_employee_ids": [
+                                candidate.get("employee_id") for candidate in candidates
+                            ],
+                            "candidate_names": [
+                                candidate.get("employee_name") for candidate in candidates
+                            ],
+                        },
+                        recommended_action=(
+                            "Reassign delivery work to same-practice available staff "
+                            "or defer lower-priority work."
+                        ),
+                    )
+                )
+            elif status == "underutilized":
+                utilization_pct = float(employee.get("utilization_pct") or 0)
+                if utilization_pct > 50:
+                    continue
+                rows.append(
+                    _recommendation(
+                        recommendation_id=f"staffing:bench:{employee['employee_id']}",
+                        recommendation_type="staffing",
+                        priority="medium",
+                        entity_type="employee",
+                        entity_id=str(employee["employee_id"]),
+                        entity_name=str(employee.get("employee_name") or employee["employee_id"]),
+                        service_line=str(employee.get("practice_area") or "unclassified"),
+                        period_start=employee.get("period_start") or period_start,
+                        period_end=employee.get("period_end") or period_end,
+                        evidence=[
+                            (
+                                f"Utilization is {employee.get('utilization_pct')}% "
+                                "with available capacity this period."
+                            )
+                        ],
+                        metrics={
+                            "capacity_hours": employee.get("capacity_hours"),
+                            "logged_hours": employee.get("logged_hours"),
+                            "billable_hours": employee.get("billable_hours"),
+                            "available_hours": _available_hours(employee),
+                        },
+                        recommended_action=(
+                            "Review open work and assign additional billable tasks "
+                            "where skills and client constraints fit."
+                        ),
+                    )
+                )
+        return rows
+
+    def _practice_recommendations(
+        self,
+        *,
+        period_start: str | None,
+        period_end: str | None,
+    ) -> list[dict]:
+        rows: list[dict] = []
+        for practice in self.practice_dashboard(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            margin_pct = Decimal(str(practice.get("gross_margin_pct") or "0"))
+            overallocated_count = int(
+                (practice.get("capacity_status_counts") or {}).get("overallocated", 0)
+            )
+            critical_project_count = int(practice.get("critical_project_count") or 0)
+            if margin_pct >= Decimal("30") and not (
+                overallocated_count and critical_project_count
+            ):
+                continue
+            rows.append(
+                _recommendation(
+                    recommendation_id=f"practice:{practice['practice_key']}",
+                    recommendation_type="practice",
+                    priority="critical" if critical_project_count else "high",
+                    entity_type="practice",
+                    entity_id=str(practice["practice_key"]),
+                    entity_name=str(practice.get("practice_label") or practice["practice_key"]),
+                    service_line=str(practice["practice_key"]),
+                    period_start=period_start,
+                    period_end=period_end,
+                    evidence=[
+                        f"Practice gross margin is {margin_pct}%.",
+                        f"Critical projects: {critical_project_count}.",
+                        f"Overallocated staff: {overallocated_count}.",
+                    ],
+                    metrics={
+                        "gross_margin_pct": float(margin_pct),
+                        "critical_project_count": critical_project_count,
+                        "overallocated_employee_count": overallocated_count,
+                        "avg_project_health_score": practice.get("avg_project_health_score"),
+                        "billable_utilization_pct": practice.get("billable_utilization_pct"),
+                    },
+                    recommended_action=(
+                        "Run a partner review covering pricing, delivery risk, "
+                        "and staffing balance for this practice."
+                    ),
+                )
+            )
+        return rows
 
     def _profitability_facts(
         self,
@@ -2200,3 +2537,84 @@ def _assignment_overlaps(row: dict, start: date, end: date) -> bool:
     assignment_start = _parse_date(row.get("start_date")) or start
     assignment_end = _parse_date(row.get("end_date")) or end
     return assignment_start <= end and assignment_end >= start
+
+
+def _target_revenue_for_margin(total_cost: Decimal) -> Decimal:
+    if total_cost <= 0:
+        return Decimal("0")
+    margin_factor = Decimal("1") - (_TARGET_GROSS_MARGIN_PCT / Decimal("100"))
+    return (total_cost / margin_factor).quantize(Decimal("0.01"))
+
+
+def _target_margin_gap(revenue: Decimal, total_cost: Decimal) -> Decimal:
+    return max(Decimal("0"), _target_revenue_for_margin(total_cost) - revenue)
+
+
+def _rate_per_hour(amount: Decimal, hours: Decimal) -> Decimal | None:
+    if hours <= 0:
+        return None
+    return (amount / hours).quantize(Decimal("0.01"))
+
+
+def _rate_uplift_pct(
+    current_rate: Decimal | None,
+    target_rate: Decimal | None,
+) -> float | None:
+    if current_rate is None or target_rate is None or current_rate <= 0:
+        return None
+    if target_rate <= current_rate:
+        return 0.0
+    return round(float((target_rate / current_rate - Decimal("1")) * 100), 1)
+
+
+def _candidate_evidence(candidates: list[dict]) -> str:
+    if not candidates:
+        return "No same-practice underutilized candidate is visible in this period."
+    names = ", ".join(str(candidate.get("employee_name") or "Unknown") for candidate in candidates)
+    return f"Same-practice underutilized candidates: {names}."
+
+
+def _available_hours(employee: dict) -> str:
+    capacity_hours = _decimal(employee.get("capacity_hours")) or Decimal("0")
+    logged_hours = _decimal(employee.get("logged_hours")) or Decimal("0")
+    return str(max(Decimal("0"), capacity_hours - logged_hours).quantize(Decimal("0.01")))
+
+
+def _recommendation(
+    *,
+    recommendation_id: str,
+    recommendation_type: str,
+    priority: str,
+    entity_type: str,
+    entity_id: str,
+    entity_name: str,
+    service_line: str | None,
+    period_start: str | None,
+    period_end: str | None,
+    evidence: list[str],
+    metrics: dict[str, object],
+    recommended_action: str,
+) -> dict[str, object]:
+    return {
+        "recommendation_id": recommendation_id,
+        "recommendation_type": recommendation_type,
+        "priority": priority,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "service_line": service_line,
+        "period_start": period_start,
+        "period_end": period_end,
+        "evidence": [item for item in evidence if item],
+        "metrics": metrics,
+        "recommended_action": recommended_action,
+    }
+
+
+def _recommendation_priority_rank(priority: str) -> int:
+    return {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+    }.get(priority, 4)

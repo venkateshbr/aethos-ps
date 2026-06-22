@@ -147,6 +147,21 @@ export interface PracticeDashboardRow {
   recommended_actions: string[];
 }
 
+export interface PricingStaffingRecommendation {
+  recommendation_id: string;
+  recommendation_type: 'pricing' | 'staffing' | 'practice' | string;
+  priority: 'critical' | 'high' | 'medium' | 'low' | string;
+  entity_type: 'client' | 'project' | 'employee' | 'practice' | string;
+  entity_id: string;
+  entity_name: string;
+  service_line?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  evidence: string[];
+  metrics: Record<string, string | number | Array<string | number | null> | null>;
+  recommended_action: string;
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -219,6 +234,11 @@ export class ReportsService {
 
   getPracticeDashboard = (): Observable<PracticeDashboardRow[]> =>
     this.http.get<PracticeDashboardRow[]>(`${this.base}/practice-dashboard`);
+
+  getPricingStaffingRecommendations = (): Observable<PricingStaffingRecommendation[]> =>
+    this.http.get<PricingStaffingRecommendation[]>(
+      `${this.base}/pricing-staffing-recommendations`,
+    );
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);
