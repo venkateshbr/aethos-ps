@@ -15,13 +15,14 @@ Public (no auth):
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.agents.base import AgentDeps
 from app.agents.invoice_drafter_agent import draft_invoice
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.invoices import (
@@ -40,13 +41,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 public_router = APIRouter()
 
+EngagementIdQuery = Annotated[str | None, Query(description="Filter by engagement")]
+StatusQuery = Annotated[
+    str | None,
+    Query(alias="status", description="Filter by invoice status"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Service dependency
 # ---------------------------------------------------------------------------
 
 
-def _service(
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> InvoicesService:
+    return InvoicesService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> InvoicesService:
@@ -60,12 +74,10 @@ def _service(
 
 @router.get("", response_model=list[InvoiceResponse])
 async def list_invoices(
-    engagement_id: str | None = Query(default=None, description="Filter by engagement"),
-    status_filter: str | None = Query(
-        default=None, alias="status", description="Filter by invoice status"
-    ),
+    engagement_id: EngagementIdQuery = None,
+    status_filter: StatusQuery = None,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_read_service),  # noqa: B008
 ) -> list[InvoiceResponse]:
     return await svc.list_invoices(engagement_id=engagement_id, status=status_filter)
 
@@ -74,7 +86,7 @@ async def list_invoices(
 async def create_invoice(
     payload: InvoiceCreate,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.create_invoice(payload, created_by=current_user.user_id)
 
@@ -125,7 +137,7 @@ async def draft_invoice_for_engagement(
 async def get_invoice(
     invoice_id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_read_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.get_invoice(invoice_id)
 
@@ -134,7 +146,7 @@ async def get_invoice(
 async def approve_invoice(
     invoice_id: str,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.approve_invoice(invoice_id, approved_by=current_user.user_id)
 
@@ -143,7 +155,7 @@ async def approve_invoice(
 async def send_invoice(
     invoice_id: str,
     current_user: CurrentUser = require_role(UserRole.owner),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.send_invoice(invoice_id, sent_by=current_user.user_id)
 
@@ -153,7 +165,7 @@ async def record_manual_payment(
     invoice_id: str,
     payload: ManualPaymentCreate,
     current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
-    svc: InvoicesService = Depends(_service),  # noqa: B008
+    svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     """Record a payment received outside of Stripe (wire/cheque/cash/etc.).
 
