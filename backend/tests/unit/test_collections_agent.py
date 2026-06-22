@@ -130,3 +130,64 @@ def test_amount_due_is_decimal() -> None:
     """amount_due on the draft must be a Decimal (not float)."""
     draft = draft_collection_email(_make_invoice(days_overdue=3), _make_deps())
     assert isinstance(draft.amount_due, Decimal)
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_collections_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approving a collections HITL task sends the drafted reminder email."""
+    from app.services.inbox_service import InboxService
+
+    sent: list[tuple[str, str, str]] = []
+
+    class _Resend:
+        def send_email(self, to: str, subject: str, body_html: str) -> dict:
+            sent.append((to, subject, body_html))
+            return {"id": "email-1"}
+
+    monkeypatch.setattr("app.services.resend_service.ResendService", lambda: _Resend())
+
+    svc = InboxService.__new__(InboxService)
+    result = await svc._materialise_collections_email(
+        {
+            "invoice_id": "inv-1",
+            "client_email": "finance@example.com",
+            "subject": "Payment overdue",
+            "body_html": "<p>Please pay</p>",
+        }
+    )
+
+    assert result == {
+        "entity_type": "collections_email",
+        "entity_id": "inv-1",
+        "send_status": "sent",
+    }
+    assert sent == [("finance@example.com", "Payment overdue", "<p>Please pay</p>")]
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialise_collections_email_raises_on_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider failures keep the HITL task unresolved by raising 409."""
+    from fastapi import HTTPException
+
+    from app.services.inbox_service import InboxService
+
+    class _Resend:
+        def send_email(self, _to: str, _subject: str, _body_html: str) -> dict:
+            return {"status": "error", "error": "provider down"}
+
+    monkeypatch.setattr("app.services.resend_service.ResendService", lambda: _Resend())
+
+    svc = InboxService.__new__(InboxService)
+    with pytest.raises(HTTPException) as exc_info:
+        await svc._materialise_collections_email(
+            {
+                "invoice_id": "inv-1",
+                "client_email": "finance@example.com",
+                "subject": "Payment overdue",
+                "body_html": "<p>Please pay</p>",
+            }
+        )
+
+    assert exc_info.value.status_code == 409

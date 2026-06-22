@@ -219,6 +219,8 @@ class InboxService:
             return await self._materialise_copilot_tool(payload)
         elif kind == "approve_billing_run":
             return await self._materialise_billing_run(payload)
+        elif kind == "send_email":
+            return await self._materialise_collections_email(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -307,6 +309,42 @@ class InboxService:
         )
         await _draft_invoices_for_run(updated, deps)
         return {"entity_type": "billing_run", "entity_id": str(billing_run_id)}
+
+    async def _materialise_collections_email(self, payload: dict) -> dict:
+        client_email = str(payload.get("client_email") or "").strip()
+        subject = str(payload.get("subject") or "").strip()
+        body_html = str(payload.get("body_html") or "").strip()
+        invoice_id = str(payload.get("invoice_id") or "").strip() or None
+
+        missing = [
+            name
+            for name, value in (
+                ("client_email", client_email),
+                ("subject", subject),
+                ("body_html", body_html),
+            )
+            if not value
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Collections email payload missing: {', '.join(missing)}",
+            )
+
+        from app.services.resend_service import ResendService
+
+        result = ResendService().send_email(client_email, subject, body_html)
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Collections email failed: {result.get('error', 'unknown error')}",
+            )
+
+        return {
+            "entity_type": "collections_email",
+            "entity_id": invoice_id,
+            "send_status": result.get("status", "sent"),
+        }
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
