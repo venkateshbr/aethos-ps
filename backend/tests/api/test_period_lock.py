@@ -139,6 +139,22 @@ def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None
     assert body["trial_balance_balanced"] is True
 
 
+def test_propose_wip_accrual_empty_period_returns_no_suggestions(
+    admin_client_a: httpx.Client,
+) -> None:
+    """The accrual agent proposal endpoint handles periods with no WIP."""
+    period = _unique_future_period()
+    r = admin_client_a.post(
+        f"/api/v1/accounting/periods/{period}/propose-wip-accrual"
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["proposal_count"] == 0
+    assert body["created_count"] == 0
+    assert body["suggestion_ids"] == []
+
+
 def test_period_lock_cross_tenant_isolation(
     admin_client_a: httpx.Client, client_b: httpx.Client, world: SeedWorld
 ) -> None:
