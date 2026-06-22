@@ -377,7 +377,8 @@ async def get_document_url(
     expires_in: int = 3600,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    read_db: Client = Depends(get_user_rls_client),  # noqa: B008
+    storage_db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> dict:
     """Return a tenant-scoped presigned URL for the document's bucket object.
 
@@ -399,7 +400,7 @@ async def get_document_url(
     # someone else (information-hiding parity with #90/#92).
     try:
         row = (
-            db.table("documents")
+            read_db.table("documents")
             .select("id, storage_path, original_filename, mime_type")
             .eq("id", document_id)
             .eq("tenant_id", tenant_id)
@@ -429,7 +430,7 @@ async def get_document_url(
 
     try:
         # supabase-py: create_signed_url(path, expires_in_seconds)
-        signed = db.storage.from_(_STORAGE_BUCKET).create_signed_url(
+        signed = storage_db.storage.from_(_STORAGE_BUCKET).create_signed_url(
             storage_path, expires_in
         )
     except Exception as exc:
