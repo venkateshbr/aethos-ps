@@ -54,7 +54,7 @@ def _parse_period(period_str: str | None) -> str | None:
     Supported forms:
         None / ""         → None   (all-time; each report uses its own default)
         "all time"        → None
-        "ytd"             → None   (callers use Jan–current month slice)
+        "ytd"             → None   (callers use Jan-current month slice)
         "this month"      → current YYYY-MM
         "last month"      → previous YYYY-MM
         "YYYY-MM"         → passed through as-is

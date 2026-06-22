@@ -174,9 +174,6 @@ class EngagementRepository:
             return {"wip_hours": 0.0, "wip_value": "0.00"}
 
         # Step 3 — resolve bill rates
-        # Collect unique (project_id, employee_id) pairs for assignment lookup
-        pairs = list({(r["project_id"], r["employee_id"]) for r in te_rows})
-
         # Fetch project_assignments for override_rate
         pa_result = await asyncio.to_thread(
             lambda: self.db.table("project_assignments")

@@ -6,7 +6,7 @@ in JSON per the Aethos money gate (CLAUDE.md).
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -14,7 +14,6 @@ from uuid import UUID
 from pydantic import BaseModel, field_validator, model_validator
 
 from app.domain.money import quantise_money
-
 
 # ---------------------------------------------------------------------------
 # Manual Journal Entry — request models
@@ -50,7 +49,7 @@ class ManualJournalEntryIn(BaseModel):
     reference: str | None = None  # Optional external ref (e.g. "Month-end accrual")
 
     @model_validator(mode="after")
-    def validate_min_lines(self) -> "ManualJournalEntryIn":
+    def validate_min_lines(self) -> ManualJournalEntryIn:
         if len(self.lines) < 2:
             raise ValueError("Journal entry requires at least 2 lines")
         return self
@@ -76,7 +75,7 @@ class ManualJournalEntryResponse(BaseModel):
     lines: list[dict]  # serialised journal lines
 
     @classmethod
-    def from_db(cls, je: dict, lines: list[dict]) -> "ManualJournalEntryResponse":
+    def from_db(cls, je: dict, lines: list[dict]) -> ManualJournalEntryResponse:
         """Build a response from a journal_entry row + its journal_lines rows."""
         return cls(
             id=str(je["id"]),

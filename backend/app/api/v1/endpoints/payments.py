@@ -16,8 +16,8 @@ router = APIRouter()
 def list_payments(
     limit: int = 50,
     tenant_id: str = Depends(get_tenant_id),
-    _: CurrentUser = Depends(get_current_user),
-    db: Client = Depends(get_service_role_client),
+    _: CurrentUser = Depends(get_current_user),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> dict:
     """Return the most-recent payment receipts, joined to invoice number.
 
