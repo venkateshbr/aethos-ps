@@ -64,11 +64,20 @@ def test_billing_run_worker_creates_draft_for_retainer_engagement() -> None:
     assert result is not None
     assert result["status"] == "draft"
 
-    # Verify engagement_ids were passed
-    insert_call = table_mock.insert.call_args[0][0]
-    assert "eng-001" in insert_call["engagement_filter"]["engagement_ids"]
-    assert "eng-002" in insert_call["engagement_filter"]["engagement_ids"]
-    assert insert_call["status"] == "draft"
+    # Verify billing run, suggestion, and HITL task were created.
+    billing_run_insert = table_mock.insert.call_args_list[0][0][0]
+    suggestion_insert = table_mock.insert.call_args_list[1][0][0]
+    task_insert = table_mock.insert.call_args_list[2][0][0]
+
+    assert "eng-001" in billing_run_insert["engagement_filter"]["engagement_ids"]
+    assert "eng-002" in billing_run_insert["engagement_filter"]["engagement_ids"]
+    assert billing_run_insert["status"] == "draft"
+    assert billing_run_insert["created_by_agent"] == "billing_run_agent"
+    assert suggestion_insert["agent_name"] == "billing_run_agent"
+    assert suggestion_insert["action_type"] == "approve_billing_run"
+    assert suggestion_insert["hitl_required"] is True
+    assert task_insert["kind"] == "approve_billing_run"
+    assert task_insert["status"] == "open"
 
 
 def test_billing_run_worker_skips_when_no_retainer_engagements() -> None:

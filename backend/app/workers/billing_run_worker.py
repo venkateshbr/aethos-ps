@@ -104,10 +104,23 @@ def _create_run_for_tenant(db, tenant_id: str, period_start: date) -> dict | Non
                 "period_end": period_end.isoformat(),
                 "status": "draft",
                 "engagement_filter": {"engagement_ids": engagement_ids},
+                "created_by_agent": "billing_run_agent",
+                "summary": {
+                    "retainer_engagement_count": len(engagement_ids),
+                    "billing_arrangements": sorted(_RETAINER_ARRANGEMENTS),
+                },
             }
         )
         .execute()
         .data[0]
+    )
+    _create_billing_run_review_task(
+        db,
+        tenant_id=tenant_id,
+        billing_run=row,
+        engagements=engagements,
+        period_start=period_start,
+        period_end=period_end,
     )
 
     logger.info(
@@ -117,3 +130,61 @@ def _create_run_for_tenant(db, tenant_id: str, period_start: date) -> dict | Non
         len(engagement_ids),
     )
     return row
+
+
+def _create_billing_run_review_task(
+    db,
+    *,
+    tenant_id: str,
+    billing_run: dict,
+    engagements: list[dict],
+    period_start: date,
+    period_end: date,
+) -> None:
+    """Create the HITL review task for a scheduled billing-run proposal."""
+    engagement_ids = [engagement["id"] for engagement in engagements]
+    output_snapshot = {
+        "billing_run_id": billing_run["id"],
+        "billing_run_name": billing_run.get("name"),
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "engagement_ids": engagement_ids,
+        "engagement_count": len(engagement_ids),
+    }
+    suggestion = (
+        db.table("agent_suggestions")
+        .insert(
+            {
+                "tenant_id": tenant_id,
+                "agent_name": "billing_run_agent",
+                "action_type": "approve_billing_run",
+                "input_snapshot": {
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "billing_arrangements": sorted(_RETAINER_ARRANGEMENTS),
+                },
+                "output_snapshot": output_snapshot,
+                "confidence": "0.95",
+                "status": "pending",
+                "hitl_required": True,
+                "related_entity_type": "billing_run",
+                "related_entity_id": billing_run["id"],
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    db.table("hitl_tasks").insert(
+        {
+            "tenant_id": tenant_id,
+            "agent_suggestion_id": suggestion["id"],
+            "kind": "approve_billing_run",
+            "priority": "med",
+            "title": f"Review {billing_run.get('name', 'billing run')}",
+            "description": (
+                f"{len(engagement_ids)} retainer engagements are ready for billing."
+            ),
+            "payload": output_snapshot,
+            "status": "open",
+        }
+    ).execute()

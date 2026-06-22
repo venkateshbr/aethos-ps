@@ -79,8 +79,8 @@ def _make_invoice_draft(engagement_id: str = "eng-001") -> MagicMock:
 def test_approve_billing_run_calls_draft_invoice_for_each_engagement() -> None:
     """When a billing run is approved, draft_invoice is called for each
     engagement in the run's engagement_filter.engagement_ids."""
-    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
     from app.agents.base import AgentDeps
+    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
 
     engagement_ids = ["eng-001", "eng-002"]
     run = _billing_run_row(engagement_ids=engagement_ids)
@@ -106,8 +106,8 @@ def test_approve_billing_run_calls_draft_invoice_for_each_engagement() -> None:
 
 def test_approve_billing_run_creates_invoice_for_each_draft() -> None:
     """For each InvoiceDraft returned, an invoice must be created via InvoicesService."""
-    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
     from app.agents.base import AgentDeps
+    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
 
     engagement_ids = ["eng-001", "eng-002"]
     run = _billing_run_row(engagement_ids=engagement_ids)
@@ -134,8 +134,8 @@ def test_approve_billing_run_creates_invoice_for_each_draft() -> None:
 
 def test_approve_billing_run_no_engagements_skips_drafting() -> None:
     """If engagement_filter has no engagement_ids, draft_invoice is not called."""
-    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
     from app.agents.base import AgentDeps
+    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
 
     run = _billing_run_row(engagement_ids=[])
     mock_db = MagicMock()
@@ -156,8 +156,8 @@ def test_approve_billing_run_no_engagements_skips_drafting() -> None:
 
 def test_approve_billing_run_draft_error_does_not_abort_run() -> None:
     """If draft_invoice raises for one engagement, other engagements are still drafted."""
-    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
     from app.agents.base import AgentDeps
+    from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
 
     engagement_ids = ["eng-001", "eng-fail", "eng-003"]
     run = _billing_run_row(engagement_ids=engagement_ids)
@@ -182,3 +182,47 @@ def test_approve_billing_run_draft_error_does_not_abort_run() -> None:
     assert "eng-001" in successful_drafts
     assert "eng-003" in successful_drafts
     assert "eng-fail" not in successful_drafts
+
+
+@pytest.mark.asyncio
+async def test_inbox_approval_materialises_billing_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Inbox approval for scheduled billing runs reuses the billing-run draft path."""
+    from app.services.inbox_service import InboxService
+
+    run = _billing_run_row(engagement_ids=["eng-001"])
+    updated = {**run, "status": "approved"}
+
+    class _Repo:
+        def __init__(self, _db: object, _tenant_id: str) -> None:
+            self.updated_with: dict | None = None
+
+        async def get_by_id(self, run_id: str) -> dict | None:
+            assert run_id == "run-001"
+            return run
+
+        async def update(self, run_id: str, patch: dict) -> dict | None:
+            assert run_id == "run-001"
+            self.updated_with = patch
+            return updated
+
+    repo = _Repo(MagicMock(), "tenant-001")
+    draft = AsyncMock()
+
+    monkeypatch.setattr(
+        "app.repositories.billing_runs_repo.BillingRunsRepository",
+        lambda _db, _tenant_id: repo,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.billing_runs._draft_invoices_for_run",
+        draft,
+    )
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = MagicMock()
+    svc._tenant_id = "tenant-001"
+
+    result = await svc._materialise_billing_run({"billing_run_id": "run-001"})
+
+    assert result == {"entity_type": "billing_run", "entity_id": "run-001"}
+    assert repo.updated_with == {"status": "approved"}
+    draft.assert_awaited_once()

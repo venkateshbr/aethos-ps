@@ -217,6 +217,8 @@ class InboxService:
             return await self._materialise_bill(payload)
         elif kind in ("copilot_log_time_entry", "copilot_update_rate_card"):
             return await self._materialise_copilot_tool(payload)
+        elif kind == "approve_billing_run":
+            return await self._materialise_billing_run(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -265,6 +267,46 @@ class InboxService:
         if tool_name == "log_time_entry":
             return {"entity_type": "time_entry", "entity_id": result.get("entry_id")}
         return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
+
+    async def _materialise_billing_run(self, payload: dict) -> dict:
+        billing_run_id = payload.get("billing_run_id")
+        if not billing_run_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Billing run approval payload must include billing_run_id",
+            )
+
+        from app.agents.base import AgentDeps
+        from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
+        from app.repositories.billing_runs_repo import BillingRunsRepository
+
+        repo = BillingRunsRepository(self._db, self._tenant_id)
+        row = await repo.get_by_id(str(billing_run_id))
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Billing run not found",
+            )
+        if row["status"] not in ("draft", "reviewed"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot approve billing run with status={row['status']!r}",
+            )
+
+        updated = await repo.update(str(billing_run_id), {"status": "approved"})
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Billing run not found after update",
+            )
+
+        deps = AgentDeps(
+            tenant_id=self._tenant_id,
+            user_id="billing_run_agent",
+            db=self._db,
+        )
+        await _draft_invoices_for_run(updated, deps)
+        return {"entity_type": "billing_run", "entity_id": str(billing_run_id)}
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
