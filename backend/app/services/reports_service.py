@@ -14,8 +14,10 @@ Report methods:
   8. revenue_by_service_line
   9. cost_by_service_line
   10. margin_by_service_line
-  11. project_health_scores
-  12. capacity_planning
+  11. client_profitability
+  12. segment_profitability
+  13. project_health_scores
+  14. capacity_planning
 """
 
 from __future__ import annotations
@@ -33,6 +35,15 @@ logger = logging.getLogger(__name__)
 _FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
 _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
+_SERVICE_LINE_LABELS = {
+    "accounting": "Accounting",
+    "tax": "Tax",
+    "cosec": "Company Secretarial",
+    "payroll": "Payroll",
+    "advisory": "Advisory",
+    "other": "Other",
+    "unclassified": "Unclassified",
+}
 
 
 class ReportsService:
@@ -787,7 +798,398 @@ class ReportsService:
         return result
 
     # ------------------------------------------------------------------
-    # 11. Project Health Scores
+    # 11. Client Profitability
+    # ------------------------------------------------------------------
+
+    def client_profitability(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        client_id: str | None = None,
+    ) -> list[dict]:
+        """Profitability by client using current transactional schema.
+
+        Revenue comes from finalized invoices. Costs include labour cost
+        (time-entry hours x employee cost_rate) and direct project expenses.
+        Vendor AP is not allocated to clients in the current schema, so this
+        report intentionally excludes generic bills until bill-line project or
+        service-line coding exists.
+        """
+        facts = self._profitability_facts(
+            period_start=period_start,
+            period_end=period_end,
+            client_id=client_id,
+        )
+        rows: list[dict] = []
+        for client in facts["clients"].values():
+            cid = str(client["id"])
+            stats = facts["by_client"].get(cid, _profitability_stats())
+            if _is_empty_profitability(stats):
+                continue
+            rows.append(
+                _profitability_row(
+                    {
+                        "client_id": cid,
+                        "client_name": client.get("name") or cid,
+                        "client_kind": client.get("kind") or "customer",
+                        "currency": _currency_label(stats),
+                        "service_lines": sorted(stats["service_lines"]),
+                    },
+                    stats,
+                )
+            )
+        return sorted(
+            rows,
+            key=lambda row: (
+                Decimal(str(row["gross_margin"])),
+                str(row["client_name"]),
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 12. Segment Profitability
+    # ------------------------------------------------------------------
+
+    def segment_profitability(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        group_by: str = "service_line",
+    ) -> list[dict]:
+        """Profitability grouped by service line or client kind.
+
+        There is no client-segment or client-group table in the current schema.
+        This method therefore exposes the two segment dimensions that are
+        already data-backed: engagement service line and client kind.
+        """
+        facts = self._profitability_facts(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        segment_type = (
+            "client_kind" if group_by == "client_kind" else "service_line"
+        )
+        by_segment: dict[str, dict] = {}
+
+        for segment_key, stats in facts[f"by_{segment_type}"].items():
+            if _is_empty_profitability(stats):
+                continue
+            label = (
+                _SERVICE_LINE_LABELS.get(segment_key, segment_key.title())
+                if segment_type == "service_line"
+                else segment_key.replace("_", " ").title()
+            )
+            by_segment[segment_key] = _profitability_row(
+                {
+                    "segment_type": segment_type,
+                    "segment_key": segment_key,
+                    "segment_label": label,
+                    "currency": _currency_label(stats),
+                },
+                stats,
+            )
+
+        return sorted(
+            by_segment.values(),
+            key=lambda row: (
+                -Decimal(str(row["gross_margin"])),
+                str(row["segment_label"]),
+            ),
+        )
+
+    def _profitability_facts(
+        self,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        client_id: str | None = None,
+    ) -> dict[str, object]:
+        clients_q = (
+            self.db.table("clients")
+            .select("id, name, kind, currency")
+            .eq("tenant_id", self.tenant_id)
+            .in_("kind", ["customer", "both"])
+            .is_("deleted_at", "null")
+        )
+        if client_id:
+            clients_q = clients_q.eq("id", client_id)
+        clients = clients_q.execute().data or []
+        clients_by_id = {str(client["id"]): client for client in clients}
+        client_ids = set(clients_by_id)
+        if not client_ids:
+            return {
+                "clients": {},
+                "by_client": {},
+                "by_service_line": {},
+                "by_client_kind": {},
+            }
+
+        engagements = (
+            self.db.table("engagements")
+            .select("id, client_id, service_line, currency")
+            .eq("tenant_id", self.tenant_id)
+            .in_("client_id", list(client_ids))
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        engagement_by_id = {
+            str(engagement["id"]): engagement for engagement in engagements
+        }
+        engagement_ids = set(engagement_by_id)
+
+        projects = []
+        project_by_id: dict[str, dict] = {}
+        if engagement_ids:
+            projects = (
+                self.db.table("projects")
+                .select("id, engagement_id, currency")
+                .eq("tenant_id", self.tenant_id)
+                .in_("engagement_id", list(engagement_ids))
+                .is_("deleted_at", "null")
+                .execute()
+                .data
+                or []
+            )
+            project_by_id = {str(project["id"]): project for project in projects}
+
+        facts: dict[str, object] = {
+            "clients": clients_by_id,
+            "by_client": {},
+            "by_service_line": {},
+            "by_client_kind": {},
+        }
+
+        for engagement in engagements:
+            self._ensure_profitability_dimensions(
+                facts=facts,
+                client=clients_by_id.get(str(engagement["client_id"]), {}),
+                engagement=engagement,
+            )
+
+        self._add_profitability_revenue(
+            facts=facts,
+            clients_by_id=clients_by_id,
+            engagement_by_id=engagement_by_id,
+            client_ids=client_ids,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        self._add_profitability_labor(
+            facts=facts,
+            clients_by_id=clients_by_id,
+            engagement_by_id=engagement_by_id,
+            project_by_id=project_by_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        self._add_profitability_expenses(
+            facts=facts,
+            clients_by_id=clients_by_id,
+            engagement_by_id=engagement_by_id,
+            project_by_id=project_by_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        return facts
+
+    def _ensure_profitability_dimensions(
+        self,
+        *,
+        facts: dict[str, object],
+        client: dict,
+        engagement: dict,
+    ) -> tuple[dict, dict, dict]:
+        by_client = facts["by_client"]  # type: ignore[index]
+        by_service_line = facts["by_service_line"]  # type: ignore[index]
+        by_client_kind = facts["by_client_kind"]  # type: ignore[index]
+
+        cid = str(client.get("id") or engagement.get("client_id") or "")
+        service_line = str(engagement.get("service_line") or "unclassified")
+        client_kind = str(client.get("kind") or "customer")
+
+        client_stats = by_client.setdefault(cid, _profitability_stats())
+        service_stats = by_service_line.setdefault(service_line, _profitability_stats())
+        kind_stats = by_client_kind.setdefault(client_kind, _profitability_stats())
+
+        for stats in (client_stats, service_stats, kind_stats):
+            stats["client_ids"].add(cid)
+            stats["engagement_ids"].add(str(engagement["id"]))
+            stats["service_lines"].add(service_line)
+            if engagement.get("currency"):
+                stats["currencies"].add(str(engagement["currency"]))
+
+        return client_stats, service_stats, kind_stats
+
+    def _profitability_dimensions_for_engagement(
+        self,
+        *,
+        facts: dict[str, object],
+        clients_by_id: dict[str, dict],
+        engagement: dict,
+    ) -> tuple[dict, dict, dict]:
+        client = clients_by_id.get(str(engagement.get("client_id")), {})
+        return self._ensure_profitability_dimensions(
+            facts=facts,
+            client=client,
+            engagement=engagement,
+        )
+
+    def _add_profitability_revenue(
+        self,
+        *,
+        facts: dict[str, object],
+        clients_by_id: dict[str, dict],
+        engagement_by_id: dict[str, dict],
+        client_ids: set[str],
+        period_start: str | None,
+        period_end: str | None,
+    ) -> None:
+        invoice_q = (
+            self.db.table("invoices")
+            .select("id, client_id, engagement_id, total, currency, issue_date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("client_id", list(client_ids))
+            .in_("status", _FINAL_INVOICE_STATUSES)
+            .is_("deleted_at", "null")
+        )
+        if period_start:
+            invoice_q = invoice_q.gte("issue_date", period_start)
+        if period_end:
+            invoice_q = invoice_q.lte("issue_date", period_end)
+        invoices = invoice_q.execute().data or []
+
+        for invoice in invoices:
+            engagement = engagement_by_id.get(str(invoice.get("engagement_id")))
+            if not engagement:
+                continue
+            amount = _decimal(invoice.get("total")) or Decimal("0")
+            for stats in self._profitability_dimensions_for_engagement(
+                facts=facts,
+                clients_by_id=clients_by_id,
+                engagement=engagement,
+            ):
+                stats["revenue"] += amount
+                stats["invoice_ids"].add(str(invoice["id"]))
+                if invoice.get("currency"):
+                    stats["currencies"].add(str(invoice["currency"]))
+
+    def _add_profitability_labor(
+        self,
+        *,
+        facts: dict[str, object],
+        clients_by_id: dict[str, dict],
+        engagement_by_id: dict[str, dict],
+        project_by_id: dict[str, dict],
+        period_start: str | None,
+        period_end: str | None,
+    ) -> None:
+        if not project_by_id:
+            return
+        entries_q = (
+            self.db.table("time_entries")
+            .select("project_id, employee_id, hours, date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("project_id", list(project_by_id))
+            .is_("deleted_at", "null")
+        )
+        if period_start:
+            entries_q = entries_q.gte("date", period_start)
+        if period_end:
+            entries_q = entries_q.lte("date", period_end)
+        entries = entries_q.execute().data or []
+        if not entries:
+            return
+
+        employee_ids = {
+            str(entry["employee_id"]) for entry in entries if entry.get("employee_id")
+        }
+        cost_rates: dict[str, Decimal] = {}
+        if employee_ids:
+            employees = (
+                self.db.table("employees")
+                .select("id, cost_rate")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(employee_ids))
+                .execute()
+                .data
+                or []
+            )
+            cost_rates = {
+                str(employee["id"]): _decimal(employee.get("cost_rate")) or Decimal("0")
+                for employee in employees
+            }
+
+        for entry in entries:
+            project = project_by_id.get(str(entry.get("project_id")))
+            if not project:
+                continue
+            engagement = engagement_by_id.get(str(project.get("engagement_id")))
+            if not engagement:
+                continue
+            hours = _decimal(entry.get("hours")) or Decimal("0")
+            rate = cost_rates.get(str(entry.get("employee_id")), Decimal("0"))
+            cost = (hours * rate).quantize(Decimal("0.01"))
+            for stats in self._profitability_dimensions_for_engagement(
+                facts=facts,
+                clients_by_id=clients_by_id,
+                engagement=engagement,
+            ):
+                stats["labor_cost"] += cost
+                stats["labor_hours"] += hours
+                stats["project_ids"].add(str(project["id"]))
+
+    def _add_profitability_expenses(
+        self,
+        *,
+        facts: dict[str, object],
+        clients_by_id: dict[str, dict],
+        engagement_by_id: dict[str, dict],
+        project_by_id: dict[str, dict],
+        period_start: str | None,
+        period_end: str | None,
+    ) -> None:
+        if not project_by_id:
+            return
+        expenses_q = (
+            self.db.table("project_expenses")
+            .select("id, project_id, amount, base_amount, currency, expense_date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("project_id", list(project_by_id))
+            .is_("deleted_at", "null")
+        )
+        if period_start:
+            expenses_q = expenses_q.gte("expense_date", period_start)
+        if period_end:
+            expenses_q = expenses_q.lte("expense_date", period_end)
+        expenses = expenses_q.execute().data or []
+
+        for expense in expenses:
+            project = project_by_id.get(str(expense.get("project_id")))
+            if not project:
+                continue
+            engagement = engagement_by_id.get(str(project.get("engagement_id")))
+            if not engagement:
+                continue
+            amount = (
+                _decimal(expense.get("base_amount"))
+                or _decimal(expense.get("amount"))
+                or Decimal("0")
+            )
+            for stats in self._profitability_dimensions_for_engagement(
+                facts=facts,
+                clients_by_id=clients_by_id,
+                engagement=engagement,
+            ):
+                stats["expense_cost"] += amount
+                stats["expense_ids"].add(str(expense["id"]))
+                stats["project_ids"].add(str(project["id"]))
+                if expense.get("currency"):
+                    stats["currencies"].add(str(expense["currency"]))
+
+    # ------------------------------------------------------------------
+    # 13. Project Health Scores
     # ------------------------------------------------------------------
 
     def project_health_scores(
@@ -1369,6 +1771,90 @@ def _decimal(value: object) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _profitability_stats() -> dict[str, object]:
+    return {
+        "revenue": Decimal("0"),
+        "labor_cost": Decimal("0"),
+        "expense_cost": Decimal("0"),
+        "labor_hours": Decimal("0"),
+        "client_ids": set(),
+        "engagement_ids": set(),
+        "project_ids": set(),
+        "invoice_ids": set(),
+        "expense_ids": set(),
+        "service_lines": set(),
+        "currencies": set(),
+    }
+
+
+def _is_empty_profitability(stats: dict) -> bool:
+    return (
+        stats["revenue"] == Decimal("0")
+        and stats["labor_cost"] == Decimal("0")
+        and stats["expense_cost"] == Decimal("0")
+    )
+
+
+def _profitability_row(identity: dict[str, object], stats: dict) -> dict[str, object]:
+    revenue = stats["revenue"]
+    labor_cost = stats["labor_cost"]
+    expense_cost = stats["expense_cost"]
+    total_cost = labor_cost + expense_cost
+    gross_margin = revenue - total_cost
+    gross_margin_pct = (
+        round(float(gross_margin / revenue * 100), 1)
+        if revenue > Decimal("0")
+        else 0.0
+    )
+
+    return {
+        **identity,
+        "revenue": serialise_money(revenue) or "0.00",
+        "labor_cost": serialise_money(labor_cost) or "0.00",
+        "expense_cost": serialise_money(expense_cost) or "0.00",
+        "total_cost": serialise_money(total_cost) or "0.00",
+        "gross_margin": serialise_money(gross_margin) or "0.00",
+        "gross_margin_pct": gross_margin_pct,
+        "labor_hours": str(stats["labor_hours"].quantize(Decimal("0.01"))),
+        "client_count": len(stats["client_ids"]),
+        "engagement_count": len(stats["engagement_ids"]),
+        "project_count": len(stats["project_ids"]),
+        "invoice_count": len(stats["invoice_ids"]),
+        "expense_count": len(stats["expense_ids"]),
+        "profitability_status": _profitability_status(gross_margin_pct),
+        "recommended_action": _profitability_action(gross_margin_pct),
+    }
+
+
+def _currency_label(stats: dict) -> str | None:
+    currencies = {str(currency) for currency in stats["currencies"] if currency}
+    if not currencies:
+        return None
+    if len(currencies) == 1:
+        return next(iter(currencies))
+    return "mixed"
+
+
+def _profitability_status(gross_margin_pct: float) -> str:
+    if gross_margin_pct < 20:
+        return "critical"
+    if gross_margin_pct < 30:
+        return "watch"
+    if gross_margin_pct >= 50:
+        return "strong"
+    return "healthy"
+
+
+def _profitability_action(gross_margin_pct: float) -> str:
+    if gross_margin_pct < 20:
+        return "Review pricing, scope, staffing mix, and direct costs before more work is approved."
+    if gross_margin_pct < 30:
+        return "Ask the partner to review margin leakage and unbilled recovery."
+    if gross_margin_pct >= 50:
+        return "Protect this relationship and look for repeatable delivery patterns."
+    return "Continue monitoring margin and delivery mix."
 
 
 def _embedded_one(value: object) -> dict:

@@ -473,3 +473,211 @@ def test_capacity_planning_flags_overallocated_and_underutilized(
     assert result[0]["active_assignments"][0]["project_name"] == "Platform Cleanup"
     assert result[1]["capacity_status"] == "underutilized"
     assert result[1]["utilization_pct"] == 25.0
+
+
+def test_client_profitability_reconciles_revenue_labor_and_expenses(
+    mock_db: MagicMock,
+) -> None:
+    """Client profitability combines finalized revenue, labour, and expenses."""
+    _route_tables(
+        mock_db,
+        {
+            "clients": [
+                {
+                    "id": "client-acme",
+                    "name": "Acme Corp",
+                    "kind": "customer",
+                    "currency": "USD",
+                },
+                {
+                    "id": "client-bravo",
+                    "name": "Bravo Ltd",
+                    "kind": "both",
+                    "currency": "USD",
+                },
+            ],
+            "engagements": [
+                {
+                    "id": "eng-acme",
+                    "client_id": "client-acme",
+                    "service_line": "advisory",
+                    "currency": "USD",
+                },
+                {
+                    "id": "eng-bravo",
+                    "client_id": "client-bravo",
+                    "service_line": "tax",
+                    "currency": "USD",
+                },
+            ],
+            "projects": [
+                {"id": "proj-acme", "engagement_id": "eng-acme", "currency": "USD"},
+                {"id": "proj-bravo", "engagement_id": "eng-bravo", "currency": "USD"},
+            ],
+            "invoices": [
+                {
+                    "id": "inv-acme",
+                    "client_id": "client-acme",
+                    "engagement_id": "eng-acme",
+                    "total": "10000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-10",
+                },
+                {
+                    "id": "inv-bravo",
+                    "client_id": "client-bravo",
+                    "engagement_id": "eng-bravo",
+                    "total": "5000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-11",
+                },
+            ],
+            "time_entries": [
+                {
+                    "project_id": "proj-acme",
+                    "employee_id": "emp-senior",
+                    "hours": "10.00",
+                    "date": "2026-06-12",
+                },
+                {
+                    "project_id": "proj-bravo",
+                    "employee_id": "emp-manager",
+                    "hours": "5.00",
+                    "date": "2026-06-12",
+                },
+            ],
+            "employees": [
+                {"id": "emp-senior", "cost_rate": "100.00"},
+                {"id": "emp-manager", "cost_rate": "120.00"},
+            ],
+            "project_expenses": [
+                {
+                    "id": "exp-acme",
+                    "project_id": "proj-acme",
+                    "amount": "1000.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+                {
+                    "id": "exp-bravo",
+                    "project_id": "proj-bravo",
+                    "amount": "500.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    result = svc.client_profitability(
+        period_start="2026-06-01",
+        period_end="2026-06-30",
+    )
+
+    by_client = {row["client_id"]: row for row in result}
+    acme = by_client["client-acme"]
+    assert acme["client_name"] == "Acme Corp"
+    assert acme["service_lines"] == ["advisory"]
+    assert Decimal(acme["revenue"]) == Decimal("10000.00")
+    assert Decimal(acme["labor_cost"]) == Decimal("1000.00")
+    assert Decimal(acme["expense_cost"]) == Decimal("1000.00")
+    assert Decimal(acme["total_cost"]) == Decimal("2000.00")
+    assert Decimal(acme["gross_margin"]) == Decimal("8000.00")
+    assert acme["gross_margin_pct"] == 80.0
+    assert acme["profitability_status"] == "strong"
+    assert acme["invoice_count"] == 1
+    assert acme["project_count"] == 1
+
+
+def test_segment_profitability_groups_by_service_line(mock_db: MagicMock) -> None:
+    """Segment profitability exposes data-backed service-line rollups."""
+    _route_tables(
+        mock_db,
+        {
+            "clients": [
+                {
+                    "id": "client-acme",
+                    "name": "Acme Corp",
+                    "kind": "customer",
+                    "currency": "USD",
+                },
+                {
+                    "id": "client-bravo",
+                    "name": "Bravo Ltd",
+                    "kind": "customer",
+                    "currency": "USD",
+                },
+            ],
+            "engagements": [
+                {
+                    "id": "eng-acme",
+                    "client_id": "client-acme",
+                    "service_line": "advisory",
+                    "currency": "USD",
+                },
+                {
+                    "id": "eng-bravo",
+                    "client_id": "client-bravo",
+                    "service_line": "tax",
+                    "currency": "USD",
+                },
+            ],
+            "projects": [
+                {"id": "proj-acme", "engagement_id": "eng-acme", "currency": "USD"},
+                {"id": "proj-bravo", "engagement_id": "eng-bravo", "currency": "USD"},
+            ],
+            "invoices": [
+                {
+                    "id": "inv-acme",
+                    "client_id": "client-acme",
+                    "engagement_id": "eng-acme",
+                    "total": "10000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-10",
+                },
+                {
+                    "id": "inv-bravo",
+                    "client_id": "client-bravo",
+                    "engagement_id": "eng-bravo",
+                    "total": "5000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-11",
+                },
+            ],
+            "time_entries": [],
+            "employees": [],
+            "project_expenses": [
+                {
+                    "id": "exp-acme",
+                    "project_id": "proj-acme",
+                    "amount": "2000.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+                {
+                    "id": "exp-bravo",
+                    "project_id": "proj-bravo",
+                    "amount": "500.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    result = svc.segment_profitability(group_by="service_line")
+
+    by_segment = {row["segment_key"]: row for row in result}
+    assert by_segment["advisory"]["segment_label"] == "Advisory"
+    assert Decimal(by_segment["advisory"]["revenue"]) == Decimal("10000.00")
+    assert Decimal(by_segment["advisory"]["expense_cost"]) == Decimal("2000.00")
+    assert Decimal(by_segment["advisory"]["gross_margin"]) == Decimal("8000.00")
+    assert by_segment["advisory"]["client_count"] == 1
+    assert by_segment["tax"]["segment_label"] == "Tax"
+    assert Decimal(by_segment["tax"]["gross_margin"]) == Decimal("4500.00")

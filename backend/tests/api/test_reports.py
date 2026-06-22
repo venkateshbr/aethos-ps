@@ -25,6 +25,8 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/project-pnl",
     "/api/v1/reports/project-health",
     "/api/v1/reports/capacity-planning",
+    "/api/v1/reports/client-profitability",
+    "/api/v1/reports/segment-profitability",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -114,3 +116,52 @@ def test_capacity_planning_report_shape(client_a: httpx.Client) -> None:
             "underutilized",
             "balanced",
         }
+
+
+def test_client_profitability_report_shape(client_a: httpx.Client) -> None:
+    """Client profitability returns component totals and margin status."""
+    r = client_a.get("/api/v1/reports/client-profitability")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "client_id",
+            "client_name",
+            "revenue",
+            "labor_cost",
+            "expense_cost",
+            "total_cost",
+            "gross_margin",
+            "gross_margin_pct",
+            "profitability_status",
+            "recommended_action",
+        } <= set(row)
+        assert row["profitability_status"] in {
+            "strong",
+            "healthy",
+            "watch",
+            "critical",
+        }
+
+
+def test_segment_profitability_report_shape(client_a: httpx.Client) -> None:
+    """Segment profitability supports service-line and client-kind grouping."""
+    r = client_a.get("/api/v1/reports/segment-profitability?group_by=client_kind")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "segment_type",
+            "segment_key",
+            "segment_label",
+            "revenue",
+            "labor_cost",
+            "expense_cost",
+            "gross_margin",
+            "gross_margin_pct",
+        } <= set(row)
+        assert row["segment_type"] == "client_kind"

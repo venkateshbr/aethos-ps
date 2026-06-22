@@ -73,6 +73,49 @@ export interface CapacityRow {
   recommended_action: string;
 }
 
+export interface ClientProfitabilityRow {
+  client_id: string;
+  client_name: string;
+  client_kind: 'customer' | 'both' | string;
+  currency?: string | null;
+  service_lines: string[];
+  revenue: string;
+  labor_cost: string;
+  expense_cost: string;
+  total_cost: string;
+  gross_margin: string;
+  gross_margin_pct: number;
+  labor_hours: string;
+  client_count: number;
+  engagement_count: number;
+  project_count: number;
+  invoice_count: number;
+  expense_count: number;
+  profitability_status: 'strong' | 'healthy' | 'watch' | 'critical';
+  recommended_action: string;
+}
+
+export interface SegmentProfitabilityRow {
+  segment_type: 'service_line' | 'client_kind';
+  segment_key: string;
+  segment_label: string;
+  currency?: string | null;
+  revenue: string;
+  labor_cost: string;
+  expense_cost: string;
+  total_cost: string;
+  gross_margin: string;
+  gross_margin_pct: number;
+  labor_hours: string;
+  client_count: number;
+  engagement_count: number;
+  project_count: number;
+  invoice_count: number;
+  expense_count: number;
+  profitability_status: 'strong' | 'healthy' | 'watch' | 'critical';
+  recommended_action: string;
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -132,6 +175,16 @@ export class ReportsService {
 
   getCapacityPlanning = (): Observable<CapacityRow[]> =>
     this.http.get<CapacityRow[]>(`${this.base}/capacity-planning`);
+
+  getClientProfitability = (): Observable<ClientProfitabilityRow[]> =>
+    this.http.get<ClientProfitabilityRow[]>(`${this.base}/client-profitability`);
+
+  getSegmentProfitability = (
+    groupBy: 'service_line' | 'client_kind' = 'service_line',
+  ): Observable<SegmentProfitabilityRow[]> =>
+    this.http.get<SegmentProfitabilityRow[]>(
+      `${this.base}/segment-profitability?group_by=${groupBy}`,
+    );
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

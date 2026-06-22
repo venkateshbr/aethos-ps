@@ -5,6 +5,8 @@ All endpoints are read-only (GET). Minimum role: authenticated user (viewer+).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import CurrentUser, get_current_user
@@ -167,6 +169,41 @@ def margin_by_service_line(
 ) -> list[dict]:
     """Gross margin by service line (revenue - labour cost), optionally filtered to a month."""
     return svc.margin_by_service_line(period=period)
+
+
+@router.get("/client-profitability")
+def client_profitability(
+    client_id: str | None = Query(None, description="Filter to a single client"),
+    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Client profitability from finalized revenue, labour cost, and expenses."""
+    return svc.client_profitability(
+        period_start=period_start,
+        period_end=period_end,
+        client_id=client_id,
+    )
+
+
+@router.get("/segment-profitability")
+def segment_profitability(
+    group_by: Literal["service_line", "client_kind"] = Query(
+        "service_line",
+        description="Data-backed segment dimension.",
+    ),
+    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Segment profitability by service line or client kind."""
+    return svc.segment_profitability(
+        period_start=period_start,
+        period_end=period_end,
+        group_by=group_by,
+    )
 
 
 @router.get("/trial-balance", response_model=TrialBalanceReport)
