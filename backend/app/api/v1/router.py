@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     employees,
     engagements,
     expenses,
+    financial_events,
     fx_rates,
     health_check,
     inbox,
@@ -68,6 +69,7 @@ api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=
 api_router.include_router(bill_payments.router, prefix="/bill-payments", tags=["bill-payments"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(financial_events.router, prefix="/financial-events", tags=["financial-events"])
 api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["billing-runs"])
 api_router.include_router(fx_rates.router, prefix="/fx-rates", tags=["fx-rates"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])

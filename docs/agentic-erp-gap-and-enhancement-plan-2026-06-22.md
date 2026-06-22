@@ -293,7 +293,7 @@ Acceptance:
 Goal: make the product credible for real finance operations.
 
 Work items:
-- Full audit trail and immutable event log for financial workflows.
+- Done 2026-06-22: added `financial_events` as an immutable, hash-chained event log with database-trigger coverage for posted journals and period lock/unlock actions, plus read-only `/api/v1/financial-events` admin API.
 - RLS/service-role reduction plan.
 - Data retention and export controls.
 - PII policy for uploaded documents, including binary masking/redaction before external LLM calls.

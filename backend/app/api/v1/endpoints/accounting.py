@@ -463,6 +463,13 @@ async def unlock_period(
     _validate_period(period)
 
     try:
+        (
+            db.table("period_locks")
+            .update({"unlock_requested_by": current_user.user_id})
+            .eq("tenant_id", tenant_id)
+            .eq("period", period)
+            .execute()
+        )
         result = (
             db.table("period_locks")
             .delete()
