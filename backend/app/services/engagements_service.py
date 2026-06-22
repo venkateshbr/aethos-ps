@@ -129,11 +129,9 @@ class EngagementService:
         if eng_row is None:
             return None
 
-        # Run invoice and WIP aggregation concurrently.
-        invoice_summary, wip_summary = await asyncio.gather(
-            self._repo.get_invoice_summary(engagement_id),
-            self._repo.get_wip_summary(engagement_id),
-        )
+        # Run sequentially to avoid HTTP/2 multiplexing errors on concurrent Supabase calls.
+        invoice_summary = await self._repo.get_invoice_summary(engagement_id)
+        wip_summary = await self._repo.get_wip_summary(engagement_id)
 
         billed_to_date: Decimal = invoice_summary["billed_to_date"]
         invoice_count: int = invoice_summary["invoice_count"]

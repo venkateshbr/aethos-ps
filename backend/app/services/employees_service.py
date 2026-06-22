@@ -72,6 +72,10 @@ class EmployeesService:
             "skills": data.skills,
             "status": "active",
         }
+        if data.practice_area is not None:
+            payload["practice_area"] = data.practice_area.value
+        if data.seniority is not None:
+            payload["seniority"] = data.seniority.value
         row = await self._repo.create(payload)
         return _row_to_response(row)
 
@@ -126,6 +130,10 @@ class EmployeesService:
             patch["available_hours_per_week"] = str(data.available_hours_per_week)
         if data.skills is not None:
             patch["skills"] = data.skills
+        if data.practice_area is not None:
+            patch["practice_area"] = data.practice_area.value
+        if data.seniority is not None:
+            patch["seniority"] = data.seniority.value
 
         if not patch:
             return _row_to_response(existing)
@@ -262,4 +270,6 @@ def _row_to_response(row: dict) -> EmployeeResponse:
         status=row.get("status", "active"),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+        practice_area=row.get("practice_area"),
+        seniority=row.get("seniority"),
     )

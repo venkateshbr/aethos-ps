@@ -20,6 +20,7 @@ from app.models.engagements import (
     EngagementCreate,
     EngagementResponse,
     EngagementStatusUpdate,
+    EngagementSummary,
 )
 from app.services.engagements_service import EngagementService
 from supabase import Client
@@ -69,6 +70,24 @@ async def get_engagement(
             status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found"
         )
     return engagement
+
+
+@router.get("/{id}/summary", response_model=EngagementSummary)
+async def get_engagement_summary(
+    id: str,
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    svc: EngagementService = Depends(_service),  # noqa: B008
+) -> EngagementSummary:
+    """Return the financial summary (billed, WIP, remaining) for one engagement.
+
+    RBAC: viewer and above.
+    """
+    summary = await svc.get_engagement_summary(id)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found"
+        )
+    return summary
 
 
 @router.patch("/{id}/status", response_model=EngagementResponse)
