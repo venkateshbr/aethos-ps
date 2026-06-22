@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.accounting import (
@@ -186,7 +186,7 @@ def _generate_periods(months_back: int = 12, months_forward: int = 3) -> list[st
 async def list_periods(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> PeriodListResponse:
     """Return periods (last 12 months + next 3) with their lock status."""
     try:
@@ -538,7 +538,7 @@ async def list_journal_entries(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[JournalEntryListItem]:
     """List journal entries for the tenant, newest first.
 
