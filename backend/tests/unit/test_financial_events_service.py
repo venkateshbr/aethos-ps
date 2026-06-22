@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+from io import StringIO
 from typing import Any
 
 import pytest
@@ -135,3 +137,18 @@ def test_list_events_filters_by_event_and_entity() -> None:
     assert result.total == 1
     assert result.items[0].id == "event-older"
     assert result.items[0].event_type == "journal_entry.posted"
+
+
+def test_export_events_csv_includes_hash_chain_columns() -> None:
+    raw = FinancialEventsService(_Db(), TENANT_ID).export_events_csv(  # type: ignore[arg-type]
+        event_type="period.locked"
+    )
+
+    rows = list(csv.DictReader(StringIO(raw.decode("utf-8"))))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["event_type"] == "period.locked"
+    assert row["entity_type"] == "period_lock"
+    assert row["previous_event_hash"] == "hash-older"
+    assert row["event_hash"] == "hash-event-newer"
+    assert row["after_state_json"] == '{"id":"lock-1"}'

@@ -295,7 +295,7 @@ Goal: make the product credible for real finance operations.
 Work items:
 - Done 2026-06-22: added `financial_events` as an immutable, hash-chained event log with database-trigger coverage for posted journals and period lock/unlock actions, plus read-only `/api/v1/financial-events` admin API.
 - RLS/service-role reduction plan.
-- Data retention and export controls.
+- Done 2026-06-22: added capped admin CSV export for `financial_events` so audit/review packages can include event evidence without direct database access.
 - PII policy for uploaded documents, including binary masking/redaction before external LLM calls.
 - Done 2026-06-22: added bill-payment export integrity metadata, actor/timestamp controls for approval/export/send/settlement, settled batch status, and financial event log coverage for payment-batch transitions.
 - Localization depth for US, UK, SG, IN, AU tax and reporting.

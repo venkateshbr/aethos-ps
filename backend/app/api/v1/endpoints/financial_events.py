@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 
 from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client
@@ -38,4 +39,26 @@ def list_financial_events(
         entity_id=entity_id,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/export")
+def export_financial_events(
+    event_type: str | None = Query(default=None, description="Filter by event type"),
+    entity_type: str | None = Query(default=None, description="Filter by entity type"),
+    entity_id: str | None = Query(default=None, description="Filter by entity id"),
+    limit: int = Query(default=1000, ge=1, le=1000),
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: FinancialEventsService = Depends(_service),  # noqa: B008
+) -> Response:
+    content = svc.export_events_csv(
+        event_type=event_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        limit=limit,
+    )
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=financial-events.csv"},
     )

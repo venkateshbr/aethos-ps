@@ -51,6 +51,18 @@ def test_admin_can_list_financial_events(admin_client: TestClient) -> None:
     assert body["items"][0]["event_hash"] == "hash-event-newer"
 
 
+def test_admin_can_export_financial_events_csv(admin_client: TestClient) -> None:
+    response = admin_client.get("/api/v1/financial-events/export?entity_type=journal_entry")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "financial-events.csv" in response.headers["content-disposition"]
+    body = response.text
+    assert "event_type,entity_type,entity_id" in body
+    assert "journal_entry.posted,journal_entry,journal-1" in body
+    assert "period.locked" not in body
+
+
 def test_viewer_cannot_list_financial_events() -> None:
     app.dependency_overrides[get_current_user] = lambda: CurrentUser(
         user_id="user-1",
