@@ -37,7 +37,16 @@ logger = logging.getLogger(__name__)
 
 # Agents that touch financial transactions — require higher promotion thresholds.
 MONEY_AGENTS: frozenset[str] = frozenset(
-    {"copilot_agent", "invoice_drafter_agent", "accounting_guardian", "bill_pay_agent"}
+    {
+        "accrual_agent",
+        "accounting_guardian",
+        "bill_pay_agent",
+        "billing_run_agent",
+        "collections_agent",
+        "copilot_agent",
+        "invoice_drafter_agent",
+        "revenue_recognition_agent",
+    }
 )
 
 

@@ -19,7 +19,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.workers.autonomy_promoter import (
-    MONEY_AGENTS,
     _check_demotions,
     _check_promotions,
 )
@@ -134,11 +133,10 @@ def test_promotion_skipped_below_min_count() -> None:
 
 def test_money_agent_requires_higher_thresholds() -> None:
     """Money agents need 60 samples — 59 approved rows must be skipped."""
-    agent = next(iter(MONEY_AGENTS))
     suggestions = [
         {
-            "agent_name": agent,
-            "action_type": "create_journal",
+            "agent_name": "bill_pay_agent",
+            "action_type": "create_bill_payment_batch",
             "status": "approved",
             "confidence": "0.99",
         }
@@ -158,7 +156,7 @@ def test_promotion_proposed_when_thresholds_met() -> None:
             "status": "approved",
             "confidence": "0.96",
         }
-        for _ in range(30)
+        for _ in range(60)
     ]
     db = _stub_db_for_promotions(
         suggestions,
@@ -168,7 +166,7 @@ def test_promotion_proposed_when_thresholds_met() -> None:
                 "locked_at_l2": False,
                 "l3_opt_in": True,
                 "eval_passed_at": "2026-06-22T06:00:00Z",
-                "max_auto_risk": "draft",
+                "max_auto_risk": "write_money_in",
             }
         ],
         hitl_open=[],
@@ -185,7 +183,7 @@ def test_promotion_skipped_without_l3_opt_in_and_eval_pass() -> None:
             "status": "approved",
             "confidence": "0.96",
         }
-        for _ in range(30)
+        for _ in range(60)
     ]
     db = _stub_db_for_promotions(
         suggestions,
@@ -245,6 +243,47 @@ def test_promotion_requires_tool_risk_permission() -> None:
 
     assert _check_promotions(blocked, "tenant-8") == 0
     assert _check_promotions(allowed, "tenant-8") == 1
+
+
+def test_promotion_requires_registered_non_copilot_action_risk() -> None:
+    suggestions = [
+        {
+            "agent_name": "accrual_agent",
+            "action_type": "draft_journal",
+            "status": "approved",
+            "confidence": "0.99",
+        }
+        for _ in range(60)
+    ]
+    blocked = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": True,
+                "eval_passed_at": "2026-06-22T06:00:00Z",
+                "max_auto_risk": "write_money_out",
+            }
+        ],
+        hitl_open=[],
+    )
+    allowed = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": True,
+                "eval_passed_at": "2026-06-22T06:00:00Z",
+                "max_auto_risk": "accounting",
+            }
+        ],
+        hitl_open=[],
+    )
+
+    assert _check_promotions(blocked, "tenant-9") == 0
+    assert _check_promotions(allowed, "tenant-9") == 1
 
 
 # ---------------------------------------------------------------------------

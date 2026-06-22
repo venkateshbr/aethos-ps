@@ -78,7 +78,16 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
 ]
 
 MONEY_AGENTS: frozenset[str] = frozenset(
-    {"copilot_agent", "invoice_drafter_agent", "bill_pay_agent", "accounting_guardian"}
+    {
+        "accrual_agent",
+        "accounting_guardian",
+        "bill_pay_agent",
+        "billing_run_agent",
+        "collections_agent",
+        "copilot_agent",
+        "invoice_drafter_agent",
+        "revenue_recognition_agent",
+    }
 )
 
 LOCKED_AGENTS: frozenset[str] = frozenset({"accounting_guardian"})

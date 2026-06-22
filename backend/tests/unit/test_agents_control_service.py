@@ -187,7 +187,7 @@ def test_set_autonomy_level_l3_requires_l3_policy_gates() -> None:
         )
 
 
-def test_set_autonomy_level_l3_allowed_when_all_gates_pass() -> None:
+def test_set_autonomy_level_l3_requires_default_risk_permission() -> None:
     db = _Db(
         {
             "agent_autonomy_settings": [
@@ -196,6 +196,28 @@ def test_set_autonomy_level_l3_allowed_when_all_gates_pass() -> None:
                     l3_opt_in=True,
                     eval_passed_at="2026-06-22T06:00:00Z",
                     max_auto_risk="draft",
+                )
+            ],
+            "agent_suggestions": [_suggestion_row() for _ in range(60)],
+        }
+    )
+
+    with pytest.raises(AgentAutonomyError, match="max_auto_risk >= write_money_in"):
+        AgentsService(db, "tenant-1").set_autonomy_level(  # type: ignore[arg-type]
+            "copilot_agent",
+            3,
+        )
+
+
+def test_set_autonomy_level_l3_allowed_when_all_gates_pass() -> None:
+    db = _Db(
+        {
+            "agent_autonomy_settings": [
+                _control_row(
+                    is_enabled=True,
+                    l3_opt_in=True,
+                    eval_passed_at="2026-06-22T06:00:00Z",
+                    max_auto_risk="write_money_in",
                 )
             ],
             "agent_suggestions": [_suggestion_row() for _ in range(60)],

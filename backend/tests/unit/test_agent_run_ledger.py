@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agents.tool_registry import risk_class_for_tool
+from app.agents.tool_registry import (
+    action_type_for_tool,
+    risk_class_for_action,
+    risk_class_for_tool,
+)
 from app.services.agent_run_ledger import (
     AgentRunLedger,
     safe_snapshot,
@@ -89,6 +93,27 @@ def test_tool_registry_classifies_copilot_tools() -> None:
     assert risk_class_for_tool("copilot_agent", "log_time_entry") == "write_low_risk"
     assert risk_class_for_tool("copilot_agent", "update_rate_card") == "write_money_in"
     assert risk_class_for_tool("copilot_agent", "unknown_tool") == "draft"
+    assert risk_class_for_action("copilot_agent", "default") == "write_money_in"
+
+
+def test_tool_registry_classifies_persisted_agent_actions() -> None:
+    assert action_type_for_tool("collections_agent", "send_email") == "send_email"
+    assert risk_class_for_action("collections_agent", "send_email") == "write_money_in"
+    assert risk_class_for_action("billing_run_agent", "approve_billing_run") == (
+        "write_money_in"
+    )
+    assert risk_class_for_action("bill_pay_agent", "create_bill_payment_batch") == (
+        "write_money_out"
+    )
+    assert risk_class_for_action("accrual_agent", "draft_journal") == "accounting"
+    assert risk_class_for_action("revenue_recognition_agent", "draft_journal") == (
+        "accounting"
+    )
+    assert risk_class_for_action("project_health_agent", "BUDGET_BURN_WARNING") == (
+        "draft"
+    )
+    assert risk_class_for_action("intelligence_agent", "EXPENSE_SPIKE") == "draft"
+    assert risk_class_for_action("unknown_agent", "unknown_action") == "draft"
 
 
 @pytest.mark.asyncio
