@@ -9,10 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import UUID
 
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 class InvoicesRepository:
@@ -49,6 +58,9 @@ class InvoicesRepository:
         return await asyncio.to_thread(_list)
 
     async def get_by_id(self, invoice_id: str) -> dict | None:
+        if not _is_uuid(invoice_id):
+            return None
+
         def _get() -> dict | None:
             result = (
                 self.db.table("invoices")
@@ -87,6 +99,9 @@ class InvoicesRepository:
         return await asyncio.to_thread(_create)
 
     async def update(self, invoice_id: str, data: dict) -> dict | None:
+        if not _is_uuid(invoice_id):
+            return None
+
         def _update() -> dict | None:
             result = (
                 self.db.table("invoices")
@@ -104,6 +119,9 @@ class InvoicesRepository:
     # ------------------------------------------------------------------
 
     async def list_lines(self, invoice_id: str) -> list[dict]:
+        if not _is_uuid(invoice_id):
+            return []
+
         def _list() -> list[dict]:
             return (
                 self.db.table("invoice_lines")

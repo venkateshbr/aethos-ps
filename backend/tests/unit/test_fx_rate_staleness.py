@@ -102,6 +102,9 @@ async def test_get_fx_rate_with_staleness_returns_stale_flag() -> None:
     assert result["to_currency"] == "GBP"
     assert result["rate"] == "1.25"
     assert result["stale"] is True
+    metadata_select = table_chain.select.call_args_list[1].args[0]
+    assert metadata_select == "rate_date, created_at"
+    assert "updated_at" not in metadata_select
 
 
 @pytest.mark.asyncio

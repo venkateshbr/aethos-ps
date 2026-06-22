@@ -295,9 +295,9 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
         >
           <!-- Name -->
           <div>
-            <label for="ps-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
+            <label for="proj-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
             <input
-              id="ps-name"
+              id="proj-name"
               type="text"
               formControlName="name"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
@@ -310,9 +310,9 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
 
           <!-- Engagement -->
           <div>
-            <label for="ps-engagement" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Engagement *</label>
+            <label for="proj-engagement" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Engagement *</label>
             <select
-              id="ps-engagement"
+              id="proj-engagement"
               formControlName="engagement_id"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
             >

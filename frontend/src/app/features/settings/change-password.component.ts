@@ -1,6 +1,8 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { startWith } from 'rxjs';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { SupabaseService } from '../../core/services/supabase.service';
@@ -106,7 +108,7 @@ import { SupabaseService } from '../../core/services/supabase.service';
         <div class="flex justify-end pt-2">
           <button
             type="submit"
-            [disabled]="form.invalid || submitting()"
+            [disabled]="!canSubmit()"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             @if (submitting()) { Updating… } @else { Update password }
@@ -134,12 +136,18 @@ export class ChangePasswordComponent {
   protected submitting = signal(false);
   protected error = signal<string | null>(null);
   protected success = signal(false);
+  private formStatus = toSignal(this.form.statusChanges.pipe(startWith(this.form.status)), {
+    initialValue: this.form.status,
+  });
+  private newPasswordValue = toSignal(
+    this.form.controls.new_password.valueChanges.pipe(startWith(this.form.controls.new_password.value)),
+    { initialValue: this.form.controls.new_password.value },
+  );
+
+  protected canSubmit = computed(() => this.formStatus() === 'VALID' && !this.submitting());
 
   /** Reactive new-password value for the strength meter. */
-  protected newPwd = computed(() => {
-    const v = this.form.controls.new_password.value || '';
-    return v;
-  });
+  protected newPwd = computed(() => this.newPasswordValue() || '');
   protected strengthPct = computed(() => Math.min(100, scorePassword(this.newPwd()) * 25));
   protected strengthLabel = computed(() => {
     const s = scorePassword(this.newPwd());

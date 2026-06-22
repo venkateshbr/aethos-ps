@@ -11,9 +11,9 @@
  *      docs/qa/MASTER_TEST_PLAN.md §5).
  *
  * Until a real signup flow ships (#94/#95/#97 still open), this setup
- * deliberately does NOT attempt a real login — it would fail on bug #97
- * (signup AuthApiError → 500). Specs that need auth must short-circuit
- * via API JWT minting, mirroring the pytest tests in backend/tests/api/.
+ * does not attempt signup. It can, however, refresh the saved O2C tenant
+ * session from e2e/.auth/o2c-tenant.meta.json so authenticated render specs
+ * do not start with an expired bearer token.
  */
 
 import { test as setup, expect } from '@playwright/test';
@@ -22,6 +22,22 @@ import * as path from 'node:path';
 
 const AUTH_DIR = path.join(__dirname, '.auth');
 const STORAGE_STATE_PATH = path.join(AUTH_DIR, 'storage-state.json');
+const O2C_STORAGE_STATE_PATH = path.join(AUTH_DIR, 'o2c-tenant.json');
+const O2C_META_PATH = path.join(AUTH_DIR, 'o2c-tenant.meta.json');
+
+interface O2CMeta {
+  email?: string;
+  password?: string;
+}
+
+function loadO2CMeta(): O2CMeta | null {
+  if (!fs.existsSync(O2C_META_PATH)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(O2C_META_PATH, 'utf-8')) as O2CMeta;
+  } catch {
+    return null;
+  }
+}
 
 setup('frontend reachable + empty storage state', async ({ page }) => {
   // Ensure the .auth directory exists
@@ -38,4 +54,25 @@ setup('frontend reachable + empty storage state', async ({ page }) => {
   // ENETUNREACH; better to surface that here with a clear error.
   await page.goto('/');
   await expect(page).toHaveURL(/\/(login|signup|)?$/);
+
+  const meta = loadO2CMeta();
+  if (!meta?.email || !meta?.password) return;
+
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
+  await page.locator('#email').fill(meta.email);
+  await page.locator('#password').fill(meta.password);
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+
+  await page.waitForURL(/\/app\/copilot(\?.*)?$/, { timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 15_000 });
+
+  const storage = await page.evaluate(() => ({
+    token: localStorage.getItem('aethos_token'),
+    tenantId: localStorage.getItem('aethos_tenant_id'),
+  }));
+  expect(storage.token, 'aethos_token must be set by global auth refresh').toBeTruthy();
+  expect(storage.tenantId, 'aethos_tenant_id must be set by global auth refresh').toBeTruthy();
+
+  await page.context().storageState({ path: O2C_STORAGE_STATE_PATH });
 });

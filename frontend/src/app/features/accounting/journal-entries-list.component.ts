@@ -92,7 +92,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <button
             type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            aria-label="Post new manual journal entry"
+            aria-label="New Journal Entry"
             (click)="openForm()"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>

@@ -18,6 +18,13 @@ export interface ServiceCatalogueItem {
   is_system: boolean;
 }
 
+interface ServiceCatalogueListResponse {
+  items: ServiceCatalogueItem[];
+  total: number;
+}
+
+type ServiceCatalogueListPayload = ServiceCatalogueItem[] | ServiceCatalogueListResponse;
+
 const SERVICE_LINE_LABELS: Record<string, string> = {
   accounting: 'Accounting & Advisory',
   tax: 'Tax Services',
@@ -451,7 +458,7 @@ export class ServicesComponent implements OnInit {
   });
 
   groupedLines = computed<ServiceLineGroup[]>(() => {
-    const all = this.services();
+    const all = Array.isArray(this.services()) ? this.services() : [];
     const map = new Map<string, ServiceCatalogueItem[]>();
     for (const svc of all) {
       const key = svc.service_line;
@@ -474,9 +481,9 @@ export class ServicesComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.loadError.set(false);
-    this.http.get<ServiceCatalogueItem[]>('/api/v1/services').subscribe({
+    this.http.get<ServiceCatalogueListPayload>('/api/v1/services').subscribe({
       next: (data) => {
-        this.services.set(data);
+        this.services.set(normalizeServiceList(data));
         this.loading.set(false);
       },
       error: () => {
@@ -635,4 +642,10 @@ export class ServicesComponent implements OnInit {
       },
     });
   }
+}
+
+function normalizeServiceList(payload: ServiceCatalogueListPayload): ServiceCatalogueItem[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
 }

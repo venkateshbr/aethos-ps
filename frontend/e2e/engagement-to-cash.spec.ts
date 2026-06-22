@@ -53,6 +53,7 @@ function apiHeaders(auth: { token: string; tenantId: string }) {
 }
 
 // Shared state across serial tests in §1 Happy Path
+let createdClientId = '';
 let createdEngagementId = '';
 let createdProjectId = '';
 let createdEmployeeId = '';
@@ -86,23 +87,13 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
     const auth = getAuthFromStorage();
     test.skip(!auth, 'no auth token');
 
-    const resp = await request.post(`${API}/api/v1/engagements`, {
-      headers: apiHeaders(auth!),
-      data: {
-        client_id: '', // will create via client first
-        name: 'E2E Test Engagement',
-        billing_arrangement: 'time_and_materials',
-        currency: 'USD',
-      },
-    });
-
-    // Create a client first, then an engagement
     const clientResp = await request.post(`${API}/api/v1/clients`, {
       headers: apiHeaders(auth!),
       data: { name: 'E2E Acme Corp', kind: 'customer' },
     });
     expect(clientResp.ok()).toBeTruthy();
     const client = await clientResp.json();
+    createdClientId = client.id;
 
     const engResp = await request.post(`${API}/api/v1/engagements`, {
       headers: apiHeaders(auth!),
@@ -125,7 +116,9 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
     test.skip(!createdEngagementId, 'engagement not created');
     await page.goto(`${BASE}/app/engagements`, { waitUntil: 'domcontentloaded' });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('E2E Test Engagement')).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.locator('[aria-label="Open engagement E2E Test Engagement"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('§1.1 step 4 — auto-created default project exists', async ({ request }) => {
@@ -157,7 +150,7 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
       data: {
         first_name: 'E2E',
         last_name: 'Tester',
-        email: `e2e-tester-${Date.now()}@test.local`,
+        email: `e2e-tester-${Date.now()}@e2e.aethosps.dev`,
         title: 'Consultant',
         employment_type: 'full_time',
         default_bill_rate: '150.00',
@@ -173,10 +166,9 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
     const auth = getAuthFromStorage();
     test.skip(!auth || !createdProjectId || !createdEmployeeId, 'prerequisites missing');
 
-    const resp = await request.post(`${API}/api/v1/assignments`, {
+    const resp = await request.post(`${API}/api/v1/projects/${createdProjectId}/assignments`, {
       headers: apiHeaders(auth!),
       data: {
-        project_id: createdProjectId,
         employee_id: createdEmployeeId,
         role: 'consultant',
       },
@@ -214,19 +206,33 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
     test.setTimeout(30_000);
     test.skip(!createdTimeEntryId, 'time entry not created');
     await page.goto(`${BASE}/app/time-entries`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('E2E test')).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByRole('cell', { name: 'E2E test — design session' }).first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('§1.3 step 7 — create invoice from engagement', async ({ request }) => {
     test.setTimeout(15_000);
     const auth = getAuthFromStorage();
-    test.skip(!auth || !createdEngagementId || !createdTimeEntryId, 'prerequisites missing');
+    test.skip(
+      !auth || !createdClientId || !createdEngagementId || !createdTimeEntryId,
+      'prerequisites missing',
+    );
 
     const resp = await request.post(`${API}/api/v1/invoices`, {
       headers: apiHeaders(auth!),
       data: {
         engagement_id: createdEngagementId,
-        time_entry_ids: [createdTimeEntryId],
+        client_id: createdClientId,
+        currency: 'USD',
+        lines: [
+          {
+            description: 'E2E test — design session',
+            quantity: '3.5',
+            unit_price: '150.00',
+            time_entry_id: createdTimeEntryId,
+          },
+        ],
       },
     });
     expect(resp.ok()).toBeTruthy();
@@ -988,7 +994,7 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
       headers: apiHeaders(auth!),
       data: {
         first_name: 'TZ', last_name: 'Tester',
-        email: `tz-test-${Date.now()}@test.local`,
+        email: `tz-test-${Date.now()}@e2e.aethosps.dev`,
         title: 'Consultant', employment_type: 'full_time', default_bill_rate: '100.00',
       },
     });
@@ -998,9 +1004,9 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     const { engagementId, projectId } = await createClientAndEngagement(
       request, auth!, 'time_and_materials',
     );
-    await request.post(`${API}/api/v1/assignments`, {
+    await request.post(`${API}/api/v1/projects/${projectId}/assignments`, {
       headers: apiHeaders(auth!),
-      data: { project_id: projectId, employee_id: emp.id, role: 'consultant' },
+      data: { employee_id: emp.id, role: 'consultant' },
     });
 
     const targetDate = '2026-03-15';
@@ -1036,7 +1042,7 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
       headers: apiHeaders(auth!),
       data: {
         first_name: 'Del', last_name: 'Guard',
-        email: `del-guard-${Date.now()}@test.local`,
+        email: `del-guard-${Date.now()}@e2e.aethosps.dev`,
         title: 'Analyst', employment_type: 'full_time', default_bill_rate: '100.00',
       },
     });
@@ -1046,9 +1052,9 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     const { engagementId, projectId } = await createClientAndEngagement(
       request, auth!, 'time_and_materials',
     );
-    await request.post(`${API}/api/v1/assignments`, {
+    await request.post(`${API}/api/v1/projects/${projectId}/assignments`, {
       headers: apiHeaders(auth!),
-      data: { project_id: projectId, employee_id: emp.id, role: 'analyst' },
+      data: { employee_id: emp.id, role: 'analyst' },
     });
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
     const teResp = await request.post(`${API}/api/v1/time-entries`, {
@@ -1106,7 +1112,7 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
       headers: apiHeaders(auth!),
       data: {
         first_name: 'DST', last_name: 'Tester',
-        email: `dst-test-${Date.now()}@test.local`,
+        email: `dst-test-${Date.now()}@e2e.aethosps.dev`,
         title: 'Analyst', employment_type: 'full_time', default_bill_rate: '100.00',
       },
     });
@@ -1114,9 +1120,9 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     const emp = await empResp.json();
 
     const { projectId } = await createClientAndEngagement(request, auth!, 'time_and_materials');
-    await request.post(`${API}/api/v1/assignments`, {
+    await request.post(`${API}/api/v1/projects/${projectId}/assignments`, {
       headers: apiHeaders(auth!),
-      data: { project_id: projectId, employee_id: emp.id, role: 'analyst' },
+      data: { employee_id: emp.id, role: 'analyst' },
     });
 
     // US DST spring-forward: 2026-03-08 (clocks skip 02:00 → 03:00)

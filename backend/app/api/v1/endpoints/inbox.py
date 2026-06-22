@@ -40,6 +40,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_TASK_STATUS_ALIASES = {
+    "pending": "open",
+}
+_TASK_STATUSES = frozenset({"open", "in_progress", "done", "expired"})
+
 
 def _service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
@@ -61,7 +66,7 @@ async def list_tasks(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     svc: InboxService = Depends(_service),  # noqa: B008
 ) -> HitlTaskListResponse:
-    status_filter = None if status == "all" else status
+    status_filter = _normalise_task_status(status)
     return await svc.list_tasks(status_filter=status_filter, kind=kind, limit=limit)
 
 
@@ -121,3 +126,19 @@ async def escalate_task(
     svc: InboxService = Depends(_service),  # noqa: B008
 ) -> EscalateResponse:
     return await svc.escalate(task_id, current_user.user_id)
+
+
+def _normalise_task_status(raw_status: str | None) -> str | None:
+    if raw_status is None:
+        return None
+    status_value = raw_status.strip().lower()
+    if status_value == "all":
+        return None
+
+    status_value = _TASK_STATUS_ALIASES.get(status_value, status_value)
+    if status_value not in _TASK_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported task status: {raw_status!r}",
+        )
+    return status_value

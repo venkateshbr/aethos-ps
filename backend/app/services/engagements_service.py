@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from decimal import Decimal
 
@@ -14,6 +13,7 @@ from app.models.engagements import (
     EngagementSummary,
 )
 from app.repositories.engagements_repo import EngagementRepository
+from app.repositories.projects_repo import ProjectRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
@@ -25,6 +25,7 @@ class EngagementService:
         self._db = db
         self._tenant_id = tenant_id
         self._repo = EngagementRepository(db, tenant_id)
+        self._projects_repo = ProjectRepository(db, tenant_id)
 
     async def list_engagements(
         self,
@@ -94,6 +95,7 @@ class EngagementService:
 
         row = await self._repo.create(eng_data)
         engagement_id = str(row["id"])
+        await self._ensure_default_project(engagement_id, data.currency)
 
         terms_row: dict | None = None
         if data.billing_terms is not None:
@@ -168,6 +170,20 @@ class EngagementService:
             remaining_value=serialise_money(remaining_value),
             invoice_count=invoice_count,
             last_invoice_date=last_invoice_date,
+        )
+
+    async def _ensure_default_project(self, engagement_id: str, currency: str) -> None:
+        existing = await self._projects_repo.list(engagement_id=engagement_id, limit=100)
+        if any(row.get("name") == "General" for row in existing):
+            return
+
+        await self._projects_repo.create(
+            {
+                "engagement_id": engagement_id,
+                "name": "General",
+                "currency": currency,
+                "status": "planning",
+            }
         )
 
 

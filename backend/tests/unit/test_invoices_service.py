@@ -64,6 +64,21 @@ def _draft_invoice(invoice_id: str, tenant_id: str, status: str = "draft") -> di
     }
 
 
+@pytest.mark.asyncio
+async def test_invoice_repository_invalid_uuid_returns_empty_without_db(
+    mock_db: MagicMock,
+    tenant_id: str,
+) -> None:
+    from app.repositories.invoices_repo import InvoicesRepository
+
+    repo = InvoicesRepository(mock_db, tenant_id)
+
+    assert await repo.get_by_id("nonexistent-id") is None
+    assert await repo.update("nonexistent-id", {"status": "approved"}) is None
+    assert await repo.list_lines("nonexistent-id") == []
+    mock_db.table.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Issue #50 — send_invoice requires approved or draft status
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  * Providing at root ensures one instance for the entire app lifetime.
  */
 import { Injectable } from '@angular/core';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, processLock, SupabaseClient } from '@supabase/supabase-js';
 import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
@@ -18,5 +18,10 @@ export class SupabaseService {
   readonly client: SupabaseClient = createClient(
     environment.supabaseUrl,
     environment.supabaseAnonKey,
+    {
+      auth: {
+        lock: processLock,
+      },
+    },
   );
 }

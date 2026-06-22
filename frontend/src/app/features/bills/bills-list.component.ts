@@ -94,7 +94,6 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
               ? 'bg-indigo-700 text-white'
               : 'bg-surface-raised text-text-muted hover:bg-surface hover:text-text-secondary border border-border-default'"
             [attr.aria-pressed]="activeFilter() === chip.value"
-            [attr.aria-label]="'Show ' + chip.label + ' bills'"
           >
             {{ chip.label }}
           </button>

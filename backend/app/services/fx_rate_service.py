@@ -48,10 +48,12 @@ async def get_fx_rate_with_staleness(
 
     rate = await get_fx_rate(from_currency, to_currency, rate_date, db)
 
-    # Fetch the rate row to get refreshed_at / rate_date
+    # Fetch the rate row to get refreshed_at / rate_date. The migration only
+    # guarantees created_at on fx_rates; fetched_at may exist in newer DBs, but
+    # updated_at is not part of the base schema.
     result = (
         db.table("fx_rates")
-        .select("rate_date, created_at, updated_at")
+        .select("rate_date, created_at")
         .eq("from_currency", from_currency)
         .eq("to_currency", to_currency)
         .lte("rate_date", rate_date.isoformat())
@@ -61,10 +63,7 @@ async def get_fx_rate_with_staleness(
     )
 
     row = result.data[0] if result.data else {}
-    # Prefer updated_at if available (set by fx_refresh_worker on upsert)
-    refreshed_at_str: str = (
-        row.get("updated_at") or row.get("created_at") or datetime.now(UTC).isoformat()
-    )
+    refreshed_at_str: str = row.get("created_at") or datetime.now(UTC).isoformat()
     try:
         refreshed_at = datetime.fromisoformat(refreshed_at_str.replace("Z", "+00:00"))
         if refreshed_at.tzinfo is None:
