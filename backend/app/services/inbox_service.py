@@ -74,7 +74,7 @@ class InboxService:
         # that lived under the plain-approve path — removed in #126 because the
         # agent_corrections table only accepts edit/reject correction_type.
 
-        entity = await self._materialise(kind, payload)
+        entity = await self._materialise(kind, payload, user_id=user_id)
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "approved", user_id)
@@ -105,7 +105,7 @@ class InboxService:
         kind = task.get("kind", "")
         agent_name = task.get("agent_name", "unknown")
 
-        entity = await self._materialise(kind, corrected_payload)
+        entity = await self._materialise(kind, corrected_payload, user_id=user_id)
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "approved", user_id)
@@ -202,7 +202,13 @@ class InboxService:
             )
         return task
 
-    async def _materialise(self, kind: str, payload: dict) -> dict:
+    async def _materialise(
+        self,
+        kind: str,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
         """Route materialisation by kind.  Returns entity_type + entity_id.
 
         The extraction worker emits the ``*_draft`` kinds; earlier kinds without
@@ -224,6 +230,8 @@ class InboxService:
             return await self._materialise_collections_email(payload)
         elif kind == "create_bill_payment_batch":
             return await self._materialise_bill_payment_batch(payload)
+        elif kind in ("draft_journal", "create_journal", "create_manual_journal"):
+            return await self._materialise_journal(payload, user_id=user_id)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -376,6 +384,46 @@ class InboxService:
             created_by="bill_pay_agent",
         )
         return {"entity_type": "bill_payment_batch", "entity_id": str(batch["id"])}
+
+    async def _materialise_journal(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None,
+    ) -> dict:
+        """Post a HITL-approved journal proposal through the manual journal service."""
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Journal approval requires a deciding user id",
+            )
+
+        journal_payload = payload.get("journal_entry") or payload.get("journal") or payload
+        if not isinstance(journal_payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Journal proposal payload must be an object",
+            )
+
+        from pydantic import ValidationError
+
+        from app.models.accounting import ManualJournalEntryIn
+        from app.services.manual_journal_service import ManualJournalService
+
+        try:
+            journal = ManualJournalEntryIn.model_validate(journal_payload)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=exc.errors(),
+            ) from exc
+
+        posted = await ManualJournalService(
+            db=self._db,
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+        ).post_manual_journal(journal)
+        return {"entity_type": "journal_entry", "entity_id": posted.id}
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
