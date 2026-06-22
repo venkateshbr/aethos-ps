@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_user_rls_client
 from app.core.tenant import get_tenant_id
 from supabase import Client
 
@@ -17,7 +17,7 @@ def list_payments(
     limit: int = 50,
     tenant_id: str = Depends(get_tenant_id),
     _: CurrentUser = Depends(get_current_user),  # noqa: B008
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> dict:
     """Return the most-recent payment receipts, joined to invoice number.
 
