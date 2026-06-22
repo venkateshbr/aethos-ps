@@ -189,6 +189,13 @@ import { HttpClient } from '@angular/common/http';
               <p class="text-xs text-confidence-low mt-1">Engagement is required.</p>
             }
           </div>
+          <!-- Budget Hours -->
+          <div>
+            <label for="proj-hours" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Budget Hours</label>
+            <input id="proj-hours" type="number" formControlName="estimated_hours" min="0" step="1"
+              placeholder="e.g. 80"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm" />
+          </div>
           @if (createError()) {
             <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">{{ createError() }}</div>
           }
@@ -304,8 +311,9 @@ export class ProjectsListComponent implements OnInit {
   createError = signal<string | null>(null);
   availableEngagements = signal<EngagementSummary[]>([]);
   createForm = this.fb.nonNullable.group({
-    name:          ['', [Validators.required]],
-    engagement_id: ['', [Validators.required]],
+    name:             ['', [Validators.required]],
+    engagement_id:    ['', [Validators.required]],
+    estimated_hours:  [null as number | null],
   });
 
   displayedColumns = ['code', 'name', 'currency', 'budget', 'status', 'team'];
@@ -359,7 +367,7 @@ export class ProjectsListComponent implements OnInit {
   openCreateForm(): void {
     // Pre-fill engagement_id if one is active
     const preselected = this.engagementId() ?? '';
-    this.createForm.reset({ name: '', engagement_id: preselected });
+    this.createForm.reset({ name: '', engagement_id: preselected, estimated_hours: null });
     this.createError.set(null);
     // Load engagements for dropdown
     this.engagementService.getEngagements().subscribe({
@@ -382,8 +390,9 @@ export class ProjectsListComponent implements OnInit {
     this.createError.set(null);
     const v = this.createForm.getRawValue();
     this.http.post<ProjectSummary>('/api/v1/projects', {
-      name:          v.name,
-      engagement_id: v.engagement_id,
+      name:             v.name,
+      engagement_id:    v.engagement_id,
+      estimated_hours:  v.estimated_hours ?? null,
     }).subscribe({
       next: (newProj) => {
         this.projects.update(list => [newProj, ...list]);

@@ -50,6 +50,7 @@ export function clearTenantId(): void {
 
 const STORAGE_KEY = 'aethos_token';
 const TENANT_STORAGE_KEY = 'aethos_tenant_id';
+const ROLE_STORAGE_KEY = 'aethos_role';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
@@ -84,6 +85,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem(STORAGE_KEY);
           localStorage.removeItem(TENANT_STORAGE_KEY);
+          localStorage.removeItem(ROLE_STORAGE_KEY);
         }
         // Avoid a navigation storm if multiple in-flight calls 401 at once —
         // only navigate when we're not already on the landing route.

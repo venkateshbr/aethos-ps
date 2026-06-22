@@ -184,20 +184,23 @@ export class ShellComponent implements OnInit {
     { label: 'Documents',   icon: 'upload_file',  route: '/app/documents' },
     { label: 'Inbox',       icon: 'inbox',        route: '/app/inbox' },
     { label: 'Engagements', icon: 'work',         route: '/app/engagements' },
+    { label: 'Projects',    icon: 'folder_open',  route: '/app/projects' },
     { label: 'Invoices',    icon: 'receipt',      route: '/app/invoices' },
     { label: 'Reports',     icon: 'bar_chart',    route: '/app/reports' },
   ];
 
   /** Secondary nav — behind the "More" overflow menu */
   readonly secondaryNav: NavItem[] = [
-    { label: 'Projects',     icon: 'folder',          route: '/app/projects' },
-    { label: 'Contacts',      icon: 'people',          route: '/app/clients' },
-    { label: 'Billing Runs', icon: 'payments',        route: '/app/billing-runs' },
-    { label: 'Expenses',     icon: 'receipt_long',    route: '/app/expenses' },
-    { label: 'Time',         icon: 'schedule',        route: '/app/time' },
-    { label: 'Approvals',    icon: 'fact_check',      route: '/app/approvals' },
-    { label: 'Payments',     icon: 'account_balance', route: '/app/payments' },
-    { label: 'People',       icon: 'badge',           route: '/app/people' },
+    { label: 'Contacts',       icon: 'people',          route: '/app/clients' },
+    { label: 'Expenses',       icon: 'receipt_long',    route: '/app/expenses' },
+    { label: 'Bills',          icon: 'description',     route: '/app/bills' },
+    { label: 'Billing Runs',   icon: 'payments',        route: '/app/billing-runs' },
+    { label: 'Time',           icon: 'schedule',        route: '/app/time' },
+    { label: 'Approvals',      icon: 'fact_check',      route: '/app/approvals' },
+    { label: 'Payments',       icon: 'account_balance', route: '/app/payments' },
+    { label: 'People',         icon: 'badge',           route: '/app/people' },
+    // ── Accounting section (#208) ──────────────────────────────────────
+    { label: 'Journal Entries', icon: 'menu_book',      route: '/app/accounting/journals' },
   ];
 
   ngOnInit(): void {

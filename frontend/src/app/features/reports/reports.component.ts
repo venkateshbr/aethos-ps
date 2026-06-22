@@ -1,5 +1,6 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
@@ -11,12 +12,14 @@ import {
   UtilRow,
   WipRow,
   RevenueRow,
+  TrialBalanceReport,
+  TrialBalanceLine,
 } from '../../core/services/reports.service';
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [CommonModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe],
+  imports: [CommonModule, FormsModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe],
   template: `
     <div class="min-h-full bg-surface-base p-6">
       <h1 class="text-2xl font-semibold text-text-primary mb-6">Reports</h1>
@@ -208,7 +211,7 @@ import {
         <!-- ── Revenue ────────────────────────────────────────────────── -->
         <mat-tab label="Revenue">
           <div class="pt-4">
-            @defer (on viewport) {
+            @defer (on immediate) {
               @if (revLoading()) {
                 <ng-container *ngTemplateOutlet="tableSkeleton" />
               } @else if (revError()) {
@@ -238,6 +241,94 @@ import {
             }
           </div>
         </mat-tab>
+        <!-- ── Trial Balance ──────────────────────────────────────────────── -->
+        <mat-tab label="Trial Balance">
+          <div class="pt-4">
+            <!-- Period picker -->
+            <div class="flex items-center gap-3 mb-6">
+              <label class="text-slate-400 text-sm" for="tb-period">As of period</label>
+              <input
+                id="tb-period"
+                type="month"
+                [(ngModel)]="tbPeriod"
+                (change)="loadTrialBalance()"
+                class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-label="Select period for trial balance"
+              />
+              <button
+                type="button"
+                (click)="tbPeriod = ''; loadTrialBalance()"
+                class="text-slate-400 text-sm hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 rounded"
+              >All time</button>
+            </div>
+
+            @defer (on viewport) {
+              @if (tbLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (tbError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Trial Balance', retry: loadTrialBalance.bind(this) }" />
+              } @else if (!tbData() || tbData()!.lines.length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'trial balance data' }" />
+              } @else {
+                <!-- Balanced indicator -->
+                <div class="mb-4 flex items-center gap-2 text-sm">
+                  @if (tbData()!.is_balanced) {
+                    <span class="text-green-400" role="status">&#10003; Balanced &mdash; DR equals CR</span>
+                  } @else {
+                    <span class="text-red-400" role="alert">&#9888; Out of balance &mdash; contact support</span>
+                  }
+                  <span class="text-slate-500">&middot; Generated {{ tbData()!.generated_at | date:'short' }}</span>
+                </div>
+
+                <!-- Trial balance table -->
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table class="w-full text-sm bg-surface-raised" aria-label="Trial Balance">
+                    <thead>
+                      <tr class="text-slate-400 border-b border-slate-700 bg-surface-base/50">
+                        <th scope="col" class="text-left py-3 px-4 text-xs uppercase tracking-wide w-20">Code</th>
+                        <th scope="col" class="text-left py-3 px-4 text-xs uppercase tracking-wide">Account</th>
+                        <th scope="col" class="text-left py-3 px-4 text-xs uppercase tracking-wide w-28">Type</th>
+                        <th scope="col" class="text-right py-3 px-4 text-xs uppercase tracking-wide w-36">Debit (DR)</th>
+                        <th scope="col" class="text-right py-3 px-4 text-xs uppercase tracking-wide w-36">Credit (CR)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (line of tbData()!.lines; track line.account_code) {
+                        <tr class="border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
+                          <td class="py-2.5 px-4 text-slate-400 font-mono text-xs">{{ line.account_code }}</td>
+                          <td class="py-2.5 px-4 text-slate-200">{{ line.account_name }}</td>
+                          <td class="py-2.5 px-4">
+                            <span [class]="tbAccountTypeBadgeClass(line.account_type)">
+                              {{ line.account_type }}
+                            </span>
+                          </td>
+                          <td class="py-2.5 px-4 text-right font-mono text-slate-200 tabular-nums">
+                            {{ line.total_dr !== '0.00' ? (line.total_dr | money) : '&mdash;' }}
+                          </td>
+                          <td class="py-2.5 px-4 text-right font-mono text-slate-200 tabular-nums">
+                            {{ line.total_cr !== '0.00' ? (line.total_cr | money) : '&mdash;' }}
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr class="border-t-2 border-slate-600 font-semibold text-slate-200 bg-surface-base/30">
+                        <td colspan="3" class="py-3 px-4 text-text-muted uppercase text-xs tracking-wide">Total</td>
+                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_dr | money }}</td>
+                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_cr | money }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
       </mat-tab-group>
     </div>
 
@@ -391,6 +482,15 @@ export class ReportsComponent implements OnInit {
   revError = signal(false);
   revRows = signal<RevenueRow[]>([]);
 
+  // Trial Balance
+  tbLoading = signal(false);
+  tbError = signal(false);
+  tbData = signal<TrialBalanceReport | null>(null);
+  tbPeriod = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
   readonly pnlColumns = ['project_name', 'revenue', 'direct_cost', 'gross_margin', 'gross_margin_pct'];
   readonly utilColumns = ['employee_id', 'total_hours', 'billable_hours', 'utilization_pct'];
   readonly wipColumns = ['project_name', 'unbilled_hours', 'avg_rate', 'wip_value'];
@@ -403,6 +503,7 @@ export class ReportsComponent implements OnInit {
     this.loadUtil();
     this.loadWip();
     this.loadRevenue();
+    this.loadTrialBalance();
   }
 
   loadAr(): void {
@@ -477,5 +578,26 @@ export class ReportsComponent implements OnInit {
     if (pct > 70) return `${base} bg-accent/15 text-accent-light`;
     if (pct >= 50) return `${base} bg-confidence-med/10 text-confidence-med`;
     return `${base} bg-confidence-low/10 text-confidence-low`;
+  }
+
+  loadTrialBalance(): void {
+    this.tbLoading.set(true);
+    this.tbError.set(false);
+    this.svc.getTrialBalance(this.tbPeriod || undefined).subscribe({
+      next: data => { this.tbData.set(data); this.tbLoading.set(false); },
+      error: () => { this.tbError.set(true); this.tbLoading.set(false); },
+    });
+  }
+
+  tbAccountTypeBadgeClass(type: string): string {
+    const base = 'inline-block px-2 py-0.5 rounded text-xs font-medium capitalize';
+    switch (type) {
+      case 'asset':     return `${base} bg-blue-500/20 text-blue-300`;
+      case 'liability': return `${base} bg-red-500/20 text-red-300`;
+      case 'equity':    return `${base} bg-purple-500/20 text-purple-300`;
+      case 'revenue':   return `${base} bg-emerald-500/20 text-emerald-300`;
+      case 'expense':   return `${base} bg-amber-500/20 text-amber-300`;
+      default:          return `${base} bg-surface text-text-muted`;
+    }
   }
 }

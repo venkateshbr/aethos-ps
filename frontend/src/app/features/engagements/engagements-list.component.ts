@@ -188,19 +188,33 @@ function formatBillingArrangement(arrangement: string): string {
 
             <!-- Actions column -->
             <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef class="bg-surface-raised border-b border-border-default px-4 py-3 w-12">
+              <th mat-header-cell *matHeaderCellDef class="bg-surface-raised border-b border-border-default px-4 py-3">
                 <span class="sr-only">Actions</span>
               </th>
               <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
-                <button
-                  mat-icon-button
-                  class="text-text-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                  [matTooltip]="'Open engagement'"
-                  (click)="openDetail(row.id)"
-                  [attr.aria-label]="'Open ' + row.name"
-                >
-                  <mat-icon class="text-base">chevron_right</mat-icon>
-                </button>
+                <div class="flex items-center gap-2" (click)="$event.stopPropagation()">
+                  @if (row.status === 'active') {
+                    <button
+                      mat-stroked-button
+                      class="text-xs text-indigo-400 border-indigo-500/50 hover:border-indigo-400 hover:text-indigo-300 h-7 min-h-0 px-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                      [matTooltip]="'Draft an invoice for this engagement'"
+                      (click)="billNow(row.id)"
+                      [attr.aria-label]="'Bill Now: ' + row.name"
+                    >
+                      <mat-icon class="text-sm mr-0.5" style="font-size:0.875rem;width:0.875rem;height:0.875rem;" aria-hidden="true">receipt</mat-icon>
+                      Bill Now
+                    </button>
+                  }
+                  <button
+                    mat-icon-button
+                    class="text-text-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                    [matTooltip]="'Open engagement'"
+                    (click)="openDetail(row.id)"
+                    [attr.aria-label]="'Open ' + row.name"
+                  >
+                    <mat-icon class="text-base">chevron_right</mat-icon>
+                  </button>
+                </div>
               </td>
             </ng-container>
 
@@ -337,6 +351,40 @@ function formatBillingArrangement(arrangement: string): string {
             <p class="text-xs text-text-muted mt-1">Optional. Enter as a decimal number.</p>
           </div>
 
+          <!-- Start Date -->
+          <div>
+            <label for="eng-start-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Start Date</label>
+            <input
+              id="eng-start-date"
+              type="date"
+              formControlName="start_date"
+              class="w-full bg-surface-base border border-border-default rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <!-- End Date -->
+          <div>
+            <label for="eng-end-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">End Date</label>
+            <input
+              id="eng-end-date"
+              type="date"
+              formControlName="end_date"
+              class="w-full bg-surface-base border border-border-default rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <!-- Description / Scope -->
+          <div>
+            <label for="eng-description" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Scope / Description</label>
+            <textarea
+              id="eng-description"
+              formControlName="description"
+              rows="2"
+              placeholder="Brief description of the engagement scope..."
+              class="w-full bg-surface-base border border-border-default rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+            ></textarea>
+          </div>
+
           @if (createError()) {
             <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
               {{ createError() }}
@@ -402,6 +450,9 @@ export class EngagementsListComponent implements OnInit {
     billing_arrangement: ['', [Validators.required]],
     currency:            ['', [Validators.required]],
     total_value:         [''],
+    start_date:          [''],
+    end_date:            [''],
+    description:         [''],
   });
 
   displayedColumns = ['name', 'client', 'billing', 'currency', 'value', 'status', 'actions'];
@@ -448,8 +499,13 @@ export class EngagementsListComponent implements OnInit {
     this.router.navigate(['/app/engagements', id]);
   }
 
+  /** Navigate to the engagement detail where billing can be initiated (#239). */
+  billNow(id: string): void {
+    this.router.navigate(['/app/engagements', id]);
+  }
+
   openCreateForm(): void {
-    this.createForm.reset({ name: '', client_id: '', billing_arrangement: '', currency: '', total_value: '' });
+    this.createForm.reset({ name: '', client_id: '', billing_arrangement: '', currency: '', total_value: '', start_date: '', end_date: '', description: '' });
     this.createError.set(null);
     this.showCreateForm.set(true);
     // Load customers for the dropdown — filter to kind=customer (includes 'both').
@@ -481,6 +537,9 @@ export class EngagementsListComponent implements OnInit {
       billing_arrangement: v.billing_arrangement,
       currency:            v.currency,
       total_value:         v.total_value || null,
+      start_date:          v.start_date || null,
+      end_date:            v.end_date || null,
+      description:         v.description || null,
     }).subscribe({
       next: (newEng) => {
         this.engagements.update(list => [newEng as unknown as EngagementSummary, ...list]);

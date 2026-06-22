@@ -1,14 +1,17 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { MatStepperModule } from '@angular/material/stepper';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { BillingRunsService, Bill } from '../../core/services/billing-runs.service';
+import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: 'app-pay-bills',
@@ -21,13 +24,64 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
     MatCheckboxModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatSnackBarModule,
     MoneyPipe,
     SourceDocumentLinkComponent,
   ],
   template: `
     <div class="min-h-full bg-surface-base p-6">
       <div class="max-w-3xl mx-auto">
-        <h1 class="text-2xl font-semibold text-text-primary mb-6">Pay Bills</h1>
+        <h1 class="text-2xl font-semibold text-text-primary mb-6">Billing</h1>
+
+        <!-- ── Run Billing (#239) ───────────────────────────────────────── -->
+        <div class="bg-surface-raised border border-border-default rounded-xl p-5 mb-8">
+          <h2 class="text-base font-semibold text-text-primary mb-1">Run Billing</h2>
+          <p class="text-sm text-text-muted mb-4">Generate invoices for your active engagements</p>
+
+          <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+            <!-- Engagement dropdown -->
+            <div class="flex-1 min-w-0">
+              @if (loadingEngagements()) {
+                <div class="h-9 bg-surface rounded border border-border-default animate-pulse"></div>
+              } @else {
+                <select
+                  [(ngModel)]="selectedEngagementId"
+                  name="billing-engagement"
+                  aria-label="Select engagement to bill"
+                  class="w-full px-3 py-2 bg-surface border border-border-strong rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">Select engagement…</option>
+                  @for (eng of activeEngagements(); track eng.id) {
+                    <option [value]="eng.id">{{ eng.name }}{{ eng.client_name ? ' — ' + eng.client_name : '' }}</option>
+                  }
+                </select>
+              }
+            </div>
+
+            <!-- Run Billing button -->
+            <button
+              [disabled]="!selectedEngagementId || runningBilling()"
+              (click)="runBilling()"
+              class="flex-none inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              aria-label="Run billing for selected engagement"
+            >
+              @if (runningBilling()) {
+                <mat-spinner diameter="14" class="inline-block" />
+                Running…
+              } @else {
+                <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">receipt_long</mat-icon>
+                Run Billing
+              }
+            </button>
+          </div>
+
+          @if (billingRunError()) {
+            <p class="mt-3 text-xs text-confidence-low" role="alert">{{ billingRunError() }}</p>
+          }
+        </div>
+
+        <!-- ── Pay Bills stepper ────────────────────────────────────────── -->
+        <h2 class="text-lg font-semibold text-text-primary mb-4">Pay Bills</h2>
 
         @if (loadingBills()) {
           <div class="flex justify-center py-16">
@@ -273,10 +327,14 @@ import { SourceDocumentLinkComponent } from '../../shared/components/source-docu
     }
   `],
 })
-export class PayBillsComponent {
+export class PayBillsComponent implements OnInit {
   private svc = inject(BillingRunsService);
+  private engagementService = inject(EngagementService);
+  private http = inject(HttpClient);
+  private snackBar = inject(MatSnackBar);
+  private router = inject(Router);
 
-  // Loading states
+  // ── Pay Bills loading states ───────────────────────────────────────────
   loadingBills = signal(true);
   billsError = signal(false);
   creatingBatch = signal(false);
@@ -285,7 +343,14 @@ export class PayBillsComponent {
   markingSent = signal(false);
   markSentError = signal(false);
 
-  // Data
+  // ── Run Billing state (#239) ───────────────────────────────────────────
+  loadingEngagements = signal(true);
+  activeEngagements = signal<EngagementSummary[]>([]);
+  selectedEngagementId = '';
+  runningBilling = signal(false);
+  billingRunError = signal<string | null>(null);
+
+  // ── Pay Bills data ─────────────────────────────────────────────────────
   bills = signal<Bill[]>([]);
   selectedIds = signal<Set<string>>(new Set());
   batchId = signal<string | null>(null);
@@ -306,8 +371,9 @@ export class PayBillsComponent {
     return total.toFixed(2);
   });
 
-  constructor() {
+  ngOnInit(): void {
     this.loadBills();
+    this.loadActiveEngagements();
   }
 
   loadBills(): void {
@@ -410,6 +476,57 @@ export class PayBillsComponent {
       error: () => {
         this.markSentError.set(true);
         this.markingSent.set(false);
+      },
+    });
+  }
+
+  // ── Run Billing methods (#239) ─────────────────────────────────────────
+
+  loadActiveEngagements(): void {
+    this.loadingEngagements.set(true);
+    this.engagementService.getEngagements({ status: 'active' }).subscribe({
+      next: engs => {
+        this.activeEngagements.set(engs);
+        this.loadingEngagements.set(false);
+      },
+      error: () => {
+        this.activeEngagements.set([]);
+        this.loadingEngagements.set(false);
+      },
+    });
+  }
+
+  runBilling(): void {
+    const engId = this.selectedEngagementId;
+    if (!engId || this.runningBilling()) return;
+    this.runningBilling.set(true);
+    this.billingRunError.set(null);
+
+    const engagement = this.activeEngagements().find(e => e.id === engId);
+    const engName = engagement?.name ?? 'Engagement';
+
+    // Draft an invoice for the selected engagement — the same POST endpoint used
+    // by the invoice drawer on the engagement detail page.
+    this.http.post<{ id: string }>('/api/v1/invoices/draft', { engagement_id: engId }).subscribe({
+      next: () => {
+        this.runningBilling.set(false);
+        this.selectedEngagementId = '';
+        this.snackBar.open(
+          `Invoice drafted for ${engName} — view in Invoices`,
+          'View',
+          { duration: 6000, panelClass: ['snack-success'] },
+        ).onAction().subscribe(() => {
+          this.router.navigate(['/app/invoices']);
+        });
+      },
+      error: (err: { status?: number; error?: { detail?: string } }) => {
+        this.runningBilling.set(false);
+        const detail = err?.error?.detail;
+        this.billingRunError.set(
+          typeof detail === 'string'
+            ? detail
+            : 'Could not initiate billing run. Please try again or use Draft Invoice on the engagement page.',
+        );
       },
     });
   }

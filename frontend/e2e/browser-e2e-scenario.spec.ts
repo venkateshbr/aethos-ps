@@ -78,23 +78,26 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       await shot(page, '02-copilot-logged-in');
     });
 
-    // ── 2. Clients ─────────────────────────────────────────────────────
-    await test.step('2. Clients — create a client', async () => {
+    // ── 2. Contacts (formerly "Clients" — renamed in #201) ─────────────
+    await test.step('2. Contacts — create a contact', async () => {
       await page.goto(`${WEB}/app/clients`);
-      await expect(page.getByRole('heading', { name: /^clients$/i, level: 1 })).toBeVisible({ timeout: 15_000 });
+      // #201: heading is now "Contacts" (route stays /app/clients, label renamed).
+      await expect(page.getByRole('heading', { name: /^contacts$/i, level: 1 })).toBeVisible({ timeout: 15_000 });
       await settled(page);
-      await shot(page, '03-clients-list');
+      await shot(page, '03-contacts-list');
 
-      await page.getByRole('button', { name: /new client/i }).first().click();
-      await expect(page.getByRole('heading', { name: /new client/i })).toBeVisible({ timeout: 10_000 });
+      // #201: button label changed from "New client" → "New contact".
+      await page.getByRole('button', { name: /new contact/i }).first().click();
+      await expect(page.getByRole('heading', { name: /new contact/i })).toBeVisible({ timeout: 10_000 });
 
       await page.fill('#client-name', CLIENT_NAME);
       await page.selectOption('#client-kind', 'customer');
-      await shot(page, '04-client-form-filled');
+      await shot(page, '04-contact-form-filled');
 
-      await page.getByRole('button', { name: /create client/i }).click();
+      // #201: submit button label changed to "Create contact".
+      await page.getByRole('button', { name: /create contact/i }).click();
       await expect(page.getByText(CLIENT_NAME)).toBeVisible({ timeout: 15_000 });
-      await shot(page, '05-client-created');
+      await shot(page, '05-contact-created');
     });
 
     // ── 3. Engagements ─────────────────────────────────────────────────
@@ -322,7 +325,8 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       const sendBtn = page.locator('button').filter({ hasText: /^send/i }).first();
       if (await sendBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
         await sendBtn.click();
-        await page.waitForTimeout(2000);
+        // Wait for the button to disappear or status to update — avoids flaky fixed sleep.
+        await expect(sendBtn).toBeHidden({ timeout: 10_000 }).catch(() => { /* send may open a dialog */ });
         await shot(page, '22-invoice-sent');
       } else {
         test.info().annotations.push({ type: 'info', description: 'No approved invoice to send.' });
@@ -404,7 +408,8 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       const newChatBtn = page.getByRole('button', { name: /new chat/i });
       if (await newChatBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await newChatBtn.click();
-        await page.waitForTimeout(500);
+        // Wait for the composer to be ready — avoids a fixed sleep.
+        await expect(page.getByPlaceholder(/message aethos/i)).toBeVisible({ timeout: 10_000 });
       }
 
       const composer = page.getByPlaceholder(/message aethos/i);

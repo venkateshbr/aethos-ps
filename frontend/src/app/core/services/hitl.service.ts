@@ -12,6 +12,9 @@ export interface HitlTask {
   status: string;
   created_at: string;
   suggestion_payload: Record<string, unknown>;
+  /** Entity that triggered this task — used for navigation on intelligence_alert cards. */
+  related_entity_type?: string;
+  related_entity_id?: string;
 }
 
 @Injectable({ providedIn: 'root' })

@@ -124,26 +124,29 @@ test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => 
     });
   });
 
-  test('clients list mounts and "New client" button opens form — #130 fix', async ({ page }) => {
+  test('contacts list mounts and "New contact" button opens form — #130 fix, #201 rename', async ({ page }) => {
     test.setTimeout(30_000);
     await page.goto(`${BASE}/app/clients`);
     await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
 
-    // #130 fix: "New client" button must exist.
-    const newBtn = page.getByRole('button', { name: /new client/i });
+    // #201: page heading is now "Contacts" (renamed from "Clients").
+    await expect(page.getByRole('heading', { name: /^contacts$/i, level: 1 })).toBeVisible({ timeout: 10_000 });
+
+    // #130 fix / #201: button is now "New contact" (was "New client").
+    const newBtn = page.getByRole('button', { name: /new contact/i });
     await expect(newBtn).toBeVisible({ timeout: 10_000 });
     await newBtn.click();
 
     const slideIn = page.getByRole('dialog').or(
-      page.locator('[class*="slide"], [class*="drawer"], [class*="panel"]').filter({ hasText: /client/i }),
-    ).or(page.getByRole('heading', { name: /new client|create client/i }));
+      page.locator('[class*="slide"], [class*="drawer"], [class*="panel"]').filter({ hasText: /contact/i }),
+    ).or(page.getByRole('heading', { name: /new contact|create contact/i }));
     await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
 
     test.info().annotations.push({
       type: 'finding',
-      description: '#130 fix verified: "New client" opens the slide-in create form.',
+      description: '#130 fix + #201 rename verified: /app/clients shows "Contacts" heading and "New contact" button opens the slide-in panel.',
     });
   });
 
