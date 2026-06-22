@@ -299,7 +299,7 @@ Work items:
 - Done 2026-06-22: added shared document preflight scanning for PII and prompt-injection markers; text is masked before LLM calls, and PDF/image binaries with detectable sensitive or adversarial text are withheld from the external LLM and replaced with masked text-only context.
 - Done 2026-06-22: added bill-payment export integrity metadata, actor/timestamp controls for approval/export/send/settlement, settled batch status, and financial event log coverage for payment-batch transitions.
 - Done 2026-06-22: added a shared launch-market localization profile service/API for US, UK, SG, IN, and AU, covering country/market mapping, base currency, locale, timezone, tax labels, authorities, reporting periods, and default tax-rate templates; signup provisioning, signup country selection, billing currency mapping, and tax-rate market mapping now reuse it.
-- Integration roadmap: email/calendar, bank feeds, Companies House/HMRC equivalents, payroll, CRM, document storage.
+- Done 2026-06-22: added a shared integration catalog/API and Settings roadmap for email/calendar, bank feeds, government registry/tax validation, payroll, CRM, document storage, Stripe Connect, and transactional email, with explicit roadmap status, auth model, risk, markets, data classes, and capabilities.
 
 Acceptance:
 - Security review for agent tools, payments, RLS, webhooks, and document/LLM data handling.

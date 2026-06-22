@@ -5,11 +5,20 @@ import { TaxRatesComponent } from './tax-rates.component';
 import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
 import { AgentRunsComponent } from './agent-runs.component';
+import { IntegrationsComponent } from './integrations.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [StripeConnectComponent, ChangePasswordComponent, TaxRatesComponent, AutonomyComponent, ServicesComponent, AgentRunsComponent],
+  imports: [
+    StripeConnectComponent,
+    ChangePasswordComponent,
+    TaxRatesComponent,
+    AutonomyComponent,
+    ServicesComponent,
+    AgentRunsComponent,
+    IntegrationsComponent,
+  ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
@@ -42,7 +51,10 @@ import { AgentRunsComponent } from './agent-runs.component';
           <h2 id="integrations-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Integrations
           </h2>
-          <app-stripe-connect />
+          <div class="space-y-4">
+            <app-stripe-connect />
+            <app-integrations />
+          </div>
         </section>
 
         <!-- Tax Rates section -->

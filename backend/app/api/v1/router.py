@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     fx_rates,
     health_check,
     inbox,
+    integrations,
     invoices,
     localization,
     payments,
@@ -59,6 +60,7 @@ api_router.include_router(projects.router, prefix="/projects", tags=["projects"]
 api_router.include_router(expenses.router, prefix="/expenses", tags=["expenses"])
 api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
+api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 api_router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
 api_router.include_router(employees.router, prefix="/employees", tags=["employees"])
