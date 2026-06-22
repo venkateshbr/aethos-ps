@@ -162,6 +162,33 @@ def test_close_status_blocks_for_pending_close_review() -> None:
     )
 
 
+def test_close_status_blocks_for_pending_revenue_recognition_review() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "suggestion-revrec-001",
+            "agent_name": "revenue_recognition_agent",
+            "action_type": "draft_journal",
+            "status": "pending",
+            "output_snapshot": {
+                "proposal_type": "deferred_revenue_release",
+                "period": "2026-06",
+                "currency": "USD",
+                "deferred_release_amount": "1000.00",
+            },
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.lock_blockers == ["close_reviews"]
+    assert result.pending_reviews[0].summary == (
+        "Review USD deferred revenue release proposal for 1000.00."
+    )
+
+
 def test_close_status_marks_already_locked_period() -> None:
     tables = _base_tables()
     tables["period_locks"] = [

@@ -11,7 +11,12 @@ from supabase import Client
 CloseItemStatus = Literal["complete", "pending", "blocked"]
 ClosePeriodStatus = Literal["ready", "blocked", "locked"]
 
-_CLOSE_REVIEW_AGENTS = ("accrual_agent", "close_agent", "reporting_agent")
+_CLOSE_REVIEW_AGENTS = (
+    "accrual_agent",
+    "close_agent",
+    "reporting_agent",
+    "revenue_recognition_agent",
+)
 _CLOSE_REVIEW_STATUSES = ("pending",)
 
 
@@ -295,4 +300,10 @@ def _review_summary(output: dict) -> str:
     wip_value = output.get("wip_value")
     if currency and wip_value:
         return f"Review {currency} WIP accrual proposal for {wip_value}."
+    deferred_release = output.get("deferred_release_amount")
+    if currency and deferred_release:
+        return (
+            f"Review {currency} deferred revenue release proposal for "
+            f"{deferred_release}."
+        )
     return "Review pending close-related agent proposal."

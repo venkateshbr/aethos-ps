@@ -5,6 +5,7 @@ Endpoints:
   GET    /api/v1/accounting/periods/{period}/close-status — close checklist/status
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
+  POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
@@ -275,6 +276,39 @@ async def propose_wip_accrual(
             credit_account_code=credit_account_code,
         )
     except AccrualProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-deferred-revenue-release")
+async def propose_deferred_revenue_release(
+    period: str,
+    deferred_account_code: str = Query("2200", min_length=1, max_length=20),
+    revenue_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for deferred revenue releases."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.revenue_recognition_agent import (
+        RevenueRecognitionProposalError,
+        write_deferred_revenue_release_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_deferred_revenue_release_suggestions(
+            deps,
+            period,
+            deferred_account_code=deferred_account_code,
+            revenue_account_code=revenue_account_code,
+        )
+    except RevenueRecognitionProposalError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
