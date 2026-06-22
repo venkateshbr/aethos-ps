@@ -9,11 +9,12 @@ RBAC:
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.engagements import (
@@ -29,8 +30,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+StatusQuery = Annotated[
+    str | None,
+    Query(alias="status", description="Filter by engagement status"),
+]
+ClientIdQuery = Annotated[str | None, Query(description="Filter by client ID")]
 
-def _service(
+
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> EngagementService:
+    return EngagementService(db, tenant_id)
+
+
+def _write_service(
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> EngagementService:
+    return EngagementService(db, tenant_id)
+
+
+def _summary_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> EngagementService:
@@ -39,12 +60,10 @@ def _service(
 
 @router.get("", response_model=list[EngagementResponse])
 async def list_engagements(
-    status_filter: str | None = Query(
-        default=None, alias="status", description="Filter by engagement status"
-    ),
-    client_id: str | None = Query(default=None, description="Filter by client ID"),
+    status_filter: StatusQuery = None,
+    client_id: ClientIdQuery = None,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: EngagementService = Depends(_service),  # noqa: B008
+    svc: EngagementService = Depends(_read_service),  # noqa: B008
 ) -> list[EngagementResponse]:
     return await svc.list_engagements(status=status_filter, client_id=client_id)
 
@@ -53,7 +72,7 @@ async def list_engagements(
 async def create_engagement(
     payload: EngagementCreate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: EngagementService = Depends(_service),  # noqa: B008
+    svc: EngagementService = Depends(_write_service),  # noqa: B008
 ) -> EngagementResponse:
     return await svc.create_engagement(payload)
 
@@ -62,7 +81,7 @@ async def create_engagement(
 async def get_engagement(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: EngagementService = Depends(_service),  # noqa: B008
+    svc: EngagementService = Depends(_read_service),  # noqa: B008
 ) -> EngagementResponse:
     engagement = await svc.get_engagement(id)
     if engagement is None:
@@ -76,7 +95,7 @@ async def get_engagement(
 async def get_engagement_summary(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: EngagementService = Depends(_service),  # noqa: B008
+    svc: EngagementService = Depends(_summary_service),  # noqa: B008
 ) -> EngagementSummary:
     """Return the financial summary (billed, WIP, remaining) for one engagement.
 
@@ -95,7 +114,7 @@ async def update_engagement_status(
     id: str,
     payload: EngagementStatusUpdate,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
-    svc: EngagementService = Depends(_service),  # noqa: B008
+    svc: EngagementService = Depends(_write_service),  # noqa: B008
 ) -> EngagementResponse:
     engagement = await svc.update_engagement_status(id, payload.status)
     if engagement is None:
