@@ -211,7 +211,7 @@ def _fetch_coa_accounts_sync(deps: AgentDeps) -> list[dict]:
     try:
         result = (
             deps.db.table("accounts")
-            .select("id, code, name, type")
+            .select("id, code, name, account_type")
             .eq("tenant_id", deps.tenant_id)
             .is_("deleted_at", "null")
             .order("code")
@@ -403,7 +403,8 @@ async def suggest_gl_account(
     # Limit to expense-type accounts to reduce noise (avoid showing AR/revenue accounts)
     expense_accounts = [
         a for a in accounts
-        if str(a.get("type", "")).lower() in ("expense", "cost_of_goods_sold", "other_expense")
+        if str(a.get("account_type") or a.get("type", "")).lower()
+        in ("expense", "cost_of_goods_sold", "other_expense")
     ] or accounts  # fall back to all accounts if type filtering is too aggressive
 
     accounts_list_text = "\n".join(

@@ -75,6 +75,58 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
     )
 
 
+def _build_ap_journal_lines(
+    *,
+    bill_lines: list[dict],
+    expense_account_id: str,
+    ap_account_id: str,
+    bill_total: Decimal,
+    bill_number: str,
+    currency: str,
+) -> list[JournalLineSpec]:
+    """Build AP approval journal lines, preserving line-level expense coding."""
+    debit_amounts: dict[str, Decimal] = {}
+    for line in bill_lines:
+        account_id = str(line.get("account_id") or expense_account_id)
+        line_amount = Decimal(str(line.get("amount") or "0"))
+        tax_amount = Decimal(str(line.get("tax_amount") or "0"))
+        debit_amounts[account_id] = (
+            debit_amounts.get(account_id, Decimal("0")) + line_amount + tax_amount
+        )
+
+    debit_total = sum(debit_amounts.values(), Decimal("0"))
+    if abs(debit_total - bill_total) > Decimal("0.01"):
+        raise ValueError(
+            "Bill line totals do not match bill total; cannot post AP journal"
+        )
+
+    journal_lines = [
+        JournalLineSpec(
+            direction="DR",
+            account_code=(
+                _EXPENSE_ACCOUNT_CODE if account_id == expense_account_id else ""
+            ),
+            account_id=account_id,
+            amount=amount,
+            description=f"Expenses - {bill_number}",
+            currency=currency,
+        )
+        for account_id, amount in sorted(debit_amounts.items())
+        if amount > Decimal("0")
+    ]
+    journal_lines.append(
+        JournalLineSpec(
+            direction="CR",
+            account_code=_AP_ACCOUNT_CODE,
+            account_id=ap_account_id,
+            amount=bill_total,
+            description=f"AP - {bill_number}",
+            currency=currency,
+        )
+    )
+    return journal_lines
+
+
 class BillsService:
     def __init__(self, db: Client, tenant_id: str) -> None:
         self._repo = BillsRepository(db, tenant_id)
@@ -238,24 +290,20 @@ class BillsService:
         #    and account existence inside post_journal.  Never bypass with direct INSERT.
         bill_number = bill.get("bill_number", "")
         currency = bill.get("currency", "USD")
-        journal_lines = [
-            JournalLineSpec(
-                direction="DR",
-                account_code=_EXPENSE_ACCOUNT_CODE,
-                account_id=expense_account_id,
-                amount=total,
-                description=f"Expenses — {bill_number}",
+        try:
+            journal_lines = _build_ap_journal_lines(
+                bill_lines=lines,
+                expense_account_id=expense_account_id,
+                ap_account_id=ap_account_id,
+                bill_total=total,
+                bill_number=bill_number,
                 currency=currency,
-            ),
-            JournalLineSpec(
-                direction="CR",
-                account_code=_AP_ACCOUNT_CODE,
-                account_id=ap_account_id,
-                amount=total,
-                description=f"AP — {bill_number}",
-                currency=currency,
-            ),
-        ]
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
         # 5. Post via canonical post_journal — runs accounting_guardian L3 always.
         #    This replaces the old _post_journal that bypassed the guardian entirely.
