@@ -29,6 +29,7 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/segment-profitability",
     "/api/v1/reports/practice-dashboard",
     "/api/v1/reports/pricing-staffing-recommendations",
+    "/api/v1/reports/scope-change-advisor",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -214,3 +215,30 @@ def test_pricing_staffing_recommendations_report_shape(client_a: httpx.Client) -
         assert row["priority"] in {"critical", "high", "medium", "low"}
         assert isinstance(row["evidence"], list)
         assert isinstance(row["metrics"], dict)
+
+
+def test_scope_change_advisor_report_shape(client_a: httpx.Client) -> None:
+    """Scope-change advisor returns current risk and comparable evidence."""
+    r = client_a.get("/api/v1/reports/scope-change-advisor")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "advisor_id",
+            "project_id",
+            "project_name",
+            "scope_signals",
+            "drivers",
+            "current_metrics",
+            "comparable_projects",
+            "suggested_fee_adjustment",
+            "suggested_fee_basis",
+            "confidence",
+            "recommended_action",
+        } <= set(row)
+        assert isinstance(row["scope_signals"], list)
+        assert isinstance(row["current_metrics"], dict)
+        assert isinstance(row["comparable_projects"], list)
+        assert row["confidence"] in {"high", "medium", "low"}

@@ -885,3 +885,188 @@ def test_pricing_staffing_recommendations_composes_margin_health_and_capacity(
     practice = by_id["practice:advisory"]
     assert practice["priority"] == "critical"
     assert practice["metrics"]["critical_project_count"] == 1
+
+
+def test_scope_change_advisor_uses_completed_project_comparables(
+    mock_db: MagicMock,
+) -> None:
+    """Scope advisor values overruns with completed-project effective rates."""
+    _route_tables(
+        mock_db,
+        {
+            "projects": [
+                {
+                    "id": "proj-current",
+                    "name": "Current Advisory Project",
+                    "status": "active",
+                    "budget_hours": "100.00",
+                    "currency": "USD",
+                    "engagements": {
+                        "id": "eng-current",
+                        "name": "Current Engagement",
+                        "billing_arrangement": "capped_tm",
+                        "total_value": "25000.00",
+                        "service_line": "advisory",
+                    },
+                },
+                {
+                    "id": "proj-comp-1",
+                    "name": "Comparable One",
+                    "status": "completed",
+                    "budget_hours": "90.00",
+                    "currency": "USD",
+                    "engagements": {
+                        "id": "eng-comp-1",
+                        "name": "Comparable One Engagement",
+                        "billing_arrangement": "capped_tm",
+                        "total_value": "20000.00",
+                        "service_line": "advisory",
+                    },
+                },
+                {
+                    "id": "proj-comp-2",
+                    "name": "Comparable Two",
+                    "status": "completed",
+                    "budget_hours": "70.00",
+                    "currency": "USD",
+                    "engagements": {
+                        "id": "eng-comp-2",
+                        "name": "Comparable Two Engagement",
+                        "billing_arrangement": "time_and_materials",
+                        "total_value": "15000.00",
+                        "service_line": "advisory",
+                    },
+                },
+                {
+                    "id": "proj-tax",
+                    "name": "Tax Comparable",
+                    "status": "completed",
+                    "budget_hours": "60.00",
+                    "currency": "USD",
+                    "engagements": {
+                        "id": "eng-tax",
+                        "name": "Tax Engagement",
+                        "billing_arrangement": "capped_tm",
+                        "total_value": "12000.00",
+                        "service_line": "tax",
+                    },
+                },
+            ],
+            "time_entries": [
+                {
+                    "project_id": "proj-comp-1",
+                    "hours": "80.00",
+                    "billable": True,
+                    "billing_status": "billed",
+                    "date": "2026-05-01",
+                },
+                {
+                    "project_id": "proj-comp-2",
+                    "hours": "60.00",
+                    "billable": True,
+                    "billing_status": "billed",
+                    "date": "2026-05-01",
+                },
+                {
+                    "project_id": "proj-tax",
+                    "hours": "40.00",
+                    "billable": True,
+                    "billing_status": "billed",
+                    "date": "2026-05-01",
+                },
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-current",
+                "project_name": "Current Advisory Project",
+                "service_line": "advisory",
+                "risk_level": "critical",
+                "health_score": 45,
+                "metrics": {
+                    "logged_hours": "120.00",
+                    "budget_hours": "100.00",
+                    "budget_burn_pct": 120.0,
+                    "wip_value": "1500.00",
+                    "unbilled_hours": "6.00",
+                },
+                "drivers": [
+                    {
+                        "code": "budget_hours_burn",
+                        "label": "Budget hours exceeded",
+                        "severity": "critical",
+                        "impact": 25,
+                        "metric": "120.0%",
+                        "threshold": "100%",
+                        "summary": "Logged hours exceed budget.",
+                        "recommended_action": "Review scope.",
+                    },
+                    {
+                        "code": "scope_creep",
+                        "label": "Scope creep risk",
+                        "severity": "watch",
+                        "impact": 10,
+                        "metric": "25.0%",
+                        "threshold": "20%",
+                        "summary": "Recent non-billable time is high.",
+                        "recommended_action": "Review non-billable work.",
+                    },
+                ],
+            },
+            {
+                "project_id": "proj-healthy",
+                "project_name": "Healthy Project",
+                "service_line": "tax",
+                "risk_level": "healthy",
+                "health_score": 95,
+                "metrics": {},
+                "drivers": [],
+            },
+        ]
+    )
+    svc.project_pnl = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-comp-1",
+                "revenue": "20000.00",
+                "direct_cost": "9000.00",
+                "gross_margin_pct": 55.0,
+            },
+            {
+                "project_id": "proj-comp-2",
+                "revenue": "15000.00",
+                "direct_cost": "7500.00",
+                "gross_margin_pct": 50.0,
+            },
+            {
+                "project_id": "proj-tax",
+                "revenue": "12000.00",
+                "direct_cost": "6000.00",
+                "gross_margin_pct": 50.0,
+            },
+        ]
+    )
+
+    result = svc.scope_change_advisor(
+        period_start="2026-06-01",
+        period_end="2026-06-30",
+    )
+
+    assert len(result) == 1
+    row = result[0]
+    assert row["advisor_id"] == "scope:proj-current"
+    assert row["scope_signals"] == ["budget_hours_burn", "scope_creep"]
+    assert row["current_metrics"]["overrun_hours"] == "20.00"
+    assert row["suggested_fee_adjustment"] == "5000.00"
+    assert row["suggested_fee_basis"] == "historical_effective_rate"
+    assert row["confidence"] == "medium"
+    assert [comp["project_id"] for comp in row["comparable_projects"]] == [
+        "proj-comp-1",
+        "proj-comp-2",
+    ]
+    assert row["comparable_projects"][0]["effective_rate"] == "250.00"
+    assert "scope-change request" in row["recommended_action"]

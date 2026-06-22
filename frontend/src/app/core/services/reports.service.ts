@@ -162,6 +162,40 @@ export interface PricingStaffingRecommendation {
   recommended_action: string;
 }
 
+export interface ScopeComparableProject {
+  project_id: string;
+  project_name: string;
+  service_line: string;
+  billing_arrangement?: string | null;
+  currency: string;
+  revenue: string;
+  direct_cost: string;
+  gross_margin_pct: number;
+  logged_hours: string;
+  billable_hours: string;
+  budget_hours?: string | null;
+  budget_overrun_pct?: number | null;
+  effective_rate?: string | null;
+}
+
+export interface ScopeChangeAdvisorRow {
+  advisor_id: string;
+  project_id: string;
+  project_name: string;
+  service_line: string;
+  billing_arrangement?: string | null;
+  risk_level: 'healthy' | 'watch' | 'at_risk' | 'critical' | string;
+  health_score: number;
+  scope_signals: string[];
+  drivers: ProjectHealthDriver[];
+  current_metrics: Record<string, string | number | null>;
+  comparable_projects: ScopeComparableProject[];
+  suggested_fee_adjustment: string;
+  suggested_fee_basis: 'historical_effective_rate' | 'unbilled_wip' | 'insufficient_scope_value_data' | string;
+  confidence: 'high' | 'medium' | 'low' | string;
+  recommended_action: string;
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -239,6 +273,9 @@ export class ReportsService {
     this.http.get<PricingStaffingRecommendation[]>(
       `${this.base}/pricing-staffing-recommendations`,
     );
+
+  getScopeChangeAdvisor = (): Observable<ScopeChangeAdvisorRow[]> =>
+    this.http.get<ScopeChangeAdvisorRow[]>(`${this.base}/scope-change-advisor`);
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

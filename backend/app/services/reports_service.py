@@ -20,6 +20,7 @@ Report methods:
   14. project_health_scores
   15. capacity_planning
   16. pricing_staffing_recommendations
+  17. scope_change_advisor
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ _FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
 _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
 _TARGET_GROSS_MARGIN_PCT = Decimal("40")
+_SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"}
 _SERVICE_LINE_LABELS = {
     "accounting": "Accounting",
     "tax": "Tax",
@@ -1333,6 +1335,176 @@ class ReportsService:
             )
         return rows
 
+    # ------------------------------------------------------------------
+    # 15. Scope-Change Advisor
+    # ------------------------------------------------------------------
+
+    def scope_change_advisor(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        """Scope-change recommendations using completed-project comparables."""
+        health_rows = self.project_health_scores(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        risky_projects = [
+            row
+            for row in health_rows
+            if _scope_change_drivers(row.get("drivers") or [])
+        ]
+        if not risky_projects:
+            return []
+
+        project_ids = [str(row["project_id"]) for row in risky_projects]
+        contexts = self._scope_project_contexts(project_ids)
+        comparables = self._scope_comparable_project_facts()
+
+        rows: list[dict] = []
+        for project in risky_projects:
+            project_id = str(project["project_id"])
+            context = contexts.get(project_id, {})
+            engagement = _embedded_one(context.get("engagements"))
+            drivers = _scope_change_drivers(project.get("drivers") or [])
+            comparable_projects = _select_scope_comparables(
+                context=context,
+                project=project,
+                comparables=comparables,
+            )
+            fee, basis = _scope_fee_adjustment(project, comparable_projects)
+            rows.append(
+                {
+                    "advisor_id": f"scope:{project_id}",
+                    "project_id": project_id,
+                    "project_name": project.get("project_name") or project_id,
+                    "service_line": project.get("service_line") or "unclassified",
+                    "billing_arrangement": engagement.get("billing_arrangement"),
+                    "risk_level": project.get("risk_level"),
+                    "health_score": project.get("health_score"),
+                    "scope_signals": [driver.get("code") for driver in drivers],
+                    "drivers": drivers,
+                    "current_metrics": _scope_current_metrics(project),
+                    "comparable_projects": comparable_projects,
+                    "suggested_fee_adjustment": serialise_money(fee) or "0.00",
+                    "suggested_fee_basis": basis,
+                    "confidence": _scope_confidence(comparable_projects),
+                    "recommended_action": _scope_recommended_action(drivers, fee),
+                }
+            )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                _recommendation_priority_rank(_scope_priority(str(row["risk_level"]))),
+                -Decimal(str(row["suggested_fee_adjustment"])),
+                str(row["project_name"]),
+            ),
+        )
+
+    def _scope_project_contexts(self, project_ids: list[str]) -> dict[str, dict]:
+        if not project_ids:
+            return {}
+        rows = (
+            self.db.table("projects")
+            .select(
+                "id, name, budget_hours, currency, status, "
+                "engagements!engagement_id("
+                "id, name, billing_arrangement, total_value, service_line)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", project_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        project_id_set = set(project_ids)
+        return {
+            str(row["id"]): row
+            for row in rows
+            if str(row.get("id")) in project_id_set
+        }
+
+    def _scope_comparable_project_facts(self) -> list[dict]:
+        projects = (
+            self.db.table("projects")
+            .select(
+                "id, name, budget_hours, currency, status, "
+                "engagements!engagement_id("
+                "id, name, billing_arrangement, total_value, service_line)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .eq("status", "completed")
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        completed = [
+            project
+            for project in projects
+            if str(project.get("status") or "") == "completed"
+        ]
+        if not completed:
+            return []
+
+        project_ids = [str(project["id"]) for project in completed]
+        time_by_project = self._time_entries_by_project(project_ids)
+        pnl_by_project = {str(row["project_id"]): row for row in self.project_pnl()}
+
+        facts: list[dict] = []
+        for project in completed:
+            project_id = str(project["id"])
+            entries = time_by_project.get(project_id, [])
+            logged_hours = sum(
+                (_decimal(entry.get("hours")) or Decimal("0")) for entry in entries
+            )
+            billable_hours = sum(
+                (_decimal(entry.get("hours")) or Decimal("0"))
+                for entry in entries
+                if entry.get("billable", True)
+                and entry.get("billing_status") != "non_billable"
+            )
+            if logged_hours <= 0:
+                continue
+            pnl = pnl_by_project.get(project_id, {})
+            revenue = _decimal(pnl.get("revenue")) or Decimal("0")
+            if revenue <= 0:
+                continue
+            direct_cost = _decimal(pnl.get("direct_cost")) or Decimal("0")
+            engagement = _embedded_one(project.get("engagements"))
+            budget_hours = _decimal(project.get("budget_hours"))
+            facts.append(
+                {
+                    "project_id": project_id,
+                    "project_name": project.get("name") or project_id,
+                    "service_line": engagement.get("service_line") or "unclassified",
+                    "billing_arrangement": engagement.get("billing_arrangement"),
+                    "currency": project.get("currency") or "USD",
+                    "revenue": serialise_money(revenue) or "0.00",
+                    "direct_cost": serialise_money(direct_cost) or "0.00",
+                    "gross_margin_pct": pnl.get("gross_margin_pct") or 0.0,
+                    "logged_hours": str(logged_hours.quantize(Decimal("0.01"))),
+                    "billable_hours": str(billable_hours.quantize(Decimal("0.01"))),
+                    "budget_hours": (
+                        str(budget_hours.quantize(Decimal("0.01")))
+                        if budget_hours is not None
+                        else None
+                    ),
+                    "budget_overrun_pct": _scope_budget_overrun_pct(
+                        logged_hours,
+                        budget_hours,
+                    ),
+                    "effective_rate": (
+                        serialise_money(_rate_per_hour(revenue, billable_hours))
+                        if billable_hours > 0
+                        else None
+                    ),
+                }
+            )
+        return facts
+
     def _profitability_facts(
         self,
         *,
@@ -2618,3 +2790,162 @@ def _recommendation_priority_rank(priority: str) -> int:
         "medium": 2,
         "low": 3,
     }.get(priority, 4)
+
+
+def _scope_change_drivers(drivers: list[dict]) -> list[dict]:
+    return [
+        driver
+        for driver in drivers
+        if driver.get("code") in _SCOPE_CHANGE_DRIVER_CODES
+    ]
+
+
+def _select_scope_comparables(
+    *,
+    context: dict,
+    project: dict,
+    comparables: list[dict],
+) -> list[dict]:
+    engagement = _embedded_one(context.get("engagements"))
+    service_line = str(project.get("service_line") or "unclassified")
+    billing_arrangement = engagement.get("billing_arrangement")
+    current_budget_hours = _decimal(context.get("budget_hours")) or _decimal(
+        (project.get("metrics") or {}).get("budget_hours")
+    )
+
+    same_billing_model = [
+        comparable
+        for comparable in comparables
+        if comparable.get("service_line") == service_line
+        and comparable.get("billing_arrangement") == billing_arrangement
+    ]
+    same_service_line = [
+        comparable
+        for comparable in comparables
+        if comparable.get("service_line") == service_line
+        and comparable not in same_billing_model
+    ]
+    ranked = [*same_billing_model, *same_service_line]
+    ranked.sort(
+        key=lambda comparable: (
+            _budget_distance(current_budget_hours, comparable),
+            -(_decimal(comparable.get("revenue")) or Decimal("0")),
+            str(comparable.get("project_name") or ""),
+        )
+    )
+    return ranked[:3]
+
+
+def _budget_distance(current_budget_hours: Decimal | None, comparable: dict) -> Decimal:
+    comparable_budget_hours = _decimal(comparable.get("budget_hours"))
+    if current_budget_hours is None or comparable_budget_hours is None:
+        return Decimal("999999")
+    return abs(current_budget_hours - comparable_budget_hours)
+
+
+def _scope_fee_adjustment(
+    project: dict,
+    comparables: list[dict],
+) -> tuple[Decimal, str]:
+    metrics = project.get("metrics") or {}
+    logged_hours = _decimal(metrics.get("logged_hours")) or Decimal("0")
+    budget_hours = _decimal(metrics.get("budget_hours"))
+    overrun_hours = (
+        max(Decimal("0"), logged_hours - budget_hours)
+        if budget_hours is not None
+        else Decimal("0")
+    )
+    comparable_rates = [
+        rate
+        for rate in (_decimal(row.get("effective_rate")) for row in comparables)
+        if rate is not None and rate > 0
+    ]
+    if overrun_hours > 0 and comparable_rates:
+        return (
+            (overrun_hours * _median_decimal(comparable_rates)).quantize(Decimal("0.01")),
+            "historical_effective_rate",
+        )
+
+    wip_value = _decimal(metrics.get("wip_value")) or Decimal("0")
+    if wip_value > 0:
+        return wip_value.quantize(Decimal("0.01")), "unbilled_wip"
+    return Decimal("0"), "insufficient_scope_value_data"
+
+
+def _median_decimal(values: list[Decimal]) -> Decimal:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return ((ordered[middle - 1] + ordered[middle]) / Decimal("2")).quantize(
+        Decimal("0.01")
+    )
+
+
+def _scope_current_metrics(project: dict) -> dict[str, object]:
+    metrics = project.get("metrics") or {}
+    logged_hours = _decimal(metrics.get("logged_hours")) or Decimal("0")
+    budget_hours = _decimal(metrics.get("budget_hours"))
+    overrun_hours = (
+        max(Decimal("0"), logged_hours - budget_hours)
+        if budget_hours is not None
+        else Decimal("0")
+    )
+    return {
+        "logged_hours": str(logged_hours.quantize(Decimal("0.01"))),
+        "budget_hours": (
+            str(budget_hours.quantize(Decimal("0.01")))
+            if budget_hours is not None
+            else None
+        ),
+        "overrun_hours": str(overrun_hours.quantize(Decimal("0.01"))),
+        "budget_burn_pct": metrics.get("budget_burn_pct"),
+        "cap_used_pct": metrics.get("cap_used_pct"),
+        "recent_non_billable_pct": metrics.get("recent_non_billable_pct"),
+        "wip_value": metrics.get("wip_value"),
+        "unbilled_hours": metrics.get("unbilled_hours"),
+    }
+
+
+def _scope_budget_overrun_pct(
+    logged_hours: Decimal,
+    budget_hours: Decimal | None,
+) -> float | None:
+    if budget_hours is None or budget_hours <= 0:
+        return None
+    return round(float((logged_hours - budget_hours) / budget_hours * 100), 1)
+
+
+def _scope_confidence(comparables: list[dict]) -> str:
+    if len(comparables) >= 3:
+        return "high"
+    if comparables:
+        return "medium"
+    return "low"
+
+
+def _scope_priority(risk_level: str) -> str:
+    if risk_level == "critical":
+        return "critical"
+    if risk_level == "at_risk":
+        return "high"
+    return "medium"
+
+
+def _scope_recommended_action(drivers: list[dict], fee: Decimal) -> str:
+    codes = {str(driver.get("code")) for driver in drivers}
+    fee_text = serialise_money(fee) or "0.00"
+    if "cap_drawdown" in codes:
+        return (
+            f"Prepare a cap increase or change order for at least {fee_text}, "
+            "then pause additional out-of-scope work until approved."
+        )
+    if "budget_hours_burn" in codes:
+        return (
+            f"Raise a scope-change request for at least {fee_text} and reset "
+            "the remaining hour budget with the client."
+        )
+    return (
+        f"Separate recurring non-billable work into a change request worth at "
+        f"least {fee_text}, or document why the firm will absorb it."
+    )

@@ -234,6 +234,20 @@ def pricing_staffing_recommendations(
     )
 
 
+@router.get("/scope-change-advisor")
+def scope_change_advisor(
+    period_start: str | None = Query(None, description="Scope risk window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Scope risk window to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Scope-change recommendations backed by completed-project comparables."""
+    return svc.scope_change_advisor(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @router.get("/trial-balance", response_model=TrialBalanceReport)
 def get_trial_balance(
     as_of_period: str | None = Query(
