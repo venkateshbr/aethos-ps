@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from app.core.auth import CurrentUser
-from app.core.db import get_service_role_client
+from app.core.db import get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.financial_events import FinancialEventListResponse
@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 def _service(
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> FinancialEventsService:
     return FinancialEventsService(db, tenant_id)
