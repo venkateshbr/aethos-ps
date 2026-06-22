@@ -206,6 +206,20 @@ def segment_profitability(
     )
 
 
+@router.get("/practice-dashboard")
+def practice_dashboard(
+    period_start: str | None = Query(None, description="Practice dashboard window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Practice dashboard window to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Partner/practice dashboard by service line and employee practice area."""
+    return svc.practice_dashboard(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @router.get("/trial-balance", response_model=TrialBalanceReport)
 def get_trial_balance(
     as_of_period: str | None = Query(

@@ -16,8 +16,9 @@ Report methods:
   10. margin_by_service_line
   11. client_profitability
   12. segment_profitability
-  13. project_health_scores
-  14. capacity_planning
+  13. practice_dashboard
+  14. project_health_scores
+  15. capacity_planning
 """
 
 from __future__ import annotations
@@ -897,6 +898,104 @@ class ReportsService:
             ),
         )
 
+    # ------------------------------------------------------------------
+    # 13. Practice Dashboard
+    # ------------------------------------------------------------------
+
+    def practice_dashboard(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        """Partner/practice dashboard by current service-line dimensions.
+
+        There is no partner ownership model yet, so this report uses the
+        schema-backed practice dimension: ``engagements.service_line`` for
+        financial/project views and ``employees.practice_area`` for capacity.
+        """
+        practices: dict[str, dict] = {}
+
+        for profitability in self.segment_profitability(
+            period_start=period_start,
+            period_end=period_end,
+            group_by="service_line",
+        ):
+            practice = _practice_stats(str(profitability["segment_key"]))
+            practice.update(
+                {
+                    "revenue": profitability["revenue"],
+                    "labor_cost": profitability["labor_cost"],
+                    "expense_cost": profitability["expense_cost"],
+                    "total_cost": profitability["total_cost"],
+                    "gross_margin": profitability["gross_margin"],
+                    "gross_margin_pct": profitability["gross_margin_pct"],
+                    "profitability_status": profitability["profitability_status"],
+                    "financial_recommended_action": profitability["recommended_action"],
+                    "client_count": profitability["client_count"],
+                    "engagement_count": profitability["engagement_count"],
+                    "project_count": profitability["project_count"],
+                    "invoice_count": profitability["invoice_count"],
+                }
+            )
+            practices[practice["practice_key"]] = practice
+
+        for project in self.project_health_scores(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            key = str(project.get("service_line") or "unclassified")
+            practice = practices.setdefault(key, _practice_stats(key))
+            practice["active_project_count"] += 1
+            practice["project_health_score_total"] += Decimal(
+                str(project.get("health_score") or "0")
+            )
+            risk_level = str(project.get("risk_level") or "healthy")
+            practice["project_risk_counts"][risk_level] = (
+                practice["project_risk_counts"].get(risk_level, 0) + 1
+            )
+            if risk_level in {"at_risk", "critical"}:
+                practice["at_risk_project_count"] += 1
+            if risk_level == "critical":
+                practice["critical_project_count"] += 1
+            for action in project.get("recommended_actions") or []:
+                _append_unique(practice["recommended_actions"], str(action))
+
+        for capacity in self.capacity_planning(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            key = str(capacity.get("practice_area") or "unclassified")
+            practice = practices.setdefault(key, _practice_stats(key))
+            practice["employee_count"] += 1
+            practice["capacity_hours"] += _decimal(capacity.get("capacity_hours")) or Decimal("0")
+            practice["logged_hours"] += _decimal(capacity.get("logged_hours")) or Decimal("0")
+            practice["billable_hours"] += _decimal(capacity.get("billable_hours")) or Decimal("0")
+            capacity_status = str(capacity.get("capacity_status") or "balanced")
+            practice["capacity_status_counts"][capacity_status] = (
+                practice["capacity_status_counts"].get(capacity_status, 0) + 1
+            )
+            if capacity_status in {"overallocated", "underutilized"}:
+                _append_unique(
+                    practice["recommended_actions"],
+                    str(capacity.get("recommended_action") or ""),
+                )
+
+        return sorted(
+            (
+                _practice_dashboard_row(
+                    practice,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                for practice in practices.values()
+            ),
+            key=lambda row: (
+                -int(row["critical_project_count"]),
+                -int(row["at_risk_project_count"]),
+                str(row["practice_label"]),
+            ),
+        )
+
     def _profitability_facts(
         self,
         *,
@@ -1189,7 +1288,7 @@ class ReportsService:
                     stats["currencies"].add(str(expense["currency"]))
 
     # ------------------------------------------------------------------
-    # 13. Project Health Scores
+    # 14. Project Health Scores
     # ------------------------------------------------------------------
 
     def project_health_scores(
@@ -1855,6 +1954,115 @@ def _profitability_action(gross_margin_pct: float) -> str:
     if gross_margin_pct >= 50:
         return "Protect this relationship and look for repeatable delivery patterns."
     return "Continue monitoring margin and delivery mix."
+
+
+def _practice_stats(practice_key: str) -> dict[str, object]:
+    return {
+        "practice_key": practice_key,
+        "practice_label": _SERVICE_LINE_LABELS.get(
+            practice_key, practice_key.replace("_", " ").title()
+        ),
+        "revenue": "0.00",
+        "labor_cost": "0.00",
+        "expense_cost": "0.00",
+        "total_cost": "0.00",
+        "gross_margin": "0.00",
+        "gross_margin_pct": 0.0,
+        "profitability_status": "healthy",
+        "financial_recommended_action": None,
+        "client_count": 0,
+        "engagement_count": 0,
+        "project_count": 0,
+        "invoice_count": 0,
+        "active_project_count": 0,
+        "at_risk_project_count": 0,
+        "critical_project_count": 0,
+        "project_health_score_total": Decimal("0"),
+        "project_risk_counts": {
+            "healthy": 0,
+            "watch": 0,
+            "at_risk": 0,
+            "critical": 0,
+        },
+        "employee_count": 0,
+        "capacity_hours": Decimal("0"),
+        "logged_hours": Decimal("0"),
+        "billable_hours": Decimal("0"),
+        "capacity_status_counts": {
+            "overallocated": 0,
+            "full": 0,
+            "underutilized": 0,
+            "balanced": 0,
+        },
+        "recommended_actions": [],
+    }
+
+
+def _practice_dashboard_row(
+    practice: dict,
+    *,
+    period_start: str | None,
+    period_end: str | None,
+) -> dict[str, object]:
+    active_project_count = int(practice["active_project_count"])
+    avg_health_score = (
+        round(
+            float(practice["project_health_score_total"] / active_project_count),
+            1,
+        )
+        if active_project_count
+        else None
+    )
+    capacity_hours = practice["capacity_hours"]
+    logged_hours = practice["logged_hours"]
+    billable_hours = practice["billable_hours"]
+    avg_utilization_pct = _pct(logged_hours, capacity_hours)
+    billable_utilization_pct = _pct(billable_hours, capacity_hours)
+
+    actions = list(practice["recommended_actions"])
+    financial_action = practice.get("financial_recommended_action")
+    if practice.get("profitability_status") in {"critical", "watch"}:
+        _append_unique(actions, str(financial_action or "Review practice margin."))
+    if int(practice["critical_project_count"]):
+        _append_unique(actions, "Escalate critical project risks in the next partner review.")
+    if practice["capacity_status_counts"].get("overallocated", 0):
+        _append_unique(actions, "Rebalance overallocated staff before accepting new work.")
+
+    return {
+        "practice_key": practice["practice_key"],
+        "practice_label": practice["practice_label"],
+        "period_start": period_start,
+        "period_end": period_end,
+        "revenue": practice["revenue"],
+        "labor_cost": practice["labor_cost"],
+        "expense_cost": practice["expense_cost"],
+        "total_cost": practice["total_cost"],
+        "gross_margin": practice["gross_margin"],
+        "gross_margin_pct": practice["gross_margin_pct"],
+        "profitability_status": practice["profitability_status"],
+        "client_count": practice["client_count"],
+        "engagement_count": practice["engagement_count"],
+        "project_count": practice["project_count"],
+        "invoice_count": practice["invoice_count"],
+        "active_project_count": active_project_count,
+        "at_risk_project_count": practice["at_risk_project_count"],
+        "critical_project_count": practice["critical_project_count"],
+        "avg_project_health_score": avg_health_score,
+        "project_risk_counts": practice["project_risk_counts"],
+        "employee_count": practice["employee_count"],
+        "capacity_hours": serialise_money(capacity_hours) or "0.00",
+        "logged_hours": serialise_money(logged_hours) or "0.00",
+        "billable_hours": serialise_money(billable_hours) or "0.00",
+        "avg_utilization_pct": avg_utilization_pct,
+        "billable_utilization_pct": billable_utilization_pct,
+        "capacity_status_counts": practice["capacity_status_counts"],
+        "recommended_actions": actions,
+    }
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
 
 
 def _embedded_one(value: object) -> dict:

@@ -116,6 +116,37 @@ export interface SegmentProfitabilityRow {
   recommended_action: string;
 }
 
+export interface PracticeDashboardRow {
+  practice_key: string;
+  practice_label: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  revenue: string;
+  labor_cost: string;
+  expense_cost: string;
+  total_cost: string;
+  gross_margin: string;
+  gross_margin_pct: number;
+  profitability_status: 'strong' | 'healthy' | 'watch' | 'critical';
+  client_count: number;
+  engagement_count: number;
+  project_count: number;
+  invoice_count: number;
+  active_project_count: number;
+  at_risk_project_count: number;
+  critical_project_count: number;
+  avg_project_health_score?: number | null;
+  project_risk_counts: Record<string, number>;
+  employee_count: number;
+  capacity_hours: string;
+  logged_hours: string;
+  billable_hours: string;
+  avg_utilization_pct: number;
+  billable_utilization_pct: number;
+  capacity_status_counts: Record<string, number>;
+  recommended_actions: string[];
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -185,6 +216,9 @@ export class ReportsService {
     this.http.get<SegmentProfitabilityRow[]>(
       `${this.base}/segment-profitability?group_by=${groupBy}`,
     );
+
+  getPracticeDashboard = (): Observable<PracticeDashboardRow[]> =>
+    this.http.get<PracticeDashboardRow[]>(`${this.base}/practice-dashboard`);
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

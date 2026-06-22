@@ -27,6 +27,7 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/capacity-planning",
     "/api/v1/reports/client-profitability",
     "/api/v1/reports/segment-profitability",
+    "/api/v1/reports/practice-dashboard",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -165,3 +166,26 @@ def test_segment_profitability_report_shape(client_a: httpx.Client) -> None:
             "gross_margin_pct",
         } <= set(row)
         assert row["segment_type"] == "client_kind"
+
+
+def test_practice_dashboard_report_shape(client_a: httpx.Client) -> None:
+    """Practice dashboard returns margin, project health, and capacity signals."""
+    r = client_a.get("/api/v1/reports/practice-dashboard")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "practice_key",
+            "practice_label",
+            "revenue",
+            "gross_margin",
+            "profitability_status",
+            "active_project_count",
+            "critical_project_count",
+            "employee_count",
+            "capacity_status_counts",
+            "recommended_actions",
+        } <= set(row)
+        assert isinstance(row["recommended_actions"], list)

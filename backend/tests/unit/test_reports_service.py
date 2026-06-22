@@ -681,3 +681,81 @@ def test_segment_profitability_groups_by_service_line(mock_db: MagicMock) -> Non
     assert by_segment["advisory"]["client_count"] == 1
     assert by_segment["tax"]["segment_label"] == "Tax"
     assert Decimal(by_segment["tax"]["gross_margin"]) == Decimal("4500.00")
+
+
+def test_practice_dashboard_combines_financial_health_and_capacity(
+    mock_db: MagicMock,
+) -> None:
+    """Practice dashboard combines service-line margin, risk, and capacity."""
+    svc = _make_svc(mock_db)
+    svc.segment_profitability = MagicMock(
+        return_value=[
+            {
+                "segment_key": "advisory",
+                "revenue": "10000.00",
+                "labor_cost": "3000.00",
+                "expense_cost": "1000.00",
+                "total_cost": "4000.00",
+                "gross_margin": "6000.00",
+                "gross_margin_pct": 60.0,
+                "profitability_status": "strong",
+                "recommended_action": "Protect this relationship.",
+                "client_count": 2,
+                "engagement_count": 3,
+                "project_count": 4,
+                "invoice_count": 5,
+            }
+        ]
+    )
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-critical",
+                "service_line": "advisory",
+                "health_score": 42,
+                "risk_level": "critical",
+                "recommended_actions": ["Escalate delivery risk."],
+            },
+            {
+                "project_id": "proj-healthy",
+                "service_line": "advisory",
+                "health_score": 90,
+                "risk_level": "healthy",
+                "recommended_actions": [],
+            },
+        ]
+    )
+    svc.capacity_planning = MagicMock(
+        return_value=[
+            {
+                "employee_id": "emp-over",
+                "practice_area": "advisory",
+                "capacity_hours": "40.00",
+                "logged_hours": "46.00",
+                "billable_hours": "44.00",
+                "capacity_status": "overallocated",
+                "recommended_action": "Rebalance assignments.",
+            }
+        ]
+    )
+
+    result = svc.practice_dashboard(
+        period_start="2026-06-01",
+        period_end="2026-06-30",
+    )
+
+    assert len(result) == 1
+    row = result[0]
+    assert row["practice_key"] == "advisory"
+    assert row["practice_label"] == "Advisory"
+    assert Decimal(row["gross_margin"]) == Decimal("6000.00")
+    assert row["active_project_count"] == 2
+    assert row["critical_project_count"] == 1
+    assert row["avg_project_health_score"] == 66.0
+    assert row["employee_count"] == 1
+    assert Decimal(row["capacity_hours"]) == Decimal("40.00")
+    assert Decimal(row["logged_hours"]) == Decimal("46.00")
+    assert row["avg_utilization_pct"] == 115.0
+    assert row["capacity_status_counts"]["overallocated"] == 1
+    assert "Escalate delivery risk." in row["recommended_actions"]
+    assert "Rebalance overallocated staff before accepting new work." in row["recommended_actions"]
