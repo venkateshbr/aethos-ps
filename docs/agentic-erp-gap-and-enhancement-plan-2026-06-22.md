@@ -296,7 +296,7 @@ Work items:
 - Done 2026-06-22: added `financial_events` as an immutable, hash-chained event log with database-trigger coverage for posted journals and period lock/unlock actions, plus read-only `/api/v1/financial-events` admin API.
 - RLS/service-role reduction plan.
 - Done 2026-06-22: added capped admin CSV export for `financial_events` so audit/review packages can include event evidence without direct database access.
-- PII policy for uploaded documents, including binary masking/redaction before external LLM calls.
+- Done 2026-06-22: added shared document preflight scanning for PII and prompt-injection markers; text is masked before LLM calls, and PDF/image binaries with detectable sensitive or adversarial text are withheld from the external LLM and replaced with masked text-only context.
 - Done 2026-06-22: added bill-payment export integrity metadata, actor/timestamp controls for approval/export/send/settlement, settled batch status, and financial event log coverage for payment-batch transitions.
 - Localization depth for US, UK, SG, IN, AU tax and reporting.
 - Integration roadmap: email/calendar, bank feeds, Companies House/HMRC equivalents, payroll, CRM, document storage.
