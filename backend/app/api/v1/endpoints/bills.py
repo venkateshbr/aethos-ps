@@ -120,3 +120,17 @@ async def approve_bill(
     svc: BillsService = Depends(_service),  # noqa: B008
 ) -> BillApproveResponse:
     return await svc.approve_bill(bill_id, current_user.user_id)
+
+
+@router.post("/{bill_id}/void", response_model=BillResponse)
+async def void_bill(
+    bill_id: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: BillsService = Depends(_service),  # noqa: B008
+) -> BillResponse:
+    """Void a bill.
+
+    Draft bills are status-updated. Approved bills first post a reversing GL
+    journal through the accounting guardian, then move to ``voided``.
+    """
+    return await svc.void_bill(bill_id, current_user.user_id)

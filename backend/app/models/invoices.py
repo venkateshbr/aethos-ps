@@ -76,6 +76,14 @@ class InvoiceCreate(BaseModel):
     lines: list[InvoiceLineCreate] = Field(default_factory=list, min_length=1)
 
 
+class InvoiceDraftRequest(BaseModel):
+    """Compatibility body for POST /api/v1/invoices/draft."""
+
+    engagement_id: str = Field(..., description="UUID of the engagement to draft")
+    period_start: date | None = None
+    period_end: date | None = None
+
+
 class ManualPaymentCreate(BaseModel):
     """Body for POST /invoices/{id}/payments — a payment received outside Stripe."""
 

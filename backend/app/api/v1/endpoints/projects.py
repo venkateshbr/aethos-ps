@@ -20,8 +20,10 @@ from app.models.assignments import (
     AssignmentListResponse,
     AssignmentResponse,
 )
+from app.models.expenses import ExpenseCreate, ExpenseResponse
 from app.models.projects import ProjectCreate, ProjectResponse
 from app.services.assignments_service import AssignmentsService
+from app.services.expenses_service import ExpensesService
 from app.services.projects_service import ProjectService
 from supabase import Client
 
@@ -42,6 +44,13 @@ def _assignments_service(
     tenant_id: str = Depends(get_tenant_id),
 ) -> AssignmentsService:
     return AssignmentsService(db, tenant_id)
+
+
+def _expenses_service(
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> ExpensesService:
+    return ExpensesService(db, tenant_id)
 
 
 @router.get("", response_model=list[ProjectResponse])
@@ -133,3 +142,18 @@ async def delete_assignment(
     svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
 ) -> None:
     await svc.delete(id, assignment_id)
+
+
+@router.post(
+    "/{id}/expenses",
+    response_model=ExpenseResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project_expense(
+    id: str,
+    payload: ExpenseCreate,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: ExpensesService = Depends(_expenses_service),  # noqa: B008
+) -> ExpenseResponse:
+    """Create a project-scoped expense."""
+    return await svc.create_expense(id, payload)

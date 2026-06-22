@@ -9,6 +9,7 @@ Flow:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal
@@ -259,10 +260,8 @@ class BillsService:
         # 5. Post via canonical post_journal — runs accounting_guardian L3 always.
         #    This replaces the old _post_journal that bypassed the guardian entirely.
         entry_date = bill.get("issue_date") or date.today().isoformat()
-        import asyncio as _asyncio
-
         try:
-            je = await _asyncio.to_thread(
+            je = await asyncio.to_thread(
                 post_journal,
                 self._db,
                 self._tenant_id,
@@ -303,6 +302,124 @@ class BillsService:
             journal_entry_id=journal_entry_id,
             message=f"Bill {bill_number} approved and GL journal posted",
         )
+
+    # ------------------------------------------------------------------
+    # Void — reverses approved AP journals
+    # ------------------------------------------------------------------
+
+    async def void_bill(self, bill_id: str, voided_by: str) -> BillResponse:
+        """Void a bill.
+
+        Draft bills can be voided with a status change. Approved bills have
+        already posted DR Expense / CR AP, so they require a reversing journal
+        before status changes. Paid bills cannot be voided here; payment
+        reversal/settlement needs its own lifecycle.
+        """
+        bill = await self._repo.get(bill_id)
+        if bill is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bill {bill_id!r} not found",
+            )
+
+        current_status = str(bill["status"])
+        if current_status == "voided":
+            lines = await self._repo.get_lines(bill_id)
+            return _bill_to_response(bill, lines)
+        if current_status in {"paid", "partially_paid"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Bill is {current_status}; reverse the payment before voiding",
+            )
+        if current_status not in {"draft", "approved"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Bill is {current_status!r} and cannot be voided",
+            )
+
+        if current_status == "approved":
+            await self._post_void_reversal(bill, voided_by)
+
+        updated = await self._repo.update(bill_id, {"status": "voided"})
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bill {bill_id!r} not found",
+            )
+        lines = await self._repo.get_lines(bill_id)
+        return _bill_to_response(updated, lines)
+
+    async def _post_void_reversal(self, bill: dict, voided_by: str) -> None:
+        bill_id = str(bill["id"])
+
+        def _fetch_original_journal() -> dict | None:
+            result = (
+                self._db.table("journal_entries")
+                .select("id")
+                .eq("tenant_id", self._tenant_id)
+                .eq("reference_type", "bill")
+                .eq("reference_id", bill_id)
+                .order("posted_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            return rows[0] if rows else None
+
+        original = await asyncio.to_thread(_fetch_original_journal)
+        if original is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot void approved bill because its original AP journal was not found",
+            )
+
+        def _fetch_original_lines() -> list[dict]:
+            result = (
+                self._db.table("journal_lines")
+                .select("direction, account_id, amount, currency, base_amount, description")
+                .eq("tenant_id", self._tenant_id)
+                .eq("journal_entry_id", original["id"])
+                .execute()
+            )
+            return result.data or []
+
+        original_lines = await asyncio.to_thread(_fetch_original_lines)
+        if not original_lines:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot void approved bill because its original AP journal has no lines",
+            )
+
+        reversal_lines = [
+            JournalLineSpec(
+                direction="CR" if line["direction"] == "DR" else "DR",
+                account_code="",
+                account_id=str(line["account_id"]),
+                amount=Decimal(str(line["amount"])),
+                currency=str(line.get("currency") or bill.get("currency") or "USD"),
+                base_amount=Decimal(str(line.get("base_amount") or line["amount"])),
+                description=f"Void {line.get('description') or bill.get('bill_number') or bill_id}",
+            )
+            for line in original_lines
+        ]
+
+        try:
+            await asyncio.to_thread(
+                post_journal,
+                self._db,
+                self._tenant_id,
+                voided_by,
+                f"Void AP bill {bill.get('bill_number') or bill_id}",
+                date.today().isoformat(),
+                "bill_void",
+                bill_id,
+                reversal_lines,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
     # ------------------------------------------------------------------
     # AP Aging

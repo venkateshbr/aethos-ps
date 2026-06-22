@@ -18,12 +18,15 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.agents.base import AgentDeps
+from app.agents.invoice_drafter_agent import draft_invoice
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.invoices import (
     InvoiceCreate,
+    InvoiceDraftRequest,
     InvoiceResponse,
     ManualPaymentCreate,
     PublicInvoiceResponse,
@@ -74,6 +77,48 @@ async def create_invoice(
     svc: InvoicesService = Depends(_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.create_invoice(payload, created_by=current_user.user_id)
+
+
+@router.post("/draft")
+async def draft_invoice_for_engagement(
+    payload: InvoiceDraftRequest,
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Build a non-persistent invoice draft for an engagement.
+
+    Compatibility route for frontend callers that use ``/invoices/draft``.
+    The canonical drafter remains ``draft_invoice``; callers that want a
+    persisted invoice should POST the returned lines to ``/invoices``.
+    """
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        invoice_draft = draft_invoice(
+            payload.engagement_id,
+            deps,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "draft_invoice raised ValueError for engagement %s: %s",
+            payload.engagement_id,
+            exc,
+            extra={"tenant_id": tenant_id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Engagement not found or cannot be invoiced",
+        ) from exc
+    except Exception as exc:
+        logger.exception("draft_invoice failed for engagement %s", payload.engagement_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return invoice_draft.model_dump(mode="json")
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
