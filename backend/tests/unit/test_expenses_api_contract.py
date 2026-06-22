@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
 
@@ -146,6 +146,11 @@ class _FakeDb:
         return _Table(self, name)
 
 
+class _ForbiddenDb:
+    def table(self, name: str) -> None:
+        raise AssertionError(f"wrong dependency attempted to access {name}")
+
+
 @pytest.fixture
 def fake_db() -> _FakeDb:
     return _FakeDb()
@@ -160,12 +165,19 @@ def client(fake_db: _FakeDb) -> TestClient:
     )
     app.dependency_overrides[get_tenant_id] = lambda: TENANT_A
     app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
 
-def test_list_expenses_returns_current_tenant_rows_for_ui(client: TestClient) -> None:
+def test_list_expenses_returns_current_tenant_rows_for_ui(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
     response = client.get("/api/v1/expenses")
 
     assert response.status_code == 200, response.text
@@ -203,6 +215,9 @@ def test_create_project_expense_materializes_project_scoped_row(
     client: TestClient,
     fake_db: _FakeDb,
 ) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
     response = client.post(
         "/api/v1/projects/proj-a/expenses",
         json={
