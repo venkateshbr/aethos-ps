@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client
@@ -18,6 +18,9 @@ from app.core.tenant import get_tenant_id
 from app.models.agents import (
     AgentAutonomyStatus,
     AgentAutonomyStatusResponse,
+    AgentRunDetailResponse,
+    AgentRunListResponse,
+    AgentRunSummary,
     SetAgentLevelRequest,
     SetAgentLevelResponse,
 )
@@ -64,6 +67,61 @@ def get_autonomy_status(
     raw = svc.get_autonomy_status()
     agents = [AgentAutonomyStatus(**item) for item in raw]
     return AgentAutonomyStatusResponse(agents=agents)
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/runs
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/runs",
+    response_model=AgentRunListResponse,
+    summary="Recent agent run ledger entries",
+)
+def list_agent_runs(
+    agent_name: str | None = None,
+    run_status: str | None = Query(default=None, alias="status"),
+    limit: int = 50,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentRunListResponse:
+    """Return recent agent runs for the current tenant.
+
+    The dashboard is manager-gated because it exposes operational trace data.
+    """
+    raw = svc.list_agent_runs(
+        agent_name=agent_name,
+        status=run_status,
+        limit=limit,
+    )
+    runs = [AgentRunSummary(**item) for item in raw["runs"]]
+    return AgentRunListResponse(runs=runs, total=raw["total"])
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/runs/{run_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/runs/{run_id}",
+    response_model=AgentRunDetailResponse,
+    summary="Agent run detail with tool invocations",
+)
+def get_agent_run(
+    run_id: str,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentRunDetailResponse:
+    """Return a single agent run and its tool invocations."""
+    row = svc.get_agent_run(run_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found",
+        )
+    return AgentRunDetailResponse(**row)
 
 
 # ---------------------------------------------------------------------------

@@ -89,6 +89,17 @@ _DECIDED_STATUSES = ("approved", "approved_with_edits", "rejected", "auto_applie
 # Positive statuses (count toward approval)
 _APPROVED_STATUSES = ("approved", "approved_with_edits", "auto_applied")
 
+_AGENT_RUN_COLUMNS = (
+    "id,agent_name,trigger_type,status,user_id,source_document_hash,prompt_version,"
+    "model_version,input_hash,output_hash,usage_input_tokens,usage_output_tokens,"
+    "cost_usd,trace_id,replay_pointer,error_message,started_at,completed_at,created_at"
+)
+
+_AGENT_TOOL_COLUMNS = (
+    "id,agent_run_id,tool_name,risk_class,status,external_tool_call_id,input_hash,"
+    "output_hash,input_snapshot,output_snapshot,duration_ms,error_message,created_at"
+)
+
 
 class AgentAutonomyError(ValueError):
     """Raised when a level-change is invalid."""
@@ -205,6 +216,70 @@ class AgentsService:
 
         return {"agent_name": agent_name, "level": level}
 
+    def list_agent_runs(
+        self,
+        *,
+        agent_name: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Return recent agent runs with aggregate tool counts."""
+        capped_limit = max(1, min(limit, 100))
+        query = (
+            self.db.table("agent_runs")
+            .select(_AGENT_RUN_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .order("created_at", desc=True)
+            .limit(capped_limit)
+        )
+        if agent_name:
+            query = query.eq("agent_name", agent_name)
+        if status:
+            query = query.eq("status", status)
+
+        rows = query.execute().data or []
+        run_ids = [row["id"] for row in rows]
+        tool_counts = self._fetch_tool_counts(run_ids)
+
+        runs = []
+        for row in rows:
+            counts = tool_counts.get(row["id"], {"tool_count": 0, "failed_tool_count": 0})
+            runs.append({**self._run_summary(row), **counts})
+
+        return {"runs": runs, "total": len(runs)}
+
+    def get_agent_run(self, run_id: str) -> dict | None:
+        """Return one agent run and its ordered tool invocations."""
+        result = (
+            self.db.table("agent_runs")
+            .select(_AGENT_RUN_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .eq("id", run_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+
+        row = result.data[0]
+        tools = (
+            self.db.table("agent_tool_invocations")
+            .select(_AGENT_TOOL_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .eq("agent_run_id", run_id)
+            .order("created_at", desc=False)
+            .execute()
+            .data
+            or []
+        )
+        failed_count = sum(1 for tool in tools if tool.get("status") == "failed")
+        return {
+            **self._run_summary(row),
+            "tool_count": len(tools),
+            "failed_tool_count": failed_count,
+            "tool_invocations": [self._tool_invocation(tool) for tool in tools],
+        }
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -299,6 +374,68 @@ class AgentsService:
                 levels[agent] = max(action_map.values())
 
         return levels
+
+    def _fetch_tool_counts(self, run_ids: list[str]) -> dict[str, dict[str, int]]:
+        if not run_ids:
+            return {}
+        rows = (
+            self.db.table("agent_tool_invocations")
+            .select("agent_run_id,status")
+            .eq("tenant_id", self.tenant_id)
+            .in_("agent_run_id", run_ids)
+            .execute()
+            .data
+            or []
+        )
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            run_id = row["agent_run_id"]
+            bucket = counts.setdefault(run_id, {"tool_count": 0, "failed_tool_count": 0})
+            bucket["tool_count"] += 1
+            if row.get("status") == "failed":
+                bucket["failed_tool_count"] += 1
+        return counts
+
+    @staticmethod
+    def _run_summary(row: dict) -> dict:
+        return {
+            "id": str(row["id"]),
+            "agent_name": row["agent_name"],
+            "trigger_type": row["trigger_type"],
+            "status": row["status"],
+            "user_id": str(row["user_id"]) if row.get("user_id") else None,
+            "source_document_hash": row.get("source_document_hash"),
+            "prompt_version": row.get("prompt_version"),
+            "model_version": row.get("model_version"),
+            "input_hash": row.get("input_hash"),
+            "output_hash": row.get("output_hash"),
+            "usage_input_tokens": row.get("usage_input_tokens"),
+            "usage_output_tokens": row.get("usage_output_tokens"),
+            "cost_usd": str(row["cost_usd"]) if row.get("cost_usd") is not None else None,
+            "trace_id": row.get("trace_id"),
+            "replay_pointer": row.get("replay_pointer"),
+            "error_message": row.get("error_message"),
+            "started_at": str(row["started_at"]),
+            "completed_at": str(row["completed_at"]) if row.get("completed_at") else None,
+            "created_at": str(row["created_at"]),
+        }
+
+    @staticmethod
+    def _tool_invocation(row: dict) -> dict:
+        return {
+            "id": str(row["id"]),
+            "tool_name": row["tool_name"],
+            "risk_class": row["risk_class"],
+            "status": row["status"],
+            "external_tool_call_id": row.get("external_tool_call_id"),
+            "input_hash": row.get("input_hash"),
+            "output_hash": row.get("output_hash"),
+            "input_snapshot": row.get("input_snapshot") or {},
+            "output_snapshot": row.get("output_snapshot") or {},
+            "duration_ms": row.get("duration_ms"),
+            "error_message": row.get("error_message"),
+            "created_at": str(row["created_at"]),
+        }
 
     @staticmethod
     def _is_eligible_for_promotion(

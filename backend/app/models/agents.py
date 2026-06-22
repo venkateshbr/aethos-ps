@@ -46,3 +46,59 @@ class SetAgentLevelResponse(BaseModel):
 
     agent_name: str
     level: int
+
+
+class AgentRunSummary(BaseModel):
+    """Single agent run row for the operator dashboard."""
+
+    id: str
+    agent_name: str
+    trigger_type: str
+    status: str
+    user_id: str | None = None
+    prompt_version: str | None = None
+    model_version: str | None = None
+    trace_id: str | None = None
+    replay_pointer: str | None = None
+    input_hash: str | None = None
+    output_hash: str | None = None
+    source_document_hash: str | None = None
+    usage_input_tokens: int | None = None
+    usage_output_tokens: int | None = None
+    cost_usd: str | None = None
+    error_message: str | None = None
+    started_at: str
+    completed_at: str | None = None
+    created_at: str
+    tool_count: int = 0
+    failed_tool_count: int = 0
+
+
+class AgentRunListResponse(BaseModel):
+    """Response wrapper for GET /agents/runs."""
+
+    runs: list[AgentRunSummary]
+    total: int
+
+
+class AgentToolInvocationResponse(BaseModel):
+    """Tool invocation row attached to an agent run detail."""
+
+    id: str
+    tool_name: str
+    risk_class: str
+    status: str
+    external_tool_call_id: str | None = None
+    input_hash: str | None = None
+    output_hash: str | None = None
+    input_snapshot: dict
+    output_snapshot: dict
+    duration_ms: int | None = None
+    error_message: str | None = None
+    created_at: str
+
+
+class AgentRunDetailResponse(AgentRunSummary):
+    """Agent run detail with ordered tool invocations."""
+
+    tool_invocations: list[AgentToolInvocationResponse]
