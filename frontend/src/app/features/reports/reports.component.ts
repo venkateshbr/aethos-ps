@@ -9,6 +9,14 @@ import {
   ReportsService,
   AgingReport,
   PnlRow,
+  ProjectHealthRow,
+  CapacityRow,
+  ClientProfitabilityRow,
+  ClientGroupProfitabilityRow,
+  SegmentProfitabilityRow,
+  PracticeDashboardRow,
+  PricingStaffingRecommendation,
+  ScopeChangeAdvisorRow,
   UtilRow,
   WipRow,
   RevenueRow,
@@ -27,6 +35,7 @@ import {
       <mat-tab-group
         animationDuration="150ms"
         class="reports-tabs"
+        (selectedTabChange)="onTabChanged($event.index)"
       >
         <!-- ── AR Aging ──────────────────────────────────────────────────── -->
         <mat-tab label="AR Aging">
@@ -110,6 +119,428 @@ import {
                     <tr mat-header-row *matHeaderRowDef="pnlColumns" class="bg-surface-base/50"></tr>
                     <tr mat-row *matRowDef="let row; columns: pnlColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
                   </table>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Project Health -->
+        <mat-tab label="Project Health">
+          <div class="pt-4">
+            @defer (on viewport) {
+              @if (healthLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (healthError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Project Health', retry: loadProjectHealth.bind(this) }" />
+              } @else if (healthRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'project health data' }" />
+              } @else {
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="healthRows()" class="w-full bg-surface-raised">
+                    <ng-container matColumnDef="project_name">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Project</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">
+                        {{ row.project_name }}
+                        <div class="text-xs text-text-muted">{{ serviceLineLabel(row.service_line) }}</div>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="risk_level">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Risk</th>
+                      <td mat-cell *matCellDef="let row">
+                        <span [class]="riskChipClass(row.risk_level)">{{ labelize(row.risk_level) }}</span>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="health_score">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Score</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.health_score }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="drivers">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Drivers</th>
+                      <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary">
+                        @if (row.drivers.length === 0) {
+                          <span class="text-text-muted">No active drivers</span>
+                        } @else {
+                          <div class="flex flex-wrap gap-1.5">
+                            @for (driver of row.drivers.slice(0, 3); track driver.code) {
+                              <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs">
+                                {{ driver.label }}
+                              </span>
+                            }
+                            @if (row.drivers.length > 3) {
+                              <span class="text-xs text-text-muted">+{{ row.drivers.length - 3 }}</span>
+                            }
+                          </div>
+                        }
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="recommended_actions">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Next action</th>
+                      <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary max-w-md">
+                        {{ firstText(row.recommended_actions) || 'Continue monitoring.' }}
+                      </td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="healthColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: healthColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                  </table>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Capacity -->
+        <mat-tab label="Capacity">
+          <div class="pt-4">
+            @defer (on viewport) {
+              @if (capacityLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (capacityError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Capacity Planning', retry: loadCapacity.bind(this) }" />
+              } @else if (capacityRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'capacity data' }" />
+              } @else {
+                <div class="overflow-x-auto rounded-lg border border-border-default">
+                  <table mat-table [dataSource]="capacityRows()" class="w-full bg-surface-raised">
+                    <ng-container matColumnDef="employee_name">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Employee</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">
+                        {{ row.employee_name }}
+                        <div class="text-xs text-text-muted">{{ serviceLineLabel(row.practice_area || 'unclassified') }}</div>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="capacity_hours">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Capacity</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.capacity_hours }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="logged_hours">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Logged</th>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.logged_hours }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="utilization_pct">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Util</th>
+                      <td mat-cell *matCellDef="let row" class="text-right">
+                        <span [class]="utilChipClass(row.utilization_pct)">{{ row.utilization_pct.toFixed(1) }}%</span>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="capacity_status">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Status</th>
+                      <td mat-cell *matCellDef="let row">
+                        <span [class]="capacityChipClass(row.capacity_status)">{{ labelize(row.capacity_status) }}</span>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="recommended_action">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Action</th>
+                      <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary max-w-md">{{ row.recommended_action }}</td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="capacityColumns" class="bg-surface-base/50"></tr>
+                    <tr mat-row *matRowDef="let row; columns: capacityColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                  </table>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Profitability -->
+        <mat-tab label="Profitability">
+          <div class="pt-4 space-y-8">
+            @defer (on viewport) {
+              <section aria-labelledby="client-profitability-heading">
+                <div class="flex items-center justify-between mb-3">
+                  <h2 id="client-profitability-heading" class="text-sm font-semibold text-text-primary">Client profitability</h2>
+                  <button type="button" class="text-xs text-accent-light hover:underline" (click)="loadProfitability()">Refresh</button>
+                </div>
+                @if (clientProfitLoading()) {
+                  <ng-container *ngTemplateOutlet="tableSkeleton" />
+                } @else if (clientProfitError()) {
+                  <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Client Profitability', retry: loadProfitability.bind(this) }" />
+                } @else if (clientProfitRows().length === 0) {
+                  <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'client profitability data' }" />
+                } @else {
+                  <div class="overflow-x-auto rounded-lg border border-border-default">
+                    <table mat-table [dataSource]="clientProfitRows()" class="w-full bg-surface-raised">
+                      <ng-container matColumnDef="client_name">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Client</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">
+                          {{ row.client_name }}
+                          <div class="text-xs text-text-muted">{{ row.service_lines.join(', ') || 'Unclassified' }}</div>
+                        </td>
+                      </ng-container>
+                      <ng-container matColumnDef="revenue">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="total_cost">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Cost</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono text-right">{{ row.total_cost | money: (row.currency || 'USD') }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="gross_margin_pct">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
+                        <td mat-cell *matCellDef="let row" class="text-right">
+                          <span [class]="profitabilityChipClass(row.profitability_status)">{{ row.gross_margin_pct.toFixed(1) }}%</span>
+                        </td>
+                      </ng-container>
+                      <ng-container matColumnDef="recommended_action">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Action</th>
+                        <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary max-w-md">{{ row.recommended_action }}</td>
+                      </ng-container>
+                      <tr mat-header-row *matHeaderRowDef="profitColumns" class="bg-surface-base/50"></tr>
+                      <tr mat-row *matRowDef="let row; columns: profitColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                    </table>
+                  </div>
+                }
+              </section>
+
+              <section aria-labelledby="group-profitability-heading">
+                <h2 id="group-profitability-heading" class="text-sm font-semibold text-text-primary mb-3">Client group rollups</h2>
+                @if (groupProfitLoading()) {
+                  <ng-container *ngTemplateOutlet="tableSkeleton" />
+                } @else if (groupProfitError()) {
+                  <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Client Group Profitability', retry: loadGroupProfitability.bind(this) }" />
+                } @else if (groupProfitRows().length === 0) {
+                  <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'client group profitability data' }" />
+                } @else {
+                  <div class="overflow-x-auto rounded-lg border border-border-default">
+                    <table mat-table [dataSource]="groupProfitRows()" class="w-full bg-surface-raised">
+                      <ng-container matColumnDef="client_group_name">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Group</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">
+                          {{ row.client_group_name }}
+                          <div class="text-xs text-text-muted">{{ labelize(row.group_type) }} · {{ row.member_count }} members</div>
+                        </td>
+                      </ng-container>
+                      <ng-container matColumnDef="revenue">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="gross_margin">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.gross_margin | money: (row.currency || 'USD') }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="gross_margin_pct">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin %</th>
+                        <td mat-cell *matCellDef="let row" class="text-right">
+                          <span [class]="profitabilityChipClass(row.profitability_status)">{{ row.gross_margin_pct.toFixed(1) }}%</span>
+                        </td>
+                      </ng-container>
+                      <ng-container matColumnDef="recommended_action">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Action</th>
+                        <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary max-w-md">{{ row.recommended_action }}</td>
+                      </ng-container>
+                      <tr mat-header-row *matHeaderRowDef="groupProfitColumns" class="bg-surface-base/50"></tr>
+                      <tr mat-row *matRowDef="let row; columns: groupProfitColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                    </table>
+                  </div>
+                }
+              </section>
+
+              <section aria-labelledby="segment-profitability-heading">
+                <h2 id="segment-profitability-heading" class="text-sm font-semibold text-text-primary mb-3">Service-line segments</h2>
+                @if (segmentProfitLoading()) {
+                  <ng-container *ngTemplateOutlet="tableSkeleton" />
+                } @else if (segmentProfitError()) {
+                  <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Segment Profitability', retry: loadSegmentProfitability.bind(this) }" />
+                } @else if (segmentProfitRows().length === 0) {
+                  <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'segment profitability data' }" />
+                } @else {
+                  <div class="overflow-x-auto rounded-lg border border-border-default">
+                    <table mat-table [dataSource]="segmentProfitRows()" class="w-full bg-surface-raised">
+                      <ng-container matColumnDef="segment_label">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Segment</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-medium">{{ row.segment_label }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="revenue">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                      </ng-container>
+                      <ng-container matColumnDef="gross_margin_pct">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
+                        <td mat-cell *matCellDef="let row" class="text-right">
+                          <span [class]="profitabilityChipClass(row.profitability_status)">{{ row.gross_margin_pct.toFixed(1) }}%</span>
+                        </td>
+                      </ng-container>
+                      <ng-container matColumnDef="client_count">
+                        <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Clients</th>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.client_count }}</td>
+                      </ng-container>
+                      <tr mat-header-row *matHeaderRowDef="segmentColumns" class="bg-surface-base/50"></tr>
+                      <tr mat-row *matRowDef="let row; columns: segmentColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                    </table>
+                  </div>
+                }
+              </section>
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Practice -->
+        <mat-tab label="Practice">
+          <div class="pt-4">
+            @defer (on viewport) {
+              @if (practiceLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (practiceError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Practice Dashboard', retry: loadPracticeDashboard.bind(this) }" />
+              } @else if (practiceRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'practice dashboard data' }" />
+              } @else {
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  @for (row of practiceRows(); track row.practice_key) {
+                    <article class="rounded-lg border border-border-default bg-surface-raised p-4">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 class="text-sm font-semibold text-text-primary">{{ row.practice_label }}</h2>
+                          <p class="text-xs text-text-muted mt-1">
+                            {{ row.client_count }} clients · {{ row.project_count }} projects · {{ row.employee_count }} employees
+                          </p>
+                        </div>
+                        <span [class]="profitabilityChipClass(row.profitability_status)">{{ labelize(row.profitability_status) }}</span>
+                      </div>
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Revenue</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.revenue | money }}</p>
+                        </div>
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Margin</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.gross_margin_pct.toFixed(1) }}%</p>
+                        </div>
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Health</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.avg_project_health_score ?? '—' }}</p>
+                        </div>
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Util</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.avg_utilization_pct.toFixed(1) }}%</p>
+                        </div>
+                      </div>
+                      @if (row.recommended_actions.length) {
+                        <p class="mt-4 text-sm text-text-secondary">{{ row.recommended_actions[0] }}</p>
+                      }
+                    </article>
+                  }
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Recommendations -->
+        <mat-tab label="Recommendations">
+          <div class="pt-4">
+            @defer (on viewport) {
+              @if (recommendationsLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (recommendationsError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Recommendations', retry: loadRecommendations.bind(this) }" />
+              } @else if (recommendationRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'pricing and staffing recommendations' }" />
+              } @else {
+                <div class="space-y-3">
+                  @for (row of recommendationRows(); track row.recommendation_id) {
+                    <article class="rounded-lg border border-border-default bg-surface-raised p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <h2 class="text-sm font-semibold text-text-primary">{{ row.entity_name }}</h2>
+                            <span [class]="priorityChipClass(row.priority)">{{ labelize(row.priority) }}</span>
+                            <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ labelize(row.recommendation_type) }}</span>
+                          </div>
+                          @if (row.service_line) {
+                            <p class="text-xs text-text-muted mt-1">{{ serviceLineLabel(row.service_line) }}</p>
+                          }
+                        </div>
+                        <span class="text-xs text-text-muted">{{ labelize(row.entity_type) }}</span>
+                      </div>
+                      <p class="mt-3 text-sm text-text-secondary">{{ row.recommended_action }}</p>
+                      @if (row.evidence.length) {
+                        <ul class="mt-3 space-y-1 text-sm text-text-muted">
+                          @for (evidence of row.evidence.slice(0, 3); track evidence) {
+                            <li>{{ evidence }}</li>
+                          }
+                        </ul>
+                      }
+                    </article>
+                  }
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Scope Advisor -->
+        <mat-tab label="Scope Advisor">
+          <div class="pt-4">
+            @defer (on viewport) {
+              @if (scopeLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (scopeError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Scope Advisor', retry: loadScopeAdvisor.bind(this) }" />
+              } @else if (scopeRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'scope advisor data' }" />
+              } @else {
+                <div class="space-y-3">
+                  @for (row of scopeRows(); track row.advisor_id) {
+                    <article class="rounded-lg border border-border-default bg-surface-raised p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h2 class="text-sm font-semibold text-text-primary">{{ row.project_name }}</h2>
+                          <p class="text-xs text-text-muted mt-1">{{ serviceLineLabel(row.service_line) }} · {{ labelize(row.billing_arrangement || 'unknown') }}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span [class]="riskChipClass(row.risk_level)">{{ labelize(row.risk_level) }}</span>
+                          <span [class]="confidenceChipClass(row.confidence)">{{ labelize(row.confidence) }} confidence</span>
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Health score</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.health_score }}</p>
+                        </div>
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Fee adjustment</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.suggested_fee_adjustment | money }}</p>
+                        </div>
+                        <div>
+                          <p class="text-xs text-text-muted uppercase tracking-wide">Comparables</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.comparable_projects.length }}</p>
+                        </div>
+                      </div>
+                      <p class="mt-3 text-sm text-text-secondary">{{ row.recommended_action }}</p>
+                      @if (row.scope_signals.length) {
+                        <div class="mt-3 flex flex-wrap gap-1.5">
+                          @for (signal of row.scope_signals; track signal) {
+                            <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ labelize(signal) }}</span>
+                          }
+                        </div>
+                      }
+                    </article>
+                  }
                 </div>
               }
             } @placeholder {
@@ -467,6 +898,42 @@ export class ReportsComponent implements OnInit {
   pnlError = signal(false);
   pnlRows = signal<PnlRow[]>([]);
 
+  // Project health
+  healthLoading = signal(false);
+  healthError = signal(false);
+  healthRows = signal<ProjectHealthRow[]>([]);
+
+  // Capacity planning
+  capacityLoading = signal(false);
+  capacityError = signal(false);
+  capacityRows = signal<CapacityRow[]>([]);
+
+  // Profitability
+  clientProfitLoading = signal(false);
+  clientProfitError = signal(false);
+  clientProfitRows = signal<ClientProfitabilityRow[]>([]);
+  groupProfitLoading = signal(false);
+  groupProfitError = signal(false);
+  groupProfitRows = signal<ClientGroupProfitabilityRow[]>([]);
+  segmentProfitLoading = signal(false);
+  segmentProfitError = signal(false);
+  segmentProfitRows = signal<SegmentProfitabilityRow[]>([]);
+
+  // Practice dashboard
+  practiceLoading = signal(false);
+  practiceError = signal(false);
+  practiceRows = signal<PracticeDashboardRow[]>([]);
+
+  // Recommendations
+  recommendationsLoading = signal(false);
+  recommendationsError = signal(false);
+  recommendationRows = signal<PricingStaffingRecommendation[]>([]);
+
+  // Scope advisor
+  scopeLoading = signal(false);
+  scopeError = signal(false);
+  scopeRows = signal<ScopeChangeAdvisorRow[]>([]);
+
   // Utilization
   utilLoading = signal(false);
   utilError = signal(false);
@@ -492,6 +959,11 @@ export class ReportsComponent implements OnInit {
   })();
 
   readonly pnlColumns = ['project_name', 'revenue', 'direct_cost', 'gross_margin', 'gross_margin_pct'];
+  readonly healthColumns = ['project_name', 'risk_level', 'health_score', 'drivers', 'recommended_actions'];
+  readonly capacityColumns = ['employee_name', 'capacity_hours', 'logged_hours', 'utilization_pct', 'capacity_status', 'recommended_action'];
+  readonly profitColumns = ['client_name', 'revenue', 'total_cost', 'gross_margin_pct', 'recommended_action'];
+  readonly groupProfitColumns = ['client_group_name', 'revenue', 'gross_margin', 'gross_margin_pct', 'recommended_action'];
+  readonly segmentColumns = ['segment_label', 'revenue', 'gross_margin_pct', 'client_count'];
   readonly utilColumns = ['employee_id', 'total_hours', 'billable_hours', 'utilization_pct'];
   readonly wipColumns = ['project_name', 'unbilled_hours', 'avg_rate', 'wip_value'];
   readonly revColumns = ['engagement_id', 'total_invoiced'];
@@ -504,6 +976,31 @@ export class ReportsComponent implements OnInit {
     this.loadWip();
     this.loadRevenue();
     this.loadTrialBalance();
+  }
+
+  onTabChanged(index: number): void {
+    switch (index) {
+      case 3:
+        this.loadProjectHealth();
+        break;
+      case 4:
+        this.loadCapacity();
+        break;
+      case 5:
+        this.loadProfitability();
+        this.loadGroupProfitability();
+        this.loadSegmentProfitability();
+        break;
+      case 6:
+        this.loadPracticeDashboard();
+        break;
+      case 7:
+        this.loadRecommendations();
+        break;
+      case 8:
+        this.loadScopeAdvisor();
+        break;
+    }
   }
 
   loadAr(): void {
@@ -530,6 +1027,78 @@ export class ReportsComponent implements OnInit {
     this.svc.getProjectPnl().subscribe({
       next: rows => { this.pnlRows.set(rows); this.pnlLoading.set(false); },
       error: () => { this.pnlError.set(true); this.pnlLoading.set(false); },
+    });
+  }
+
+  loadProjectHealth(): void {
+    this.healthLoading.set(true);
+    this.healthError.set(false);
+    this.svc.getProjectHealth().subscribe({
+      next: rows => { this.healthRows.set(rows); this.healthLoading.set(false); },
+      error: () => { this.healthError.set(true); this.healthLoading.set(false); },
+    });
+  }
+
+  loadCapacity(): void {
+    this.capacityLoading.set(true);
+    this.capacityError.set(false);
+    this.svc.getCapacityPlanning().subscribe({
+      next: rows => { this.capacityRows.set(rows); this.capacityLoading.set(false); },
+      error: () => { this.capacityError.set(true); this.capacityLoading.set(false); },
+    });
+  }
+
+  loadProfitability(): void {
+    this.clientProfitLoading.set(true);
+    this.clientProfitError.set(false);
+    this.svc.getClientProfitability().subscribe({
+      next: rows => { this.clientProfitRows.set(rows); this.clientProfitLoading.set(false); },
+      error: () => { this.clientProfitError.set(true); this.clientProfitLoading.set(false); },
+    });
+  }
+
+  loadGroupProfitability(): void {
+    this.groupProfitLoading.set(true);
+    this.groupProfitError.set(false);
+    this.svc.getClientGroupProfitability().subscribe({
+      next: rows => { this.groupProfitRows.set(rows); this.groupProfitLoading.set(false); },
+      error: () => { this.groupProfitError.set(true); this.groupProfitLoading.set(false); },
+    });
+  }
+
+  loadSegmentProfitability(): void {
+    this.segmentProfitLoading.set(true);
+    this.segmentProfitError.set(false);
+    this.svc.getSegmentProfitability().subscribe({
+      next: rows => { this.segmentProfitRows.set(rows); this.segmentProfitLoading.set(false); },
+      error: () => { this.segmentProfitError.set(true); this.segmentProfitLoading.set(false); },
+    });
+  }
+
+  loadPracticeDashboard(): void {
+    this.practiceLoading.set(true);
+    this.practiceError.set(false);
+    this.svc.getPracticeDashboard().subscribe({
+      next: rows => { this.practiceRows.set(rows); this.practiceLoading.set(false); },
+      error: () => { this.practiceError.set(true); this.practiceLoading.set(false); },
+    });
+  }
+
+  loadRecommendations(): void {
+    this.recommendationsLoading.set(true);
+    this.recommendationsError.set(false);
+    this.svc.getPricingStaffingRecommendations().subscribe({
+      next: rows => { this.recommendationRows.set(rows); this.recommendationsLoading.set(false); },
+      error: () => { this.recommendationsError.set(true); this.recommendationsLoading.set(false); },
+    });
+  }
+
+  loadScopeAdvisor(): void {
+    this.scopeLoading.set(true);
+    this.scopeError.set(false);
+    this.svc.getScopeChangeAdvisor().subscribe({
+      next: rows => { this.scopeRows.set(rows); this.scopeLoading.set(false); },
+      error: () => { this.scopeError.set(true); this.scopeLoading.set(false); },
     });
   }
 
@@ -578,6 +1147,79 @@ export class ReportsComponent implements OnInit {
     if (pct > 70) return `${base} bg-accent/15 text-accent-light`;
     if (pct >= 50) return `${base} bg-confidence-med/10 text-confidence-med`;
     return `${base} bg-confidence-low/10 text-confidence-low`;
+  }
+
+  riskChipClass(risk: string): string {
+    const base = 'text-xs font-semibold px-2 py-0.5 rounded';
+    switch (risk) {
+      case 'critical': return `${base} bg-confidence-low/10 text-confidence-low`;
+      case 'at_risk': return `${base} bg-orange-500/10 text-orange-300`;
+      case 'watch': return `${base} bg-confidence-med/10 text-confidence-med`;
+      default: return `${base} bg-accent/15 text-accent-light`;
+    }
+  }
+
+  capacityChipClass(status: string): string {
+    const base = 'text-xs font-semibold px-2 py-0.5 rounded';
+    switch (status) {
+      case 'overallocated': return `${base} bg-confidence-low/10 text-confidence-low`;
+      case 'underutilized': return `${base} bg-confidence-med/10 text-confidence-med`;
+      case 'full': return `${base} bg-blue-500/15 text-blue-300`;
+      default: return `${base} bg-accent/15 text-accent-light`;
+    }
+  }
+
+  profitabilityChipClass(status: string): string {
+    const base = 'text-xs font-semibold px-2 py-0.5 rounded';
+    switch (status) {
+      case 'critical': return `${base} bg-confidence-low/10 text-confidence-low`;
+      case 'watch': return `${base} bg-confidence-med/10 text-confidence-med`;
+      case 'strong': return `${base} bg-accent/15 text-accent-light`;
+      default: return `${base} bg-blue-500/15 text-blue-300`;
+    }
+  }
+
+  priorityChipClass(priority: string): string {
+    const base = 'text-xs font-semibold px-2 py-0.5 rounded';
+    switch (priority) {
+      case 'critical': return `${base} bg-confidence-low/10 text-confidence-low`;
+      case 'high': return `${base} bg-orange-500/10 text-orange-300`;
+      case 'medium': return `${base} bg-confidence-med/10 text-confidence-med`;
+      default: return `${base} bg-surface-base text-text-muted border border-border-subtle`;
+    }
+  }
+
+  confidenceChipClass(confidence: string): string {
+    const base = 'text-xs font-semibold px-2 py-0.5 rounded';
+    switch (confidence) {
+      case 'high': return `${base} bg-accent/15 text-accent-light`;
+      case 'medium': return `${base} bg-confidence-med/10 text-confidence-med`;
+      default: return `${base} bg-surface-base text-text-muted border border-border-subtle`;
+    }
+  }
+
+  labelize(value: string | null | undefined): string {
+    if (!value) return 'Unclassified';
+    return value
+      .replaceAll('_', ' ')
+      .replace(/\b\w/g, char => char.toUpperCase());
+  }
+
+  serviceLineLabel(value: string | null | undefined): string {
+    const labels: Record<string, string> = {
+      accounting: 'Accounting',
+      tax: 'Tax',
+      cosec: 'Company Secretarial',
+      payroll: 'Payroll',
+      advisory: 'Advisory',
+      other: 'Other',
+      unclassified: 'Unclassified',
+    };
+    return labels[value ?? 'unclassified'] ?? this.labelize(value);
+  }
+
+  firstText(values: string[] | null | undefined): string {
+    return values?.find(value => value.trim().length > 0) ?? '';
   }
 
   loadTrialBalance(): void {
