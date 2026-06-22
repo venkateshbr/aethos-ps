@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.time_entries import (
@@ -31,8 +32,25 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+ProjectIdQuery = Annotated[str | None, Query(description="Filter by project ID")]
+EmployeeIdQuery = Annotated[str | None, Query(description="Filter by employee ID")]
+DateFromQuery = Annotated[str | None, Query(description="Filter from date YYYY-MM-DD")]
+DateToQuery = Annotated[str | None, Query(description="Filter to date YYYY-MM-DD")]
+BillingStatusQuery = Annotated[
+    str | None,
+    Query(description="Filter by billing status: unbilled | billed | non_billable"),
+]
+LimitQuery = Annotated[int, Query(ge=1, le=500)]
 
-def _service(
+
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> TimeEntriesService:
+    return TimeEntriesService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> TimeEntriesService:
@@ -46,17 +64,14 @@ def _service(
 
 @router.get("", response_model=TimeEntryListResponse)
 async def list_time_entries(
-    project_id: str | None = Query(default=None, description="Filter by project ID"),
-    employee_id: str | None = Query(default=None, description="Filter by employee ID"),
-    date_from: str | None = Query(default=None, description="Filter from date YYYY-MM-DD"),
-    date_to: str | None = Query(default=None, description="Filter to date YYYY-MM-DD"),
-    billing_status: str | None = Query(
-        default=None,
-        description="Filter by billing status: unbilled | billed | non_billable",
-    ),
-    limit: int = Query(default=100, ge=1, le=500),
+    project_id: ProjectIdQuery = None,
+    employee_id: EmployeeIdQuery = None,
+    date_from: DateFromQuery = None,
+    date_to: DateToQuery = None,
+    billing_status: BillingStatusQuery = None,
+    limit: LimitQuery = 100,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: TimeEntriesService = Depends(_service),  # noqa: B008
+    svc: TimeEntriesService = Depends(_read_service),  # noqa: B008
 ) -> TimeEntryListResponse:
     df: date | None = None
     dt: date | None = None
@@ -85,7 +100,7 @@ async def list_time_entries(
 async def create_time_entry(
     payload: TimeEntryCreate,
     current_user: CurrentUser = require_role(UserRole.member),  # noqa: B008
-    svc: TimeEntriesService = Depends(_service),  # noqa: B008
+    svc: TimeEntriesService = Depends(_write_service),  # noqa: B008
 ) -> TimeEntryResponse:
     return await svc.create_entry(payload, approved_by=current_user.user_id)
 
@@ -94,7 +109,7 @@ async def create_time_entry(
 async def get_time_entry(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: TimeEntriesService = Depends(_service),  # noqa: B008
+    svc: TimeEntriesService = Depends(_read_service),  # noqa: B008
 ) -> TimeEntryResponse:
     entry = await svc.get_entry(id)
     if entry is None:
@@ -110,7 +125,7 @@ async def update_time_entry(
     id: str,
     payload: TimeEntryUpdate,
     _current_user: CurrentUser = require_role(UserRole.member),  # noqa: B008
-    svc: TimeEntriesService = Depends(_service),  # noqa: B008
+    svc: TimeEntriesService = Depends(_write_service),  # noqa: B008
 ) -> TimeEntryResponse:
     return await svc.update_entry(id, payload)
 
@@ -119,6 +134,6 @@ async def update_time_entry(
 async def delete_time_entry(
     id: str,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: TimeEntriesService = Depends(_service),  # noqa: B008
+    svc: TimeEntriesService = Depends(_write_service),  # noqa: B008
 ) -> None:
     await svc.delete_entry(id)
