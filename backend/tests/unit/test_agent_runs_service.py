@@ -109,6 +109,27 @@ def _tool_row(**overrides: object) -> dict:
     return row
 
 
+def _candidate_row(**overrides: object) -> dict:
+    row = {
+        "id": "candidate-1",
+        "tenant_id": "tenant-1",
+        "agent_correction_id": "correction-1",
+        "agent_suggestion_id": "suggestion-1",
+        "agent_name": "copilot_agent",
+        "action_type": "copilot_update_rate_card",
+        "eval_case_key": "copilot_agent:copilot_update_rate_card:correction:correction-1",
+        "status": "candidate",
+        "input_hash": "input-hash",
+        "original_output_hash": "original-hash",
+        "corrected_output_hash": "corrected-hash",
+        "reason": "human_edit",
+        "created_at": "2026-06-22T06:00:00Z",
+        "updated_at": "2026-06-22T06:00:00Z",
+    }
+    row.update(overrides)
+    return row
+
+
 def test_list_agent_runs_returns_recent_runs_with_tool_counts() -> None:
     db = _Db(
         {
@@ -183,3 +204,29 @@ def test_get_agent_run_returns_none_for_missing_run() -> None:
     db = _Db({"agent_runs": [], "agent_tool_invocations": []})
 
     assert AgentsService(db, "tenant-1").get_agent_run("missing") is None  # type: ignore[arg-type]
+
+
+def test_list_eval_candidates_filters_by_agent_and_status() -> None:
+    db = _Db(
+        {
+            "agent_eval_candidates": [
+                _candidate_row(id="candidate-1", status="candidate"),
+                _candidate_row(id="candidate-2", status="exported"),
+                _candidate_row(
+                    id="candidate-3",
+                    agent_name="invoice_drafter_agent",
+                    status="candidate",
+                ),
+                _candidate_row(id="other-tenant-candidate", tenant_id="tenant-2"),
+            ],
+        }
+    )
+
+    result = AgentsService(db, "tenant-1").list_eval_candidates(  # type: ignore[arg-type]
+        agent_name="copilot_agent",
+        status="candidate",
+    )
+
+    assert result["total"] == 1
+    assert result["candidates"][0]["id"] == "candidate-1"
+    assert result["candidates"][0]["eval_case_key"].startswith("copilot_agent:")

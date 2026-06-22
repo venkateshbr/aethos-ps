@@ -104,6 +104,31 @@ class AgentControlResponse(BaseModel):
     is_circuit_open: bool
 
 
+class AgentEvalCandidateResponse(BaseModel):
+    """Human correction selected as a candidate eval case."""
+
+    id: str
+    agent_correction_id: str
+    agent_suggestion_id: str
+    agent_name: str
+    action_type: str
+    eval_case_key: str
+    status: str
+    input_hash: str | None = None
+    original_output_hash: str | None = None
+    corrected_output_hash: str | None = None
+    reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AgentEvalCandidateListResponse(BaseModel):
+    """Response wrapper for GET /agents/eval-candidates."""
+
+    candidates: list[AgentEvalCandidateResponse]
+    total: int
+
+
 class AgentRunSummary(BaseModel):
     """Single agent run row for the operator dashboard."""
 

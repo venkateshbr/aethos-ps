@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.services.agent_run_ledger import stable_payload_hash
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 _TASKS_TABLE = "hitl_tasks"
 _SUGGESTIONS_TABLE = "agent_suggestions"
 _CORRECTIONS_TABLE = "agent_corrections"
+_EVAL_CANDIDATES_TABLE = "agent_eval_candidates"
 
 
 class InboxRepository:
@@ -155,9 +157,71 @@ class InboxRepository:
             "correction_type": correction_type,
             "corrected_by": corrected_by,
         }
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             lambda: self.db.table(_CORRECTIONS_TABLE).insert(payload).execute()
         )
+        rows = getattr(result, "data", None) or []
+        correction_id = rows[0].get("id") if rows else None
+        if correction_id:
+            await self._record_eval_candidate(
+                correction_id=str(correction_id),
+                suggestion_id=suggestion_id,
+                agent_name=agent_name,
+                action_type=action_type,
+                original_output=original_output,
+                corrected_output=corrected_output or {},
+                correction_type=correction_type,
+            )
+
+    async def _record_eval_candidate(
+        self,
+        *,
+        correction_id: str,
+        suggestion_id: str,
+        agent_name: str,
+        action_type: str,
+        original_output: dict,
+        corrected_output: dict,
+        correction_type: str,
+    ) -> None:
+        """Best-effort eval-candidate index for human corrections."""
+        try:
+            suggestion = await self.get_suggestion(suggestion_id)
+            input_snapshot = (
+                suggestion.get("input_snapshot") if isinstance(suggestion, dict) else None
+            )
+            payload = {
+                "tenant_id": self.tenant_id,
+                "agent_correction_id": correction_id,
+                "agent_suggestion_id": suggestion_id,
+                "agent_name": agent_name,
+                "action_type": action_type,
+                "eval_case_key": f"{agent_name}:{action_type}:correction:{correction_id}",
+                "input_hash": (
+                    stable_payload_hash(input_snapshot)
+                    if input_snapshot is not None
+                    else None
+                ),
+                "original_output_hash": stable_payload_hash(original_output),
+                "corrected_output_hash": stable_payload_hash(corrected_output),
+                "reason": f"human_{correction_type}",
+            }
+            await asyncio.to_thread(
+                lambda: self.db.table(_EVAL_CANDIDATES_TABLE)
+                .upsert(payload, on_conflict="tenant_id,agent_correction_id")
+                .execute()
+            )
+        except Exception:
+            logger.warning(
+                "agent_eval_candidate_record_failed",
+                exc_info=True,
+                extra={
+                    "tenant_id": self.tenant_id,
+                    "agent_name": agent_name,
+                    "action_type": action_type,
+                    "agent_correction_id": correction_id,
+                },
+            )
 
     # ------------------------------------------------------------------
     # Helpers

@@ -110,6 +110,11 @@ _AGENT_TOOL_COLUMNS = (
     "output_hash,input_snapshot,output_snapshot,duration_ms,error_message,created_at"
 )
 
+_AGENT_EVAL_CANDIDATE_COLUMNS = (
+    "id,agent_correction_id,agent_suggestion_id,agent_name,action_type,eval_case_key,"
+    "status,input_hash,original_output_hash,corrected_output_hash,reason,created_at,updated_at"
+)
+
 
 class AgentAutonomyError(ValueError):
     """Raised when a level-change is invalid."""
@@ -377,6 +382,31 @@ class AgentsService:
             "tool_invocations": [self._tool_invocation(tool) for tool in tools],
         }
 
+    def list_eval_candidates(
+        self,
+        *,
+        agent_name: str | None = None,
+        status: str | None = "candidate",
+        limit: int = 50,
+    ) -> dict:
+        """Return correction-backed eval candidates for review/export."""
+        capped_limit = max(1, min(limit, 100))
+        query = (
+            self.db.table("agent_eval_candidates")
+            .select(_AGENT_EVAL_CANDIDATE_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .order("created_at", desc=True)
+            .limit(capped_limit)
+        )
+        if agent_name:
+            query = query.eq("agent_name", agent_name)
+        if status:
+            query = query.eq("status", status)
+
+        rows = query.execute().data or []
+        candidates = [self._eval_candidate(row) for row in rows]
+        return {"candidates": candidates, "total": len(candidates)}
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -567,6 +597,24 @@ class AgentsService:
             "duration_ms": row.get("duration_ms"),
             "error_message": row.get("error_message"),
             "created_at": str(row["created_at"]),
+        }
+
+    @staticmethod
+    def _eval_candidate(row: dict) -> dict:
+        return {
+            "id": str(row["id"]),
+            "agent_correction_id": str(row["agent_correction_id"]),
+            "agent_suggestion_id": str(row["agent_suggestion_id"]),
+            "agent_name": row["agent_name"],
+            "action_type": row["action_type"],
+            "eval_case_key": row["eval_case_key"],
+            "status": row["status"],
+            "input_hash": row.get("input_hash"),
+            "original_output_hash": row.get("original_output_hash"),
+            "corrected_output_hash": row.get("corrected_output_hash"),
+            "reason": row.get("reason"),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
         }
 
     @staticmethod

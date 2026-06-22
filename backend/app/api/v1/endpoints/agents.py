@@ -20,6 +20,8 @@ from app.models.agents import (
     AgentAutonomyStatus,
     AgentAutonomyStatusResponse,
     AgentControlResponse,
+    AgentEvalCandidateListResponse,
+    AgentEvalCandidateResponse,
     AgentRunDetailResponse,
     AgentRunListResponse,
     AgentRunSummary,
@@ -125,6 +127,36 @@ def get_agent_run(
             detail="Agent run not found",
         )
     return AgentRunDetailResponse(**row)
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/eval-candidates
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/eval-candidates",
+    response_model=AgentEvalCandidateListResponse,
+    summary="Correction-backed eval candidates",
+)
+def list_eval_candidates(
+    agent_name: str | None = None,
+    candidate_status: str | None = Query(default="candidate", alias="status"),
+    limit: int = 50,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentEvalCandidateListResponse:
+    """Return human-correction candidates for eval-pack review/export."""
+    raw = svc.list_eval_candidates(
+        agent_name=agent_name,
+        status=candidate_status,
+        limit=limit,
+    )
+    candidates = [AgentEvalCandidateResponse(**item) for item in raw["candidates"]]
+    return AgentEvalCandidateListResponse(
+        candidates=candidates,
+        total=raw["total"],
+    )
 
 
 # ---------------------------------------------------------------------------
