@@ -19,6 +19,21 @@ export interface EngagementSummary {
 // Backend returns a bare array (not a paginated wrapper).
 export type EngagementListResponse = EngagementSummary[];
 
+/** Financial summary returned by GET /api/v1/engagements/{id}/summary */
+export interface EngagementFinancialSummary {
+  engagement_id: string;
+  engagement_name: string;
+  total_value: string | null;
+  currency: string;
+  billed_to_date: string;
+  billed_pct: number | null;
+  wip_hours: number;
+  wip_value: string;
+  remaining_value: string | null;
+  invoice_count: number;
+  last_invoice_date: string | null;
+}
+
 export interface EngagementDetail extends EngagementSummary {
   description?: string | null;
   created_at?: string;
@@ -35,6 +50,7 @@ export interface EngagementCreate {
   total_value?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  description?: string | null;
   rate_card_id?: string | null;
 }
 
@@ -75,5 +91,9 @@ export class EngagementService {
     let params = new HttpParams();
     if (filters?.engagement_id) params = params.set('engagement_id', filters.engagement_id);
     return this.http.get<ProjectListResponse>(`${this.base}/projects`, { params });
+  }
+
+  getEngagementFinancialSummary(id: string): Observable<EngagementFinancialSummary> {
+    return this.http.get<EngagementFinancialSummary>(`${this.base}/engagements/${id}/summary`);
   }
 }

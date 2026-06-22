@@ -6,7 +6,7 @@
  */
 import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -177,6 +177,12 @@ interface ClientSummary {
               <option value="both">Both (Customer &amp; Vendor)</option>
             </select>
           </div>
+          <!-- Phone -->
+          <div>
+            <label for="contact-phone" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Phone</label>
+            <input id="contact-phone" type="tel" formControlName="phone" placeholder="+44 20 7123 4567"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm" />
+          </div>
           @if (createError()) {
             <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">{{ createError() }}</div>
           }
@@ -229,6 +235,7 @@ export class ClientsListComponent implements OnInit {
   createForm = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
     kind: ['customer' as ContactKind, [Validators.required]],
+    phone: [''],
   });
 
   ngOnInit(): void {
@@ -269,7 +276,7 @@ export class ClientsListComponent implements OnInit {
   }
 
   openCreateForm(): void {
-    this.createForm.reset({ name: '', kind: 'customer' });
+    this.createForm.reset({ name: '', kind: 'customer', phone: '' });
     this.createError.set(null);
     this.showCreateForm.set(true);
   }
@@ -286,7 +293,7 @@ export class ClientsListComponent implements OnInit {
     this.creating.set(true);
     this.createError.set(null);
     const v = this.createForm.getRawValue();
-    this.http.post<ClientSummary>('/api/v1/clients', { name: v.name, kind: v.kind }).subscribe({
+    this.http.post<ClientSummary>('/api/v1/clients', { name: v.name, kind: v.kind, phone: v.phone || null }).subscribe({
       next: (newContact) => {
         this.contacts.update(list => [newContact, ...list]);
         this.creating.set(false);

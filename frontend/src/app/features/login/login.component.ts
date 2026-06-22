@@ -156,7 +156,7 @@ export class LoginComponent {
       if (userId) {
         const { data: memberships, error: membershipErr } = await this.supabaseSvc.client
           .from('tenant_users')
-          .select('tenant_id')
+          .select('tenant_id, role')
           .eq('user_id', userId)
           .is('deleted_at', null)
           .limit(1);
@@ -165,7 +165,14 @@ export class LoginComponent {
           this.auth.clearToken();
           return;
         }
-        this.auth.setTenantId(memberships[0].tenant_id);
+        const membership = memberships[0] as { tenant_id: string; role?: string | null };
+        if (!membership.role) {
+          this.error.set('Sign-in succeeded but this account has no tenant role. Contact support.');
+          this.auth.clearToken();
+          return;
+        }
+        this.auth.setTenantId(membership.tenant_id);
+        this.auth.setRole(membership.role);
       }
 
       this.router.navigate(['/app/copilot']);

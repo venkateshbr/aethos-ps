@@ -20,6 +20,7 @@ import { SupabaseService } from './supabase.service';
 
 const STORAGE_KEY = 'aethos_token';
 const TENANT_STORAGE_KEY = 'aethos_tenant_id';
+const ROLE_STORAGE_KEY = 'aethos_role';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -29,9 +30,13 @@ export class AuthService {
   /** Reactive tenant_id signal — components read the current tenant. */
   private _tenantId = signal<string | null>(this.readTenantFromStorage());
 
+  /** Reactive tenant role signal — used for UI affordances; backend still enforces RBAC. */
+  private _role = signal<string | null>(this.readRoleFromStorage());
+
   /** Public read-only signal of the current access token (null when signed out). */
   readonly token = this._token.asReadonly();
   readonly tenantId = this._tenantId.asReadonly();
+  readonly role = this._role.asReadonly();
 
   /** True when a token is present. Derived signal — use in templates & guards. */
   readonly isAuthenticated = computed(() => this._token() !== null);
@@ -65,7 +70,7 @@ export class AuthService {
     // restored from storage with no tenant_id means every API call 403s with
     // "Tenant context missing". Re-resolve the membership the same way login
     // does instead of leaving the user in a half-broken session.
-    if (t && !tid) {
+    if (t && (!tid || !this._role())) {
       void this.resolveTenantFromMembership();
     }
   }
@@ -86,7 +91,7 @@ export class AuthService {
       }
       const { data: memberships, error } = await this.supa.client
         .from('tenant_users')
-        .select('tenant_id')
+        .select('tenant_id, role')
         .eq('user_id', userId)
         .is('deleted_at', null)
         .limit(1);
@@ -95,6 +100,9 @@ export class AuthService {
         return;
       }
       this.setTenantId(memberships[0].tenant_id as string);
+      if (memberships[0].role) {
+        this.setRole(memberships[0].role as string);
+      }
     } catch {
       this.clearToken();
     }
@@ -119,11 +127,13 @@ export class AuthService {
   clearToken(): void {
     this._token.set(null);
     this._tenantId.set(null);
+    this._role.set(null);
     clearAccessToken();
     clearTenantId();
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TENANT_STORAGE_KEY);
+      localStorage.removeItem(ROLE_STORAGE_KEY);
     }
   }
 
@@ -149,6 +159,17 @@ export class AuthService {
     return this._tenantId();
   }
 
+  setRole(role: string): void {
+    this._role.set(role);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(ROLE_STORAGE_KEY, role);
+    }
+  }
+
+  getRole(): string | null {
+    return this._role();
+  }
+
   private readFromStorage(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(STORAGE_KEY);
@@ -157,5 +178,10 @@ export class AuthService {
   private readTenantFromStorage(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(TENANT_STORAGE_KEY);
+  }
+
+  private readRoleFromStorage(): string | null {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(ROLE_STORAGE_KEY);
   }
 }

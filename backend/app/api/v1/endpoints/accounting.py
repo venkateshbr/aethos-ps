@@ -1,9 +1,11 @@
-"""Accounting endpoints — period management.
+"""Accounting endpoints — period management and manual journal entries.
 
 Endpoints:
-  GET    /api/v1/accounting/periods               — list all periods with lock status
-  POST   /api/v1/accounting/periods/{period}/lock — lock a period (admin+)
-  DELETE /api/v1/accounting/periods/{period}/lock — unlock a period (owner only)
+  GET    /api/v1/accounting/periods                — list all periods with lock status
+  POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
+  DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
+  POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
+  GET    /api/v1/accounting/journal-entries        — list journal entries (viewer+)
 
 Period format: "YYYY-MM" (e.g. "2026-05").
 
@@ -22,13 +24,19 @@ import logging
 import re
 from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
+from app.models.accounting import (
+    JournalEntryListItem,
+    ManualJournalEntryIn,
+    ManualJournalEntryResponse,
+)
+from app.services.manual_journal_service import ManualJournalService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -256,4 +264,56 @@ async def unlock_period(
         period=period,
         action="unlocked",
         message=f"Period {period} has been unlocked.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Manual Journal Entry routes
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/journal-entries",
+    response_model=ManualJournalEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_manual_journal(
+    payload: ManualJournalEntryIn,
+    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> ManualJournalEntryResponse:
+    """Post a manual GL journal entry.
+
+    All entries are gated by the accounting_guardian (L3 hard gate):
+    balance check, period lock, and account validity. The journal is
+    immutable once posted — corrections require reversing entries.
+
+    RBAC: manager or owner only.
+    """
+    svc = ManualJournalService(db=db, tenant_id=tenant_id, user_id=current_user.user_id)
+    return await svc.post_manual_journal(payload)
+
+
+@router.get("/journal-entries", response_model=list[JournalEntryListItem])
+async def list_journal_entries(
+    reference_type: str | None = Query(None, description="Filter by reference_type (e.g. 'manual', 'invoice')"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum rows to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> list[JournalEntryListItem]:
+    """List journal entries for the tenant, newest first.
+
+    Optionally filter by ``reference_type`` (e.g. ``manual``, ``invoice``,
+    ``bill``, ``payment``). Paginate with ``limit`` and ``offset``.
+
+    RBAC: viewer+ (all authenticated tenant members).
+    """
+    svc = ManualJournalService(db=db, tenant_id=tenant_id, user_id=_current_user.user_id)
+    return await svc.list_journal_entries(
+        reference_type=reference_type,
+        limit=limit,
+        offset=offset,
     )

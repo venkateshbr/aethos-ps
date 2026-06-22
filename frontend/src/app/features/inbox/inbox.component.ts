@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { HitlService, HitlTask } from '../../core/services/hitl.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
@@ -11,6 +12,23 @@ import { userMessageForError } from '../../core/utils/error-message';
 
 /** HITL task kinds that originate from an AI document extraction (#127). */
 const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_draft', 'create_bill_draft']);
+
+/** Human-readable labels for intelligence_alert sub-types. */
+const INTELLIGENCE_ALERT_LABELS: Record<string, string> = {
+  UNBILLED_ENGAGEMENT:       'Unbilled Engagement Detected',
+  MARGIN_COMPRESSION:        'Margin Compression Warning',
+  EXPENSE_SPIKE:             'Unusual Expense Spike',
+  FX_EXPOSURE:               'FX Currency Exposure',
+  RETAINER_UNDER_UTILIZATION: 'Retainer Under-Utilization',
+  OVERDUE_ESCALATION:        'Overdue Invoice Escalation',
+};
+
+/** Route prefix per related entity type for intelligence_alert navigation. */
+const ENTITY_ROUTE: Record<string, string> = {
+  engagement: '/app/engagements',
+  invoice:    '/app/invoices',
+  project:    '/app/projects',
+};
 
 interface EditField {
   key: string;
@@ -215,6 +233,49 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                   </div>
                 }
               </div>
+            } @else if (task.kind === 'intelligence_alert') {
+              <!-- Intelligence alert card -->
+              <div
+                [id]="'task-' + task.id"
+                [class]="cardClass(idx)"
+                (click)="focusCard(idx)"
+                role="article"
+                [attr.aria-label]="task.title"
+                [attr.aria-current]="idx === focusedIdx() ? 'true' : null"
+              >
+                <div class="flex items-center gap-2 mb-3">
+                  <mat-icon class="text-amber-400" style="font-size:1.1rem;width:1.1rem;height:1.1rem;" aria-hidden="true">psychology</mat-icon>
+                  <span class="text-xs font-medium uppercase tracking-wide text-amber-400">Intelligence Alert</span>
+                  <app-confidence-chip [confidence]="task.confidence" />
+                </div>
+                <p class="text-sm font-semibold text-text-primary mb-1">
+                  {{ alertLabel(task) }}
+                </p>
+                @if (task.suggestion_payload?.['metric_current']) {
+                  <p class="text-xs text-text-secondary mb-1">{{ task.suggestion_payload!['metric_current'] }}</p>
+                }
+                @if (task.suggestion_payload?.['recommended_action']) {
+                  <p class="text-xs text-text-muted mb-4">{{ task.suggestion_payload!['recommended_action'] }}</p>
+                }
+                <div class="flex items-center gap-2 flex-wrap">
+                  <button
+                    (click)="investigate(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="px-3 py-1.5 text-xs font-medium rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                    [attr.aria-label]="'Investigate ' + alertLabel(task)"
+                  >
+                    Investigate
+                  </button>
+                  <button
+                    (click)="reject(task, $event)"
+                    [disabled]="actioning() === task.id"
+                    class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-muted hover:text-text-secondary hover:border-border-default transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+                    aria-label="Dismiss alert for 14 days"
+                  >
+                    Dismiss (14d)
+                  </button>
+                </div>
+              </div>
             } @else {
               <!-- Regular task card -->
               <div
@@ -410,6 +471,7 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
 })
 export class InboxComponent implements OnInit {
   private hitlSvc = inject(HitlService);
+  private router = inject(Router);
 
   loading = signal(true);
   hasError = signal(false);
@@ -428,10 +490,11 @@ export class InboxComponent implements OnInit {
   savingEdit = signal(false);
 
   readonly kindFilters = [
-    { value: 'all',               label: 'All' },
+    { value: 'all',                  label: 'All' },
     { value: 'create_engagement_draft', label: 'Engagements' },
     { value: 'create_expense_draft',    label: 'Expenses' },
     { value: 'create_bill_draft',       label: 'Bills' },
+    { value: 'intelligence_alert',      label: 'Alerts' },
   ] as const;
 
   tasks = computed(() => {
@@ -667,6 +730,28 @@ export class InboxComponent implements OnInit {
         this.savingEdit.set(false);
       },
     });
+  }
+
+  /** Returns a human-friendly label for an intelligence_alert task. */
+  alertLabel(task: HitlTask): string {
+    const alertType = String(task.suggestion_payload?.['alert_type'] ?? '');
+    return INTELLIGENCE_ALERT_LABELS[alertType] ?? task.title;
+  }
+
+  /**
+   * Navigates to the related entity for an intelligence_alert card so the user
+   * can investigate the underlying data before deciding.
+   * Route: engagement → /app/engagements/:id, invoice → /app/invoices/:id,
+   *        project → /app/projects (list, since project id may not yield a detail route).
+   */
+  investigate(task: HitlTask, e?: Event): void {
+    e?.stopPropagation();
+    const entityType = task.related_entity_type ?? '';
+    const entityId   = task.related_entity_id;
+    const base = ENTITY_ROUTE[entityType];
+    if (!base) return;
+    const route = entityId ? [base, entityId] : [base];
+    this.router.navigate(route);
   }
 
   approveAll(): void {

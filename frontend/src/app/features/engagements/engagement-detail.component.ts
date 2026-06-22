@@ -1,5 +1,5 @@
 import { Component, computed, inject, signal, OnInit } from '@angular/core';
-import { CommonModule, DatePipe, TitleCasePipe } from '@angular/common';
+import { CommonModule, DatePipe, DecimalPipe, TitleCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -8,7 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { firstValueFrom } from 'rxjs';
 
-import { EngagementService, EngagementDetail } from '../../core/services/engagement.service';
+import { EngagementService, EngagementDetail, EngagementFinancialSummary } from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { ProjectsListComponent } from '../projects/projects-list.component';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
@@ -52,6 +52,7 @@ interface EmployeeMeta {
     CommonModule,
     FormsModule,
     DatePipe,
+    DecimalPipe,
     TitleCasePipe,
     MatButtonModule,
     MatIconModule,
@@ -128,6 +129,48 @@ interface EmployeeMeta {
           </div>
         </div>
 
+        <!-- Financial summary (#242) -->
+        @if (financialSummary()) {
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <!-- Total Value -->
+            <div class="bg-surface-raised rounded-lg p-4 border border-border-default">
+              <div class="text-xs text-text-muted uppercase tracking-wide mb-1">Total Value</div>
+              <div class="text-lg font-semibold text-text-primary font-mono">
+                {{ financialSummary()!.total_value ? (financialSummary()!.total_value! | money: financialSummary()!.currency) : '—' }}
+              </div>
+            </div>
+            <!-- Billed to Date -->
+            <div class="bg-surface-raised rounded-lg p-4 border border-border-default">
+              <div class="text-xs text-text-muted uppercase tracking-wide mb-1">Billed to Date</div>
+              <div class="text-lg font-semibold text-accent-light font-mono">
+                {{ financialSummary()!.billed_to_date | money: financialSummary()!.currency }}
+              </div>
+              @if (financialSummary()!.billed_pct !== null) {
+                <div class="mt-1 text-xs text-text-muted">{{ financialSummary()!.billed_pct | number:'1.0-0' }}% of total</div>
+                <div class="mt-1 h-1 bg-surface-base rounded-full overflow-hidden">
+                  <div class="h-full bg-accent rounded-full transition-all" [style.width.%]="financialSummary()!.billed_pct"></div>
+                </div>
+              }
+            </div>
+            <!-- WIP (Unbilled) -->
+            <div class="bg-surface-raised rounded-lg p-4 border border-border-default">
+              <div class="text-xs text-text-muted uppercase tracking-wide mb-1">WIP (Unbilled)</div>
+              <div class="text-lg font-semibold text-confidence-med font-mono">
+                {{ financialSummary()!.wip_value | money: financialSummary()!.currency }}
+              </div>
+              <div class="mt-1 text-xs text-text-muted">{{ financialSummary()!.wip_hours | number:'1.0-1' }} hrs</div>
+            </div>
+            <!-- Remaining -->
+            <div class="bg-surface-raised rounded-lg p-4 border border-border-default">
+              <div class="text-xs text-text-muted uppercase tracking-wide mb-1">Remaining</div>
+              <div class="text-lg font-semibold text-text-primary font-mono">
+                {{ financialSummary()!.remaining_value ? (financialSummary()!.remaining_value! | money: financialSummary()!.currency) : '—' }}
+              </div>
+              <div class="mt-1 text-xs text-text-muted">{{ financialSummary()!.invoice_count }} invoice(s) sent</div>
+            </div>
+          </div>
+        }
+
         <!-- Key metrics grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
@@ -163,6 +206,13 @@ interface EmployeeMeta {
             </div>
           }
         </div>
+
+        @if (engagement()?.description) {
+          <div class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Scope / Description</dt>
+            <dd class="text-sm text-text-secondary leading-relaxed">{{ engagement()!.description }}</dd>
+          </div>
+        }
 
         <!-- Projects section -->
         <div class="mt-2">
@@ -331,6 +381,9 @@ export class EngagementDetailComponent implements OnInit {
   error = signal<string | null>(null);
   engagement = signal<EngagementDetail | null>(null);
 
+  /** Financial summary — loaded separately; fails silently (#242). */
+  financialSummary = signal<EngagementFinancialSummary | null>(null);
+
   // -------- Invoice drawer state (#156) --------
   drawerOpen = signal(false);
   loadingEntries = signal(false);
@@ -395,6 +448,12 @@ export class EngagementDetailComponent implements OnInit {
         this.error.set(userMessageForError(err, 'Engagement'));
         this.loading.set(false);
       },
+    });
+
+    // Load financial summary independently — fail silently; it's an enhancement (#242).
+    this.engagementService.getEngagementFinancialSummary(id).subscribe({
+      next: s => this.financialSummary.set(s),
+      error: () => {}, // intentional: summary is non-blocking
     });
   }
 

@@ -16,10 +16,12 @@ Security / quality gates enforced here:
 from __future__ import annotations
 
 import datetime
+import difflib
 import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
 import openai
@@ -50,15 +52,19 @@ class CopilotAgent:
 
     SYSTEM_PROMPT = (
         "You are Aethos Copilot, an AI assistant for professional services firms.\n"
-        "You help users manage engagements, projects, invoices, and billing.\n"
+        "You help users manage engagements, projects, invoices, billing, and time tracking.\n"
         "Today's date: {date}.\n"
         "Tenant: {tenant_id}.\n\n"
-        "You have access to tools to look up data. Always use tools to get real data — "
-        "never invent numbers.\n"
+        "You have access to tools to look up data and perform actions. Always use tools to get "
+        "real data — never invent numbers.\n"
         "When users ask about their engagements or projects, use the query_engagements tool.\n"
         "When users ask about outstanding invoices or receivables, use get_ar_aging.\n"
         "When users ask about outstanding bills or payables, use get_ap_aging.\n"
         "When users ask about unbilled work or WIP, use get_wip.\n"
+        "When users ask to log hours or time (e.g. 'log 3 hours on Nexus for today'), "
+        "use the log_time_entry tool — match the project name from what the user says.\n"
+        "When users ask to update a billing rate or set an employee's rate "
+        "(e.g. 'Set Marcus rate to £380/hr'), use the update_rate_card tool.\n"
         "Be concise and professional. Format monetary values with their currency symbol."
     )
 
@@ -146,6 +152,84 @@ class CopilotAgent:
                     }
                 },
                 "required": [],
+            },
+        },
+        {
+            "name": "log_time_entry",
+            "description": (
+                "Log billable or non-billable hours to a project. "
+                "Use when the user asks to log time, record hours, or track work "
+                "(e.g. 'Log 3 hours on Nexus CFO Advisory for today')."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "project_name": {
+                        "type": "string",
+                        "description": (
+                            "Name of the project to log time against. "
+                            "Will be fuzzy-matched to active projects."
+                        ),
+                    },
+                    "hours": {
+                        "type": "number",
+                        "description": "Number of hours to log (e.g. 4.5).",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "ISO date YYYY-MM-DD. Defaults to today if omitted.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What was done during this time.",
+                    },
+                    "billable": {
+                        "type": "boolean",
+                        "description": "Whether the hours are billable to the client. Default true.",
+                    },
+                },
+                "required": ["project_name", "hours"],
+            },
+        },
+        {
+            "name": "update_rate_card",
+            "description": (
+                "Set or update an employee's billing rate — either their default rate "
+                "or a rate specific to an engagement. "
+                "Use when the user asks to change a rate "
+                "(e.g. 'Set Marcus rate on Nexus to £380/hr' or 'Update Alice default rate to £300')."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "employee_name": {
+                        "type": "string",
+                        "description": (
+                            "Name of the employee whose rate to update. "
+                            "Will be fuzzy-matched to employees."
+                        ),
+                    },
+                    "rate": {
+                        "type": "number",
+                        "description": "New hourly billing rate (e.g. 380.0).",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "3-letter currency code, e.g. GBP, USD. Default GBP.",
+                    },
+                    "engagement_name": {
+                        "type": "string",
+                        "description": (
+                            "Name of the engagement to set the rate for. "
+                            "If omitted, updates the employee's default bill rate."
+                        ),
+                    },
+                    "effective_date": {
+                        "type": "string",
+                        "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                    },
+                },
+                "required": ["employee_name", "rate"],
             },
         },
     ]
@@ -397,6 +481,10 @@ class CopilotAgent:
 
             svc = ReportsService(self.deps.db_client, self.deps.tenant_id)  # type: ignore[arg-type]
             return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
+        if tool_name == "log_time_entry":
+            return await self._log_time_entry(tool_input)
+        if tool_name == "update_rate_card":
+            return await self._update_rate_card(tool_input)
         logger.warning(
             "Unknown tool requested by LLM",
             extra={"tool_name": tool_name, "tenant_id": self.deps.tenant_id},
@@ -510,3 +598,285 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc), "entries": []}
+
+    async def _log_time_entry(self, args: dict) -> dict:
+        """Log a time entry via chat — fuzzy-matches project name, resolves employee from user_id.
+
+        Security: only non-PII fields are returned to the LLM (no employee names,
+        emails, or raw rates — only hours, project name, and calculated billable value).
+        """
+        import asyncio
+
+        try:
+            db = self.deps.db_client  # type: ignore[assignment]
+
+            # 1. Fetch active projects for this tenant
+            def _fetch_projects() -> list[dict]:
+                result = (
+                    db.table("projects")
+                    .select("id, name, engagement_id")
+                    .eq("tenant_id", self.deps.tenant_id)
+                    .eq("status", "active")
+                    .is_("deleted_at", "null")
+                    .execute()
+                )
+                return result.data or []
+
+            projects = await asyncio.to_thread(_fetch_projects)
+
+            if not projects:
+                return {"error": "No active projects found for this tenant."}
+
+            # 2. Fuzzy-match project name
+            project_names = [p["name"] for p in projects]
+            query_name = args.get("project_name", "")
+            matches = difflib.get_close_matches(query_name, project_names, n=1, cutoff=0.4)
+
+            if not matches:
+                return {
+                    "error": (
+                        f"Could not find a project matching '{query_name}'. "
+                        f"Active projects: {', '.join(project_names)}"
+                    )
+                }
+
+            matched_project = next(p for p in projects if p["name"] == matches[0])
+
+            # 3. Resolve employee from authenticated user_id — optional (manager may log on behalf)
+            def _fetch_employee() -> list[dict]:
+                result = (
+                    db.table("employees")
+                    .select("id, default_bill_rate, default_bill_rate_currency")
+                    .eq("tenant_id", self.deps.tenant_id)
+                    .eq("user_id", str(self.deps.user_id))
+                    .limit(1)
+                    .execute()
+                )
+                return result.data or []
+
+            employee_rows = await asyncio.to_thread(_fetch_employee)
+            employee_id: str | None = employee_rows[0]["id"] if employee_rows else None
+            bill_rate = (
+                Decimal(str(employee_rows[0].get("default_bill_rate") or "0"))
+                if employee_rows
+                else Decimal("0")
+            )
+
+            # 4. Build and insert the entry
+            entry_date = args.get("date") or datetime.date.today().isoformat()
+            hours = Decimal(str(args.get("hours", 0)))
+            billable: bool = args.get("billable", True)
+            description: str = args.get("description") or ""
+
+            payload: dict = {
+                "tenant_id": str(self.deps.tenant_id),
+                "project_id": matched_project["id"],
+                "date": entry_date,
+                "hours": str(hours),
+                "description": description,
+                "billable": billable,
+                "billing_status": "unbilled" if billable else "non_billable",
+                "status": "submitted",
+            }
+            if employee_id:
+                payload["employee_id"] = employee_id
+
+            def _insert() -> dict:
+                result = db.table("time_entries").insert(payload).execute()
+                return result.data[0]
+
+            row = await asyncio.to_thread(_insert)
+
+            billable_value = (hours * bill_rate).quantize(Decimal("0.01")) if billable else Decimal("0.00")
+
+            logger.info(
+                "log_time_entry tool: entry created",
+                extra={
+                    "tenant_id": self.deps.tenant_id,
+                    "project_id": matched_project["id"],
+                    "hours": str(hours),
+                    "billable": billable,
+                },
+            )
+
+            return {
+                "logged": True,
+                "project": matched_project["name"],
+                "hours": float(hours),
+                "date": entry_date,
+                "billable": billable,
+                "billable_value": str(billable_value),
+                "description": description,
+                "entry_id": row["id"],
+            }
+
+        except Exception as exc:
+            logger.error(
+                "log_time_entry tool failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _update_rate_card(self, args: dict) -> dict:
+        """Set or update an employee's billing rate via chat.
+
+        Two paths:
+        - engagement_name provided: upsert a rate_card_lines row scoped to that engagement.
+        - engagement_name absent: update the employee's default_bill_rate on the employees table.
+
+        Security: employee names are looked up from DB and passed back only as confirmation
+        — no email, user_id, or cost rates are returned to the LLM.
+        """
+        import asyncio
+
+        try:
+            db = self.deps.db_client  # type: ignore[assignment]
+
+            # 1. Fetch employees for fuzzy matching
+            def _fetch_employees() -> list[dict]:
+                result = (
+                    db.table("employees")
+                    .select("id, first_name, last_name, default_bill_rate, default_bill_rate_currency")
+                    .eq("tenant_id", self.deps.tenant_id)
+                    .execute()
+                )
+                return result.data or []
+
+            employees = await asyncio.to_thread(_fetch_employees)
+
+            if not employees:
+                return {"error": "No employees found for this tenant."}
+
+            # Build full-name list for fuzzy matching
+            emp_names = [f"{e['first_name']} {e['last_name']}" for e in employees]
+            query_name = args.get("employee_name", "")
+            matches = difflib.get_close_matches(query_name, emp_names, n=1, cutoff=0.4)
+
+            if not matches:
+                return {
+                    "error": (
+                        f"Could not find employee '{query_name}'. "
+                        f"Employees: {', '.join(emp_names)}"
+                    )
+                }
+
+            employee = next(
+                e for e in employees if f"{e['first_name']} {e['last_name']}" == matches[0]
+            )
+            employee_full_name = f"{employee['first_name']} {employee['last_name']}"
+
+            rate = Decimal(str(args.get("rate", 0)))
+            currency: str = args.get("currency") or "GBP"
+            effective_date: str = args.get("effective_date") or datetime.date.today().isoformat()
+
+            # 2. If engagement_name given, upsert a rate_card_lines row for that engagement
+            if args.get("engagement_name"):
+                def _fetch_engagements() -> list[dict]:
+                    result = (
+                        db.table("engagements")
+                        .select("id, name")
+                        .eq("tenant_id", self.deps.tenant_id)
+                        .is_("deleted_at", "null")
+                        .execute()
+                    )
+                    return result.data or []
+
+                engagements = await asyncio.to_thread(_fetch_engagements)
+                eng_names = [e["name"] for e in engagements]
+                eng_matches = difflib.get_close_matches(
+                    args["engagement_name"], eng_names, n=1, cutoff=0.4
+                )
+
+                if not eng_matches:
+                    return {
+                        "error": (
+                            f"Could not find engagement '{args['engagement_name']}'. "
+                            f"Engagements: {', '.join(eng_names) if eng_names else 'none found'}"
+                        )
+                    }
+
+                engagement = next(e for e in engagements if e["name"] == eng_matches[0])
+
+                # Check for existing rate_card_lines row scoped to this employee+engagement
+                def _fetch_existing_line() -> list[dict]:
+                    result = (
+                        db.table("rate_card_lines")
+                        .select("id")
+                        .eq("tenant_id", self.deps.tenant_id)
+                        .eq("engagement_id", engagement["id"])
+                        .eq("employee_id", employee["id"])
+                        .limit(1)
+                        .execute()
+                    )
+                    return result.data or []
+
+                existing = await asyncio.to_thread(_fetch_existing_line)
+
+                if existing:
+                    def _update_line() -> None:
+                        db.table("rate_card_lines").update({
+                            "rate": str(rate),
+                            "currency": currency,
+                        }).eq("id", existing[0]["id"]).execute()
+
+                    await asyncio.to_thread(_update_line)
+                else:
+                    def _insert_line() -> None:
+                        db.table("rate_card_lines").insert({
+                            "tenant_id": str(self.deps.tenant_id),
+                            "engagement_id": engagement["id"],
+                            "employee_id": employee["id"],
+                            "rate": str(rate),
+                            "currency": currency,
+                            "effective_date": effective_date,
+                        }).execute()
+
+                    await asyncio.to_thread(_insert_line)
+
+                logger.info(
+                    "update_rate_card tool: engagement rate updated",
+                    extra={
+                        "tenant_id": self.deps.tenant_id,
+                        "engagement_id": engagement["id"],
+                        "employee_id": employee["id"],
+                    },
+                )
+
+                return {
+                    "updated": True,
+                    "employee": employee_full_name,
+                    "engagement": engagement["name"],
+                    "new_rate": f"{currency} {rate}/hr",
+                }
+
+            # 3. No engagement — update default bill rate on employees table
+            def _update_default_rate() -> None:
+                db.table("employees").update({
+                    "default_bill_rate": str(rate),
+                    "default_bill_rate_currency": currency,
+                }).eq("id", employee["id"]).execute()
+
+            await asyncio.to_thread(_update_default_rate)
+
+            logger.info(
+                "update_rate_card tool: default rate updated",
+                extra={
+                    "tenant_id": self.deps.tenant_id,
+                    "employee_id": employee["id"],
+                },
+            )
+
+            return {
+                "updated": True,
+                "employee": employee_full_name,
+                "new_default_rate": f"{currency} {rate}/hr",
+            }
+
+        except Exception as exc:
+            logger.error(
+                "update_rate_card tool failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}

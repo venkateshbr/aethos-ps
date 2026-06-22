@@ -42,6 +42,24 @@ export interface RevenueRow {
   currency?: string;
 }
 
+export interface TrialBalanceLine {
+  account_code: string;
+  account_name: string;
+  account_type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+  total_dr: string;
+  total_cr: string;
+  net: string;
+}
+
+export interface TrialBalanceReport {
+  as_of_period: string | null;
+  lines: TrialBalanceLine[];
+  grand_total_dr: string;
+  grand_total_cr: string;
+  is_balanced: boolean;
+  generated_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private http = inject(HttpClient);
@@ -64,4 +82,9 @@ export class ReportsService {
 
   getRevenueByEngagement = (): Observable<RevenueRow[]> =>
     this.http.get<RevenueRow[]>(`${this.base}/revenue-by-engagement`);
+
+  getTrialBalance = (asOfPeriod?: string): Observable<TrialBalanceReport> => {
+    const params = asOfPeriod ? `?as_of_period=${asOfPeriod}` : '';
+    return this.http.get<TrialBalanceReport>(`${this.base}/trial-balance${params}`);
+  };
 }

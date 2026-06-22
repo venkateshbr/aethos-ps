@@ -88,7 +88,7 @@ def build_document_content(prompt: str, document_bytes: bytes, mime_type: str) -
 
 
 def mask_pii(text: str) -> str:
-    """Redact SSN-like, credit-card-like, and email patterns before LLM calls.
+    """Redact SSN-like, credit-card-like, email, and tax-ID patterns before LLM calls.
 
     This is a v1 stub. Week 6 will add a proper NER-based masker.
     Returns the text with sensitive patterns replaced by [REDACTED].
@@ -104,3 +104,34 @@ def mask_pii(text: str) -> str:
         text,
     )
     return text
+
+
+def mask_registration_number(reg_number: str) -> str:
+    """Mask a tax / registration number for safe LLM transmission.
+
+    Replaces the middle digits/characters with asterisks, keeping only the
+    first 4 and last 2 characters visible for context (e.g. format detection).
+
+    Examples:
+        "GB123456789"  → "GB12*****89"
+        "12-3456789"   → "12-3*****89"
+        "27AAPFU0939F1Z5" → "27AA*********Z5"
+    """
+    if not reg_number or len(reg_number) <= 6:
+        return "[REDACTED-REGNUM]"
+    return reg_number[:4] + ("*" * (len(reg_number) - 6)) + reg_number[-2:]
+
+
+def mask_address(address: str) -> str:
+    """Mask a street address before sending to LLM.
+
+    Keeps only the country/region portion (last comma-separated segment)
+    to allow country-cross-check without transmitting full postal details.
+    """
+    if not address:
+        return "[REDACTED-ADDR]"
+    parts = [p.strip() for p in address.split(",")]
+    if len(parts) > 1:
+        # Keep only the last segment (country or state/country)
+        return f"[REDACTED], {', '.join(parts[-1:])}"
+    return "[REDACTED-ADDR]"

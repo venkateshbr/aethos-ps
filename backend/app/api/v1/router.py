@@ -10,6 +10,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     accounting,
+    agents,
     auth,
     bill_payments,
     billing,
@@ -28,6 +29,7 @@ from app.api.v1.endpoints import (
     projects,
     rate_cards,
     reports,
+    service_catalogue,
     stripe_connect,
     tenants,
     time_entries,
@@ -62,3 +64,5 @@ api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["billing-runs"])
 api_router.include_router(fx_rates.router, prefix="/fx-rates", tags=["fx-rates"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
+api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
+api_router.include_router(service_catalogue.router, prefix="/services", tags=["services"])

@@ -24,6 +24,24 @@ class EmploymentType(StrEnum):
     consultant = "consultant"
 
 
+class PracticeArea(StrEnum):
+    accounting = "accounting"
+    tax = "tax"
+    cosec = "cosec"
+    payroll = "payroll"
+    advisory = "advisory"
+    other = "other"
+
+
+class Seniority(StrEnum):
+    partner = "partner"
+    director = "director"
+    manager = "manager"
+    senior = "senior"
+    associate = "associate"
+    analyst = "analyst"
+
+
 class EmployeeCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=120)
     last_name: str = Field(..., min_length=1, max_length=120)
@@ -37,6 +55,8 @@ class EmployeeCreate(BaseModel):
     available_hours_per_week: Decimal | None = Field(default=None, ge=0, le=168)
     manager_id: str | None = Field(default=None, max_length=36)
     skills: list[str] = Field(default_factory=list)
+    practice_area: PracticeArea | None = None
+    seniority: Seniority | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -53,6 +73,8 @@ class EmployeeUpdate(BaseModel):
     manager_id: str | None = Field(default=None, max_length=36)
     skills: list[str] | None = None
     status: str | None = Field(default=None, max_length=40)
+    practice_area: PracticeArea | None = None
+    seniority: Seniority | None = None
 
 
 class EmployeeResponse(BaseModel):
@@ -77,6 +99,8 @@ class EmployeeResponse(BaseModel):
     status: str
     created_at: str
     updated_at: str | None = None
+    practice_area: str | None = None
+    seniority: str | None = None
 
     @field_validator(
         "default_bill_rate", "cost_rate", "available_hours_per_week", mode="before"
