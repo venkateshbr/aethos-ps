@@ -8,11 +8,12 @@ RBAC:
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.assignments import (
@@ -31,8 +32,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+EngagementIdQuery = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Optional filter — when omitted, returns every project in the "
+            "current tenant (subject to RLS)."
+        ),
+    ),
+]
+LimitQuery = Annotated[int, Query(ge=1, le=500, description="Max rows to return")]
+OffsetQuery = Annotated[int, Query(ge=0, description="Pagination offset")]
 
-def _service(
+
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> ProjectService:
+    return ProjectService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> ProjectService:
@@ -55,17 +75,11 @@ def _expenses_service(
 
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
-    engagement_id: str | None = Query(
-        default=None,
-        description=(
-            "Optional filter — when omitted, returns every project in the "
-            "current tenant (subject to RLS)."
-        ),
-    ),
-    limit: int = Query(default=100, ge=1, le=500, description="Max rows to return"),
-    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+    engagement_id: EngagementIdQuery = None,
+    limit: LimitQuery = 100,
+    offset: OffsetQuery = 0,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: ProjectService = Depends(_service),  # noqa: B008
+    svc: ProjectService = Depends(_read_service),  # noqa: B008
 ) -> list[ProjectResponse]:
     # Bug #91: engagement_id is now optional. When None we list every project
     # in the tenant (RLS still scopes by tenant_id).
@@ -76,7 +90,7 @@ async def list_projects(
 async def create_project(
     payload: ProjectCreate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: ProjectService = Depends(_service),  # noqa: B008
+    svc: ProjectService = Depends(_write_service),  # noqa: B008
 ) -> ProjectResponse:
     return await svc.create_project(payload)
 
@@ -85,7 +99,7 @@ async def create_project(
 async def get_project(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: ProjectService = Depends(_service),  # noqa: B008
+    svc: ProjectService = Depends(_read_service),  # noqa: B008
 ) -> ProjectResponse:
     project = await svc.get_project(id)
     if project is None:
@@ -97,7 +111,7 @@ async def get_project(
 async def delete_project(
     id: str,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: ProjectService = Depends(_service),  # noqa: B008
+    svc: ProjectService = Depends(_write_service),  # noqa: B008
 ) -> None:
     """Soft-delete a project. Returns 409 if unbilled time entries exist."""
     await svc.delete_project(id)
