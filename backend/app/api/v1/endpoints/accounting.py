@@ -228,7 +228,7 @@ async def close_status(
     period: str,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> PeriodCloseStatusResponse:
     """Return the derived close checklist and lock blockers for a period."""
     _validate_period(period)
@@ -249,7 +249,7 @@ async def close_package(
     period: str,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> PeriodClosePackageResponse:
     """Return a review-ready close package with deterministic commentary."""
     _validate_period(period)
@@ -274,7 +274,7 @@ async def close_readiness(
     period: str,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> PeriodCloseReadinessResponse:
     """Return reconciliation status for a period before attempting to lock it."""
     _validate_period(period)

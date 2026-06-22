@@ -15,6 +15,9 @@ from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
 from app.models.accounting import ManualJournalEntryResponse
+from app.services.close_package_service import ClosePackageService
+from app.services.close_reconciliation_service import CloseReconciliationService
+from app.services.close_status_service import CloseStatusService
 from app.services.manual_journal_service import ManualJournalService
 
 pytestmark = pytest.mark.unit
@@ -144,7 +147,7 @@ def client(fake_db: _FakeDb) -> TestClient:
     app.dependency_overrides[get_current_user] = lambda: CurrentUser(
         user_id="manager-1",
         email="manager@example.com",
-        role="manager",
+        role="admin",
     )
     app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
@@ -157,13 +160,82 @@ def client(fake_db: _FakeDb) -> TestClient:
 def test_accounting_read_routes_use_rls_client(
     client: TestClient,
     fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class _CloseStatusResult:
+        def as_dict(self) -> dict[str, Any]:
+            return {
+                "period": "2026-06",
+                "status": "ready",
+                "locked": False,
+                "locked_at": None,
+                "locked_by": None,
+                "ready_to_lock": True,
+                "checklist": [],
+                "findings": [],
+                "pending_reviews": [],
+                "lock_blockers": [],
+            }
+
+    class _CloseReadinessResult:
+        def __init__(self) -> None:
+            self.period = "2026-06"
+            self.ready = True
+            self.findings: list[Any] = []
+            self.trial_balance_balanced = True
+
+    def _close_status(self: CloseStatusService, period: str) -> _CloseStatusResult:
+        assert period == "2026-06"
+        assert self.db is fake_db
+        return _CloseStatusResult()
+
+    def _close_readiness(
+        self: CloseReconciliationService, period: str
+    ) -> _CloseReadinessResult:
+        assert period == "2026-06"
+        assert self.db is fake_db
+        return _CloseReadinessResult()
+
+    def _close_package(self: ClosePackageService, period: str) -> dict[str, Any]:
+        assert period == "2026-06"
+        assert self.db is fake_db
+        return {
+            "period": "2026-06",
+            "period_start": "2026-06-01",
+            "period_end": "2026-06-30",
+            "previous_period": "2026-05",
+            "generated_at": "2026-06-22T00:00:00+00:00",
+            "close_status": {"status": "ready"},
+            "gl_summary": {},
+            "previous_gl_summary": {},
+            "working_capital": {},
+            "trial_balance": {},
+            "ar_aging": {},
+            "ap_aging": {},
+            "wip": [],
+            "service_line_margins": [],
+            "variance_commentary": [],
+        }
+
+    monkeypatch.setattr(CloseStatusService, "get_status", _close_status)
+    monkeypatch.setattr(CloseReconciliationService, "check_period", _close_readiness)
+    monkeypatch.setattr(ClosePackageService, "build_package", _close_package)
+
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
     app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
 
     periods_response = client.get("/api/v1/accounting/periods")
     journals_response = client.get(
         "/api/v1/accounting/journal-entries?reference_type=manual&limit=10&offset=0"
+    )
+    close_status_response = client.get(
+        "/api/v1/accounting/periods/2026-06/close-status"
+    )
+    close_readiness_response = client.get(
+        "/api/v1/accounting/periods/2026-06/close-readiness"
+    )
+    close_package_response = client.get(
+        "/api/v1/accounting/periods/2026-06/close-package"
     )
 
     assert periods_response.status_code == 200, periods_response.text
@@ -189,6 +261,12 @@ def test_accounting_read_routes_use_rls_client(
             "posted_at": "2026-06-22T00:00:00+00:00",
         }
     ]
+    assert close_status_response.status_code == 200, close_status_response.text
+    assert close_status_response.json()["ready_to_lock"] is True
+    assert close_readiness_response.status_code == 200, close_readiness_response.text
+    assert close_readiness_response.json()["ready"] is True
+    assert close_package_response.status_code == 200, close_package_response.text
+    assert close_package_response.json()["previous_period"] == "2026-05"
 
 
 def test_manual_journal_create_uses_service_role_client(
