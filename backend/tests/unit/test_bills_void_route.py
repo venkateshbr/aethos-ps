@@ -45,7 +45,7 @@ def test_void_bill_route_calls_service(bill_response: BillResponse) -> None:
         role="owner",
     )
     app.dependency_overrides[get_service_role_client] = lambda: MagicMock()
-    app.dependency_overrides[bills_endpoint._service] = lambda: svc
+    app.dependency_overrides[bills_endpoint._write_service] = lambda: svc
     try:
         with TestClient(app) as client:
             response = client.post("/api/v1/bills/bill-1/void")
