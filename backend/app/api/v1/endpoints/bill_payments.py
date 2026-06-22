@@ -7,6 +7,7 @@ RBAC:
   create:  admin+
   approve: admin+
   export:  admin+
+  settle:  admin+
   propose: admin+
 """
 
@@ -119,6 +120,15 @@ def mark_sent(
     _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> dict:
     return svc.mark_sent(batch_id)
+
+
+@router.post("/batches/{batch_id}/settle")
+def settle_batch(
+    batch_id: str,
+    svc: BillPaymentsService = Depends(_service),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+) -> dict:
+    return svc.settle_batch(batch_id, user.user_id)
 
 
 @router.post("/propose")

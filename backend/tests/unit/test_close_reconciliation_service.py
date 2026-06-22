@@ -223,6 +223,80 @@ def test_blocks_paid_invoice_without_posted_payment_journal() -> None:
     assert [finding.code for finding in result.findings] == ["missing_ar_payment_journal"]
 
 
+def test_paid_bill_requires_bill_payment_journal() -> None:
+    bill_id = str(uuid.uuid4())
+    db = _Db(
+        {
+            "invoices": [],
+            "bills": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "id": bill_id,
+                    "bill_number": "BILL-1003",
+                    "status": "paid",
+                    "issue_date": "2026-05-15",
+                    "paid_at": "2026-06-21T09:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "journal_entries": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "reference_type": "bill",
+                    "reference_id": bill_id,
+                    "posted_at": "2026-05-15T00:00:00+00:00",
+                }
+            ],
+            "journal_lines": _balanced_trial_balance_lines(),
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is False
+    assert [finding.code for finding in result.findings] == ["missing_ap_payment_journal"]
+
+
+def test_paid_bill_with_bill_payment_journal_is_ready() -> None:
+    bill_id = str(uuid.uuid4())
+    db = _Db(
+        {
+            "invoices": [],
+            "bills": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "id": bill_id,
+                    "bill_number": "BILL-1004",
+                    "status": "paid",
+                    "issue_date": "2026-05-15",
+                    "paid_at": "2026-06-21T09:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "journal_entries": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "reference_type": "bill",
+                    "reference_id": bill_id,
+                    "posted_at": "2026-05-15T00:00:00+00:00",
+                },
+                {
+                    "tenant_id": TENANT_ID,
+                    "reference_type": "bill_payment",
+                    "reference_id": bill_id,
+                    "posted_at": "2026-06-21T00:00:00+00:00",
+                },
+            ],
+            "journal_lines": _balanced_trial_balance_lines(),
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is True
+    assert result.findings == []
+
+
 def test_blocks_unbalanced_trial_balance() -> None:
     db = _Db(
         {

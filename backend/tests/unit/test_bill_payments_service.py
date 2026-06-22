@@ -174,7 +174,104 @@ def test_nacha_padded_to_multiple_of_10(mock_db: MagicMock) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. propose endpoint calls write_agent_suggestion with L2
+# 4. settle_batch posts AP clearing journal only after bank confirmation
+# ---------------------------------------------------------------------------
+
+
+def test_settle_batch_posts_ap_clearing_journal(mock_db: MagicMock) -> None:
+    """Settlement posts DR AP / CR Bank and marks the bill/payment item settled."""
+    batch = {
+        "id": "batch-settle-001",
+        "status": "sent_to_bank",
+        "currency": "USD",
+        "items": [
+            {
+                "id": "item-001",
+                "bill_id": "11111111-1111-1111-1111-111111111111",
+                "amount": "750.00",
+                "currency": "USD",
+                "status": "pending",
+                "bills": {"bill_number": "BILL-001"},
+            }
+        ],
+    }
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value=batch)
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        if table_name == "accounts":
+            return _chain(
+                [
+                    {"code": "1100", "id": "bank-account-id"},
+                    {"code": "2000", "id": "ap-account-id"},
+                ]
+            )
+        return _chain([{"id": "updated"}])
+
+    mock_db.table.side_effect = table_side_effect
+
+    with patch(
+        "app.services.bill_payments_service.post_journal",
+        return_value={"id": "journal-001"},
+    ) as mock_post:
+        result = svc.settle_batch("batch-settle-001", USER_ID)
+
+    assert result == {
+        "batch_id": "batch-settle-001",
+        "status": "settled",
+        "settled_count": 1,
+        "journal_entry_ids": ["journal-001"],
+    }
+    call_kwargs = mock_post.call_args.kwargs
+    assert call_kwargs["reference_type"] == "bill_payment"
+    assert call_kwargs["reference_id"] == "11111111-1111-1111-1111-111111111111"
+    lines = call_kwargs["lines"]
+    assert lines[0].direction == "DR"
+    assert lines[0].account_code == "2000"
+    assert lines[1].direction == "CR"
+    assert lines[1].account_code == "1100"
+
+
+def test_settle_batch_requires_sent_to_bank(mock_db: MagicMock) -> None:
+    """A draft/approved batch cannot post money-out journals."""
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value={"id": "batch-1", "status": "approved", "items": []})
+
+    with pytest.raises(HTTPException) as exc_info:
+        svc.settle_batch("batch-1", USER_ID)
+
+    assert exc_info.value.status_code == 409
+    assert "sent_to_bank" in str(exc_info.value.detail)
+
+
+def test_settle_batch_rejects_already_settled_items(mock_db: MagicMock) -> None:
+    """Retrying a fully settled batch is blocked before any journal post."""
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(
+        return_value={
+            "id": "batch-1",
+            "status": "sent_to_bank",
+            "items": [{"id": "item-1", "status": "settled"}],
+        }
+    )
+
+    with (
+        patch("app.services.bill_payments_service.post_journal") as mock_post,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        svc.settle_batch("batch-1", USER_ID)
+
+    assert exc_info.value.status_code == 409
+    mock_post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 5. propose endpoint calls write_agent_suggestion with L2
 # ---------------------------------------------------------------------------
 
 

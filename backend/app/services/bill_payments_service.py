@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
 from supabase import Client
 
@@ -170,6 +171,104 @@ class BillPaymentsService:
             .execute()
         )
         return result.data[0]
+
+    def settle_batch(self, batch_id: str, settled_by: str) -> dict:
+        """Confirm bank settlement and post AP clearing journals.
+
+        Money movement is never posted when a batch is merely proposed,
+        approved, exported, or marked sent. This method represents the bank
+        confirmation step: for each unsettled item it posts DR AP / CR Bank,
+        marks the bill paid, and marks the batch item settled.
+        """
+        batch = self.get_batch(batch_id)
+        if batch["status"] != "sent_to_bank":
+            raise HTTPException(409, "Batch must be sent_to_bank before settlement")
+
+        items = [item for item in batch["items"] if item.get("status") != "settled"]
+        if not items:
+            raise HTTPException(409, "Batch has no unsettled payment items")
+
+        account_ids = self._get_account_ids_by_codes(["1100", "2000"])
+        bank_account_id = account_ids.get("1100")
+        ap_account_id = account_ids.get("2000")
+        if not bank_account_id or not ap_account_id:
+            raise HTTPException(500, "Chart of accounts not configured for bill settlement")
+
+        settled_at = datetime.now(UTC).isoformat()
+        journal_entry_ids: list[str] = []
+        for item in items:
+            amount = Decimal(str(item["amount"]))
+            currency = item.get("currency") or batch.get("currency") or "USD"
+            bill_id = str(item["bill_id"])
+            bill_number = (item.get("bills") or {}).get("bill_number") or bill_id[:8]
+            lines = [
+                JournalLineSpec(
+                    direction="DR",
+                    account_code="2000",
+                    account_id=ap_account_id,
+                    amount=amount,
+                    currency=currency,
+                    description=f"AP cleared for bill {bill_number}",
+                ),
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="1100",
+                    account_id=bank_account_id,
+                    amount=amount,
+                    currency=currency,
+                    description=f"Bank payment for bill {bill_number}",
+                ),
+            ]
+            try:
+                journal = post_journal(
+                    db=self.db,
+                    tenant_id=self.tenant_id,
+                    created_by=settled_by,
+                    description=f"Bill payment settled for {bill_number}",
+                    entry_date=date.today().isoformat(),
+                    reference_type="bill_payment",
+                    reference_id=bill_id,
+                    lines=lines,
+                    entry_number=f"BP-{bill_number}",
+                )
+            except ValueError as exc:
+                raise HTTPException(422, detail=str(exc)) from exc
+
+            journal_entry_ids.append(str(journal["id"]))
+            self.db.table("bills").update(
+                {"status": "paid", "paid_at": settled_at}
+            ).eq("id", bill_id).eq("tenant_id", self.tenant_id).execute()
+            self.db.table("bill_payment_items").update({"status": "settled"}).eq(
+                "id", item["id"]
+            ).eq("tenant_id", self.tenant_id).execute()
+
+        logger.info(
+            "bill_payment_batch_settled",
+            extra={
+                "batch_id": batch_id,
+                "tenant_id": self.tenant_id,
+                "settled_count": len(items),
+            },
+        )
+        return {
+            "batch_id": batch_id,
+            "status": "settled",
+            "settled_count": len(items),
+            "journal_entry_ids": journal_entry_ids,
+        }
+
+    def _get_account_ids_by_codes(self, codes: list[str]) -> dict[str, str]:
+        rows = (
+            self.db.table("accounts")
+            .select("id, code")
+            .eq("tenant_id", self.tenant_id)
+            .in_("code", codes)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        return {row["code"]: row["id"] for row in rows}
 
     # ------------------------------------------------------------------
     # Export — NACHA

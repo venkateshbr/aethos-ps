@@ -47,6 +47,11 @@ def test_export_unknown_batch_returns_404(client_a: httpx.Client) -> None:
     assert r.status_code == 404, r.text
 
 
+def test_settle_unknown_batch_returns_404(client_a: httpx.Client) -> None:
+    r = client_a.post("/api/v1/bill-payments/batches/00000000-0000-0000-0000-000000000000/settle")
+    assert r.status_code == 404, r.text
+
+
 def test_bill_payment_batches_tenant_scoped(
     client_a: httpx.Client, world: SeedWorld
 ) -> None:
