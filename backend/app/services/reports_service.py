@@ -3,7 +3,7 @@
 All monetary values use Decimal internally; serialised as strings in the
 returned dicts so JSON consumers receive exact values without float drift.
 
-Seven report methods:
+Report methods:
   1. ar_aging              — AR aging buckets (0-30 / 31-60 / 61-90 / 90+)
   2. ap_aging              — AP aging buckets
   3. project_pnl           — revenue vs cost per project
@@ -11,19 +11,26 @@ Seven report methods:
   5. wip                   — unbilled hours x rate (Work In Progress)
   6. revenue_by_engagement — total invoiced per engagement in a period
   7. trial_balance         — DR/CR totals per account, optionally cumulative to period
+  8. revenue_by_service_line
+  9. cost_by_service_line
+  10. margin_by_service_line
+  11. project_health_scores
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from app.domain.money import serialise_money
 from app.models.reports import TrialBalanceLine, TrialBalanceReport
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+_FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
+_RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 
 
 class ReportsService:
@@ -776,3 +783,502 @@ class ReportsService:
             )
 
         return result
+
+    # ------------------------------------------------------------------
+    # 11. Project Health Scores
+    # ------------------------------------------------------------------
+
+    def project_health_scores(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        """Rank active projects by deterministic operating risk.
+
+        Reuses the existing P&L and WIP reports, then layers in project budget,
+        time-entry mix, capped T&M drawdown, and retainer under-utilisation.
+        Every risk driver is returned with the score so users can audit why a
+        project is ranked as healthy, watch, at-risk, or critical.
+        """
+        projects = (
+            self.db.table("projects")
+            .select(
+                "id, name, engagement_id, currency, budget, budget_hours, status, "
+                "engagements!engagement_id("
+                "id, name, billing_arrangement, total_value, service_line)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .eq("status", "active")
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        if not projects:
+            return []
+
+        project_ids = [str(project["id"]) for project in projects]
+        engagement_ids = {
+            str(project["engagement_id"])
+            for project in projects
+            if project.get("engagement_id")
+        }
+
+        terms_by_engagement = self._billing_terms_by_engagement(engagement_ids)
+        time_entries_by_project = self._time_entries_by_project(project_ids)
+        invoices_by_engagement = self._invoices_by_engagement(engagement_ids)
+        pnl_by_project = {
+            str(row["project_id"]): row
+            for row in self.project_pnl(
+                period_start=period_start,
+                period_end=period_end,
+            )
+        }
+        wip_by_project = {str(row["project_id"]): row for row in self.wip()}
+
+        rows: list[dict] = []
+        for project in projects:
+            project_id = str(project["id"])
+            engagement_id = str(project.get("engagement_id") or "")
+            engagement = _embedded_one(project.get("engagements"))
+            terms = terms_by_engagement.get(engagement_id, {})
+            entries = time_entries_by_project.get(project_id, [])
+            invoices = invoices_by_engagement.get(engagement_id, [])
+            pnl = pnl_by_project.get(project_id, {})
+            wip = wip_by_project.get(project_id, {})
+
+            drivers: list[dict] = []
+            metrics = self._project_health_metrics(
+                project=project,
+                engagement=engagement,
+                terms=terms,
+                entries=entries,
+                invoices=invoices,
+                pnl=pnl,
+                wip=wip,
+                drivers=drivers,
+            )
+
+            score = max(0, 100 - sum(int(driver["impact"]) for driver in drivers))
+            rows.append(
+                {
+                    "project_id": project_id,
+                    "project_name": str(project.get("name") or project_id),
+                    "engagement_id": engagement_id or None,
+                    "engagement_name": engagement.get("name"),
+                    "service_line": engagement.get("service_line") or "unclassified",
+                    "currency": project.get("currency") or "USD",
+                    "health_score": score,
+                    "risk_level": _risk_level(score),
+                    "drivers": drivers,
+                    "metrics": metrics,
+                    "recommended_actions": _unique_actions(drivers),
+                }
+            )
+
+        return sorted(rows, key=lambda row: (row["health_score"], row["project_name"]))
+
+    def _billing_terms_by_engagement(
+        self, engagement_ids: set[str]
+    ) -> dict[str, dict]:
+        if not engagement_ids:
+            return {}
+        rows = (
+            self.db.table("engagement_billing_terms")
+            .select(
+                "engagement_id, cap_amount, retainer_floor, "
+                "retainer_monthly_amount, milestone_total"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("engagement_id", list(engagement_ids))
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["engagement_id"]): row for row in rows}
+
+    def _time_entries_by_project(self, project_ids: list[str]) -> dict[str, list[dict]]:
+        if not project_ids:
+            return {}
+        rows = (
+            self.db.table("time_entries")
+            .select("project_id, hours, billable, billing_status, date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("project_id", project_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.get("project_id")), []).append(row)
+        return grouped
+
+    def _invoices_by_engagement(
+        self, engagement_ids: set[str]
+    ) -> dict[str, list[dict]]:
+        if not engagement_ids:
+            return {}
+        rows = (
+            self.db.table("invoices")
+            .select("engagement_id, total, status, issue_date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("engagement_id", list(engagement_ids))
+            .in_("status", _FINAL_INVOICE_STATUSES)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.get("engagement_id")), []).append(row)
+        return grouped
+
+    def _project_health_metrics(
+        self,
+        *,
+        project: dict,
+        engagement: dict,
+        terms: dict,
+        entries: list[dict],
+        invoices: list[dict],
+        pnl: dict,
+        wip: dict,
+        drivers: list[dict],
+    ) -> dict[str, object]:
+        logged_hours = sum(
+            (_decimal(row.get("hours")) or Decimal("0")) for row in entries
+        )
+        billable_hours = sum(
+            (_decimal(row.get("hours")) or Decimal("0"))
+            for row in entries
+            if row.get("billable", True)
+        )
+        budget_hours = _decimal(project.get("budget_hours"))
+        revenue = _decimal(pnl.get("revenue")) or Decimal("0")
+        direct_cost = _decimal(pnl.get("direct_cost")) or Decimal("0")
+        gross_margin_pct = Decimal(str(pnl.get("gross_margin_pct") or "0"))
+        wip_value = _decimal(wip.get("wip_value")) or Decimal("0")
+        unbilled_hours = _decimal(wip.get("unbilled_hours")) or Decimal("0")
+
+        metrics: dict[str, object] = {
+            "logged_hours": str(logged_hours),
+            "billable_hours": str(billable_hours),
+            "budget_hours": str(budget_hours) if budget_hours is not None else None,
+            "revenue": serialise_money(revenue),
+            "direct_cost": serialise_money(direct_cost),
+            "gross_margin_pct": float(gross_margin_pct),
+            "wip_value": serialise_money(wip_value),
+            "unbilled_hours": str(unbilled_hours),
+        }
+
+        self._budget_driver(project, logged_hours, budget_hours, drivers, metrics)
+        self._margin_driver(revenue, gross_margin_pct, drivers)
+        self._wip_driver(revenue, wip_value, drivers, metrics)
+        self._cap_driver(engagement, terms, invoices, revenue, drivers, metrics)
+        self._retainer_driver(engagement, terms, invoices, drivers, metrics)
+        self._scope_creep_driver(entries, drivers, metrics)
+        return metrics
+
+    @staticmethod
+    def _budget_driver(
+        project: dict,
+        logged_hours: Decimal,
+        budget_hours: Decimal | None,
+        drivers: list[dict],
+        metrics: dict[str, object],
+    ) -> None:
+        if budget_hours is None or budget_hours <= 0:
+            return
+        burn_pct = logged_hours / budget_hours
+        metrics["budget_burn_pct"] = round(float(burn_pct * 100), 1)
+        if burn_pct >= Decimal("1.00"):
+            drivers.append(
+                _driver(
+                    "budget_hours_burn",
+                    "Budget hours exceeded",
+                    "critical",
+                    25,
+                    f"{round(float(burn_pct * 100), 1)}%",
+                    "100%",
+                    "Logged hours exceed the approved project hour budget.",
+                    "Review remaining scope and request a budget or timeline change.",
+                )
+            )
+        elif burn_pct >= Decimal("0.80"):
+            drivers.append(
+                _driver(
+                    "budget_hours_burn",
+                    "Budget hours nearing limit",
+                    "watch",
+                    15,
+                    f"{round(float(burn_pct * 100), 1)}%",
+                    "80%",
+                    (
+                        f"{project.get('name', 'Project')} has used most of "
+                        "its approved hour budget."
+                    ),
+                    "Review remaining scope before approving more work.",
+                )
+            )
+
+    @staticmethod
+    def _margin_driver(
+        revenue: Decimal,
+        gross_margin_pct: Decimal,
+        drivers: list[dict],
+    ) -> None:
+        if revenue <= 0:
+            return
+        if gross_margin_pct < Decimal("20"):
+            drivers.append(
+                _driver(
+                    "low_margin",
+                    "Low gross margin",
+                    "critical",
+                    25,
+                    f"{gross_margin_pct}%",
+                    "20%",
+                    "Project gross margin is below the finance guardrail.",
+                    "Investigate labour and vendor costs before the next billing run.",
+                )
+            )
+        elif gross_margin_pct < Decimal("30"):
+            drivers.append(
+                _driver(
+                    "low_margin",
+                    "Gross margin watch",
+                    "watch",
+                    10,
+                    f"{gross_margin_pct}%",
+                    "30%",
+                    "Project margin is below target but not yet critical.",
+                    "Review staffing mix and unbilled recoverability.",
+                )
+            )
+
+    @staticmethod
+    def _wip_driver(
+        revenue: Decimal,
+        wip_value: Decimal,
+        drivers: list[dict],
+        metrics: dict[str, object],
+    ) -> None:
+        if wip_value <= 0:
+            return
+        if revenue > 0:
+            wip_pct = wip_value / revenue
+            metrics["wip_to_revenue_pct"] = round(float(wip_pct * 100), 1)
+            if wip_pct >= Decimal("0.25"):
+                drivers.append(
+                    _driver(
+                        "unbilled_wip",
+                        "High unbilled WIP",
+                        "watch",
+                        12,
+                        f"{round(float(wip_pct * 100), 1)}%",
+                        "25% of revenue",
+                        "Unbilled WIP is high relative to recognized revenue.",
+                        "Prepare billing or accrual review for this project.",
+                    )
+                )
+        elif wip_value >= Decimal("1000"):
+            drivers.append(
+                _driver(
+                    "unbilled_wip",
+                    "Unbilled WIP with no revenue",
+                    "watch",
+                    12,
+                    serialise_money(wip_value) or "0.00",
+                    "1000.00",
+                    "The project has material WIP but no finalized revenue.",
+                    "Review whether the next billing run should include this work.",
+                )
+            )
+
+    @staticmethod
+    def _cap_driver(
+        engagement: dict,
+        terms: dict,
+        invoices: list[dict],
+        revenue: Decimal,
+        drivers: list[dict],
+        metrics: dict[str, object],
+    ) -> None:
+        if engagement.get("billing_arrangement") != "capped_tm":
+            return
+        cap_amount = _decimal(terms.get("cap_amount"))
+        if cap_amount is None or cap_amount <= 0:
+            return
+        billed = _sum_money(invoices, "total") or revenue
+        cap_pct = billed / cap_amount
+        metrics["cap_amount"] = serialise_money(cap_amount)
+        metrics["cap_used_pct"] = round(float(cap_pct * 100), 1)
+        if cap_pct >= Decimal("0.90"):
+            drivers.append(
+                _driver(
+                    "cap_drawdown",
+                    "Capped T&M near cap",
+                    "critical",
+                    20,
+                    f"{round(float(cap_pct * 100), 1)}%",
+                    "90%",
+                    "Finalized billings are close to the capped T&M limit.",
+                    "Confirm scope, cap increase, or stop-work posture with the client.",
+                )
+            )
+        elif cap_pct >= Decimal("0.80"):
+            drivers.append(
+                _driver(
+                    "cap_drawdown",
+                    "Capped T&M cap watch",
+                    "watch",
+                    10,
+                    f"{round(float(cap_pct * 100), 1)}%",
+                    "80%",
+                    "Finalized billings are approaching the capped T&M limit.",
+                    "Warn the project lead before approving additional work.",
+                )
+            )
+
+    @staticmethod
+    def _retainer_driver(
+        engagement: dict,
+        terms: dict,
+        invoices: list[dict],
+        drivers: list[dict],
+        metrics: dict[str, object],
+    ) -> None:
+        if engagement.get("billing_arrangement") not in _RETAINER_BILLING_MODELS:
+            return
+        retainer_floor = _decimal(terms.get("retainer_floor"))
+        if retainer_floor is None or retainer_floor <= 0:
+            return
+        current_month_billed = _sum_current_month_money(invoices, "total")
+        metrics["retainer_floor"] = serialise_money(retainer_floor)
+        metrics["current_month_billed"] = serialise_money(current_month_billed)
+        if current_month_billed < retainer_floor:
+            drivers.append(
+                _driver(
+                    "retainer_underutilized",
+                    "Retainer below floor",
+                    "watch",
+                    10,
+                    serialise_money(current_month_billed) or "0.00",
+                    serialise_money(retainer_floor) or "0.00",
+                    "Current-month billing is below the retainer floor.",
+                    "Schedule work or review retainer communication before month end.",
+                )
+            )
+
+    @staticmethod
+    def _scope_creep_driver(
+        entries: list[dict],
+        drivers: list[dict],
+        metrics: dict[str, object],
+    ) -> None:
+        cutoff = (date.today() - timedelta(days=30)).isoformat()
+        recent = [entry for entry in entries if str(entry.get("date") or "") >= cutoff]
+        if len(recent) < 5:
+            return
+        non_billable = [
+            entry
+            for entry in recent
+            if not entry.get("billable", True)
+            or entry.get("billing_status") == "non_billable"
+        ]
+        scope_pct = Decimal(len(non_billable)) / Decimal(len(recent))
+        metrics["recent_non_billable_pct"] = round(float(scope_pct * 100), 1)
+        if scope_pct > Decimal("0.20"):
+            drivers.append(
+                _driver(
+                    "scope_creep",
+                    "Scope creep risk",
+                    "watch",
+                    10,
+                    f"{round(float(scope_pct * 100), 1)}%",
+                    "20%",
+                    "Recent non-billable time is above the scope-risk threshold.",
+                    "Review whether non-billable work should be re-scoped or absorbed.",
+                )
+            )
+
+
+def _decimal(value: object) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _embedded_one(value: object) -> dict:
+    if isinstance(value, list):
+        return value[0] if value else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _sum_money(rows: list[dict], key: str) -> Decimal:
+    total = Decimal("0")
+    for row in rows:
+        amount = _decimal(row.get(key))
+        if amount is not None:
+            total += amount
+    return total
+
+
+def _sum_current_month_money(rows: list[dict], key: str) -> Decimal:
+    month_prefix = date.today().strftime("%Y-%m")
+    total = Decimal("0")
+    for row in rows:
+        issue_date = str(row.get("issue_date") or "")
+        if issue_date[:7] != month_prefix:
+            continue
+        amount = _decimal(row.get(key))
+        if amount is not None:
+            total += amount
+    return total
+
+
+def _driver(
+    code: str,
+    label: str,
+    severity: str,
+    impact: int,
+    metric: str,
+    threshold: str,
+    summary: str,
+    recommended_action: str,
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "label": label,
+        "severity": severity,
+        "impact": impact,
+        "metric": metric,
+        "threshold": threshold,
+        "summary": summary,
+        "recommended_action": recommended_action,
+    }
+
+
+def _risk_level(score: int) -> str:
+    if score >= 85:
+        return "healthy"
+    if score >= 70:
+        return "watch"
+    if score >= 50:
+        return "at_risk"
+    return "critical"
+
+
+def _unique_actions(drivers: list[dict]) -> list[str]:
+    actions: list[str] = []
+    for driver in drivers:
+        action = str(driver.get("recommended_action") or "")
+        if action and action not in actions:
+            actions.append(action)
+    return actions

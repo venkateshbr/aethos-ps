@@ -20,6 +20,31 @@ export interface PnlRow {
   gross_margin_pct: number;
 }
 
+export interface ProjectHealthDriver {
+  code: string;
+  label: string;
+  severity: 'watch' | 'critical' | string;
+  impact: number;
+  metric: string;
+  threshold: string;
+  summary: string;
+  recommended_action: string;
+}
+
+export interface ProjectHealthRow {
+  project_id: string;
+  project_name: string;
+  engagement_id: string | null;
+  engagement_name?: string;
+  service_line: string;
+  currency: string;
+  health_score: number;
+  risk_level: 'healthy' | 'watch' | 'at_risk' | 'critical';
+  drivers: ProjectHealthDriver[];
+  metrics: Record<string, string | number | null>;
+  recommended_actions: string[];
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -73,6 +98,9 @@ export class ReportsService {
 
   getProjectPnl = (pid?: string): Observable<PnlRow[]> =>
     this.http.get<PnlRow[]>(`${this.base}/project-pnl${pid ? '?project_id=' + pid : ''}`);
+
+  getProjectHealth = (): Observable<ProjectHealthRow[]> =>
+    this.http.get<ProjectHealthRow[]>(`${this.base}/project-health`);
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

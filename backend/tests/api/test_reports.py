@@ -23,6 +23,7 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/ar-aging",
     "/api/v1/reports/ap-aging",
     "/api/v1/reports/project-pnl",
+    "/api/v1/reports/project-health",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -66,3 +67,23 @@ def test_ar_aging_returns_buckets(client_a: httpx.Client) -> None:
     if isinstance(body, dict):
         # Look for any of: buckets, items, rows, aging
         assert any(k in body for k in ("buckets", "items", "rows", "aging", "total")), body
+
+
+def test_project_health_report_shape(client_a: httpx.Client) -> None:
+    """Project health returns ranked rows with score, drivers, and metrics."""
+    r = client_a.get("/api/v1/reports/project-health")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "project_id",
+            "project_name",
+            "health_score",
+            "risk_level",
+            "drivers",
+            "metrics",
+            "recommended_actions",
+        } <= set(row)
+        assert 0 <= row["health_score"] <= 100

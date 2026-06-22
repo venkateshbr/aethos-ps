@@ -56,6 +56,15 @@ def _chain(data: list[dict]) -> MagicMock:
     return chain
 
 
+def _route_tables(mock_db: MagicMock, tables: dict[str, list[dict]]) -> None:
+    """Route mock_db.table(name) to a chain seeded from ``tables[name]``."""
+
+    def _table(name: str) -> MagicMock:
+        return _chain(tables.get(name, []))
+
+    mock_db.table.side_effect = _table
+
+
 # ---------------------------------------------------------------------------
 # 1. AR Aging
 # ---------------------------------------------------------------------------
@@ -226,3 +235,161 @@ def test_revenue_by_engagement_groups(mock_db: MagicMock) -> None:
     by_eng = {r["engagement_id"]: Decimal(r["total_invoiced"]) for r in result}
     assert by_eng["eng-A"] == Decimal("8000.00")
     assert by_eng["eng-B"] == Decimal("8000.00")
+
+
+def test_project_health_scores_rank_riskiest_project_first(mock_db: MagicMock) -> None:
+    """Project health score combines budget, margin, WIP, cap, and scope risks."""
+    today = date.today().isoformat()
+    projects = [
+        {
+            "id": "proj-risk",
+            "name": "Risky Capped Project",
+            "engagement_id": "eng-risk",
+            "currency": "USD",
+            "budget": "100000.00",
+            "budget_hours": "100.00",
+            "status": "active",
+            "engagements": {
+                "id": "eng-risk",
+                "name": "Risky Engagement",
+                "billing_arrangement": "capped_tm",
+                "total_value": "1000.00",
+                "service_line": "advisory",
+            },
+        },
+        {
+            "id": "proj-healthy",
+            "name": "Healthy Project",
+            "engagement_id": "eng-healthy",
+            "currency": "USD",
+            "budget": "50000.00",
+            "budget_hours": "100.00",
+            "status": "active",
+            "engagements": {
+                "id": "eng-healthy",
+                "name": "Healthy Engagement",
+                "billing_arrangement": "time_and_materials",
+                "total_value": "50000.00",
+                "service_line": "tax",
+            },
+        },
+    ]
+    time_entries = [
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": True,
+            "billing_status": "unbilled",
+            "date": today,
+        },
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": True,
+            "billing_status": "unbilled",
+            "date": today,
+        },
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": True,
+            "billing_status": "unbilled",
+            "date": today,
+        },
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": True,
+            "billing_status": "unbilled",
+            "date": today,
+        },
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": False,
+            "billing_status": "non_billable",
+            "date": today,
+        },
+        {
+            "project_id": "proj-risk",
+            "hours": "15.00",
+            "billable": False,
+            "billing_status": "non_billable",
+            "date": today,
+        },
+        {
+            "project_id": "proj-healthy",
+            "hours": "10.00",
+            "billable": True,
+            "billing_status": "unbilled",
+            "date": today,
+        },
+    ]
+    _route_tables(
+        mock_db,
+        {
+            "projects": projects,
+            "engagement_billing_terms": [
+                {"engagement_id": "eng-risk", "cap_amount": "1000.00"}
+            ],
+            "time_entries": time_entries,
+            "invoices": [
+                {
+                    "engagement_id": "eng-risk",
+                    "total": "920.00",
+                    "status": "sent",
+                    "issue_date": today,
+                }
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    svc.project_pnl = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "revenue": "920.00",
+                "direct_cost": "800.00",
+                "gross_margin_pct": 13.0,
+            },
+            {
+                "project_id": "proj-healthy",
+                "revenue": "10000.00",
+                "direct_cost": "5000.00",
+                "gross_margin_pct": 50.0,
+            },
+        ]
+    )
+    svc.wip = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "unbilled_hours": "8.00",
+                "wip_value": "300.00",
+            },
+            {
+                "project_id": "proj-healthy",
+                "unbilled_hours": "0.00",
+                "wip_value": "0.00",
+            },
+        ]
+    )
+
+    result = svc.project_health_scores()
+
+    assert [row["project_id"] for row in result] == ["proj-risk", "proj-healthy"]
+    risky = result[0]
+    assert risky["risk_level"] == "critical"
+    assert risky["health_score"] < 50
+    driver_codes = {driver["code"] for driver in risky["drivers"]}
+    assert driver_codes >= {
+        "budget_hours_burn",
+        "low_margin",
+        "cap_drawdown",
+        "unbilled_wip",
+        "scope_creep",
+    }
+    assert risky["metrics"]["budget_burn_pct"] == 90.0
+    assert risky["metrics"]["cap_used_pct"] == 92.0
+    assert result[1]["risk_level"] == "healthy"

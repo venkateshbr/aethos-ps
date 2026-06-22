@@ -59,6 +59,20 @@ def project_pnl(
     )
 
 
+@router.get("/project-health")
+def project_health(
+    period_start: str | None = Query(None, description="Analysis window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Analysis window to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Project health scores ranked from riskiest to healthiest."""
+    return svc.project_health_scores(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @router.get("/utilization")
 def utilization(
     employee_id: str | None = Query(None, description="Filter to a single employee"),
