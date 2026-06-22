@@ -20,6 +20,7 @@ Start locally:
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 from app.agents.base import AgentDeps
 from app.agents.intelligence_agent import (
@@ -140,7 +141,7 @@ async def _persist_alert(deps: AgentDeps, alert: IntelligenceAlert) -> int:
     }
 
     try:
-        suggestion = await write_agent_suggestion(
+        await write_agent_suggestion(
             deps=deps,
             agent_name=AGENT_NAME,
             action_type=alert.anomaly_type,
@@ -148,22 +149,9 @@ async def _persist_alert(deps: AgentDeps, alert: IntelligenceAlert) -> int:
             output=output,
             confidence=alert.confidence,
             autonomy_level=2,  # Always L2 — intelligence alerts never auto-act
+            related_entity_type="intelligence_alert",
+            related_entity_id=_uuid_or_none(alert.entity_id),
         )
-
-        # Stamp the related_entity_id so dedup queries can filter by it.
-        # write_agent_suggestion returns the inserted row; we update in-place
-        # if the column exists (schema may not have it yet — graceful skip).
-        if suggestion and suggestion.get("id"):
-            try:
-                deps.db.table("agent_suggestions").update(
-                    {"related_entity_id": alert.entity_id}
-                ).eq("id", suggestion["id"]).execute()
-            except Exception:
-                # Non-fatal: dedup will work on the next run if this fails
-                logger.warning(
-                    "intelligence_worker: could not stamp related_entity_id on suggestion %s",
-                    suggestion.get("id"),
-                )
 
         logger.info(
             "intelligence_worker: alert persisted",
@@ -182,3 +170,11 @@ async def _persist_alert(deps: AgentDeps, alert: IntelligenceAlert) -> int:
             exc_info=True,
         )
         return 0
+
+
+def _uuid_or_none(value: str) -> str | None:
+    """Return value if it is UUID-compatible for related_entity_id."""
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError):
+        return None

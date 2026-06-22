@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -191,3 +192,95 @@ async def test_inbox_materialise_collections_email_raises_on_provider_error(
         )
 
     assert exc_info.value.status_code == 409
+
+
+class _Result:
+    def __init__(self, data: list[dict]) -> None:
+        self.data = data
+
+
+class _Query:
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+        self._filters: list[tuple[str, str, Any]] = []
+
+    def select(self, _columns: str) -> _Query:
+        return self
+
+    def eq(self, field: str, value: Any) -> _Query:
+        self._filters.append(("eq", field, value))
+        return self
+
+    def in_(self, field: str, values: list[Any]) -> _Query:
+        self._filters.append(("in", field, values))
+        return self
+
+    def gte(self, field: str, value: Any) -> _Query:
+        self._filters.append(("gte", field, value))
+        return self
+
+    def execute(self) -> _Result:
+        return _Result([row for row in self._rows if self._matches(row)])
+
+    def _matches(self, row: dict) -> bool:
+        for op, field, value in self._filters:
+            current = row.get(field)
+            if op == "eq" and current != value:
+                return False
+            if op == "in" and current not in value and str(current) not in {str(v) for v in value}:
+                return False
+            if op == "gte" and str(current or "") < str(value):
+                return False
+        return True
+
+
+class _Db:
+    def __init__(self, suggestions: list[dict]) -> None:
+        self.suggestions = suggestions
+
+    def table(self, name: str) -> _Query:
+        assert name == "agent_suggestions"
+        return _Query(self.suggestions)
+
+
+def test_collections_duplicate_guard_matches_related_entity() -> None:
+    """Recent same-invoice same-tone suggestions suppress duplicate reminders."""
+    from app.workers.collections import _recent_collections_action_exists
+
+    db = _Db(
+        [
+            {
+                "tenant_id": "tenant-001",
+                "agent_name": "collections_agent",
+                "action_type": "send_email",
+                "status": "pending",
+                "created_at": date.today().isoformat(),
+                "related_entity_id": "invoice-001",
+                "output_snapshot": {"invoice_id": "invoice-001", "tone": "firm"},
+            }
+        ]
+    )
+
+    assert _recent_collections_action_exists(db, "tenant-001", "invoice-001", "firm") is True  # type: ignore[arg-type]
+    assert _recent_collections_action_exists(db, "tenant-001", "invoice-001", "final") is False  # type: ignore[arg-type]
+
+
+def test_collections_duplicate_guard_matches_legacy_output_invoice_id() -> None:
+    """Rows written before related_entity_id still suppress by output invoice_id."""
+    from app.workers.collections import _recent_collections_action_exists
+
+    db = _Db(
+        [
+            {
+                "tenant_id": "tenant-001",
+                "agent_name": "collections_agent",
+                "action_type": "send_email",
+                "status": "approved",
+                "created_at": date.today().isoformat(),
+                "related_entity_id": None,
+                "output_snapshot": {"invoice_id": "invoice-002", "tone": "gentle"},
+            }
+        ]
+    )
+
+    assert _recent_collections_action_exists(db, "tenant-001", "invoice-002", "gentle") is True  # type: ignore[arg-type]

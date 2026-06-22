@@ -183,6 +183,39 @@ async def test_3_13_low_confidence_routes_to_hitl() -> None:
     assert result["id"] == "sug-abc123"
 
 
+async def test_write_agent_suggestion_persists_related_entity_without_document_fk() -> None:
+    """Non-document suggestions should attach business entity metadata, not document FK."""
+    from app.agents.suggestion_writer import write_agent_suggestion
+
+    suggestion_row = {
+        "id": "sug-related-001",
+        "status": "auto_applied",
+        "hitl_required": False,
+    }
+    db = MagicMock()
+    db.table.return_value.insert.return_value.execute.return_value.data = [suggestion_row]
+    deps = _make_deps(db)
+
+    result = await write_agent_suggestion(
+        deps=deps,
+        agent_name="collections_agent",
+        action_type="send_email",
+        document_id=None,
+        output={"invoice_id": "invoice-001", "tone": "firm"},
+        confidence=0.95,
+        autonomy_level=3,
+        confidence_threshold=0.90,
+        related_entity_type="invoice",
+        related_entity_id="invoice-001",
+    )
+
+    payload = db.table.return_value.insert.call_args.args[0]
+    assert payload["related_entity_type"] == "invoice"
+    assert payload["related_entity_id"] == "invoice-001"
+    assert "original_document_id" not in payload
+    assert result["id"] == "sug-related-001"
+
+
 # ---------------------------------------------------------------------------
 # §3.14 — Prompt injection sets suspected_injection flag
 # ---------------------------------------------------------------------------

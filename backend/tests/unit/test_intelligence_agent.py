@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, timedelta
-from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,23 +30,32 @@ import pytest
 
 from app.agents.base import AgentDeps
 from app.agents.intelligence_agent import (
-    FALLBACK_TEMPLATES,
     ANOMALY_TYPES,
+    FALLBACK_TEMPLATES,
     IntelligenceAlert,
-    check_unbilled_engagement,
     check_expense_spike,
-    check_margin_compression,
     check_fx_exposure,
-    check_retainer_under_utilization,
+    check_margin_compression,
     check_overdue_escalation,
+    check_retainer_under_utilization,
+    check_unbilled_engagement,
     generate_alert_narrative,
     is_duplicate_anomaly,
 )
 from app.workers.intelligence_worker import (
     _run_anomaly_checks,
+    _uuid_or_none,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_intelligence_worker_related_entity_id_accepts_uuid_only() -> None:
+    """Synthetic anomaly ids stay out of the UUID related_entity_id column."""
+    entity_id = str(uuid.uuid4())
+
+    assert _uuid_or_none(entity_id) == entity_id
+    assert _uuid_or_none("tenant-001:USD") is None
 
 
 # ---------------------------------------------------------------------------
@@ -64,17 +72,17 @@ class _FlatMock:
     def __init__(self, data: list | None = None) -> None:
         self.final_data = data if data is not None else []
 
-    def __getattr__(self, name: str) -> "_FlatMock":
+    def __getattr__(self, name: str) -> _FlatMock:
         return self
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "_FlatMock":
+    def __call__(self, *args: Any, **kwargs: Any) -> _FlatMock:
         return self
 
     @property
     def data(self) -> list:
         return self.final_data
 
-    def execute(self) -> "_FlatMock":
+    def execute(self) -> _FlatMock:
         return self
 
 
@@ -568,7 +576,7 @@ async def test_retainer_under_utilization_detected() -> None:
             "currency": "USD",
         }
     ]
-    # 3 months × $5,000 retainer = $15,000 expected; only $6,000 billed (40%)
+    # 3 months x $5,000 retainer = $15,000 expected; only $6,000 billed (40%)
     invoices = [
         {
             "id": str(uuid.uuid4()),
@@ -605,7 +613,7 @@ async def test_no_retainer_alert_when_fully_utilized() -> None:
             "currency": "USD",
         }
     ]
-    # 3 months × $5,000 = $15,000; $9,000 billed (60% — above 50% threshold)
+    # 3 months x $5,000 = $15,000; $9,000 billed (60% — above 50% threshold)
     invoices = [
         {
             "id": str(uuid.uuid4()),
@@ -796,8 +804,6 @@ async def test_check_anomalies_graceful_degradation() -> None:
     # Make the DB raise on any table access to simulate a mid-flight error
     # for the unbilled_engagement check, but let others pass via the suggestions mock
     call_count = {"n": 0}
-    original_side_effect = db.table.side_effect
-
     def _failing_table(name: str) -> MagicMock:
         call_count["n"] += 1
         if name == "engagements":

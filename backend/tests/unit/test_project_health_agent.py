@@ -15,21 +15,19 @@ DB interactions are replaced with lightweight MagicMock stubs.
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.agents.base import AgentDeps
 from app.agents.project_health_agent import (
-    ProjectHealthAlert,
     check_project_health,
 )
 from app.workers.project_health_worker import (
     _is_duplicate_alert,
     _process_project,
 )
-from app.agents.base import AgentDeps
 
 pytestmark = pytest.mark.unit
 
@@ -50,10 +48,10 @@ class _FlatMock:
         self.final_data = data if data is not None else []
         self.final_count = count
 
-    def __getattr__(self, name: str) -> "_FlatMock":
+    def __getattr__(self, name: str) -> _FlatMock:
         return self
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "_FlatMock":
+    def __call__(self, *args: Any, **kwargs: Any) -> _FlatMock:
         return self
 
     @property
@@ -64,7 +62,7 @@ class _FlatMock:
     def count(self) -> int | None:
         return self.final_count
 
-    def execute(self) -> "_FlatMock":
+    def execute(self) -> _FlatMock:
         return self
 
 
@@ -296,7 +294,7 @@ def test_dedup_7_days_returns_false_when_suggestion_is_rejected() -> None:
         "related_entity_id": project_id,
         "status": "rejected",
     }
-    deps, _ = _make_deps(suggestions=[rejected_suggestion])
+    _deps, _ = _make_deps(suggestions=[rejected_suggestion])
 
     # The dedup check should only block on pending/approved — rejected allows re-alert.
     # Our stub returns the row regardless; the real DB query filters by status.
@@ -327,7 +325,7 @@ async def test_process_project_writes_suggestion_and_hitl_task() -> None:
 
     te_data = [{"hours": 88.0, "billable": True}]  # 88% — triggers alert
 
-    deps, db = _make_deps(suggestions=[], time_entry_data=te_data)
+    deps, _db = _make_deps(suggestions=[], time_entry_data=te_data)
 
     with patch(
         "app.workers.project_health_worker.write_agent_suggestion"
@@ -340,6 +338,8 @@ async def test_process_project_writes_suggestion_and_hitl_task() -> None:
     # Verify the call used the correct agent name and action_type
     assert call_kwargs.args[1] == "project_health_agent"  # agent_name
     assert call_kwargs.args[2] == "BUDGET_BURN_WARNING"   # action_type
+    assert call_kwargs.kwargs["related_entity_type"] == "project"
+    assert call_kwargs.kwargs["related_entity_id"] == project_id
 
 
 @pytest.mark.asyncio

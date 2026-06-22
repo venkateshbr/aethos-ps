@@ -103,6 +103,8 @@ async def _process_project(project: dict, deps: AgentDeps) -> int:
                     },
                     alert.confidence,
                     autonomy_level=2,  # L2 always — suggest only, never auto-apply
+                    related_entity_type="project",
+                    related_entity_id=project_id_str,
                 )
                 written += 1
                 logger.info(

@@ -28,6 +28,8 @@ async def write_agent_suggestion(
     confidence: float,
     autonomy_level: int = 2,
     confidence_threshold: float = 0.90,
+    related_entity_type: str | None = None,
+    related_entity_id: str | None = None,
 ) -> dict:
     """Write agent_suggestion + hitl_task rows.
 
@@ -45,6 +47,8 @@ async def write_agent_suggestion(
     confidence:           Agent confidence score (0.0 - 1.0).
     autonomy_level:       Agent autonomy level (1=notify, 2=suggest, 3=auto-apply).
     confidence_threshold: Minimum confidence to skip HITL at L3.
+    related_entity_type:  Optional business entity kind (invoice, project, bill, …).
+    related_entity_id:    Optional business entity id for dedup/audit trails.
 
     Returns
     -------
@@ -70,6 +74,10 @@ async def write_agent_suggestion(
     # the column stores SQL NULL (matches schema: nullable REFERENCES documents).
     if document_id is not None:
         suggestion_payload["original_document_id"] = document_id
+    if related_entity_type is not None:
+        suggestion_payload["related_entity_type"] = related_entity_type
+    if related_entity_id is not None:
+        suggestion_payload["related_entity_id"] = related_entity_id
 
     suggestion = db.table("agent_suggestions").insert(suggestion_payload).execute().data[0]
 
