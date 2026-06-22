@@ -59,3 +59,10 @@ def risk_class_for_tool(agent_name: str, tool_name: str) -> ToolRiskClass:
     if definition is None:
         return "draft"
     return definition.risk_class
+
+
+def action_type_for_tool(agent_name: str, tool_name: str) -> str:
+    """Return the autonomy/control action key for a tool call."""
+    if agent_name == "copilot_agent":
+        return f"copilot_{tool_name}"
+    return f"{agent_name}_{tool_name}"

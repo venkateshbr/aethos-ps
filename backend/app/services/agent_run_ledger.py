@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from app.agents.base import mask_pii
 from app.agents.tool_registry import ToolRiskClass
+from app.services.agent_circuit_breaker import AgentCircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,8 @@ class AgentRunLedger:
         self,
         run_id: str | None,
         *,
+        agent_name: str | None = None,
+        action_type: str | None = None,
         tool_name: str,
         risk_class: ToolRiskClass,
         input_payload: Any | None,
@@ -184,6 +187,13 @@ class AgentRunLedger:
                     "agent_run_id": run_id,
                     "tool_name": tool_name,
                 },
+            )
+        if agent_name and action_type:
+            await AgentCircuitBreaker(self.db, self.tenant_id).record_tool_result(
+                agent_name=agent_name,
+                action_type=action_type,
+                status=status,
+                error_message=error_message,
             )
 
 

@@ -29,7 +29,7 @@ import openai
 
 from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
 from app.agents.suggestion_writer import write_agent_suggestion
-from app.agents.tool_registry import risk_class_for_tool
+from app.agents.tool_registry import action_type_for_tool, risk_class_for_tool
 from app.core.config import settings
 from app.core.logging import trace_id_var
 from app.services.agent_run_ledger import AgentRunLedger
@@ -398,6 +398,8 @@ class CopilotAgent:
                             invocation_status = "failed"
                         await ledger.record_tool_invocation(
                             run_id,
+                            agent_name="copilot_agent",
+                            action_type=action_type_for_tool("copilot_agent", tc["name"]),
                             tool_name=tc["name"],
                             risk_class=risk_class_for_tool("copilot_agent", tc["name"]),
                             input_payload=tool_input,
@@ -573,7 +575,7 @@ class CopilotAgent:
             return await self._execute_tool(tool_name, tool_input)
 
         risk_class = risk_class_for_tool("copilot_agent", tool_name)
-        action_type = f"copilot_{tool_name}"
+        action_type = action_type_for_tool("copilot_agent", tool_name)
         decision = await self.tool_policy.decide(
             agent_name="copilot_agent",
             action_type=action_type,

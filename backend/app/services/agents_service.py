@@ -17,7 +17,7 @@ Thresholds mirror autonomy_promoter.py:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from supabase import Client
@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 AGENT_CATALOG: list[tuple[str, str, str]] = [
+    (
+        "copilot_agent",
+        "Copilot",
+        "Answers ERP questions and routes write-capable tools through review",
+    ),
     (
         "expense_extractor_agent",
         "Expense Extractor",
@@ -72,7 +77,7 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
 ]
 
 MONEY_AGENTS: frozenset[str] = frozenset(
-    {"invoice_drafter_agent", "bill_pay_agent", "accounting_guardian"}
+    {"copilot_agent", "invoice_drafter_agent", "bill_pay_agent", "accounting_guardian"}
 )
 
 LOCKED_AGENTS: frozenset[str] = frozenset({"accounting_guardian"})
@@ -88,6 +93,11 @@ _DEFAULT_ACTION_TYPE = "default"
 _DECIDED_STATUSES = ("approved", "approved_with_edits", "rejected", "auto_applied")
 # Positive statuses (count toward approval)
 _APPROVED_STATUSES = ("approved", "approved_with_edits", "auto_applied")
+
+_AUTONOMY_COLUMNS = (
+    "agent_name,action_type,level,is_enabled,failure_count,failure_threshold,"
+    "circuit_open_until,circuit_open_reason"
+)
 
 _AGENT_RUN_COLUMNS = (
     "id,agent_name,trigger_type,status,user_id,source_document_hash,prompt_version,"
@@ -117,14 +127,14 @@ class AgentsService:
     def get_autonomy_status(self) -> list[dict]:
         """Return autonomy status for all known agents.
 
-        Always returns 8 entries (one per AGENT_CATALOG entry).
+        Always returns one entry per AGENT_CATALOG item.
         Agents with no suggestion data show sample_count=0 and
         approval_rate=None / avg_confidence=None.
         """
         # Note: tenant isolation enforced via .eq("tenant_id", ...) in every query.
         # The service-role client bypasses RLS; no set_config RPC needed here.
         stats = self._fetch_suggestion_stats_30d()
-        levels = self._fetch_autonomy_levels()
+        settings_by_agent = self._fetch_default_autonomy_settings()
 
         results: list[dict] = []
         for agent_name, display_name, description in AGENT_CATALOG:
@@ -134,11 +144,23 @@ class AgentsService:
             avg_confidence = s.get("avg_confidence")
 
             is_locked = agent_name in LOCKED_AGENTS
-            current_level = levels.get(agent_name, 3 if is_locked else 2)
+            setting = settings_by_agent.get(agent_name, {})
+            current_level = _int_or_default(
+                setting.get("level"),
+                3 if is_locked else 2,
+            )
 
             # Locked agents are always L3 regardless of DB value
             if is_locked:
                 current_level = 3
+            is_enabled = bool(setting.get("is_enabled", True))
+            if is_locked:
+                is_enabled = True
+            circuit_open_until = (
+                str(setting["circuit_open_until"])
+                if setting.get("circuit_open_until")
+                else None
+            )
 
             is_eligible = self._is_eligible_for_promotion(
                 agent_name=agent_name,
@@ -157,6 +179,15 @@ class AgentsService:
                     "approval_rate_30d": approval_rate,
                     "sample_count_30d": sample_count,
                     "avg_confidence_30d": avg_confidence,
+                    "is_enabled": is_enabled,
+                    "failure_count": _int_or_default(setting.get("failure_count"), 0),
+                    "failure_threshold": _int_or_default(
+                        setting.get("failure_threshold"),
+                        3,
+                    ),
+                    "circuit_open_until": circuit_open_until,
+                    "circuit_open_reason": setting.get("circuit_open_reason"),
+                    "is_circuit_open": _circuit_is_open(circuit_open_until),
                     "is_eligible_for_promotion": is_eligible,
                     "description": description,
                 }
@@ -215,6 +246,72 @@ class AgentsService:
         )
 
         return {"agent_name": agent_name, "level": level}
+
+    def set_agent_control(
+        self,
+        agent_name: str,
+        *,
+        action_type: str = _DEFAULT_ACTION_TYPE,
+        is_enabled: bool | None = None,
+        failure_threshold: int | None = None,
+        reset_circuit: bool = False,
+    ) -> dict:
+        """Update an agent/action kill switch, threshold, or circuit reset."""
+        self._validate_agent_control_update(
+            agent_name=agent_name,
+            action_type=action_type,
+            is_enabled=is_enabled,
+            failure_threshold=failure_threshold,
+            reset_circuit=reset_circuit,
+        )
+
+        patch: dict[str, object] = {
+            "tenant_id": self.tenant_id,
+            "agent_name": agent_name,
+            "action_type": action_type,
+        }
+        if is_enabled is not None:
+            patch["is_enabled"] = is_enabled
+        if failure_threshold is not None:
+            patch["failure_threshold"] = failure_threshold
+        if reset_circuit:
+            patch.update(
+                {
+                    "failure_count": 0,
+                    "last_failure_at": None,
+                    "circuit_opened_at": None,
+                    "circuit_open_until": None,
+                    "circuit_open_reason": None,
+                }
+            )
+
+        self.db.rpc(
+            "set_config",
+            {"setting": "app.current_tenant_id", "value": self.tenant_id},
+        ).execute()
+
+        result = (
+            self.db.table("agent_autonomy_settings")
+            .upsert(patch, on_conflict="tenant_id,agent_name,action_type")
+            .execute()
+        )
+        rows = result.data or []
+        row = rows[0] if rows else self._fetch_control_row(agent_name, action_type)
+        if row is None:
+            row = patch
+
+        logger.info(
+            "agent_control_set",
+            extra={
+                "tenant_id": self.tenant_id,
+                "agent_name": agent_name,
+                "action_type": action_type,
+                "is_enabled": is_enabled,
+                "failure_threshold": failure_threshold,
+                "reset_circuit": reset_circuit,
+            },
+        )
+        return self._control_response(row, agent_name, action_type)
 
     def list_agent_runs(
         self,
@@ -341,39 +438,74 @@ class AgentsService:
 
         return stats
 
-    def _fetch_autonomy_levels(self) -> dict[str, int]:
-        """Return current autonomy level per agent_name.
-
-        Looks at ``action_type = 'default'`` rows (UI-managed).  Falls back
-        to the maximum level across all action_type rows for that agent if
-        no 'default' row exists (backward-compat with promoter-written rows).
-        """
+    def _fetch_default_autonomy_settings(self) -> dict[str, dict]:
+        """Return the UI-managed default autonomy/control row per agent."""
         rows = (
             self.db.table("agent_autonomy_settings")
-            .select("agent_name,action_type,level")
+            .select(_AUTONOMY_COLUMNS)
             .eq("tenant_id", self.tenant_id)
             .execute()
             .data
             or []
         )
 
-        # Collect all rows per agent
-        per_agent: dict[str, dict[str, int]] = {}
+        per_agent: dict[str, dict[str, dict]] = {}
         for row in rows:
             agent = row["agent_name"]
             action = row["action_type"]
-            lvl = row["level"]
-            per_agent.setdefault(agent, {})[action] = lvl
+            per_agent.setdefault(agent, {})[action] = row
 
-        levels: dict[str, int] = {}
+        settings: dict[str, dict] = {}
         for agent, action_map in per_agent.items():
             if _DEFAULT_ACTION_TYPE in action_map:
-                levels[agent] = action_map[_DEFAULT_ACTION_TYPE]
+                settings[agent] = action_map[_DEFAULT_ACTION_TYPE]
             else:
-                # Fall back to max level (most permissive) across all action types
-                levels[agent] = max(action_map.values())
+                # Backward compat with promoter-written action rows: expose the
+                # most permissive action level but keep default control values.
+                fallback = max(action_map.values(), key=lambda row: row.get("level", 2))
+                settings[agent] = {
+                    "agent_name": agent,
+                    "action_type": _DEFAULT_ACTION_TYPE,
+                    "level": fallback.get("level", 2),
+                }
 
-        return levels
+        return settings
+
+    def _fetch_control_row(self, agent_name: str, action_type: str) -> dict | None:
+        result = (
+            self.db.table("agent_autonomy_settings")
+            .select(_AUTONOMY_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .eq("agent_name", agent_name)
+            .eq("action_type", action_type)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    @staticmethod
+    def _validate_agent_control_update(
+        *,
+        agent_name: str,
+        action_type: str,
+        is_enabled: bool | None,
+        failure_threshold: int | None,
+        reset_circuit: bool,
+    ) -> None:
+        known_agents = {a[0] for a in AGENT_CATALOG}
+        if agent_name not in known_agents and agent_name != "copilot_agent":
+            raise AgentAutonomyError(f"Unknown agent: {agent_name!r}")
+        if not action_type:
+            raise AgentAutonomyError("action_type is required")
+        if is_enabled is None and failure_threshold is None and not reset_circuit:
+            raise AgentAutonomyError("No control change requested")
+        if failure_threshold is not None and not (1 <= failure_threshold <= 25):
+            raise AgentAutonomyError("failure_threshold must be between 1 and 25")
+        if agent_name in LOCKED_AGENTS and is_enabled is False:
+            raise AgentAutonomyError(
+                f"{agent_name!r} is required for accounting controls and cannot be disabled"
+            )
 
     def _fetch_tool_counts(self, run_ids: list[str]) -> dict[str, dict[str, int]]:
         if not run_ids:
@@ -438,6 +570,22 @@ class AgentsService:
         }
 
     @staticmethod
+    def _control_response(row: dict, agent_name: str, action_type: str) -> dict:
+        circuit_open_until = (
+            str(row["circuit_open_until"]) if row.get("circuit_open_until") else None
+        )
+        return {
+            "agent_name": row.get("agent_name", agent_name),
+            "action_type": row.get("action_type", action_type),
+            "is_enabled": bool(row.get("is_enabled", True)),
+            "failure_count": _int_or_default(row.get("failure_count"), 0),
+            "failure_threshold": _int_or_default(row.get("failure_threshold"), 3),
+            "circuit_open_until": circuit_open_until,
+            "circuit_open_reason": row.get("circuit_open_reason"),
+            "is_circuit_open": _circuit_is_open(circuit_open_until),
+        }
+
+    @staticmethod
     def _is_eligible_for_promotion(
         *,
         agent_name: str,
@@ -463,3 +611,25 @@ class AgentsService:
             and approval_rate >= min_rate
             and avg_confidence >= 0.85
         )
+
+
+def _int_or_default(value: object, default: int) -> int:
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _circuit_is_open(value: object) -> bool:
+    if not value:
+        return False
+    try:
+        if isinstance(value, datetime):
+            opened_until = value
+        else:
+            opened_until = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if opened_until.tzinfo is None:
+            opened_until = opened_until.replace(tzinfo=UTC)
+    except (TypeError, ValueError):
+        return False
+    return opened_until > datetime.now(UTC)

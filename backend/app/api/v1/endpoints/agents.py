@@ -1,7 +1,7 @@
 """Agents router — autonomy status and level management.
 
 Routes:
-  GET  /agents/autonomy-status                — viewer+; returns all 8 agents
+  GET  /agents/autonomy-status                — viewer+; returns known agents
   POST /agents/{agent_name}/set-level         — manager+; update autonomy level
 """
 
@@ -11,6 +11,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.agents.tool_registry import action_type_for_tool
 from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
@@ -18,9 +19,11 @@ from app.core.tenant import get_tenant_id
 from app.models.agents import (
     AgentAutonomyStatus,
     AgentAutonomyStatusResponse,
+    AgentControlResponse,
     AgentRunDetailResponse,
     AgentRunListResponse,
     AgentRunSummary,
+    SetAgentControlRequest,
     SetAgentLevelRequest,
     SetAgentLevelResponse,
 )
@@ -60,7 +63,7 @@ def get_autonomy_status(
 ) -> AgentAutonomyStatusResponse:
     """Return autonomy status for all known agents.
 
-    Always returns 8 entries (one per known agent).  Agents with no
+    Always returns one entry per known agent.  Agents with no
     suggestion history in the last 30 days show ``sample_count_30d=0``
     and ``approval_rate_30d=None``.
     """
@@ -122,6 +125,72 @@ def get_agent_run(
             detail="Agent run not found",
         )
     return AgentRunDetailResponse(**row)
+
+
+# ---------------------------------------------------------------------------
+# POST /agents/{agent_name}/control
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{agent_name}/control",
+    response_model=AgentControlResponse,
+    summary="Update an agent kill switch or circuit breaker",
+)
+def set_agent_control(
+    agent_name: str,
+    body: SetAgentControlRequest,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentControlResponse:
+    """Pause/resume an agent or tune/reset its default circuit breaker."""
+    try:
+        result = svc.set_agent_control(
+            agent_name,
+            is_enabled=body.is_enabled,
+            failure_threshold=body.failure_threshold,
+            reset_circuit=body.reset_circuit,
+        )
+    except AgentAutonomyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return AgentControlResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# POST /agents/{agent_name}/tools/{tool_name}/control
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{agent_name}/tools/{tool_name}/control",
+    response_model=AgentControlResponse,
+    summary="Update an agent tool kill switch or circuit breaker",
+)
+def set_agent_tool_control(
+    agent_name: str,
+    tool_name: str,
+    body: SetAgentControlRequest,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentControlResponse:
+    """Pause/resume a specific tool/action or reset its circuit breaker."""
+    try:
+        result = svc.set_agent_control(
+            agent_name,
+            action_type=action_type_for_tool(agent_name, tool_name),
+            is_enabled=body.is_enabled,
+            failure_threshold=body.failure_threshold,
+            reset_circuit=body.reset_circuit,
+        )
+    except AgentAutonomyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return AgentControlResponse(**result)
 
 
 # ---------------------------------------------------------------------------

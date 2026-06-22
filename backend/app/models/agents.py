@@ -23,6 +23,30 @@ class AgentAutonomyStatus(BaseModel):
         default=None,
         description="Average agent confidence score in last 30 days. None if no decided samples.",
     )
+    is_enabled: bool = Field(
+        default=True,
+        description="False when the admin kill switch blocks this agent's default action.",
+    )
+    failure_count: int = Field(
+        default=0,
+        description="Consecutive failures recorded for this agent's default action.",
+    )
+    failure_threshold: int = Field(
+        default=3,
+        description="Failures required before this agent's default circuit opens.",
+    )
+    circuit_open_until: str | None = Field(
+        default=None,
+        description="Future timestamp while the agent circuit is open.",
+    )
+    circuit_open_reason: str | None = Field(
+        default=None,
+        description="Last error that opened the agent circuit.",
+    )
+    is_circuit_open: bool = Field(
+        default=False,
+        description="True when circuit_open_until is still in the future.",
+    )
     is_eligible_for_promotion: bool = Field(
         description="True when all L2→L3 thresholds are met and current_level is 2"
     )
@@ -46,6 +70,38 @@ class SetAgentLevelResponse(BaseModel):
 
     agent_name: str
     level: int
+
+
+class SetAgentControlRequest(BaseModel):
+    """Body for updating an agent/action kill switch or circuit threshold."""
+
+    is_enabled: bool | None = Field(
+        default=None,
+        description="Set false to pause this agent/action, true to resume it.",
+    )
+    failure_threshold: int | None = Field(
+        default=None,
+        ge=1,
+        le=25,
+        description="Consecutive failures before opening the circuit.",
+    )
+    reset_circuit: bool = Field(
+        default=False,
+        description="Reset failure counters and close any currently open circuit.",
+    )
+
+
+class AgentControlResponse(BaseModel):
+    """Current control state for an agent/action row."""
+
+    agent_name: str
+    action_type: str
+    is_enabled: bool
+    failure_count: int
+    failure_threshold: int
+    circuit_open_until: str | None = None
+    circuit_open_reason: str | None = None
+    is_circuit_open: bool
 
 
 class AgentRunSummary(BaseModel):

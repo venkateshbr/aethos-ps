@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -165,3 +166,117 @@ async def test_exact_action_autonomy_level_overrides_default() -> None:
     )
 
     assert decision.autonomy_level == 3
+
+
+@pytest.mark.asyncio
+async def test_disabled_agent_blocks_tool_before_execution() -> None:
+    policy = AgentToolPolicy(
+        _Db(
+            {
+                "tenant_users": [{"tenant_id": "tenant-1", "user_id": "user-1", "role": "admin"}],
+                "agent_autonomy_settings": [
+                    {
+                        "tenant_id": "tenant-1",
+                        "agent_name": "copilot_agent",
+                        "action_type": "default",
+                        "level": 2,
+                        "is_enabled": False,
+                    }
+                ],
+            }
+        ),
+        tenant_id="tenant-1",
+    )
+
+    decision = await policy.decide(
+        agent_name="copilot_agent",
+        action_type="copilot_query_engagements",
+        tool_name="query_engagements",
+        risk_class="read_only",
+        user_id="user-1",
+    )
+
+    assert decision.allowed is False
+    assert decision.execute_now is False
+    assert decision.reason == "agent_disabled"
+
+
+@pytest.mark.asyncio
+async def test_disabled_tool_blocks_only_exact_action() -> None:
+    policy = AgentToolPolicy(
+        _Db(
+            {
+                "tenant_users": [{"tenant_id": "tenant-1", "user_id": "user-1", "role": "admin"}],
+                "agent_autonomy_settings": [
+                    {
+                        "tenant_id": "tenant-1",
+                        "agent_name": "copilot_agent",
+                        "action_type": "default",
+                        "level": 2,
+                        "is_enabled": True,
+                    },
+                    {
+                        "tenant_id": "tenant-1",
+                        "agent_name": "copilot_agent",
+                        "action_type": "copilot_update_rate_card",
+                        "level": 2,
+                        "is_enabled": False,
+                    },
+                ],
+            }
+        ),
+        tenant_id="tenant-1",
+    )
+
+    denied = await policy.decide(
+        agent_name="copilot_agent",
+        action_type="copilot_update_rate_card",
+        tool_name="update_rate_card",
+        risk_class="write_money_in",
+        user_id="user-1",
+    )
+    allowed = await policy.decide(
+        agent_name="copilot_agent",
+        action_type="copilot_query_engagements",
+        tool_name="query_engagements",
+        risk_class="read_only",
+        user_id="user-1",
+    )
+
+    assert denied.allowed is False
+    assert denied.reason == "tool_disabled:update_rate_card"
+    assert allowed.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_open_tool_circuit_blocks_exact_action() -> None:
+    future = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)).isoformat()
+    policy = AgentToolPolicy(
+        _Db(
+            {
+                "tenant_users": [{"tenant_id": "tenant-1", "user_id": "user-1", "role": "admin"}],
+                "agent_autonomy_settings": [
+                    {
+                        "tenant_id": "tenant-1",
+                        "agent_name": "copilot_agent",
+                        "action_type": "copilot_update_rate_card",
+                        "level": 2,
+                        "is_enabled": True,
+                        "circuit_open_until": future,
+                    },
+                ],
+            }
+        ),
+        tenant_id="tenant-1",
+    )
+
+    decision = await policy.decide(
+        agent_name="copilot_agent",
+        action_type="copilot_update_rate_card",
+        tool_name="update_rate_card",
+        risk_class="write_money_in",
+        user_id="user-1",
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "tool_circuit_open:update_rate_card"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from dataclasses import dataclass
 
 from app.agents.tool_registry import ToolRiskClass
@@ -53,7 +54,24 @@ class AgentToolPolicy:
     ) -> AgentToolPolicyDecision:
         user_role = await self._fetch_user_role(user_id)
         minimum_role = _MINIMUM_ROLE_BY_RISK[risk_class]
-        autonomy_level = await self._fetch_autonomy_level(agent_name, action_type)
+        autonomy_rows = await self._fetch_autonomy_rows(agent_name, action_type)
+        autonomy_level = self._select_autonomy_level(autonomy_rows, action_type)
+
+        control_reason = self._blocked_by_control(
+            rows=autonomy_rows,
+            action_type=action_type,
+            tool_name=tool_name,
+        )
+        if control_reason:
+            return AgentToolPolicyDecision(
+                allowed=False,
+                execute_now=False,
+                route_to_hitl=False,
+                reason=control_reason,
+                user_role=user_role,
+                minimum_role=minimum_role,
+                autonomy_level=autonomy_level,
+            )
 
         if ROLE_HIERARCHY[user_role] < ROLE_HIERARCHY[minimum_role]:
             return AgentToolPolicyDecision(
@@ -119,8 +137,8 @@ class AgentToolPolicy:
             return UserRole.viewer
         return UserRole.viewer
 
-    async def _fetch_autonomy_level(self, agent_name: str, action_type: str) -> int:
-        rows = await self._fetch_autonomy_rows(agent_name, action_type)
+    @staticmethod
+    def _select_autonomy_level(rows: list[dict], action_type: str) -> int:
         exact = next(
             (row for row in rows if row.get("action_type") == action_type),
             None,
@@ -141,7 +159,9 @@ class AgentToolPolicy:
         try:
             result = await asyncio.to_thread(
                 lambda: self.db.table("agent_autonomy_settings")
-                .select("action_type,level")
+                .select(
+                    "action_type,level,is_enabled,circuit_open_until,circuit_open_reason"
+                )
                 .eq("tenant_id", self.tenant_id)
                 .eq("agent_name", agent_name)
                 .in_("action_type", [action_type, _DEFAULT_ACTION_TYPE])
@@ -150,3 +170,48 @@ class AgentToolPolicy:
             return getattr(result, "data", None) or []
         except Exception:
             return []
+
+    @staticmethod
+    def _blocked_by_control(
+        *,
+        rows: list[dict],
+        action_type: str,
+        tool_name: str,
+    ) -> str | None:
+        default = next(
+            (row for row in rows if row.get("action_type") == _DEFAULT_ACTION_TYPE),
+            None,
+        )
+        exact = next(
+            (row for row in rows if row.get("action_type") == action_type),
+            None,
+        )
+
+        if default and default.get("is_enabled") is False:
+            return "agent_disabled"
+        if exact and exact.get("is_enabled") is False:
+            return f"tool_disabled:{tool_name}"
+
+        if default and _circuit_is_open(default.get("circuit_open_until")):
+            return "agent_circuit_open"
+        if exact and _circuit_is_open(exact.get("circuit_open_until")):
+            return f"tool_circuit_open:{tool_name}"
+
+        return None
+
+
+def _circuit_is_open(value: object) -> bool:
+    if not value:
+        return False
+    try:
+        if isinstance(value, datetime.datetime):
+            opened_until = value
+        else:
+            opened_until = datetime.datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        if opened_until.tzinfo is None:
+            opened_until = opened_until.replace(tzinfo=datetime.UTC)
+    except (TypeError, ValueError):
+        return False
+    return opened_until > datetime.datetime.now(datetime.UTC)
