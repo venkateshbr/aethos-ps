@@ -21,7 +21,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.employee import get_current_employee
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
@@ -47,7 +47,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _service(
+def _read_service(
+    employee: dict = Depends(get_current_employee),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> TimesheetService:
+    return TimesheetService(
+        db, tenant_id=str(employee["tenant_id"]), employee_id=str(employee["id"])
+    )
+
+
+def _write_service(
     employee: dict = Depends(get_current_employee),  # noqa: B008
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> TimesheetService:
@@ -58,7 +67,7 @@ def _service(
 
 @router.get("/my-projects", response_model=MyProjectListResponse)
 async def my_projects(
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_read_service),  # noqa: B008
 ) -> MyProjectListResponse:
     return await svc.my_projects()
 
@@ -67,7 +76,7 @@ async def my_projects(
 async def list_entries(
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_read_service),  # noqa: B008
 ) -> TimesheetEntryListResponse:
     df = dt = None
     try:
@@ -86,7 +95,7 @@ async def list_entries(
 @router.post("/entries", response_model=TimesheetEntryResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(
     payload: TimesheetEntryCreate,
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_write_service),  # noqa: B008
 ) -> TimesheetEntryResponse:
     return await svc.create_entry(payload)
 
@@ -95,7 +104,7 @@ async def create_entry(
 async def update_entry(
     id: str,
     payload: TimesheetEntryUpdate,
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_write_service),  # noqa: B008
 ) -> TimesheetEntryResponse:
     return await svc.update_entry(id, payload)
 
@@ -103,7 +112,7 @@ async def update_entry(
 @router.delete("/entries/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_entry(
     id: str,
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_write_service),  # noqa: B008
 ) -> None:
     await svc.delete_entry(id)
 
@@ -111,7 +120,7 @@ async def delete_entry(
 @router.post("/submit", response_model=SubmitWeekResponse)
 async def submit_week(
     payload: SubmitWeekRequest,
-    svc: TimesheetService = Depends(_service),  # noqa: B008
+    svc: TimesheetService = Depends(_write_service),  # noqa: B008
 ) -> SubmitWeekResponse:
     return await svc.submit_week(payload.week_start)
 
@@ -122,7 +131,14 @@ async def submit_week(
 # ---------------------------------------------------------------------------
 
 
-def _approvals_service(
+def _approvals_read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> TimesheetApprovalsService:
+    return TimesheetApprovalsService(db, tenant_id)
+
+
+def _approvals_write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> TimesheetApprovalsService:
@@ -132,7 +148,7 @@ def _approvals_service(
 @router.get("/approvals", response_model=ApprovalListResponse)
 async def list_pending_approvals(
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_read_service),  # noqa: B008
 ) -> ApprovalListResponse:
     return await svc.list_pending()
 
@@ -141,7 +157,7 @@ async def list_pending_approvals(
 async def approve_entries(
     payload: ApproveRequest,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_write_service),  # noqa: B008
 ) -> ApprovalActionResponse:
     return await svc.approve(payload.entry_ids, current_user.user_id)
 
@@ -150,6 +166,6 @@ async def approve_entries(
 async def reject_entries(
     payload: RejectRequest,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: TimesheetApprovalsService = Depends(_approvals_service),  # noqa: B008
+    svc: TimesheetApprovalsService = Depends(_approvals_write_service),  # noqa: B008
 ) -> ApprovalActionResponse:
     return await svc.reject(payload.entry_ids, payload.reason, current_user.user_id)
