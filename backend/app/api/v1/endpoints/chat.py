@@ -15,12 +15,9 @@ SSE frame format (text/event-stream):
 Security:
     - All endpoints require a valid JWT (get_current_user) and tenant context
       (get_tenant_id).
-    - The service-role Supabase client is used; tenant isolation is enforced at
-      the application/repository layer via explicit ``tenant_id`` filtering on
-      every query and insert.  This matches the pattern used by every other
-      service in the codebase (bills_service, invoices_service, etc.) — see
-      bug #98 for why RLS-on-anon-client did not work without middleware that
-      sets ``app.current_tenant_id``.
+    - Read-only thread listing uses the authenticated RLS Supabase client.
+      Thread creation and message streaming remain service-role-backed because
+      they persist user/assistant messages and execute write-capable tools.
     - No PII is logged; thread/message IDs and tenant_id are safe to log.
 """
 
@@ -36,7 +33,7 @@ from pydantic import BaseModel
 
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.repositories.chat_repo import ChatRepository
 from supabase import Client
@@ -139,7 +136,7 @@ async def list_threads(
     limit: int = 20,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[ThreadResponse]:
     """Return active threads for the authenticated user, newest first."""
     repo = _build_repo(db, tenant_id)
