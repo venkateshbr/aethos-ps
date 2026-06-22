@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.rbac import UserRole
+from app.services.agent_tool_policy import AgentToolPolicyDecision
+
 
 class _CapturingLedger:
     instances: ClassVar[list[_CapturingLedger]] = []
@@ -34,6 +37,23 @@ class _CapturingLedger:
         self.complete_calls.append((run_id, kwargs))
 
 
+class _RouteToHitlPolicy:
+    def __init__(self, db: object, tenant_id: str) -> None:
+        self.db = db
+        self.tenant_id = tenant_id
+
+    async def decide(self, **kwargs: object) -> AgentToolPolicyDecision:
+        return AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_tool_requires_human_review",
+            user_role=UserRole.manager,
+            minimum_role=UserRole.manager,
+            autonomy_level=2,
+        )
+
+
 def _make_agent():
     from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 
@@ -53,6 +73,9 @@ async def test_copilot_records_run_and_tool_invocation(monkeypatch: pytest.Monke
 
     _CapturingLedger.instances.clear()
     monkeypatch.setattr(graph, "AgentRunLedger", _CapturingLedger)
+    monkeypatch.setattr(graph, "AgentToolPolicy", _RouteToHitlPolicy)
+    write_suggestion = AsyncMock(return_value={"id": "sug-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
     trace_token = graph.trace_id_var.set("trace-123")
 
     try:
@@ -106,10 +129,19 @@ async def test_copilot_records_run_and_tool_invocation(monkeypatch: pytest.Monke
     assert run_id == "run-1"
     assert tool_call["tool_name"] == "update_rate_card"
     assert tool_call["risk_class"] == "write_money_in"
-    assert tool_call["status"] == "succeeded"
+    assert tool_call["status"] == "skipped"
     assert tool_call["external_tool_call_id"] == "call-1"
     assert tool_call["input_payload"] == {"employee_name": "Sarah", "rate": 425}
-    assert tool_call["output_payload"] == {"updated": True}
+    assert tool_call["output_payload"] == {
+        "requires_review": True,
+        "suggestion_id": "sug-1",
+        "action_type": "copilot_update_rate_card",
+        "tool_name": "update_rate_card",
+        "risk_class": "write_money_in",
+        "message": "Created an Inbox review task before applying this change.",
+    }
+    agent._execute_tool.assert_not_awaited()
+    write_suggestion.assert_awaited_once()
 
     assert ledger.complete_calls == [
         (

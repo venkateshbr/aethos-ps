@@ -215,6 +215,8 @@ class InboxService:
             return await self._materialise_expense(payload)
         elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
             return await self._materialise_bill(payload)
+        elif kind in ("copilot_log_time_entry", "copilot_update_rate_card"):
+            return await self._materialise_copilot_tool(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -228,6 +230,41 @@ class InboxService:
         back into the materialised row without an extra DB lookup.
         """
         return payload.get("original_document_id")
+
+    async def _materialise_copilot_tool(self, payload: dict) -> dict:
+        tool_name = payload.get("tool_name")
+        if tool_name not in ("log_time_entry", "update_rate_card"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported Copilot tool approval: {tool_name!r}",
+            )
+
+        tool_input = payload.get("tool_input") or {}
+        if not isinstance(tool_input, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Copilot tool payload must include a tool_input object",
+            )
+
+        from app.agents.copilot.graph import CopilotAgent, CopilotDeps
+
+        agent = CopilotAgent(
+            CopilotDeps(
+                tenant_id=self._tenant_id,
+                user_id=str(payload.get("requested_by_user_id") or ""),
+                db_client=self._db,
+            )
+        )
+        result = await agent._execute_tool(tool_name, tool_input)
+        if result.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Approved Copilot tool failed: {result['error']}",
+            )
+
+        if tool_name == "log_time_entry":
+            return {"entity_type": "time_entry", "entity_id": result.get("entry_id")}
+        return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
