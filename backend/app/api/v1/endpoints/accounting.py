@@ -2,6 +2,7 @@
 
 Endpoints:
   GET    /api/v1/accounting/periods                — list all periods with lock status
+  GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
@@ -64,6 +65,22 @@ class PeriodLockResponse(BaseModel):
     period: str
     action: str  # "locked" | "unlocked"
     message: str
+
+
+class PeriodCloseFinding(BaseModel):
+    code: str
+    source_table: str
+    source_id: str
+    source_number: str | None
+    reason: str
+    expected_reference_type: str
+
+
+class PeriodCloseReadinessResponse(BaseModel):
+    period: str
+    ready: bool
+    findings: list[PeriodCloseFinding]
+    trial_balance_balanced: bool
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +163,32 @@ async def list_periods(
         )
 
     return PeriodListResponse(periods=result)
+
+
+@router.get("/periods/{period}/close-readiness", response_model=PeriodCloseReadinessResponse)
+async def close_readiness(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> PeriodCloseReadinessResponse:
+    """Return reconciliation status for a period before attempting to lock it."""
+    _validate_period(period)
+    try:
+        result = CloseReconciliationService(db, tenant_id).check_period(period)
+    except Exception as exc:
+        logger.exception("Failed to reconcile period %s for tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodCloseReadinessResponse(
+        period=result.period,
+        ready=result.ready,
+        findings=[PeriodCloseFinding(**finding.as_dict()) for finding in result.findings],
+        trial_balance_balanced=result.trial_balance_balanced,
+    )
 
 
 @router.post("/periods/{period}/lock", response_model=PeriodLockResponse)

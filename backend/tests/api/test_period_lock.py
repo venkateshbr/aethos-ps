@@ -127,6 +127,18 @@ def test_period_lock_invalid_format_returns_422(
         )
 
 
+def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can preview period close readiness before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-readiness")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["ready"] is True
+    assert body["findings"] == []
+    assert body["trial_balance_balanced"] is True
+
+
 def test_period_lock_cross_tenant_isolation(
     admin_client_a: httpx.Client, client_b: httpx.Client, world: SeedWorld
 ) -> None:
@@ -197,6 +209,14 @@ def test_period_lock_rejects_when_subledger_unbalanced(
                 "notes": "period-lock reconciliation regression fixture",
             }
         ).execute()
+
+        readiness = admin_client_a.get(
+            f"/api/v1/accounting/periods/{period}/close-readiness"
+        )
+        assert readiness.status_code == 200, readiness.text
+        readiness_body = readiness.json()
+        assert readiness_body["ready"] is False
+        assert readiness_body["findings"][0]["code"] == "missing_invoice_journal"
 
         r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
         assert r.status_code == 409, r.text
