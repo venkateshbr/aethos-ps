@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
@@ -137,6 +138,54 @@ def test_export_csv_has_header_row(mock_db: MagicMock) -> None:
     assert header == expected_cols
 
 
+def test_export_csv_records_integrity_metadata(mock_db: MagicMock) -> None:
+    """CSV export stores actor, byte count, and SHA-256 without bank credentials."""
+    batch = {
+        "id": "batch-001",
+        "status": "approved",
+        "total": "5000.00",
+        "currency": "USD",
+        "pay_date": "2026-06-01",
+        "items": [
+            {
+                "amount": "5000.00",
+                "currency": "USD",
+                "bills": {
+                    "client_id": "client-1",
+                    "vendor_invoice_number": "VIN-9999",
+                },
+            }
+        ],
+    }
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value=batch)
+    chain = _chain([{"id": "batch-001"}])
+    mock_db.table.return_value = chain
+
+    raw = svc.export_csv("batch-001", USER_ID)
+
+    patch = chain.update.call_args.args[0]
+    assert patch["file_format"] == "csv"
+    assert patch["exported_by"] == USER_ID
+    assert patch["export_file_bytes"] == len(raw)
+    assert patch["export_file_sha256"] == hashlib.sha256(raw).hexdigest()
+    chain.eq.assert_any_call("tenant_id", TENANT_ID)
+
+
+def test_export_requires_approved_batch(mock_db: MagicMock) -> None:
+    """Draft batches cannot be exported into bank files."""
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value={"id": "batch-1", "status": "draft", "items": []})
+
+    with pytest.raises(HTTPException) as exc_info:
+        svc.export_csv("batch-1", USER_ID)
+
+    assert exc_info.value.status_code == 409
+    assert "approved" in str(exc_info.value.detail)
+
+
 # ---------------------------------------------------------------------------
 # 3. export_nacha output is padded to multiples of 10 lines
 # ---------------------------------------------------------------------------
@@ -172,6 +221,58 @@ def test_nacha_padded_to_multiple_of_10(mock_db: MagicMock) -> None:
     assert len(lines) % 10 == 0, (
         f"NACHA file must be padded to 10-line blocks; got {len(lines)} lines"
     )
+
+
+def test_approve_batch_records_approver(mock_db: MagicMock) -> None:
+    """Approval stores who approved the money-out batch."""
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value={"id": "batch-1", "status": "draft"})
+    chain = _chain([{"id": "batch-1", "status": "approved"}])
+    mock_db.table.return_value = chain
+
+    result = svc.approve_batch("batch-1", USER_ID)
+
+    assert result["status"] == "approved"
+    patch = chain.update.call_args.args[0]
+    assert patch["status"] == "approved"
+    assert patch["approved_by"] == USER_ID
+    assert "approved_at" in patch
+
+
+def test_mark_sent_requires_export_hash(mock_db: MagicMock) -> None:
+    """A batch cannot be marked sent until the exported file hash exists."""
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value={"id": "batch-1", "status": "approved"})
+
+    with pytest.raises(HTTPException) as exc_info:
+        svc.mark_sent("batch-1", USER_ID)
+
+    assert exc_info.value.status_code == 409
+    assert "exported" in str(exc_info.value.detail)
+
+
+def test_mark_sent_records_sender(mock_db: MagicMock) -> None:
+    """Sending to bank stores actor/timestamp and moves to sent_to_bank."""
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(
+        return_value={
+            "id": "batch-1",
+            "status": "approved",
+            "export_file_sha256": "a" * 64,
+        }
+    )
+    chain = _chain([{"id": "batch-1", "status": "sent_to_bank"}])
+    mock_db.table.return_value = chain
+
+    result = svc.mark_sent("batch-1", USER_ID)
+
+    assert result["status"] == "sent_to_bank"
+    patch = chain.update.call_args.args[0]
+    assert patch["status"] == "sent_to_bank"
+    assert patch["sent_by"] == USER_ID
+    assert "sent_at" in patch
 
 
 # ---------------------------------------------------------------------------

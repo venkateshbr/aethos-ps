@@ -12,6 +12,7 @@ Security notes:
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 from datetime import UTC, date, datetime
@@ -152,20 +153,38 @@ class BillPaymentsService:
         batch = self.get_batch(batch_id)
         if batch["status"] != "draft":
             raise HTTPException(409, f"Batch is already {batch['status']}")
+        approved_at = datetime.now(UTC).isoformat()
         result = (
             self.db.table("bill_payment_batches")
-            .update({"status": "approved"})
+            .update(
+                {
+                    "status": "approved",
+                    "approved_by": approved_by,
+                    "approved_at": approved_at,
+                }
+            )
             .eq("id", batch_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
         )
         return result.data[0]
 
-    def mark_sent(self, batch_id: str) -> dict:
-        self.get_batch(batch_id)  # verify exists + tenant owns it
+    def mark_sent(self, batch_id: str, sent_by: str) -> dict:
+        batch = self.get_batch(batch_id)
+        if batch["status"] != "approved":
+            raise HTTPException(409, "Batch must be approved before it can be sent to bank")
+        if not batch.get("export_file_sha256"):
+            raise HTTPException(409, "Batch must be exported before it can be sent to bank")
+        sent_at = datetime.now(UTC).isoformat()
         result = (
             self.db.table("bill_payment_batches")
-            .update({"status": "sent_to_bank", "exported_at": datetime.now(UTC).isoformat()})
+            .update(
+                {
+                    "status": "sent_to_bank",
+                    "sent_by": sent_by,
+                    "sent_at": sent_at,
+                }
+            )
             .eq("id", batch_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
@@ -242,6 +261,14 @@ class BillPaymentsService:
                 "id", item["id"]
             ).eq("tenant_id", self.tenant_id).execute()
 
+        self.db.table("bill_payment_batches").update(
+            {
+                "status": "settled",
+                "settled_by": settled_by,
+                "settled_at": settled_at,
+            }
+        ).eq("id", batch_id).eq("tenant_id", self.tenant_id).execute()
+
         logger.info(
             "bill_payment_batch_settled",
             extra={
@@ -274,7 +301,7 @@ class BillPaymentsService:
     # Export — NACHA
     # ------------------------------------------------------------------
 
-    def export_nacha(self, batch_id: str) -> bytes:
+    def export_nacha(self, batch_id: str, exported_by: str | None = None) -> bytes:
         """Generate a minimal NACHA ACH batch file. US market only.
 
         Routing/account numbers are left as placeholder zeros — the operator
@@ -282,6 +309,7 @@ class BillPaymentsService:
         or account numbers here (Prahari gate).
         """
         batch = self.get_batch(batch_id)
+        self._assert_exportable(batch)
         items = batch["items"]
 
         today = datetime.now(UTC)
@@ -333,25 +361,22 @@ class BillPaymentsService:
         while len(lines) % 10 != 0:
             lines.append("9" * 94)
 
-        content = "\r\n".join(lines)
-
-        self.db.table("bill_payment_batches").update(
-            {"file_format": "nacha", "exported_at": datetime.now(UTC).isoformat()}
-        ).eq("id", batch_id).execute()
-
-        return content.encode("ascii")
+        content = "\r\n".join(lines).encode("ascii")
+        self._persist_export_metadata(batch_id, "nacha", content, exported_by)
+        return content
 
     # ------------------------------------------------------------------
     # Export — CSV (universal, all 5 launch markets)
     # ------------------------------------------------------------------
 
-    def export_csv(self, batch_id: str) -> bytes:
+    def export_csv(self, batch_id: str, exported_by: str | None = None) -> bytes:
         """Generate a Universal CSV for bulk bank upload.
 
         Routing/account columns are intentionally blank — filled by the
         operator before upload.  We never persist bank credentials here.
         """
         batch = self.get_batch(batch_id)
+        self._assert_exportable(batch)
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(
@@ -381,8 +406,29 @@ class BillPaymentsService:
                 ]
             )
 
-        self.db.table("bill_payment_batches").update(
-            {"file_format": "csv", "exported_at": datetime.now(UTC).isoformat()}
-        ).eq("id", batch_id).execute()
+        content = output.getvalue().encode("utf-8")
+        self._persist_export_metadata(batch_id, "csv", content, exported_by)
+        return content
 
-        return output.getvalue().encode("utf-8")
+    def _assert_exportable(self, batch: dict) -> None:
+        if batch["status"] != "approved":
+            raise HTTPException(409, "Batch must be approved before export")
+
+    def _persist_export_metadata(
+        self,
+        batch_id: str,
+        file_format: str,
+        content: bytes,
+        exported_by: str | None,
+    ) -> None:
+        patch = {
+            "file_format": file_format,
+            "exported_at": datetime.now(UTC).isoformat(),
+            "export_file_sha256": hashlib.sha256(content).hexdigest(),
+            "export_file_bytes": len(content),
+        }
+        if exported_by:
+            patch["exported_by"] = exported_by
+        self.db.table("bill_payment_batches").update(patch).eq("id", batch_id).eq(
+            "tenant_id", self.tenant_id
+        ).execute()

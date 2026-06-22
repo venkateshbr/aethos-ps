@@ -96,16 +96,16 @@ def export_batch(
     batch_id: str,
     format: str = Query("csv", pattern="^(nacha|csv)$"),
     svc: BillPaymentsService = Depends(_service),  # noqa: B008
-    _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> Response:
     if format == "nacha":
-        content = svc.export_nacha(batch_id)
+        content = svc.export_nacha(batch_id, user.user_id)
         return Response(
             content=content,
             media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename=batch-{batch_id[:8]}.txt"},
         )
-    content = svc.export_csv(batch_id)
+    content = svc.export_csv(batch_id, user.user_id)
     return Response(
         content=content,
         media_type="text/csv",
@@ -117,9 +117,9 @@ def export_batch(
 def mark_sent(
     batch_id: str,
     svc: BillPaymentsService = Depends(_service),  # noqa: B008
-    _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> dict:
-    return svc.mark_sent(batch_id)
+    return svc.mark_sent(batch_id, user.user_id)
 
 
 @router.post("/batches/{batch_id}/settle")

@@ -297,7 +297,7 @@ Work items:
 - RLS/service-role reduction plan.
 - Data retention and export controls.
 - PII policy for uploaded documents, including binary masking/redaction before external LLM calls.
-- Bank/payment file integrity and approval controls.
+- Done 2026-06-22: added bill-payment export integrity metadata, actor/timestamp controls for approval/export/send/settlement, settled batch status, and financial event log coverage for payment-batch transitions.
 - Localization depth for US, UK, SG, IN, AU tax and reporting.
 - Integration roadmap: email/calendar, bank feeds, Companies House/HMRC equivalents, payroll, CRM, document storage.
 
