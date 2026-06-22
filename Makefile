@@ -22,7 +22,8 @@ e2e-headed:
 
 ## Start the backend API (port 8011)
 backend:
-	cd backend && uv run uvicorn app.main:app --reload --port 8011
+	set -a; [ ! -f .env ] || . ./.env; set +a; \
+	  cd backend && uv run uvicorn app.main:app --reload --port 8011
 
 ## Start the Angular frontend (port 4201)
 frontend:

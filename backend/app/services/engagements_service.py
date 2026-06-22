@@ -76,6 +76,8 @@ class EngagementService:
             # downstream readers don't have to worry about "100000.0" coming
             # back as a stale value.
             eng_data["total_value"] = serialise_money(data.total_value)
+        if data.description is not None:
+            eng_data["description"] = data.description
         if data.start_date is not None:
             eng_data["start_date"] = data.start_date.isoformat()
         if data.end_date is not None:
@@ -191,10 +193,14 @@ def _billing_terms_to_dict(terms: BillingTerms) -> dict:
     result: dict = {}
     if terms.fixed_fee_amount is not None:
         result["fixed_fee_amount"] = serialise_money(terms.fixed_fee_amount)
+    if terms.milestone_total is not None:
+        result["milestone_total"] = serialise_money(terms.milestone_total)
     if terms.retainer_monthly_amount is not None:
         result["retainer_monthly_amount"] = serialise_money(terms.retainer_monthly_amount)
     if terms.retainer_floor is not None:
         result["retainer_floor"] = serialise_money(terms.retainer_floor)
+    if terms.retainer_rollover is not None:
+        result["retainer_rollover"] = terms.retainer_rollover
     if terms.cap_amount is not None:
         result["cap_amount"] = serialise_money(terms.cap_amount)
     return result

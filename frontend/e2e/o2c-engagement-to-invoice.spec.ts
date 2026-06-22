@@ -97,9 +97,15 @@ test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => 
     ).or(page.getByRole('heading', { name: /new engagement|create engagement/i }));
     await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
 
+    await expect(page.locator('#eng-service')).toBeVisible();
+    await expect(page.locator('#eng-service-line')).toBeVisible();
+    await expect(page.locator('#eng-rate-card')).toBeVisible();
+    await expect(page.locator('#eng-billing')).toContainText('Retainer Drawdown');
+    await expect(page.locator('#eng-billing')).toContainText('Mixed');
+
     test.info().annotations.push({
       type: 'finding',
-      description: '#130 fix verified: "New engagement" opens the slide-in create form.',
+      description: '#130 + Phase 1 verified: "New engagement" opens with service catalogue, service line, rate card, and expanded billing arrangement controls.',
     });
   });
 

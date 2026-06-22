@@ -11,19 +11,59 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
-import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
+import {
+  EngagementCreate,
+  EngagementService,
+  EngagementSummary,
+} from '../../core/services/engagement.service';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { userMessageForError } from '../../core/utils/error-message';
 
 interface ClientOption { id: string; name: string; }
+interface RateCardOption { id: string; name: string; currency: string; }
+interface ServiceCatalogueOption {
+  id: string;
+  code: string;
+  name: string;
+  service_line: string;
+  billing_unit: string;
+  default_rate?: string | null;
+  default_currency: string;
+}
+
+type ServiceCataloguePayload =
+  | ServiceCatalogueOption[]
+  | { items?: ServiceCatalogueOption[]; total?: number };
+
+interface EngagementCreateFormValue {
+  name: string;
+  client_id: string;
+  service_catalogue_id: string;
+  service_line: string;
+  billing_arrangement: string;
+  rate_card_id: string;
+  currency: string;
+  total_value: string;
+  fixed_fee_amount: string;
+  milestone_total: string;
+  retainer_monthly_amount: string;
+  retainer_floor: string;
+  retainer_rollover: boolean;
+  cap_amount: string;
+  start_date: string;
+  end_date: string;
+  description: string;
+}
 
 function formatBillingArrangement(arrangement: string): string {
   const map: Record<string, string> = {
     time_and_materials: 'T&M',
     fixed_fee: 'Fixed',
     retainer: 'Retainer',
+    retainer_draw: 'Retainer Draw',
     milestone: 'Milestone',
     capped_tm: 'Capped T&M',
+    mixed: 'Mixed',
   };
   return map[arrangement] ?? arrangement;
 }
@@ -298,6 +338,39 @@ function formatBillingArrangement(arrangement: string): string {
             }
           </div>
 
+          <!-- Service catalogue -->
+          <div>
+            <label for="eng-service" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Service</label>
+            <select
+              id="eng-service"
+              formControlName="service_catalogue_id"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            >
+              <option value="">No catalogue service</option>
+              @for (svc of serviceCatalogue(); track svc.id) {
+                <option [value]="svc.id">{{ svc.code }} — {{ svc.name }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Service line -->
+          <div>
+            <label for="eng-service-line" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Service line</label>
+            <select
+              id="eng-service-line"
+              formControlName="service_line"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            >
+              <option value="">Select…</option>
+              <option value="accounting">Accounting</option>
+              <option value="tax">Tax</option>
+              <option value="cosec">Company Secretarial</option>
+              <option value="payroll">Payroll</option>
+              <option value="advisory">Advisory</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
           <!-- Billing arrangement -->
           <div>
             <label for="eng-billing" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Billing arrangement *</label>
@@ -310,12 +383,29 @@ function formatBillingArrangement(arrangement: string): string {
               <option value="time_and_materials">Time &amp; Materials</option>
               <option value="fixed_fee">Fixed Fee</option>
               <option value="retainer">Retainer</option>
+              <option value="retainer_draw">Retainer Drawdown</option>
               <option value="milestone">Milestone</option>
               <option value="capped_tm">Capped T&amp;M</option>
+              <option value="mixed">Mixed</option>
             </select>
             @if (createForm.controls.billing_arrangement.touched && createForm.controls.billing_arrangement.errors) {
               <p class="text-xs text-confidence-low mt-1">Billing arrangement is required.</p>
             }
+          </div>
+
+          <!-- Rate card -->
+          <div>
+            <label for="eng-rate-card" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Rate card</label>
+            <select
+              id="eng-rate-card"
+              formControlName="rate_card_id"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            >
+              <option value="">No rate card</option>
+              @for (card of rateCards(); track card.id) {
+                <option [value]="card.id">{{ card.name }} — {{ card.currency }}</option>
+              }
+            </select>
           </div>
 
           <!-- Currency -->
@@ -350,6 +440,80 @@ function formatBillingArrangement(arrangement: string): string {
             />
             <p class="text-xs text-text-muted mt-1">Optional. Enter as a decimal number.</p>
           </div>
+
+          <!-- Billing terms -->
+          @if (showFixedFeeTerms()) {
+            <div>
+              <label for="eng-fixed-fee" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Fixed fee amount</label>
+              <input
+                id="eng-fixed-fee"
+                type="text"
+                formControlName="fixed_fee_amount"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                placeholder="e.g. 25000.00"
+              />
+            </div>
+          }
+
+          @if (showRetainerTerms()) {
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="eng-retainer-monthly" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Monthly retainer</label>
+                <input
+                  id="eng-retainer-monthly"
+                  type="text"
+                  formControlName="retainer_monthly_amount"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                  placeholder="e.g. 5000.00"
+                />
+              </div>
+              <div>
+                <label for="eng-retainer-floor" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Retainer floor</label>
+                <input
+                  id="eng-retainer-floor"
+                  type="text"
+                  formControlName="retainer_floor"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                  placeholder="Optional"
+                />
+              </div>
+              <label class="col-span-2 inline-flex items-center gap-2 text-xs text-text-muted">
+                <input
+                  id="eng-retainer-rollover"
+                  type="checkbox"
+                  formControlName="retainer_rollover"
+                  class="w-4 h-4 rounded border-border-strong bg-surface text-accent focus:ring-accent"
+                />
+                Unused retainer rolls over
+              </label>
+            </div>
+          }
+
+          @if (showMilestoneTerms()) {
+            <div>
+              <label for="eng-milestone-total" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Milestone total</label>
+              <input
+                id="eng-milestone-total"
+                type="text"
+                formControlName="milestone_total"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                placeholder="e.g. 40000.00"
+              />
+            </div>
+          }
+
+          @if (showCappedTerms()) {
+            <div>
+              <label for="eng-cap-amount" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Cap amount</label>
+              <input
+                id="eng-cap-amount"
+                type="text"
+                formControlName="cap_amount"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                placeholder="e.g. 75000.00"
+              />
+            </div>
+          }
 
           <!-- Start Date -->
           <div>
@@ -444,12 +608,23 @@ export class EngagementsListComponent implements OnInit {
   creating = signal(false);
   createError = signal<string | null>(null);
   clients = signal<ClientOption[]>([]);
+  rateCards = signal<RateCardOption[]>([]);
+  serviceCatalogue = signal<ServiceCatalogueOption[]>([]);
   createForm = this.fb.nonNullable.group({
     name:                ['', [Validators.required]],
     client_id:           ['', [Validators.required]],
+    service_catalogue_id: [''],
+    service_line:        [''],
     billing_arrangement: ['', [Validators.required]],
+    rate_card_id:        [''],
     currency:            ['', [Validators.required]],
     total_value:         [''],
+    fixed_fee_amount:    [''],
+    milestone_total:     [''],
+    retainer_monthly_amount: [''],
+    retainer_floor:      [''],
+    retainer_rollover:   [false],
+    cap_amount:          [''],
     start_date:          [''],
     end_date:            [''],
     description:         [''],
@@ -458,6 +633,10 @@ export class EngagementsListComponent implements OnInit {
   displayedColumns = ['name', 'client', 'billing', 'currency', 'value', 'status', 'actions'];
 
   ngOnInit(): void {
+    this.createForm.controls.service_catalogue_id.valueChanges.subscribe(id => {
+      this.applyServiceDefaults(id);
+    });
+
     this.engagementService.getEngagements().subscribe({
       next: (res) => {
         this.engagements.set(res);
@@ -505,17 +684,54 @@ export class EngagementsListComponent implements OnInit {
   }
 
   openCreateForm(): void {
-    this.createForm.reset({ name: '', client_id: '', billing_arrangement: '', currency: '', total_value: '', start_date: '', end_date: '', description: '' });
+    this.createForm.reset({
+      name: '',
+      client_id: '',
+      service_catalogue_id: '',
+      service_line: '',
+      billing_arrangement: '',
+      rate_card_id: '',
+      currency: '',
+      total_value: '',
+      fixed_fee_amount: '',
+      milestone_total: '',
+      retainer_monthly_amount: '',
+      retainer_floor: '',
+      retainer_rollover: false,
+      cap_amount: '',
+      start_date: '',
+      end_date: '',
+      description: '',
+    });
     this.createError.set(null);
     this.showCreateForm.set(true);
-    // Load customers for the dropdown — filter to kind=customer (includes 'both').
-    // The backend accepts ?kind=customer and returns contacts where kind IN ('customer','both').
+    this.loadCreateFormOptions();
+  }
+
+  private loadCreateFormOptions(): void {
     this.http.get<{ items?: { id: string; name: string }[] } | { id: string; name: string }[]>('/api/v1/clients?kind=customer').subscribe({
       next: (res) => {
         const list = Array.isArray(res) ? res : (res as { items?: { id: string; name: string }[] }).items ?? [];
         this.clients.set(list.map(c => ({ id: c.id, name: c.name })));
       },
       error: () => this.clients.set([]),
+    });
+
+    this.http.get<RateCardOption[]>('/api/v1/rate-cards').subscribe({
+      next: cards => this.rateCards.set(cards.map(card => ({
+        id: card.id,
+        name: card.name,
+        currency: card.currency,
+      }))),
+      error: () => this.rateCards.set([]),
+    });
+
+    this.http.get<ServiceCataloguePayload>('/api/v1/services').subscribe({
+      next: (res) => {
+        const items = Array.isArray(res) ? res : res.items ?? [];
+        this.serviceCatalogue.set(items);
+      },
+      error: () => this.serviceCatalogue.set([]),
     });
   }
 
@@ -531,12 +747,17 @@ export class EngagementsListComponent implements OnInit {
     this.creating.set(true);
     this.createError.set(null);
     const v = this.createForm.getRawValue();
+    const billingTerms = this.buildBillingTerms(v);
     this.engagementService.createEngagement({
       name:                v.name,
       client_id:           v.client_id,
       billing_arrangement: v.billing_arrangement,
       currency:            v.currency,
       total_value:         v.total_value || null,
+      service_catalogue_id: v.service_catalogue_id || null,
+      service_line:        v.service_line || null,
+      rate_card_id:        v.rate_card_id || null,
+      billing_terms:       billingTerms,
       start_date:          v.start_date || null,
       end_date:            v.end_date || null,
       description:         v.description || null,
@@ -554,5 +775,67 @@ export class EngagementsListComponent implements OnInit {
         );
       },
     });
+  }
+
+  showFixedFeeTerms(): boolean {
+    const arrangement = this.createForm.controls.billing_arrangement.value;
+    return arrangement === 'fixed_fee' || arrangement === 'mixed';
+  }
+
+  showRetainerTerms(): boolean {
+    const arrangement = this.createForm.controls.billing_arrangement.value;
+    return arrangement === 'retainer' || arrangement === 'retainer_draw';
+  }
+
+  showMilestoneTerms(): boolean {
+    return this.createForm.controls.billing_arrangement.value === 'milestone';
+  }
+
+  showCappedTerms(): boolean {
+    const arrangement = this.createForm.controls.billing_arrangement.value;
+    return arrangement === 'capped_tm' || arrangement === 'mixed';
+  }
+
+  private applyServiceDefaults(id: string): void {
+    const service = this.serviceCatalogue().find(item => item.id === id);
+    if (!service) return;
+
+    const arrangement = this.arrangementFromBillingUnit(service.billing_unit);
+    const patch: Partial<EngagementCreateFormValue> = {
+      service_line: service.service_line,
+      currency: service.default_currency || this.createForm.controls.currency.value || 'USD',
+    };
+    if (arrangement) patch.billing_arrangement = arrangement;
+    if (service.default_rate && !this.createForm.controls.total_value.value) {
+      patch.total_value = service.default_rate;
+      if (arrangement === 'fixed_fee') patch.fixed_fee_amount = service.default_rate;
+      if (arrangement === 'retainer') patch.retainer_monthly_amount = service.default_rate;
+      if (arrangement === 'milestone') patch.milestone_total = service.default_rate;
+    }
+    this.createForm.patchValue(patch);
+  }
+
+  private arrangementFromBillingUnit(unit: string): string | null {
+    const map: Record<string, string> = {
+      hour: 'time_and_materials',
+      fixed: 'fixed_fee',
+      retainer: 'retainer',
+      milestone: 'milestone',
+      per_employee: 'fixed_fee',
+      per_entity: 'fixed_fee',
+      per_event: 'fixed_fee',
+    };
+    return map[unit] ?? null;
+  }
+
+  private buildBillingTerms(v: EngagementCreateFormValue): EngagementCreate['billing_terms'] {
+    const terms: NonNullable<EngagementCreate['billing_terms']> = {};
+    if (v.fixed_fee_amount) terms.fixed_fee_amount = v.fixed_fee_amount;
+    if (v.milestone_total) terms.milestone_total = v.milestone_total;
+    if (v.retainer_monthly_amount) terms.retainer_monthly_amount = v.retainer_monthly_amount;
+    if (v.retainer_floor) terms.retainer_floor = v.retainer_floor;
+    if (v.retainer_rollover) terms.retainer_rollover = v.retainer_rollover;
+    if (v.cap_amount) terms.cap_amount = v.cap_amount;
+    return Object.keys(terms).length ? terms : null;
   }
 }
