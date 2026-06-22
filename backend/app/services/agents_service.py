@@ -20,6 +20,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from app.agents.tool_registry import risk_class_allows, risk_class_for_action
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -93,10 +94,19 @@ _DEFAULT_ACTION_TYPE = "default"
 _DECIDED_STATUSES = ("approved", "approved_with_edits", "rejected", "auto_applied")
 # Positive statuses (count toward approval)
 _APPROVED_STATUSES = ("approved", "approved_with_edits", "auto_applied")
+_VALID_AUTO_RISKS = {
+    "read_only",
+    "draft",
+    "write_low_risk",
+    "write_money_in",
+    "write_money_out",
+    "accounting",
+}
 
 _AUTONOMY_COLUMNS = (
     "agent_name,action_type,level,is_enabled,failure_count,failure_threshold,"
-    "circuit_open_until,circuit_open_reason"
+    "circuit_open_until,circuit_open_reason,l3_opt_in,eval_passed_at,eval_score,"
+    "max_auto_risk"
 )
 
 _AGENT_RUN_COLUMNS = (
@@ -174,6 +184,15 @@ class AgentsService:
                 avg_confidence=avg_confidence,
                 sample_count=sample_count,
             )
+            if is_eligible:
+                is_eligible = (
+                    bool(setting.get("l3_opt_in"))
+                    and bool(setting.get("eval_passed_at"))
+                    and risk_class_allows(
+                        setting.get("max_auto_risk") or "draft",
+                        risk_class_for_action(agent_name, _DEFAULT_ACTION_TYPE),
+                    )
+                )
 
             results.append(
                 {
@@ -193,6 +212,18 @@ class AgentsService:
                     "circuit_open_until": circuit_open_until,
                     "circuit_open_reason": setting.get("circuit_open_reason"),
                     "is_circuit_open": _circuit_is_open(circuit_open_until),
+                    "l3_opt_in": bool(setting.get("l3_opt_in", False)),
+                    "eval_passed_at": (
+                        str(setting["eval_passed_at"])
+                        if setting.get("eval_passed_at")
+                        else None
+                    ),
+                    "eval_score": (
+                        str(setting["eval_score"])
+                        if setting.get("eval_score") is not None
+                        else None
+                    ),
+                    "max_auto_risk": setting.get("max_auto_risk") or "draft",
                     "is_eligible_for_promotion": is_eligible,
                     "description": description,
                 }
@@ -224,6 +255,12 @@ class AgentsService:
         if not (_MIN_LEVEL <= level <= _MAX_LEVEL):
             raise AgentAutonomyError(
                 f"Level must be between {_MIN_LEVEL} and {_MAX_LEVEL}; got {level}"
+            )
+
+        if level == 3:
+            self._assert_l3_promotion_allowed(
+                agent_name=agent_name,
+                action_type=_DEFAULT_ACTION_TYPE,
             )
 
         self.db.rpc(
@@ -317,6 +354,49 @@ class AgentsService:
             },
         )
         return self._control_response(row, agent_name, action_type)
+
+    def set_l3_policy(
+        self,
+        agent_name: str,
+        *,
+        action_type: str = _DEFAULT_ACTION_TYPE,
+        l3_opt_in: bool,
+        max_auto_risk: str,
+    ) -> dict:
+        """Set admin-controlled L3 promotion policy for an agent/action."""
+        self._validate_agent_control_update(
+            agent_name=agent_name,
+            action_type=action_type,
+            is_enabled=None,
+            failure_threshold=None,
+            reset_circuit=True,
+        )
+        if max_auto_risk not in _VALID_AUTO_RISKS:
+            raise AgentAutonomyError(f"Unknown max_auto_risk: {max_auto_risk!r}")
+
+        patch: dict[str, object] = {
+            "tenant_id": self.tenant_id,
+            "agent_name": agent_name,
+            "action_type": action_type,
+            "l3_opt_in": l3_opt_in,
+            "max_auto_risk": max_auto_risk,
+        }
+
+        self.db.rpc(
+            "set_config",
+            {"setting": "app.current_tenant_id", "value": self.tenant_id},
+        ).execute()
+
+        result = (
+            self.db.table("agent_autonomy_settings")
+            .upsert(patch, on_conflict="tenant_id,agent_name,action_type")
+            .execute()
+        )
+        rows = result.data or []
+        row = rows[0] if rows else self._fetch_control_row(agent_name, action_type)
+        if row is None:
+            row = patch
+        return self._l3_policy_response(row, agent_name, action_type)
 
     def list_agent_runs(
         self,
@@ -514,6 +594,33 @@ class AgentsService:
         rows = result.data or []
         return rows[0] if rows else None
 
+    def _assert_l3_promotion_allowed(self, agent_name: str, action_type: str) -> None:
+        row = self._fetch_control_row(agent_name, action_type) or {}
+        if not row.get("l3_opt_in"):
+            raise AgentAutonomyError("L3 promotion requires explicit admin opt-in")
+        if not row.get("eval_passed_at"):
+            raise AgentAutonomyError("L3 promotion requires a passing eval gate")
+
+        actual_risk = risk_class_for_action(agent_name, action_type)
+        max_auto_risk = row.get("max_auto_risk") or "draft"
+        if not risk_class_allows(max_auto_risk, actual_risk):
+            raise AgentAutonomyError(
+                f"L3 promotion requires max_auto_risk >= {actual_risk}; "
+                f"current max_auto_risk is {max_auto_risk}"
+            )
+
+        stats = self._fetch_suggestion_stats_30d().get(agent_name, {})
+        if not self._is_eligible_for_promotion(
+            agent_name=agent_name,
+            current_level=_int_or_default(row.get("level"), 2),
+            approval_rate=stats.get("approval_rate"),
+            avg_confidence=stats.get("avg_confidence"),
+            sample_count=_int_or_default(stats.get("sample_count"), 0),
+        ):
+            raise AgentAutonomyError(
+                "L3 promotion requires sufficient approval history"
+            )
+
     @staticmethod
     def _validate_agent_control_update(
         *,
@@ -631,6 +738,21 @@ class AgentsService:
             "circuit_open_until": circuit_open_until,
             "circuit_open_reason": row.get("circuit_open_reason"),
             "is_circuit_open": _circuit_is_open(circuit_open_until),
+        }
+
+    @staticmethod
+    def _l3_policy_response(row: dict, agent_name: str, action_type: str) -> dict:
+        return {
+            "agent_name": row.get("agent_name", agent_name),
+            "action_type": row.get("action_type", action_type),
+            "l3_opt_in": bool(row.get("l3_opt_in", False)),
+            "max_auto_risk": row.get("max_auto_risk") or "draft",
+            "eval_passed_at": (
+                str(row["eval_passed_at"]) if row.get("eval_passed_at") else None
+            ),
+            "eval_score": (
+                str(row["eval_score"]) if row.get("eval_score") is not None else None
+            ),
         }
 
     @staticmethod

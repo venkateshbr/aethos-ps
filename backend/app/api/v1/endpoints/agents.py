@@ -22,10 +22,12 @@ from app.models.agents import (
     AgentControlResponse,
     AgentEvalCandidateListResponse,
     AgentEvalCandidateResponse,
+    AgentL3PolicyResponse,
     AgentRunDetailResponse,
     AgentRunListResponse,
     AgentRunSummary,
     SetAgentControlRequest,
+    SetAgentL3PolicyRequest,
     SetAgentLevelRequest,
     SetAgentLevelResponse,
 )
@@ -157,6 +159,70 @@ def list_eval_candidates(
         candidates=candidates,
         total=raw["total"],
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /agents/{agent_name}/l3-policy
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{agent_name}/l3-policy",
+    response_model=AgentL3PolicyResponse,
+    summary="Set admin L3 promotion policy for an agent",
+)
+def set_agent_l3_policy(
+    agent_name: str,
+    body: SetAgentL3PolicyRequest,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+) -> AgentL3PolicyResponse:
+    """Set explicit opt-in and max auto-risk for future L3 promotion."""
+    try:
+        result = svc.set_l3_policy(
+            agent_name,
+            l3_opt_in=body.l3_opt_in,
+            max_auto_risk=body.max_auto_risk,
+        )
+    except AgentAutonomyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return AgentL3PolicyResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# POST /agents/{agent_name}/tools/{tool_name}/l3-policy
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{agent_name}/tools/{tool_name}/l3-policy",
+    response_model=AgentL3PolicyResponse,
+    summary="Set admin L3 promotion policy for an agent tool",
+)
+def set_agent_tool_l3_policy(
+    agent_name: str,
+    tool_name: str,
+    body: SetAgentL3PolicyRequest,
+    svc: AgentsService = Depends(_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+) -> AgentL3PolicyResponse:
+    """Set explicit opt-in and max auto-risk for a specific tool/action."""
+    try:
+        result = svc.set_l3_policy(
+            agent_name,
+            action_type=action_type_for_tool(agent_name, tool_name),
+            l3_opt_in=body.l3_opt_in,
+            max_auto_risk=body.max_auto_risk,
+        )
+    except AgentAutonomyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return AgentL3PolicyResponse(**result)
 
 
 # ---------------------------------------------------------------------------

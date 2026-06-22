@@ -150,7 +150,7 @@ def test_money_agent_requires_higher_thresholds() -> None:
 
 
 def test_promotion_proposed_when_thresholds_met() -> None:
-    """When all thresholds are met for a non-money agent, a hitl_task is created."""
+    """When metrics and L3 gates are met, a hitl_task is created."""
     suggestions = [
         {
             "agent_name": "collections_agent",
@@ -160,9 +160,91 @@ def test_promotion_proposed_when_thresholds_met() -> None:
         }
         for _ in range(30)
     ]
-    db = _stub_db_for_promotions(suggestions, autonomy_settings=[], hitl_open=[])
+    db = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": True,
+                "eval_passed_at": "2026-06-22T06:00:00Z",
+                "max_auto_risk": "draft",
+            }
+        ],
+        hitl_open=[],
+    )
     result = _check_promotions(db, "tenant-3")
     assert result == 1
+
+
+def test_promotion_skipped_without_l3_opt_in_and_eval_pass() -> None:
+    suggestions = [
+        {
+            "agent_name": "collections_agent",
+            "action_type": "send_email",
+            "status": "approved",
+            "confidence": "0.96",
+        }
+        for _ in range(30)
+    ]
+    db = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": False,
+                "eval_passed_at": None,
+                "max_auto_risk": "draft",
+            }
+        ],
+        hitl_open=[],
+    )
+
+    result = _check_promotions(db, "tenant-7")
+
+    assert result == 0
+
+
+def test_promotion_requires_tool_risk_permission() -> None:
+    suggestions = [
+        {
+            "agent_name": "copilot_agent",
+            "action_type": "copilot_update_rate_card",
+            "status": "approved",
+            "confidence": "0.99",
+        }
+        for _ in range(60)
+    ]
+    blocked = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": True,
+                "eval_passed_at": "2026-06-22T06:00:00Z",
+                "max_auto_risk": "draft",
+            }
+        ],
+        hitl_open=[],
+    )
+    allowed = _stub_db_for_promotions(
+        suggestions,
+        autonomy_settings=[
+            {
+                "level": 2,
+                "locked_at_l2": False,
+                "l3_opt_in": True,
+                "eval_passed_at": "2026-06-22T06:00:00Z",
+                "max_auto_risk": "write_money_in",
+            }
+        ],
+        hitl_open=[],
+    )
+
+    assert _check_promotions(blocked, "tenant-8") == 0
+    assert _check_promotions(allowed, "tenant-8") == 1
 
 
 # ---------------------------------------------------------------------------

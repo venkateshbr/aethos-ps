@@ -47,6 +47,22 @@ class AgentAutonomyStatus(BaseModel):
         default=False,
         description="True when circuit_open_until is still in the future.",
     )
+    l3_opt_in: bool = Field(
+        default=False,
+        description="Explicit admin opt-in for L3 promotion.",
+    )
+    eval_passed_at: str | None = Field(
+        default=None,
+        description="Timestamp of latest passing eval gate for this agent default action.",
+    )
+    eval_score: str | None = Field(
+        default=None,
+        description="Score from latest passing eval gate.",
+    )
+    max_auto_risk: str = Field(
+        default="draft",
+        description="Highest risk class permitted for automatic L3 execution.",
+    )
     is_eligible_for_promotion: bool = Field(
         description="True when all L2→L3 thresholds are met and current_level is 2"
     )
@@ -102,6 +118,27 @@ class AgentControlResponse(BaseModel):
     circuit_open_until: str | None = None
     circuit_open_reason: str | None = None
     is_circuit_open: bool
+
+
+class SetAgentL3PolicyRequest(BaseModel):
+    """Admin policy gate for allowing future L3 promotion."""
+
+    l3_opt_in: bool = Field(description="Explicit admin opt-in for L3 promotion.")
+    max_auto_risk: str = Field(
+        default="draft",
+        description="Highest risk class permitted for automatic L3 execution.",
+    )
+
+
+class AgentL3PolicyResponse(BaseModel):
+    """Current L3 promotion policy for an agent/action row."""
+
+    agent_name: str
+    action_type: str
+    l3_opt_in: bool
+    max_auto_risk: str
+    eval_passed_at: str | None = None
+    eval_score: str | None = None
 
 
 class AgentEvalCandidateResponse(BaseModel):

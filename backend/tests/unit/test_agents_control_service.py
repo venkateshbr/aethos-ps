@@ -103,6 +103,23 @@ def _control_row(**overrides: object) -> dict:
         "failure_threshold": 3,
         "circuit_open_until": future.isoformat(),
         "circuit_open_reason": "boom",
+        "l3_opt_in": False,
+        "eval_passed_at": None,
+        "eval_score": None,
+        "max_auto_risk": "draft",
+    }
+    row.update(overrides)
+    return row
+
+
+def _suggestion_row(**overrides: object) -> dict:
+    row = {
+        "tenant_id": "tenant-1",
+        "agent_name": "copilot_agent",
+        "action_type": "default",
+        "status": "approved",
+        "confidence": "0.99",
+        "created_at": "2026-06-22T06:00:00Z",
     }
     row.update(overrides)
     return row
@@ -153,3 +170,42 @@ def test_set_agent_control_rejects_guardian_disable() -> None:
             "accounting_guardian",
             is_enabled=False,
         )
+
+
+def test_set_autonomy_level_l3_requires_l3_policy_gates() -> None:
+    db = _Db(
+        {
+            "agent_autonomy_settings": [_control_row(l3_opt_in=False)],
+            "agent_suggestions": [_suggestion_row() for _ in range(60)],
+        }
+    )
+
+    with pytest.raises(AgentAutonomyError, match="admin opt-in"):
+        AgentsService(db, "tenant-1").set_autonomy_level(  # type: ignore[arg-type]
+            "copilot_agent",
+            3,
+        )
+
+
+def test_set_autonomy_level_l3_allowed_when_all_gates_pass() -> None:
+    db = _Db(
+        {
+            "agent_autonomy_settings": [
+                _control_row(
+                    is_enabled=True,
+                    l3_opt_in=True,
+                    eval_passed_at="2026-06-22T06:00:00Z",
+                    max_auto_risk="draft",
+                )
+            ],
+            "agent_suggestions": [_suggestion_row() for _ in range(60)],
+        }
+    )
+
+    result = AgentsService(db, "tenant-1").set_autonomy_level(  # type: ignore[arg-type]
+        "copilot_agent",
+        3,
+    )
+
+    assert result == {"agent_name": "copilot_agent", "level": 3}
+    assert db.tables["agent_autonomy_settings"][0]["level"] == 3

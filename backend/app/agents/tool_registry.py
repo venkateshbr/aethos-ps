@@ -43,6 +43,15 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     AgentToolDefinition("reporting_agent", "get_trial_balance", "read_only"),
 )
 
+_RISK_ORDER: dict[ToolRiskClass, int] = {
+    "read_only": 0,
+    "draft": 1,
+    "write_low_risk": 2,
+    "write_money_in": 3,
+    "write_money_out": 4,
+    "accounting": 5,
+}
+
 TOOL_DEFINITIONS: dict[tuple[str, str], AgentToolDefinition] = {
     (definition.agent_name, definition.tool_name): definition
     for definition in _TOOL_DEFINITIONS
@@ -66,3 +75,19 @@ def action_type_for_tool(agent_name: str, tool_name: str) -> str:
     if agent_name == "copilot_agent":
         return f"copilot_{tool_name}"
     return f"{agent_name}_{tool_name}"
+
+
+def risk_class_for_action(agent_name: str, action_type: str) -> ToolRiskClass:
+    """Return a risk class for a persisted autonomy action key."""
+    for definition in _TOOL_DEFINITIONS:
+        if definition.agent_name != agent_name:
+            continue
+        if action_type_for_tool(agent_name, definition.tool_name) == action_type:
+            return definition.risk_class
+    return "draft"
+
+
+def risk_class_allows(max_allowed: str | None, actual: ToolRiskClass) -> bool:
+    """True when an admin-granted max risk permits the actual action risk."""
+    allowed_rank = _RISK_ORDER.get(max_allowed, _RISK_ORDER["draft"])
+    return _RISK_ORDER[actual] <= allowed_rank

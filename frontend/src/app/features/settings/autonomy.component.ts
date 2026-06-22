@@ -277,11 +277,11 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
                         @if (agent.current_level === 2) {
                           <button
                             type="button"
-                            [disabled]="actionAgent() === agent.agent_name"
+                            [disabled]="actionAgent() === agent.agent_name || !agent.is_eligible_for_promotion"
                             (click)="setLevel(agent, 3)"
                             class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-700/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             [attr.aria-label]="'Promote ' + agent.display_name + ' to L3 (auto)'"
-                            matTooltip="Promote to L3 — agent acts automatically without HITL"
+                            matTooltip="Promote to L3 — requires approval history, eval pass, admin opt-in, and risk permission"
                           >
                             <mat-icon style="font-size:0.875rem;width:0.875rem;height:0.875rem;" aria-hidden="true">arrow_upward</mat-icon>
                             L3
