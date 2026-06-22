@@ -143,13 +143,46 @@ async def propose(
     Always L2 — writes an agent_suggestion + hitl_task for human approval.
     """
     from app.agents.base import AgentDeps
-    from app.agents.bill_pay_agent import propose_payment_batch
+    from app.agents.bill_pay_agent import (
+        find_duplicate_payment_proposal,
+        propose_payment_batch,
+    )
     from app.agents.suggestion_writer import write_agent_suggestion
 
     deps = AgentDeps(tenant_id=tenant_id, user_id=user.user_id, db=db)
     proposal = propose_payment_batch(deps, due_within_days)
+    response = proposal.model_dump(mode="json")
 
-    await write_agent_suggestion(
+    if not proposal.proposed_bill_ids:
+        logger.info(
+            "bill_pay_agent_proposal_empty",
+            extra={"tenant_id": tenant_id, "user_id": user.user_id},
+        )
+        return {
+            **response,
+            "suggestion_id": None,
+            "duplicate_suppressed": False,
+            "skipped_reason": "no_approved_bills",
+        }
+
+    duplicate_id = find_duplicate_payment_proposal(deps, proposal.proposed_bill_ids)
+    if duplicate_id:
+        logger.info(
+            "bill_pay_agent_duplicate_suppressed",
+            extra={
+                "tenant_id": tenant_id,
+                "user_id": user.user_id,
+                "suggestion_id": duplicate_id,
+                "bill_count": len(proposal.proposed_bill_ids),
+            },
+        )
+        return {
+            **response,
+            "suggestion_id": duplicate_id,
+            "duplicate_suppressed": True,
+        }
+
+    suggestion = await write_agent_suggestion(
         deps,
         agent_name="bill_pay_agent",
         action_type="create_bill_payment_batch",
@@ -172,4 +205,8 @@ async def propose(
         },
     )
 
-    return proposal.model_dump(mode="json")
+    return {
+        **response,
+        "suggestion_id": suggestion.get("id"),
+        "duplicate_suppressed": False,
+    }

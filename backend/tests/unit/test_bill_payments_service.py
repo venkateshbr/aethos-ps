@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -341,6 +342,63 @@ def test_propose_writes_l2_suggestion() -> None:
     assert len(suggestion_calls) == 1
     assert suggestion_calls[0]["autonomy_level"] == 2, "bill_pay_agent must always be L2"
     assert suggestion_calls[0]["agent_name"] == "bill_pay_agent"
+
+
+def test_bill_pay_duplicate_proposal_matches_bill_set() -> None:
+    """Duplicate detection normalises bill id order before comparing proposals."""
+    from app.agents.base import AgentDeps
+    from app.agents.bill_pay_agent import find_duplicate_payment_proposal
+
+    rows = [
+        {
+            "id": "suggestion-001",
+            "output_snapshot": {"proposed_bill_ids": ["bill-2", "bill-1"]},
+        }
+    ]
+    mock_db = MagicMock()
+    mock_db.table.return_value = _chain(rows)
+    deps = AgentDeps(tenant_id=TENANT_ID, user_id=USER_ID, db=mock_db)
+
+    assert find_duplicate_payment_proposal(deps, ["bill-1", "bill-2"]) == (
+        "suggestion-001"
+    )
+    assert find_duplicate_payment_proposal(deps, []) is None
+
+
+@pytest.mark.asyncio
+async def test_bill_pay_propose_endpoint_skips_empty_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty bill-pay proposals return context but do not create HITL tasks."""
+    from app.agents.bill_pay_agent import BillPayProposal
+    from app.api.v1.endpoints.bill_payments import propose
+    from app.core.auth import CurrentUser
+
+    def _fake_proposal(_deps: object, _due_within_days: int) -> BillPayProposal:
+        return BillPayProposal(
+            proposed_bill_ids=[],
+            proposed_pay_date="2026-06-30",
+            total_amount=Decimal("0.00"),
+            currency="USD",
+            rationale="No approved bills are ready for payment.",
+        )
+
+    async def _unexpected_write(*_args: object, **_kwargs: object) -> dict:
+        raise AssertionError("empty proposal should not write agent_suggestions")
+
+    monkeypatch.setattr("app.agents.bill_pay_agent.propose_payment_batch", _fake_proposal)
+    monkeypatch.setattr("app.agents.suggestion_writer.write_agent_suggestion", _unexpected_write)
+
+    result = await propose(
+        due_within_days=7,
+        tenant_id=TENANT_ID,
+        db=MagicMock(),
+        user=CurrentUser(user_id=USER_ID, email="admin@example.com", role="admin"),
+    )
+
+    assert result["proposed_bill_ids"] == []
+    assert result["suggestion_id"] is None
+    assert result["skipped_reason"] == "no_approved_bills"
 
 
 @pytest.mark.asyncio

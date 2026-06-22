@@ -18,6 +18,8 @@ from app.agents.base import AgentDeps
 
 logger = logging.getLogger(__name__)
 
+_ACTIVE_PROPOSAL_STATUSES = ("pending", "approved", "auto_applied")
+
 
 class BillPayProposal(BaseModel):
     proposed_bill_ids: list[str]
@@ -28,6 +30,36 @@ class BillPayProposal(BaseModel):
     confidence: float = Field(default=0.92, ge=0.0, le=1.0)
     early_pay_discount_captured: bool = False
     flagged_for_review: list[dict] = []  # bills with unusual amounts
+
+
+def find_duplicate_payment_proposal(
+    deps: AgentDeps,
+    proposed_bill_ids: list[str],
+) -> str | None:
+    """Return an active matching bill-pay suggestion id, if one exists."""
+    target = _normalise_bill_ids(proposed_bill_ids)
+    if not target:
+        return None
+
+    rows = (
+        deps.db.table("agent_suggestions")
+        .select("id, output_snapshot")
+        .eq("tenant_id", deps.tenant_id)
+        .eq("agent_name", "bill_pay_agent")
+        .eq("action_type", "create_bill_payment_batch")
+        .in_("status", list(_ACTIVE_PROPOSAL_STATUSES))
+        .execute()
+        .data
+        or []
+    )
+    for row in rows:
+        output = row.get("output_snapshot") or {}
+        if not isinstance(output, dict):
+            continue
+        existing = output.get("proposed_bill_ids") or output.get("bill_ids") or []
+        if _normalise_bill_ids(existing) == target:
+            return str(row["id"])
+    return None
 
 
 def propose_payment_batch(
@@ -112,3 +144,7 @@ def propose_payment_batch(
         ),
         flagged_for_review=flagged,
     )
+
+
+def _normalise_bill_ids(values: list[object]) -> tuple[str, ...]:
+    return tuple(sorted({str(value) for value in values if value}))
