@@ -27,6 +27,8 @@ class _Query:
         self.db = db
         self.table = table
         self._eq_filters: list[tuple[str, Any]] = []
+        self._neq_filters: list[tuple[str, Any]] = []
+        self._in_filters: list[tuple[str, list[Any]]] = []
         self._null_filters: list[str] = []
         self._update_payload: dict[str, Any] | None = None
 
@@ -35,6 +37,14 @@ class _Query:
 
     def eq(self, key: str, value: Any) -> _Query:
         self._eq_filters.append((key, value))
+        return self
+
+    def neq(self, key: str, value: Any) -> _Query:
+        self._neq_filters.append((key, value))
+        return self
+
+    def in_(self, key: str, values: list[Any]) -> _Query:
+        self._in_filters.append((key, values))
         return self
 
     def is_(self, key: str, value: Any) -> _Query:
@@ -58,6 +68,10 @@ class _Query:
         rows = list(self.db.tables[self.table])
         for key, value in self._eq_filters:
             rows = [row for row in rows if row.get(key) == value]
+        for key, value in self._neq_filters:
+            rows = [row for row in rows if row.get(key) != value]
+        for key, values in self._in_filters:
+            rows = [row for row in rows if row.get(key) in values]
         for key in self._null_filters:
             rows = [row for row in rows if row.get(key) is None]
         return rows
@@ -119,6 +133,72 @@ class _FakeDb:
                     "cap_amount": None,
                 }
             ],
+            "invoices": [
+                {
+                    "id": "invoice-1",
+                    "tenant_id": TENANT_ID,
+                    "engagement_id": "eng-1",
+                    "total": "25000.00",
+                    "issue_date": "2026-06-01",
+                    "status": "sent",
+                    "deleted_at": None,
+                },
+                {
+                    "id": "invoice-2",
+                    "tenant_id": TENANT_ID,
+                    "engagement_id": "eng-1",
+                    "total": "5000.00",
+                    "issue_date": "2026-06-15",
+                    "status": "voided",
+                    "deleted_at": None,
+                },
+            ],
+            "projects": [
+                {
+                    "id": "project-1",
+                    "tenant_id": TENANT_ID,
+                    "engagement_id": "eng-1",
+                    "deleted_at": None,
+                }
+            ],
+            "time_entries": [
+                {
+                    "id": "time-1",
+                    "tenant_id": TENANT_ID,
+                    "project_id": "project-1",
+                    "employee_id": "employee-1",
+                    "hours": "10.00",
+                    "billing_status": "unbilled",
+                    "billable": True,
+                    "deleted_at": None,
+                },
+                {
+                    "id": "time-2",
+                    "tenant_id": TENANT_ID,
+                    "project_id": "project-1",
+                    "employee_id": "employee-1",
+                    "hours": "3.00",
+                    "billing_status": "billed",
+                    "billable": True,
+                    "deleted_at": None,
+                },
+            ],
+            "project_assignments": [
+                {
+                    "id": "assignment-1",
+                    "tenant_id": TENANT_ID,
+                    "project_id": "project-1",
+                    "employee_id": "employee-1",
+                    "override_rate": "200.00",
+                }
+            ],
+            "employees": [
+                {
+                    "id": "employee-1",
+                    "tenant_id": TENANT_ID,
+                    "default_bill_rate": "150.00",
+                }
+            ],
         }
 
     def table(self, name: str) -> _Query:
@@ -159,12 +239,27 @@ def test_engagement_read_routes_use_rls_client(
 
     list_response = client.get("/api/v1/engagements?status=active&client_id=client-1")
     detail_response = client.get("/api/v1/engagements/eng-1")
+    summary_response = client.get("/api/v1/engagements/eng-1/summary")
 
     assert list_response.status_code == 200, list_response.text
     assert len(list_response.json()) == 1
     assert list_response.json()[0]["id"] == "eng-1"
     assert detail_response.status_code == 200, detail_response.text
     assert detail_response.json()["billing_terms"]["retainer_monthly_amount"] == "10000.00"
+    assert summary_response.status_code == 200, summary_response.text
+    assert summary_response.json() == {
+        "engagement_id": "eng-1",
+        "engagement_name": "Monthly Advisory",
+        "total_value": "120000.00",
+        "currency": "USD",
+        "billed_to_date": "25000.00",
+        "billed_pct": 20.83,
+        "wip_hours": 10.0,
+        "wip_value": "2000.00",
+        "remaining_value": "95000.00",
+        "invoice_count": 1,
+        "last_invoice_date": "2026-06-01",
+    }
 
 
 def test_engagement_status_update_uses_service_role_client(

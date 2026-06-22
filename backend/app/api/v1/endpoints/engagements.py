@@ -52,7 +52,7 @@ def _write_service(
 
 
 def _summary_service(
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> EngagementService:
     return EngagementService(db, tenant_id)
