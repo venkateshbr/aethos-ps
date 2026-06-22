@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.models.accounts import AccountResponse, AccountType
 from app.services.accounts_service import AccountsService
@@ -32,7 +32,7 @@ async def list_accounts(
     limit: int | None = ACCOUNT_LIMIT_QUERY,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[AccountResponse]:
     """List active chart-of-accounts rows for the authenticated tenant."""
     svc = AccountsService(db=db, tenant_id=tenant_id)
