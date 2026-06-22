@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.agents.tool_registry import action_type_for_tool
 from app.core.auth import CurrentUser
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.agents import (
@@ -44,7 +44,14 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-def _service(
+def _read_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> AgentsService:
+    return AgentsService(db, tenant_id)
+
+
+def _write_service(
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> AgentsService:
@@ -62,7 +69,7 @@ def _service(
     summary="Per-agent autonomy status with 30-day approval metrics",
 )
 def get_autonomy_status(
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
 ) -> AgentAutonomyStatusResponse:
     """Return autonomy status for all known agents.
@@ -90,7 +97,7 @@ def list_agent_runs(
     agent_name: str | None = None,
     run_status: str | None = Query(default=None, alias="status"),
     limit: int = 50,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> AgentRunListResponse:
     """Return recent agent runs for the current tenant.
@@ -118,7 +125,7 @@ def list_agent_runs(
 )
 def get_agent_run(
     run_id: str,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> AgentRunDetailResponse:
     """Return a single agent run and its tool invocations."""
@@ -145,7 +152,7 @@ def list_eval_candidates(
     agent_name: str | None = None,
     candidate_status: str | None = Query(default="candidate", alias="status"),
     limit: int = 50,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> AgentEvalCandidateListResponse:
     """Return human-correction candidates for eval-pack review/export."""
@@ -174,7 +181,7 @@ def list_eval_candidates(
 def set_agent_l3_policy(
     agent_name: str,
     body: SetAgentL3PolicyRequest,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> AgentL3PolicyResponse:
     """Set explicit opt-in and max auto-risk for future L3 promotion."""
@@ -206,7 +213,7 @@ def set_agent_tool_l3_policy(
     agent_name: str,
     tool_name: str,
     body: SetAgentL3PolicyRequest,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> AgentL3PolicyResponse:
     """Set explicit opt-in and max auto-risk for a specific tool/action."""
@@ -238,7 +245,7 @@ def set_agent_tool_l3_policy(
 def set_agent_control(
     agent_name: str,
     body: SetAgentControlRequest,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> AgentControlResponse:
     """Pause/resume an agent or tune/reset its default circuit breaker."""
@@ -271,7 +278,7 @@ def set_agent_tool_control(
     agent_name: str,
     tool_name: str,
     body: SetAgentControlRequest,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> AgentControlResponse:
     """Pause/resume a specific tool/action or reset its circuit breaker."""
@@ -305,7 +312,7 @@ def set_agent_tool_control(
 def set_agent_level(
     agent_name: str,
     body: SetAgentLevelRequest,
-    svc: AgentsService = Depends(_service),  # noqa: B008
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
 ) -> SetAgentLevelResponse:
     """Set the autonomy level for a named agent (1=notify, 2=suggest, 3=auto).
