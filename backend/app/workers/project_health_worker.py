@@ -26,6 +26,9 @@ from app.workers.procrastinate_app import app
 logger = logging.getLogger(__name__)
 
 DEDUP_DAYS = 7
+ACTIVE_PROJECT_SELECT = (
+    "id, name, engagement_id, budget_hours, budget, currency, status"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +63,24 @@ def _is_duplicate_alert(
         .data
     )
     return bool(rows)
+
+
+def _fetch_active_projects(db, tenant_id: str) -> list[dict]:
+    """Fetch active projects using columns that exist on the projects table.
+
+    Billing arrangement, cap, and retainer terms live on engagements and
+    engagement_billing_terms.  The agent derives those in context per project.
+    """
+    return (
+        db.table("projects")
+        .select(ACTIVE_PROJECT_SELECT)
+        .eq("tenant_id", tenant_id)
+        .eq("status", "active")
+        .is_("deleted_at", "null")
+        .execute()
+        .data
+        or []
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,20 +190,7 @@ def run_project_health_checks(timestamp: int) -> dict:
         try:
             deps = AgentDeps(tenant_id=tenant_id, user_id=None, db=db)
 
-            # Fetch active projects for this tenant
-            projects = (
-                db.table("projects")
-                .select(
-                    "id, name, engagement_id, budget_hours, status, "
-                    "billing_arrangement, cap_amount, billed_amount, "
-                    "retainer_floor_hours, hours_this_period"
-                )
-                .eq("tenant_id", tenant_id)
-                .eq("status", "active")
-                .execute()
-                .data
-                or []
-            )
+            projects = _fetch_active_projects(db, tenant_id)
 
             alerts_for_tenant = asyncio.run(
                 _run_tenant_checks(projects, deps)

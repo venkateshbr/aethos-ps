@@ -18,6 +18,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 from uuid import UUID
 
@@ -61,6 +62,113 @@ def _fetch_time_entries(deps: AgentDeps, project_id: str) -> list[dict]:
     return result.data or []
 
 
+def _fetch_engagement_sync(deps: AgentDeps, engagement_id: str | None) -> dict:
+    """Fetch the parent engagement using fields that exist in the schema."""
+    if not engagement_id:
+        return {}
+    try:
+        result = (
+            deps.db.table("engagements")
+            .select(
+                "id, name, billing_arrangement, currency, total_value, "
+                "rate_card_id, service_line"
+            )
+            .eq("tenant_id", deps.tenant_id)
+            .eq("id", engagement_id)
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else {}
+    except Exception:
+        logger.warning(
+            "project_health_agent: failed to fetch engagement context",
+            extra={"tenant_id": deps.tenant_id, "engagement_id": engagement_id},
+        )
+        return {}
+
+
+def _fetch_billing_terms_sync(deps: AgentDeps, engagement_id: str | None) -> dict:
+    """Fetch billing terms for capped T&M / retainer checks."""
+    if not engagement_id:
+        return {}
+    try:
+        result = (
+            deps.db.table("engagement_billing_terms")
+            .select(
+                "cap_amount, retainer_monthly_amount, retainer_floor, "
+                "milestone_total"
+            )
+            .eq("tenant_id", deps.tenant_id)
+            .eq("engagement_id", engagement_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else {}
+    except Exception:
+        logger.warning(
+            "project_health_agent: failed to fetch billing terms",
+            extra={"tenant_id": deps.tenant_id, "engagement_id": engagement_id},
+        )
+        return {}
+
+
+def _fetch_engagement_invoices_sync(
+    deps: AgentDeps, engagement_id: str | None
+) -> list[dict]:
+    """Fetch finalized engagement invoices used for cap/retainer drawdown."""
+    if not engagement_id:
+        return []
+    try:
+        result = (
+            deps.db.table("invoices")
+            .select("id, total, status, issue_date")
+            .eq("tenant_id", deps.tenant_id)
+            .eq("engagement_id", engagement_id)
+            .in_("status", ["approved", "sent", "paid", "overdue"])
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        return result.data or []
+    except Exception:
+        logger.warning(
+            "project_health_agent: failed to fetch engagement invoices",
+            extra={"tenant_id": deps.tenant_id, "engagement_id": engagement_id},
+        )
+        return []
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _sum_invoice_total(invoices: list[dict]) -> Decimal:
+    total = Decimal("0")
+    for invoice in invoices:
+        amount = _decimal_or_none(invoice.get("total"))
+        if amount is not None:
+            total += amount
+    return total
+
+
+def _sum_current_month_invoice_total(invoices: list[dict]) -> Decimal:
+    month_prefix = date.today().strftime("%Y-%m")
+    total = Decimal("0")
+    for invoice in invoices:
+        issue_date = str(invoice.get("issue_date") or "")
+        if issue_date[:7] != month_prefix:
+            continue
+        amount = _decimal_or_none(invoice.get("total"))
+        if amount is not None:
+            total += amount
+    return total
+
+
 async def check_project_health(
     project: dict,
     deps: AgentDeps,
@@ -86,11 +194,20 @@ async def check_project_health(
     project_id = UUID(project_id_str)
     project_name: str = project.get("name", "Unknown")
     engagement_id: str | None = project.get("engagement_id")
-    billing_arrangement: str = project.get("billing_arrangement", "")
 
     # Fetch time entries (sync supabase-py — run in thread to avoid blocking)
     time_entries: list[dict] = await asyncio.to_thread(
         _fetch_time_entries, deps, project_id_str
+    )
+    engagement, billing_terms, invoices = await asyncio.gather(
+        asyncio.to_thread(_fetch_engagement_sync, deps, engagement_id),
+        asyncio.to_thread(_fetch_billing_terms_sync, deps, engagement_id),
+        asyncio.to_thread(_fetch_engagement_invoices_sync, deps, engagement_id),
+    )
+    billing_arrangement: str = str(
+        project.get("billing_arrangement")
+        or engagement.get("billing_arrangement")
+        or ""
     )
 
     # ------------------------------------------------------------------
@@ -122,12 +239,16 @@ async def check_project_health(
     # Check 2: Capped T&M approaching — billed_amount > 90% of cap_amount
     # ------------------------------------------------------------------
     if billing_arrangement == "capped_tm":
-        cap_amount = project.get("cap_amount")
-        billed_amount = project.get("billed_amount")
-        if cap_amount and float(cap_amount) > 0 and billed_amount is not None:
-            cap_pct = float(billed_amount) / float(cap_amount)
+        cap_amount = _decimal_or_none(
+            project.get("cap_amount") or billing_terms.get("cap_amount")
+        )
+        billed_amount = _decimal_or_none(project.get("billed_amount"))
+        if billed_amount is None:
+            billed_amount = _sum_invoice_total(invoices)
+        if cap_amount and cap_amount > 0 and billed_amount is not None:
+            cap_pct = billed_amount / cap_amount
             if cap_pct >= 0.90:
-                pct_str = f"{cap_pct:.0%}"
+                pct_str = f"{float(cap_pct):.0%}"
                 alerts.append(
                     ProjectHealthAlert(
                         alert_type="CAPPED_TM_APPROACHING",
@@ -151,7 +272,7 @@ async def check_project_health(
     # ------------------------------------------------------------------
     # Check 3: Retainer floor warning — hours_this_period < retainer_floor_hours
     # ------------------------------------------------------------------
-    if billing_arrangement == "retainer":
+    if billing_arrangement in ("retainer", "retainer_draw"):
         floor_hours = project.get("retainer_floor_hours")
         hours_this_period = project.get("hours_this_period")
         if floor_hours is not None and hours_this_period is not None:
@@ -172,6 +293,38 @@ async def check_project_health(
                             "Schedule work or flag under-utilisation risk to the client."
                         ),
                         confidence=0.90,
+                    )
+                )
+        else:
+            retainer_floor = _decimal_or_none(
+                project.get("retainer_floor") or billing_terms.get("retainer_floor")
+            )
+            current_period_value = _decimal_or_none(
+                project.get("retainer_period_value") or project.get("billed_this_period")
+            )
+            if current_period_value is None:
+                current_period_value = _sum_current_month_invoice_total(invoices)
+            if (
+                retainer_floor is not None
+                and retainer_floor > 0
+                and current_period_value < retainer_floor
+            ):
+                alerts.append(
+                    ProjectHealthAlert(
+                        alert_type="RETAINER_FLOOR_WARNING",
+                        project_id=project_id,
+                        project_name=project_name,
+                        engagement_id=engagement_id,
+                        tenant_id=deps.tenant_id,
+                        metric_current=(
+                            f"{current_period_value} billed this period"
+                        ),
+                        metric_threshold=f"retainer floor: {retainer_floor}",
+                        recommended_action=(
+                            "Review retainer utilisation and schedule enough "
+                            "work or client communication before the period closes."
+                        ),
+                        confidence=0.88,
                     )
                 )
 

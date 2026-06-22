@@ -70,6 +70,8 @@ def _make_deps(
     suggestions: list[dict] | None = None,
     time_entry_data: list[dict] | None = None,
     invoice_data: list[dict] | None = None,
+    engagements: list[dict] | None = None,
+    billing_terms: list[dict] | None = None,
     insert_result: dict | None = None,
 ) -> tuple[AgentDeps, MagicMock]:
     """Build an AgentDeps with a MagicMock Supabase client.
@@ -78,6 +80,8 @@ def _make_deps(
       - "agent_suggestions" => returns suggestion dedup rows
       - "time_entries"      => returns time entry rows
       - "invoices"          => returns invoice rows
+      - "engagements"        => returns parent engagement rows
+      - "engagement_billing_terms" => returns engagement billing terms
       - "hitl_tasks"        => accepts inserts (captured for assertions)
     """
     db = MagicMock()
@@ -85,6 +89,8 @@ def _make_deps(
     sugg_mock = _FlatMock(suggestions or [])
     te_mock = _FlatMock(time_entry_data or [])
     inv_mock = _FlatMock(invoice_data or [])
+    eng_mock = _FlatMock(engagements or [])
+    terms_mock = _FlatMock(billing_terms or [])
 
     inserted: list[dict] = []
     _insert_result = MagicMock()
@@ -105,6 +111,10 @@ def _make_deps(
             t.select.return_value = te_mock
         elif table_name == "invoices":
             t.select.return_value = inv_mock
+        elif table_name == "engagements":
+            t.select.return_value = eng_mock
+        elif table_name == "engagement_billing_terms":
+            t.select.return_value = terms_mock
         elif table_name == "hitl_tasks":
             t.insert.side_effect = _capture_insert
         else:
@@ -231,6 +241,47 @@ async def test_capped_tm_approaching() -> None:
 
 
 @pytest.mark.asyncio
+async def test_capped_tm_approaching_derives_from_engagement_terms_and_invoices() -> None:
+    """Real schema path: cap is on billing terms and billed amount is invoices."""
+    project_id = str(uuid.uuid4())
+    engagement_id = str(uuid.uuid4())
+    project = {
+        "id": project_id,
+        "name": "Real Schema Capped",
+        "engagement_id": engagement_id,
+        "status": "active",
+        "budget_hours": None,
+    }
+
+    deps, _ = _make_deps(
+        suggestions=[],
+        time_entry_data=[],
+        engagements=[
+            {
+                "id": engagement_id,
+                "billing_arrangement": "capped_tm",
+                "currency": "USD",
+            }
+        ],
+        billing_terms=[{"cap_amount": "1000.00"}],
+        invoice_data=[
+            {
+                "id": str(uuid.uuid4()),
+                "total": "920.00",
+                "status": "sent",
+                "issue_date": "2026-06-15",
+            }
+        ],
+    )
+
+    alerts = await check_project_health(project, deps)
+
+    cap_alerts = [a for a in alerts if a.alert_type == "CAPPED_TM_APPROACHING"]
+    assert len(cap_alerts) == 1
+    assert cap_alerts[0].metric_current.startswith("92% of cap used")
+
+
+@pytest.mark.asyncio
 async def test_no_capped_tm_alert_below_threshold() -> None:
     """Capped T&M at 85% of cap (below 90% threshold) does NOT trigger CAPPED_TM_APPROACHING."""
     project_id = str(uuid.uuid4())
@@ -304,6 +355,32 @@ def test_dedup_7_days_returns_false_when_suggestion_is_rejected() -> None:
     result = _is_duplicate_alert(deps2.db, deps2.tenant_id, project_id, "BUDGET_BURN_WARNING")
 
     assert result is False
+
+
+def test_fetch_active_projects_uses_real_project_columns() -> None:
+    """Worker select must not include billing columns that live off-project."""
+    from app.workers.project_health_worker import (
+        ACTIVE_PROJECT_SELECT,
+        _fetch_active_projects,
+    )
+
+    db = MagicMock()
+    chain = MagicMock()
+    result = MagicMock()
+    result.data = []
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.is_.return_value = chain
+    chain.execute.return_value = result
+    db.table.return_value = chain
+
+    rows = _fetch_active_projects(db, "tenant-1")
+
+    assert rows == []
+    chain.select.assert_called_once_with(ACTIVE_PROJECT_SELECT)
+    assert "billing_arrangement" not in ACTIVE_PROJECT_SELECT
+    assert "cap_amount" not in ACTIVE_PROJECT_SELECT
+    assert "retainer_floor_hours" not in ACTIVE_PROJECT_SELECT
 
 
 # ---------------------------------------------------------------------------
