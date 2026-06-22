@@ -30,6 +30,13 @@ import { SupabaseService } from '../../core/services/supabase.service';
 export type PlanTier = 'starter' | 'growth' | 'pro';
 export type BillingInterval = 'monthly' | 'annual';
 export type LaunchCountry = 'US' | 'GB' | 'SG' | 'IN' | 'AU';
+export type LaunchCountryOption = {
+  code: LaunchCountry;
+  label: string;
+  currency: string;
+  market: string;
+  taxLabel: string;
+};
 
 export interface SignupAccountPayload {
   email: string;
@@ -67,23 +74,53 @@ export interface StartTrialResponse {
   trial_ends_at: number | null;
 }
 
-// ── Country → currency mirror (matches backend country_to_currency) ────────
-// Kept in lock-step with `backend/app/services/billing/stripe_service.py`.
-export const COUNTRY_TO_CURRENCY: Record<LaunchCountry, string> = {
-  US: 'USD',
-  GB: 'GBP',
-  SG: 'SGD',
-  IN: 'INR',
-  AU: 'AUD',
-};
+export interface MarketProfile {
+  country: string;
+  market: string;
+  country_name: string;
+  base_currency: string;
+  locale: string;
+  timezone: string;
+  tax_label: string;
+  tax_registration_label: string;
+  invoice_tax_label: string;
+  tax_authority_label: string;
+  tax_collection_model: string;
+  default_tax_rate_code: string | null;
+  reporting_periods: string[];
+  fiscal_year_label: string;
+}
 
-export const LAUNCH_COUNTRIES: Array<{ code: LaunchCountry; label: string; currency: string }> = [
-  { code: 'US', label: 'United States', currency: 'USD' },
-  { code: 'GB', label: 'United Kingdom', currency: 'GBP' },
-  { code: 'SG', label: 'Singapore', currency: 'SGD' },
-  { code: 'IN', label: 'India', currency: 'INR' },
-  { code: 'AU', label: 'Australia', currency: 'AUD' },
+export const LAUNCH_COUNTRIES: LaunchCountryOption[] = [
+  { code: 'US', label: 'United States', currency: 'USD', market: 'US', taxLabel: 'Sales tax' },
+  { code: 'GB', label: 'United Kingdom', currency: 'GBP', market: 'UK', taxLabel: 'VAT' },
+  { code: 'SG', label: 'Singapore', currency: 'SGD', market: 'SG', taxLabel: 'GST' },
+  { code: 'IN', label: 'India', currency: 'INR', market: 'IN', taxLabel: 'GST' },
+  { code: 'AU', label: 'Australia', currency: 'AUD', market: 'AU', taxLabel: 'GST' },
 ];
+
+const LAUNCH_COUNTRY_CODES = new Set<string>(['US', 'GB', 'SG', 'IN', 'AU']);
+
+function isLaunchCountry(value: string): value is LaunchCountry {
+  return LAUNCH_COUNTRY_CODES.has(value);
+}
+
+export function launchCountriesFromProfiles(profiles: MarketProfile[]): LaunchCountryOption[] {
+  const options = profiles
+    .flatMap((profile): LaunchCountryOption[] => {
+      if (!isLaunchCountry(profile.country)) return [];
+      return [
+        {
+          code: profile.country,
+          label: profile.country_name,
+          currency: profile.base_currency,
+          market: profile.market,
+          taxLabel: profile.tax_label,
+        },
+      ];
+    });
+  return options.length === 0 ? LAUNCH_COUNTRIES : options;
+}
 
 @Injectable({ providedIn: 'root' })
 export class SignupService {
@@ -93,6 +130,16 @@ export class SignupService {
 
   private get supabaseClient() {
     return this.supabaseSvc.client;
+  }
+
+  async fetchMarketProfiles(): Promise<MarketProfile[]> {
+    const headers = new HttpHeaders({ 'skip-auth': '1' });
+    return firstValueFrom(
+      this.http.get<MarketProfile[]>(
+        `${environment.apiUrl}/api/v1/localization/market-profiles`,
+        { headers },
+      ),
+    );
   }
 
   /**

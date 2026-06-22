@@ -9,25 +9,8 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 
 from app.models.tax_rates import TaxRateCreate, TaxRateResponse, TaxRateUpdate
+from app.services.localization_service import country_to_market, market_to_country
 from supabase import Client
-
-_COUNTRY_TO_MARKET = {"GB": "UK"}
-_MARKET_TO_COUNTRY = {"UK": "GB"}
-
-
-def _country_to_market(country: str | None) -> str | None:
-    if country is None:
-        return None
-    return _COUNTRY_TO_MARKET.get(country.upper(), country.upper())
-
-
-def _market_to_country(market: str | None) -> str | None:
-    if market is None:
-        return None
-    normalized = market.strip().upper()
-    if not normalized:
-        return None
-    return _MARKET_TO_COUNTRY.get(normalized, normalized)
 
 
 def _percent_from_fraction(value: object) -> str:
@@ -49,7 +32,7 @@ def _to_response(row: dict) -> TaxRateResponse:
         id=str(row["id"]),
         name=str(row["name"]),
         rate=_percent_from_fraction(row["rate"]),
-        market=_country_to_market(row.get("country")),
+        market=country_to_market(row.get("country")),
         is_system=row.get("tenant_id") is None or bool(row.get("is_seeded")),
         is_active=bool(row["is_active"]),
     )
@@ -100,7 +83,7 @@ class TaxRatesService:
 
         row = {
             "tenant_id": self.tenant_id,
-            "country": _market_to_country(payload.market),
+            "country": market_to_country(payload.market),
             "code": _custom_code(payload.name),
             "name": payload.name,
             "rate": _fraction_from_percent(payload.rate),

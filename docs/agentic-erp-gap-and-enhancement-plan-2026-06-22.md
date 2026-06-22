@@ -298,7 +298,7 @@ Work items:
 - Done 2026-06-22: added capped admin CSV export for `financial_events` so audit/review packages can include event evidence without direct database access.
 - Done 2026-06-22: added shared document preflight scanning for PII and prompt-injection markers; text is masked before LLM calls, and PDF/image binaries with detectable sensitive or adversarial text are withheld from the external LLM and replaced with masked text-only context.
 - Done 2026-06-22: added bill-payment export integrity metadata, actor/timestamp controls for approval/export/send/settlement, settled batch status, and financial event log coverage for payment-batch transitions.
-- Localization depth for US, UK, SG, IN, AU tax and reporting.
+- Done 2026-06-22: added a shared launch-market localization profile service/API for US, UK, SG, IN, and AU, covering country/market mapping, base currency, locale, timezone, tax labels, authorities, reporting periods, and default tax-rate templates; signup provisioning, signup country selection, billing currency mapping, and tax-rate market mapping now reuse it.
 - Integration roadmap: email/calendar, bank feeds, Companies House/HMRC equivalents, payroll, CRM, document storage.
 
 Acceptance:
