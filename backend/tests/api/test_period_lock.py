@@ -169,6 +169,30 @@ def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
     }
 
 
+def test_period_close_package_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can fetch a composed close package before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-package")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["period_start"] == f"{period}-01"
+    assert body["previous_period"]
+    assert body["close_status"]["period"] == period
+    assert body["gl_summary"]["period"] == period
+    assert body["trial_balance"]["is_balanced"] is True
+    assert {"ar_open_total", "ap_open_total", "wip_total"} == set(
+        body["working_capital"]
+    )
+    assert {row["code"] for row in body["variance_commentary"]} >= {
+        "revenue_variance",
+        "expense_variance",
+        "net_income_variance",
+        "margin_variance",
+        "working_capital",
+    }
+
+
 def test_propose_wip_accrual_empty_period_returns_no_suggestions(
     admin_client_a: httpx.Client,
 ) -> None:

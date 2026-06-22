@@ -3,6 +3,7 @@
 Endpoints:
   GET    /api/v1/accounting/periods                — list all periods with lock status
   GET    /api/v1/accounting/periods/{period}/close-status — close checklist/status
+  GET    /api/v1/accounting/periods/{period}/close-package — close review package
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
@@ -24,6 +25,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, date, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -37,6 +39,7 @@ from app.models.accounting import (
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
 )
+from app.services.close_package_service import ClosePackageService
 from app.services.close_reconciliation_service import CloseReconciliationService
 from app.services.close_status_service import (
     CloseStatusService,
@@ -118,6 +121,24 @@ class PeriodCloseStatusResponse(BaseModel):
     findings: list[PeriodCloseFinding]
     pending_reviews: list[PeriodClosePendingReview]
     lock_blockers: list[str]
+
+
+class PeriodClosePackageResponse(BaseModel):
+    period: str
+    period_start: str
+    period_end: str
+    previous_period: str
+    generated_at: str
+    close_status: dict[str, Any]
+    gl_summary: dict[str, Any]
+    previous_gl_summary: dict[str, Any]
+    working_capital: dict[str, Any]
+    trial_balance: dict[str, Any]
+    ar_aging: dict[str, str]
+    ap_aging: dict[str, str]
+    wip: list[dict[str, Any]]
+    service_line_margins: list[dict[str, Any]]
+    variance_commentary: list[dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +242,31 @@ async def close_status(
         ) from exc
 
     return PeriodCloseStatusResponse(**result.as_dict())
+
+
+@router.get("/periods/{period}/close-package", response_model=PeriodClosePackageResponse)
+async def close_package(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> PeriodClosePackageResponse:
+    """Return a review-ready close package with deterministic commentary."""
+    _validate_period(period)
+    try:
+        result = ClosePackageService(db, tenant_id).build_package(period)
+    except Exception as exc:
+        logger.exception(
+            "Failed to build close package for tenant %s period %s",
+            tenant_id,
+            period,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodClosePackageResponse(**result)
 
 
 @router.get("/periods/{period}/close-readiness", response_model=PeriodCloseReadinessResponse)
