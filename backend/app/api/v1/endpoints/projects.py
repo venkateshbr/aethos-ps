@@ -59,7 +59,14 @@ def _write_service(
     return ProjectService(db, tenant_id)
 
 
-def _assignments_service(
+def _assignments_read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> AssignmentsService:
+    return AssignmentsService(db, tenant_id)
+
+
+def _assignments_write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> AssignmentsService:
@@ -126,7 +133,7 @@ async def delete_project(
 async def list_assignments(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_read_service),  # noqa: B008
 ) -> AssignmentListResponse:
     return await svc.list_for_project(id)
 
@@ -140,7 +147,7 @@ async def create_assignment(
     id: str,
     payload: AssignmentCreate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_write_service),  # noqa: B008
 ) -> AssignmentResponse:
     return await svc.create(id, payload)
 
@@ -153,7 +160,7 @@ async def delete_assignment(
     id: str,
     assignment_id: str,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: AssignmentsService = Depends(_assignments_service),  # noqa: B008
+    svc: AssignmentsService = Depends(_assignments_write_service),  # noqa: B008
 ) -> None:
     await svc.delete(id, assignment_id)
 

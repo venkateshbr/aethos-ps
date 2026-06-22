@@ -27,6 +27,7 @@ class _Query:
         self.db = db
         self.table = table
         self._eq_filters: list[tuple[str, Any]] = []
+        self._in_filters: list[tuple[str, list[Any]]] = []
         self._null_filters: list[str] = []
         self._order_key: str | None = None
         self._order_desc = False
@@ -40,6 +41,10 @@ class _Query:
 
     def eq(self, key: str, value: Any) -> _Query:
         self._eq_filters.append((key, value))
+        return self
+
+    def in_(self, key: str, values: list[Any]) -> _Query:
+        self._in_filters.append((key, values))
         return self
 
     def is_(self, key: str, value: Any) -> _Query:
@@ -101,6 +106,8 @@ class _Query:
         rows = list(self.db.tables[self.table])
         for key, value in self._eq_filters:
             rows = [row for row in rows if row.get(key) == value]
+        for key, values in self._in_filters:
+            rows = [row for row in rows if row.get(key) in values]
         for key in self._null_filters:
             rows = [row for row in rows if row.get(key) is None]
         return rows
@@ -155,6 +162,29 @@ class _FakeDb:
                     "deleted_at": None,
                 },
             ],
+            "project_assignments": [
+                {
+                    "id": "assignment-1",
+                    "tenant_id": TENANT_ID,
+                    "project_id": "project-alpha",
+                    "employee_id": "employee-1",
+                    "role": "Consultant",
+                    "override_rate": "200.00",
+                    "start_date": "2026-06-01",
+                    "end_date": None,
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                }
+            ],
+            "employees": [
+                {
+                    "id": "employee-1",
+                    "tenant_id": TENANT_ID,
+                    "first_name": "Taylor",
+                    "last_name": "Consultant",
+                    "email": "taylor@example.com",
+                    "deleted_at": None,
+                }
+            ],
         }
 
     def table(self, name: str) -> _Query:
@@ -195,12 +225,16 @@ def test_project_read_routes_use_rls_client(
 
     list_response = client.get("/api/v1/projects?engagement_id=eng-1&limit=10")
     detail_response = client.get("/api/v1/projects/project-alpha")
+    assignments_response = client.get("/api/v1/projects/project-alpha/assignments")
 
     assert list_response.status_code == 200, list_response.text
     assert len(list_response.json()) == 1
     assert list_response.json()[0]["id"] == "project-alpha"
     assert detail_response.status_code == 200, detail_response.text
     assert detail_response.json()["name"] == "Alpha"
+    assert assignments_response.status_code == 200, assignments_response.text
+    assert assignments_response.json()["items"][0]["id"] == "assignment-1"
+    assert assignments_response.json()["items"][0]["employee_name"] == "Taylor Consultant"
 
 
 def test_project_create_uses_service_role_client(
