@@ -71,6 +71,17 @@ def _cleanup_invoice(world: SeedWorld, invoice_id: str) -> None:
         pass
 
 
+def _cleanup_agent_suggestion(world: SeedWorld, suggestion_id: str) -> None:
+    """Delete a test suggestion row by tenant + id (best-effort)."""
+    try:
+        db = make_service_client()
+        db.table("agent_suggestions").delete().eq(
+            "tenant_id", world.tenant_a.tenant_id
+        ).eq("id", suggestion_id).execute()
+    except Exception:
+        pass
+
+
 def test_period_lock_happy_path(admin_client_a: httpx.Client, world: SeedWorld) -> None:
     """Admin locks a fresh period; subsequent list shows it locked."""
     period = _unique_future_period()
@@ -139,6 +150,25 @@ def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None
     assert body["trial_balance_balanced"] is True
 
 
+def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can see a derived close checklist before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-status")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["status"] == "ready"
+    assert body["ready_to_lock"] is True
+    assert body["pending_reviews"] == []
+    assert body["lock_blockers"] == []
+    assert {item["code"] for item in body["checklist"]} == {
+        "subledger_reconciliation",
+        "trial_balance",
+        "close_reviews",
+        "period_lock",
+    }
+
+
 def test_propose_wip_accrual_empty_period_returns_no_suggestions(
     admin_client_a: httpx.Client,
 ) -> None:
@@ -153,6 +183,49 @@ def test_propose_wip_accrual_empty_period_returns_no_suggestions(
     assert body["proposal_count"] == 0
     assert body["created_count"] == 0
     assert body["suggestion_ids"] == []
+
+
+def test_period_lock_rejects_pending_close_review(
+    admin_client_a: httpx.Client, world: SeedWorld
+) -> None:
+    """A pending close-related HITL suggestion must be resolved before lock."""
+    period = _unique_future_period()
+    suggestion_id = str(uuid.uuid4())
+    try:
+        db = make_service_client()
+        db.table("agent_suggestions").insert(
+            {
+                "id": suggestion_id,
+                "tenant_id": world.tenant_a.tenant_id,
+                "agent_name": "accrual_agent",
+                "action_type": "draft_journal",
+                "input_snapshot": {"period": period},
+                "output_snapshot": {
+                    "period": period,
+                    "currency": world.tenant_a.base_currency,
+                    "wip_value": "100.00",
+                },
+                "confidence": "0.68",
+                "status": "pending",
+                "hitl_required": True,
+            }
+        ).execute()
+
+        status = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-status")
+        assert status.status_code == 200, status.text
+        status_body = status.json()
+        assert status_body["ready_to_lock"] is False
+        assert status_body["lock_blockers"] == ["close_reviews"]
+        assert status_body["pending_reviews"][0]["id"] == suggestion_id
+
+        r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert detail["code"] == "close_review_pending"
+        assert detail["pending_reviews"][0]["id"] == suggestion_id
+    finally:
+        _cleanup_agent_suggestion(world, suggestion_id)
+        _cleanup_lock(world, period)
 
 
 def test_period_lock_cross_tenant_isolation(

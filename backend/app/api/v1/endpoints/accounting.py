@@ -2,6 +2,7 @@
 
 Endpoints:
   GET    /api/v1/accounting/periods                — list all periods with lock status
+  GET    /api/v1/accounting/periods/{period}/close-status — close checklist/status
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
@@ -36,6 +37,10 @@ from app.models.accounting import (
     ManualJournalEntryResponse,
 )
 from app.services.close_reconciliation_service import CloseReconciliationService
+from app.services.close_status_service import (
+    CloseStatusService,
+    close_review_blocker_detail,
+)
 from app.services.manual_journal_service import ManualJournalService
 from supabase import Client
 
@@ -82,6 +87,36 @@ class PeriodCloseReadinessResponse(BaseModel):
     ready: bool
     findings: list[PeriodCloseFinding]
     trial_balance_balanced: bool
+
+
+class PeriodCloseChecklistItem(BaseModel):
+    code: str
+    label: str
+    status: str
+    blocking: bool
+    summary: str
+    count: int
+
+
+class PeriodClosePendingReview(BaseModel):
+    id: str
+    agent_name: str
+    action_type: str
+    status: str
+    summary: str
+
+
+class PeriodCloseStatusResponse(BaseModel):
+    period: str
+    status: str
+    locked: bool
+    locked_at: str | None
+    locked_by: str | None
+    ready_to_lock: bool
+    checklist: list[PeriodCloseChecklistItem]
+    findings: list[PeriodCloseFinding]
+    pending_reviews: list[PeriodClosePendingReview]
+    lock_blockers: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +199,27 @@ async def list_periods(
         )
 
     return PeriodListResponse(periods=result)
+
+
+@router.get("/periods/{period}/close-status", response_model=PeriodCloseStatusResponse)
+async def close_status(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> PeriodCloseStatusResponse:
+    """Return the derived close checklist and lock blockers for a period."""
+    _validate_period(period)
+    try:
+        result = CloseStatusService(db, tenant_id).get_status(period)
+    except Exception as exc:
+        logger.exception("Failed to build close status for period %s tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodCloseStatusResponse(**result.as_dict())
 
 
 @router.get("/periods/{period}/close-readiness", response_model=PeriodCloseReadinessResponse)
@@ -273,6 +329,13 @@ async def lock_period(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=reconciliation.as_error_detail(),
+        )
+
+    pending_reviews = CloseStatusService(db, tenant_id).pending_close_reviews(period)
+    if pending_reviews:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=close_review_blocker_detail(period, pending_reviews),
         )
 
     # Insert the lock
