@@ -26,6 +26,22 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
 import { userMessageForError } from '../../core/utils/error-message';
 
 type ContactKind = 'customer' | 'vendor' | 'both';
+type ClientGroupType =
+  | 'family_office'
+  | 'portfolio'
+  | 'corporate_group'
+  | 'billing_group'
+  | 'client_relationship'
+  | 'other';
+type ClientGroupMemberRole =
+  | 'parent'
+  | 'subsidiary'
+  | 'trust'
+  | 'spv'
+  | 'individual'
+  | 'portfolio_company'
+  | 'billing_entity'
+  | 'other';
 
 interface ContactDetail {
   id: string;
@@ -34,6 +50,34 @@ interface ContactDetail {
   phone?: string | null;
   kind: ContactKind;
   created_at: string;
+}
+
+interface ContactOption {
+  id: string;
+  name: string;
+  kind: ContactKind;
+}
+
+interface ClientGroupMember {
+  id: string;
+  group_id: string;
+  client_id: string;
+  client_name?: string | null;
+  client_kind?: ContactKind | string | null;
+  relationship_role: ClientGroupMemberRole | string;
+  is_primary: boolean;
+}
+
+interface ClientGroup {
+  id: string;
+  name: string;
+  group_type: ClientGroupType | string;
+  primary_client_id?: string | null;
+  billing_client_id?: string | null;
+  currency?: string | null;
+  status: string;
+  member_count: number;
+  members: ClientGroupMember[];
 }
 
 interface InvoiceSummary {
@@ -184,6 +228,213 @@ function daysSince(dateStr: string | null): number | null {
           </div>
         </div>
 
+        <!-- Related entities -->
+        <section class="mb-8" aria-labelledby="related-heading">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 id="related-heading" class="text-base font-semibold text-text-primary">Related Entities</h2>
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 border border-border-strong hover:border-accent text-text-secondary hover:text-text-primary font-medium px-3 py-1.5 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              (click)="openCreateGroup()"
+              aria-label="Create related entity group"
+            >
+              <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">account_tree</mat-icon>
+              New group
+            </button>
+          </div>
+
+          @if (showCreateGroup()) {
+            <form
+              [formGroup]="createGroupForm"
+              (ngSubmit)="submitCreateGroup()"
+              class="mb-4 rounded-lg border border-border-default bg-surface p-4 grid grid-cols-1 md:grid-cols-[1fr_180px_120px_auto] gap-3 items-end"
+              novalidate
+            >
+              <div>
+                <label for="group-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Group name
+                </label>
+                <input
+                  id="group-name"
+                  type="text"
+                  formControlName="name"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                  placeholder="e.g. Acme Family Office"
+                />
+              </div>
+              <div>
+                <label for="group-type" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Type
+                </label>
+                <select
+                  id="group-type"
+                  formControlName="group_type"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of groupTypeOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="group-currency" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Currency
+                </label>
+                <input
+                  id="group-currency"
+                  type="text"
+                  formControlName="currency"
+                  maxlength="3"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded uppercase text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                  placeholder="USD"
+                />
+              </div>
+              <div class="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  class="px-3 py-2 text-sm text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+                  (click)="closeCreateGroup()"
+                >Cancel</button>
+                <button
+                  type="submit"
+                  class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  [disabled]="createGroupForm.invalid || groupSaving()"
+                >
+                  @if (groupSaving()) { Saving… } @else { Create }
+                </button>
+              </div>
+              @if (groupError()) {
+                <div class="md:col-span-4 text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2" role="alert">
+                  {{ groupError() }}
+                </div>
+              }
+            </form>
+          }
+
+          @if (groupsLoading()) {
+            <app-skeleton-rows [count]="2" ariaLabel="Loading related entities" />
+          } @else if (groupsError()) {
+            <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low flex items-center gap-2"
+                 role="alert">
+              <mat-icon class="text-base flex-none">error_outline</mat-icon>
+              {{ groupsError() }}
+            </div>
+          } @else if (clientGroups().length === 0) {
+            <app-empty-state
+              icon="account_tree"
+              heading="No related entities"
+              message="Groups created for this contact will appear here."
+            />
+          } @else {
+            <div class="space-y-3">
+              @for (group of clientGroups(); track group.id) {
+                <div class="rounded-lg border border-border-default bg-surface p-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="text-sm font-semibold text-text-primary">{{ group.name }}</h3>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/15 text-accent-light">
+                          {{ groupTypeLabel(group.group_type) }}
+                        </span>
+                      </div>
+                      <p class="text-xs text-text-muted mt-1">
+                        {{ group.member_count }} member{{ group.member_count === 1 ? '' : 's' }}
+                        @if (group.currency) { &middot; {{ group.currency }} }
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 border border-border-default hover:border-accent text-text-secondary hover:text-text-primary px-3 py-1.5 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      (click)="openAddMember(group.id)"
+                    >
+                      <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">person_add</mat-icon>
+                      Add member
+                    </button>
+                  </div>
+
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    @for (member of group.members; track member.id) {
+                      <a
+                        [routerLink]="['/app/clients', member.client_id]"
+                        class="inline-flex items-center gap-2 rounded border border-border-subtle bg-surface-base px-3 py-2 text-sm hover:border-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        [attr.aria-label]="'Open ' + (member.client_name || 'member contact')"
+                      >
+                        <span class="font-medium text-text-primary">{{ member.client_name || member.client_id }}</span>
+                        <span class="text-xs text-text-muted">{{ roleLabel(member.relationship_role) }}</span>
+                        @if (member.is_primary) {
+                          <span class="text-xs text-accent-light">Primary</span>
+                        }
+                      </a>
+                    }
+                  </div>
+
+                  @if (addMemberGroupId() === group.id) {
+                    <form
+                      [formGroup]="addMemberForm"
+                      (ngSubmit)="submitAddMember(group.id)"
+                      class="mt-4 grid grid-cols-1 md:grid-cols-[1fr_180px_120px_auto] gap-3 items-end"
+                      novalidate
+                    >
+                      <div>
+                        <label for="member-client" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                          Contact
+                        </label>
+                        <select
+                          id="member-client"
+                          formControlName="client_id"
+                          class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                        >
+                          <option value="">Select contact</option>
+                          @for (option of availableMemberOptions(group); track option.id) {
+                            <option [value]="option.id">{{ option.name }}</option>
+                          }
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-role" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                          Role
+                        </label>
+                        <select
+                          id="member-role"
+                          formControlName="relationship_role"
+                          class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                        >
+                          @for (option of roleOptions; track option.value) {
+                            <option [value]="option.value">{{ option.label }}</option>
+                          }
+                        </select>
+                      </div>
+                      <label class="inline-flex items-center gap-2 text-sm text-text-secondary pb-2">
+                        <input type="checkbox" formControlName="is_primary" class="accent-accent" />
+                        Primary
+                      </label>
+                      <div class="flex gap-2 justify-end">
+                        <button
+                          type="button"
+                          class="px-3 py-2 text-sm text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+                          (click)="closeAddMember()"
+                        >Cancel</button>
+                        <button
+                          type="submit"
+                          class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          [disabled]="addMemberForm.invalid || memberSaving()"
+                        >
+                          @if (memberSaving()) { Adding… } @else { Add }
+                        </button>
+                      </div>
+                      @if (memberError()) {
+                        <div class="md:col-span-4 text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2" role="alert">
+                          {{ memberError() }}
+                        </div>
+                      }
+                    </form>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </section>
+
         <!-- AR section — customers and both -->
         @if (isCustomer()) {
           <section class="mb-8" aria-labelledby="ar-heading">
@@ -246,7 +497,7 @@ function daysSince(dateStr: string | null): number | null {
                 <p class="text-sm font-medium text-text-primary">
                   Total Outstanding:
                   <span class="font-mono font-bold ml-2 tabular-nums">
-                    {{ arTotal() | money: (invoices()[0]?.currency ?? 'USD') }}
+                    {{ arTotal() | money: (invoices()[0].currency || 'USD') }}
                   </span>
                 </p>
               </div>
@@ -317,7 +568,7 @@ function daysSince(dateStr: string | null): number | null {
                 <p class="text-sm font-medium text-text-primary">
                   Total Outstanding:
                   <span class="font-mono font-bold ml-2 tabular-nums">
-                    {{ apTotal() | money: (bills()[0]?.currency ?? 'USD') }}
+                    {{ apTotal() | money: (bills()[0].currency || 'USD') }}
                   </span>
                 </p>
               </div>
@@ -465,6 +716,47 @@ export class ClientDetailComponent implements OnInit {
   billsError   = signal<string | null>(null);
   bills        = signal<BillSummary[]>([]);
 
+  // Related entities
+  groupsLoading = signal(false);
+  groupsError = signal<string | null>(null);
+  clientGroups = signal<ClientGroup[]>([]);
+  allContacts = signal<ContactOption[]>([]);
+  showCreateGroup = signal(false);
+  groupSaving = signal(false);
+  groupError = signal<string | null>(null);
+  addMemberGroupId = signal<string | null>(null);
+  memberSaving = signal(false);
+  memberError = signal<string | null>(null);
+  createGroupForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required]],
+    group_type: ['client_relationship' as ClientGroupType, [Validators.required]],
+    currency: [''],
+  });
+  addMemberForm = this.fb.nonNullable.group({
+    client_id: ['', [Validators.required]],
+    relationship_role: ['subsidiary' as ClientGroupMemberRole, [Validators.required]],
+    is_primary: [false],
+  });
+
+  readonly groupTypeOptions: { label: string; value: ClientGroupType }[] = [
+    { label: 'Relationship', value: 'client_relationship' },
+    { label: 'Family office', value: 'family_office' },
+    { label: 'Portfolio', value: 'portfolio' },
+    { label: 'Corporate group', value: 'corporate_group' },
+    { label: 'Billing group', value: 'billing_group' },
+    { label: 'Other', value: 'other' },
+  ];
+  readonly roleOptions: { label: string; value: ClientGroupMemberRole }[] = [
+    { label: 'Subsidiary', value: 'subsidiary' },
+    { label: 'Parent', value: 'parent' },
+    { label: 'Trust', value: 'trust' },
+    { label: 'SPV', value: 'spv' },
+    { label: 'Individual', value: 'individual' },
+    { label: 'Portfolio company', value: 'portfolio_company' },
+    { label: 'Billing entity', value: 'billing_entity' },
+    { label: 'Other', value: 'other' },
+  ];
+
   // Edit panel
   showEditPanel = signal(false);
   saving        = signal(false);
@@ -511,6 +803,8 @@ export class ClientDetailComponent implements OnInit {
         this.contact.set(data);
         this.loading.set(false);
         this.loadArAp(id, data.kind);
+        this.loadGroups(id);
+        this.loadContactOptions();
       },
       error: (err: unknown) => {
         this.error.set(userMessageForError(err, 'Contact'));
@@ -557,6 +851,28 @@ export class ClientDetailComponent implements OnInit {
     }
   }
 
+  private loadGroups(clientId: string): void {
+    this.groupsLoading.set(true);
+    this.groupsError.set(null);
+    this.http.get<{ items: ClientGroup[] }>(`/api/v1/client-groups?client_id=${clientId}`).subscribe({
+      next: (res) => {
+        this.clientGroups.set(res.items ?? []);
+        this.groupsLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.groupsError.set(userMessageForError(err, 'Related entities'));
+        this.groupsLoading.set(false);
+      },
+    });
+  }
+
+  private loadContactOptions(): void {
+    this.http.get<{ items: ContactOption[] }>('/api/v1/clients').subscribe({
+      next: (res) => this.allContacts.set(res.items ?? []),
+      error: () => this.allContacts.set([]),
+    });
+  }
+
   goBack(): void {
     this.router.navigate(['/app/clients']);
   }
@@ -576,6 +892,92 @@ export class ClientDetailComponent implements OnInit {
 
   closeEditPanel(): void {
     this.showEditPanel.set(false);
+  }
+
+  openCreateGroup(): void {
+    const c = this.contact();
+    this.createGroupForm.reset({
+      name: c ? `${c.name} Group` : '',
+      group_type: 'client_relationship',
+      currency: '',
+    });
+    this.groupError.set(null);
+    this.showCreateGroup.set(true);
+  }
+
+  closeCreateGroup(): void {
+    this.showCreateGroup.set(false);
+  }
+
+  submitCreateGroup(): void {
+    if (this.createGroupForm.invalid) {
+      this.createGroupForm.markAllAsTouched();
+      return;
+    }
+    const c = this.contact();
+    if (!c) return;
+
+    const value = this.createGroupForm.getRawValue();
+    this.groupSaving.set(true);
+    this.groupError.set(null);
+    this.http.post<ClientGroup>('/api/v1/client-groups', {
+      name: value.name,
+      group_type: value.group_type,
+      primary_client_id: c.id,
+      billing_client_id: c.kind === 'vendor' ? null : c.id,
+      currency: value.currency ? value.currency.toUpperCase() : null,
+    }).subscribe({
+      next: (group) => {
+        this.clientGroups.update(groups => [group, ...groups]);
+        this.groupSaving.set(false);
+        this.closeCreateGroup();
+      },
+      error: (err: unknown) => {
+        this.groupSaving.set(false);
+        this.groupError.set(userMessageForError(err, 'Create related entity group'));
+      },
+    });
+  }
+
+  openAddMember(groupId: string): void {
+    if (this.allContacts().length === 0) {
+      this.loadContactOptions();
+    }
+    this.addMemberForm.reset({
+      client_id: '',
+      relationship_role: 'subsidiary',
+      is_primary: false,
+    });
+    this.memberError.set(null);
+    this.addMemberGroupId.set(groupId);
+  }
+
+  closeAddMember(): void {
+    this.addMemberGroupId.set(null);
+  }
+
+  submitAddMember(groupId: string): void {
+    if (this.addMemberForm.invalid) {
+      this.addMemberForm.markAllAsTouched();
+      return;
+    }
+    const c = this.contact();
+    if (!c) return;
+
+    const value = this.addMemberForm.getRawValue();
+    this.memberSaving.set(true);
+    this.memberError.set(null);
+    this.http.post<ClientGroupMember>(`/api/v1/client-groups/${groupId}/members`, value).subscribe({
+      next: () => {
+        this.memberSaving.set(false);
+        this.closeAddMember();
+        this.loadGroups(c.id);
+      },
+      error: (err: unknown) => {
+        this.memberSaving.set(false);
+        this.memberError.set(userMessageForError(err, 'Add related entity member'));
+      },
+    });
   }
 
   submitEdit(): void {
@@ -635,6 +1037,40 @@ export class ClientDetailComponent implements OnInit {
       case 'vendor':   return 'bg-amber-500/20 text-amber-300';
       case 'both':     return 'bg-purple-500/20 text-purple-300';
     }
+  }
+
+  groupTypeLabel(groupType: string): string {
+    const labels: Record<string, string> = {
+      family_office: 'Family office',
+      portfolio: 'Portfolio',
+      corporate_group: 'Corporate group',
+      billing_group: 'Billing group',
+      client_relationship: 'Relationship',
+      other: 'Other',
+    };
+    return labels[groupType] ?? groupType.replaceAll('_', ' ');
+  }
+
+  roleLabel(role: string): string {
+    const labels: Record<string, string> = {
+      parent: 'Parent',
+      subsidiary: 'Subsidiary',
+      trust: 'Trust',
+      spv: 'SPV',
+      individual: 'Individual',
+      portfolio_company: 'Portfolio company',
+      billing_entity: 'Billing entity',
+      other: 'Other',
+    };
+    return labels[role] ?? role.replaceAll('_', ' ');
+  }
+
+  availableMemberOptions(group: ClientGroup): ContactOption[] {
+    const currentId = this.contact()?.id;
+    const existingIds = new Set(group.members.map(member => member.client_id));
+    return this.allContacts().filter(option =>
+      option.id !== currentId && !existingIds.has(option.id)
+    );
   }
 
   avatarBgClass(kind: ContactKind): string {

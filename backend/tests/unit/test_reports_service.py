@@ -683,6 +683,162 @@ def test_segment_profitability_groups_by_service_line(mock_db: MagicMock) -> Non
     assert Decimal(by_segment["tax"]["gross_margin"]) == Decimal("4500.00")
 
 
+def test_client_group_profitability_rolls_up_member_clients(mock_db: MagicMock) -> None:
+    """Client group profitability aggregates member client facts."""
+    _route_tables(
+        mock_db,
+        {
+            "client_groups": [
+                {
+                    "id": "group-acme",
+                    "name": "Acme Family Office",
+                    "group_type": "family_office",
+                    "primary_client_id": "client-acme",
+                    "billing_client_id": "client-acme",
+                    "currency": "USD",
+                    "status": "active",
+                },
+            ],
+            "client_group_members": [
+                {
+                    "id": "member-acme",
+                    "group_id": "group-acme",
+                    "client_id": "client-acme",
+                    "relationship_role": "parent",
+                    "is_primary": True,
+                    "clients": {
+                        "id": "client-acme",
+                        "name": "Acme Corp",
+                        "kind": "customer",
+                    },
+                },
+                {
+                    "id": "member-bravo",
+                    "group_id": "group-acme",
+                    "client_id": "client-bravo",
+                    "relationship_role": "portfolio_company",
+                    "is_primary": False,
+                    "clients": {
+                        "id": "client-bravo",
+                        "name": "Bravo Ltd",
+                        "kind": "both",
+                    },
+                },
+            ],
+            "clients": [
+                {
+                    "id": "client-acme",
+                    "name": "Acme Corp",
+                    "kind": "customer",
+                    "currency": "USD",
+                },
+                {
+                    "id": "client-bravo",
+                    "name": "Bravo Ltd",
+                    "kind": "both",
+                    "currency": "USD",
+                },
+            ],
+            "engagements": [
+                {
+                    "id": "eng-acme",
+                    "client_id": "client-acme",
+                    "service_line": "advisory",
+                    "currency": "USD",
+                },
+                {
+                    "id": "eng-bravo",
+                    "client_id": "client-bravo",
+                    "service_line": "tax",
+                    "currency": "USD",
+                },
+            ],
+            "projects": [
+                {"id": "proj-acme", "engagement_id": "eng-acme", "currency": "USD"},
+                {"id": "proj-bravo", "engagement_id": "eng-bravo", "currency": "USD"},
+            ],
+            "invoices": [
+                {
+                    "id": "inv-acme",
+                    "client_id": "client-acme",
+                    "engagement_id": "eng-acme",
+                    "total": "10000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-10",
+                },
+                {
+                    "id": "inv-bravo",
+                    "client_id": "client-bravo",
+                    "engagement_id": "eng-bravo",
+                    "total": "5000.00",
+                    "currency": "USD",
+                    "issue_date": "2026-06-11",
+                },
+            ],
+            "time_entries": [
+                {
+                    "project_id": "proj-acme",
+                    "employee_id": "emp-senior",
+                    "hours": "10.00",
+                    "date": "2026-06-12",
+                },
+                {
+                    "project_id": "proj-bravo",
+                    "employee_id": "emp-manager",
+                    "hours": "5.00",
+                    "date": "2026-06-12",
+                },
+            ],
+            "employees": [
+                {"id": "emp-senior", "cost_rate": "100.00"},
+                {"id": "emp-manager", "cost_rate": "120.00"},
+            ],
+            "project_expenses": [
+                {
+                    "id": "exp-acme",
+                    "project_id": "proj-acme",
+                    "amount": "1000.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+                {
+                    "id": "exp-bravo",
+                    "project_id": "proj-bravo",
+                    "amount": "500.00",
+                    "base_amount": None,
+                    "currency": "USD",
+                    "expense_date": "2026-06-12",
+                },
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    result = svc.client_group_profitability(
+        period_start="2026-06-01",
+        period_end="2026-06-30",
+    )
+
+    assert len(result) == 1
+    row = result[0]
+    assert row["client_group_id"] == "group-acme"
+    assert row["client_group_name"] == "Acme Family Office"
+    assert row["group_type"] == "family_office"
+    assert row["member_count"] == 2
+    assert [member["client_id"] for member in row["members"]] == [
+        "client-acme",
+        "client-bravo",
+    ]
+    assert row["service_lines"] == ["advisory", "tax"]
+    assert Decimal(row["revenue"]) == Decimal("15000.00")
+    assert Decimal(row["labor_cost"]) == Decimal("1600.00")
+    assert Decimal(row["expense_cost"]) == Decimal("1500.00")
+    assert Decimal(row["gross_margin"]) == Decimal("11900.00")
+    assert row["gross_margin_pct"] == 79.3
+    assert row["client_count"] == 2
+
+
 def test_practice_dashboard_combines_financial_health_and_capacity(
     mock_db: MagicMock,
 ) -> None:

@@ -15,12 +15,13 @@ Report methods:
   9. cost_by_service_line
   10. margin_by_service_line
   11. client_profitability
-  12. segment_profitability
-  13. practice_dashboard
-  14. project_health_scores
-  15. capacity_planning
-  16. pricing_staffing_recommendations
-  17. scope_change_advisor
+  12. client_group_profitability
+  13. segment_profitability
+  14. practice_dashboard
+  15. project_health_scores
+  16. capacity_planning
+  17. pricing_staffing_recommendations
+  18. scope_change_advisor
 """
 
 from __future__ import annotations
@@ -811,6 +812,7 @@ class ReportsService:
         period_start: str | None = None,
         period_end: str | None = None,
         client_id: str | None = None,
+        client_group_id: str | None = None,
     ) -> list[dict]:
         """Profitability by client using current transactional schema.
 
@@ -820,10 +822,16 @@ class ReportsService:
         report intentionally excludes generic bills until bill-line project or
         service-line coding exists.
         """
+        client_ids_filter = (
+            self._client_ids_for_client_group(client_group_id)
+            if client_group_id
+            else None
+        )
         facts = self._profitability_facts(
             period_start=period_start,
             period_end=period_end,
             client_id=client_id,
+            client_ids_filter=client_ids_filter,
         )
         rows: list[dict] = []
         for client in facts["clients"].values():
@@ -852,7 +860,82 @@ class ReportsService:
         )
 
     # ------------------------------------------------------------------
-    # 12. Segment Profitability
+    # 12. Client Group Profitability
+    # ------------------------------------------------------------------
+
+    def client_group_profitability(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        client_group_id: str | None = None,
+    ) -> list[dict]:
+        """Profitability rollups for configured client groups."""
+        groups_q = (
+            self.db.table("client_groups")
+            .select("id, name, group_type, primary_client_id, billing_client_id, currency, status")
+            .eq("tenant_id", self.tenant_id)
+            .is_("deleted_at", "null")
+        )
+        if client_group_id:
+            groups_q = groups_q.eq("id", client_group_id)
+        groups = groups_q.execute().data or []
+        if not groups:
+            return []
+
+        group_ids = [str(group["id"]) for group in groups]
+        members_by_group = self._client_group_members_by_group(group_ids)
+        all_client_ids = {
+            str(member["client_id"])
+            for members in members_by_group.values()
+            for member in members
+            if member.get("client_id")
+        }
+        facts = self._profitability_facts(
+            period_start=period_start,
+            period_end=period_end,
+            client_ids_filter=all_client_ids,
+        )
+
+        rows: list[dict] = []
+        by_client = facts["by_client"]  # type: ignore[index]
+        for group in groups:
+            group_id = str(group["id"])
+            members = members_by_group.get(group_id, [])
+            stats = _profitability_stats()
+            for member in members:
+                member_stats = by_client.get(str(member["client_id"]))
+                if member_stats:
+                    _merge_profitability_stats(stats, member_stats)
+            if _is_empty_profitability(stats):
+                continue
+            rows.append(
+                _profitability_row(
+                    {
+                        "client_group_id": group_id,
+                        "client_group_name": group.get("name") or group_id,
+                        "group_type": group.get("group_type") or "other",
+                        "primary_client_id": group.get("primary_client_id"),
+                        "billing_client_id": group.get("billing_client_id"),
+                        "group_status": group.get("status") or "active",
+                        "currency": _currency_label(stats) or group.get("currency"),
+                        "service_lines": sorted(stats["service_lines"]),
+                        "member_count": len(members),
+                        "members": [_client_group_member_summary(member) for member in members],
+                    },
+                    stats,
+                )
+            )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                Decimal(str(row["gross_margin"])),
+                str(row["client_group_name"]),
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 13. Segment Profitability
     # ------------------------------------------------------------------
 
     def segment_profitability(
@@ -1511,7 +1594,11 @@ class ReportsService:
         period_start: str | None = None,
         period_end: str | None = None,
         client_id: str | None = None,
+        client_ids_filter: set[str] | None = None,
     ) -> dict[str, object]:
+        if client_ids_filter is not None and not client_ids_filter:
+            return _empty_profitability_facts()
+
         clients_q = (
             self.db.table("clients")
             .select("id, name, kind, currency")
@@ -1521,16 +1608,13 @@ class ReportsService:
         )
         if client_id:
             clients_q = clients_q.eq("id", client_id)
+        if client_ids_filter is not None:
+            clients_q = clients_q.in_("id", sorted(client_ids_filter))
         clients = clients_q.execute().data or []
         clients_by_id = {str(client["id"]): client for client in clients}
         client_ids = set(clients_by_id)
         if not client_ids:
-            return {
-                "clients": {},
-                "by_client": {},
-                "by_service_line": {},
-                "by_client_kind": {},
-            }
+            return _empty_profitability_facts()
 
         engagements = (
             self.db.table("engagements")
@@ -1601,6 +1685,44 @@ class ReportsService:
             period_end=period_end,
         )
         return facts
+
+    def _client_ids_for_client_group(self, client_group_id: str) -> set[str]:
+        rows = (
+            self.db.table("client_group_members")
+            .select("client_id")
+            .eq("tenant_id", self.tenant_id)
+            .eq("group_id", client_group_id)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["client_id"]) for row in rows if row.get("client_id")}
+
+    def _client_group_members_by_group(self, group_ids: list[str]) -> dict[str, list[dict]]:
+        if not group_ids:
+            return {}
+        rows = (
+            self.db.table("client_group_members")
+            .select("id, group_id, client_id, relationship_role, is_primary, clients!client_id(id, name, kind)")
+            .eq("tenant_id", self.tenant_id)
+            .in_("group_id", group_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(str(row["group_id"]), []).append(row)
+        for members in grouped.values():
+            members.sort(
+                key=lambda member: (
+                    not bool(member.get("is_primary")),
+                    _embedded_one(member.get("clients")).get("name") or "",
+                )
+            )
+        return grouped
 
     def _ensure_profitability_dimensions(
         self,
@@ -2397,6 +2519,30 @@ def _profitability_stats() -> dict[str, object]:
     }
 
 
+def _empty_profitability_facts() -> dict[str, object]:
+    return {
+        "clients": {},
+        "by_client": {},
+        "by_service_line": {},
+        "by_client_kind": {},
+    }
+
+
+def _merge_profitability_stats(target: dict, source: dict) -> None:
+    for key in ("revenue", "labor_cost", "expense_cost", "labor_hours"):
+        target[key] += source[key]
+    for key in (
+        "client_ids",
+        "engagement_ids",
+        "project_ids",
+        "invoice_ids",
+        "expense_ids",
+        "service_lines",
+        "currencies",
+    ):
+        target[key].update(source[key])
+
+
 def _is_empty_profitability(stats: dict) -> bool:
     return (
         stats["revenue"] == Decimal("0")
@@ -2433,6 +2579,18 @@ def _profitability_row(identity: dict[str, object], stats: dict) -> dict[str, ob
         "expense_count": len(stats["expense_ids"]),
         "profitability_status": _profitability_status(gross_margin_pct),
         "recommended_action": _profitability_action(gross_margin_pct),
+    }
+
+
+def _client_group_member_summary(member: dict) -> dict[str, object]:
+    client = _embedded_one(member.get("clients"))
+    return {
+        "member_id": str(member["id"]),
+        "client_id": str(member["client_id"]),
+        "client_name": client.get("name"),
+        "client_kind": client.get("kind"),
+        "relationship_role": member.get("relationship_role") or "other",
+        "is_primary": bool(member.get("is_primary")),
     }
 
 

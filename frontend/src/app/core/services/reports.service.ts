@@ -95,6 +95,42 @@ export interface ClientProfitabilityRow {
   recommended_action: string;
 }
 
+export interface ClientGroupMemberSummary {
+  member_id: string;
+  client_id: string;
+  client_name?: string | null;
+  client_kind?: 'customer' | 'vendor' | 'both' | string | null;
+  relationship_role: string;
+  is_primary: boolean;
+}
+
+export interface ClientGroupProfitabilityRow {
+  client_group_id: string;
+  client_group_name: string;
+  group_type: string;
+  primary_client_id?: string | null;
+  billing_client_id?: string | null;
+  group_status: string;
+  currency?: string | null;
+  service_lines: string[];
+  member_count: number;
+  members: ClientGroupMemberSummary[];
+  revenue: string;
+  labor_cost: string;
+  expense_cost: string;
+  total_cost: string;
+  gross_margin: string;
+  gross_margin_pct: number;
+  labor_hours: string;
+  client_count: number;
+  engagement_count: number;
+  project_count: number;
+  invoice_count: number;
+  expense_count: number;
+  profitability_status: 'strong' | 'healthy' | 'watch' | 'critical';
+  recommended_action: string;
+}
+
 export interface SegmentProfitabilityRow {
   segment_type: 'service_line' | 'client_kind';
   segment_key: string;
@@ -256,8 +292,13 @@ export class ReportsService {
   getCapacityPlanning = (): Observable<CapacityRow[]> =>
     this.http.get<CapacityRow[]>(`${this.base}/capacity-planning`);
 
-  getClientProfitability = (): Observable<ClientProfitabilityRow[]> =>
-    this.http.get<ClientProfitabilityRow[]>(`${this.base}/client-profitability`);
+  getClientProfitability = (clientGroupId?: string): Observable<ClientProfitabilityRow[]> =>
+    this.http.get<ClientProfitabilityRow[]>(
+      `${this.base}/client-profitability${clientGroupId ? '?client_group_id=' + clientGroupId : ''}`,
+    );
+
+  getClientGroupProfitability = (): Observable<ClientGroupProfitabilityRow[]> =>
+    this.http.get<ClientGroupProfitabilityRow[]>(`${this.base}/client-group-profitability`);
 
   getSegmentProfitability = (
     groupBy: 'service_line' | 'client_kind' = 'service_line',

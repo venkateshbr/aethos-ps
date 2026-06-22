@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     billing_runs,
     bills,
     chat,
+    client_groups,
     clients,
     documents,
     employees,
@@ -49,6 +50,7 @@ api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"]
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
+api_router.include_router(client_groups.router, prefix="/client-groups", tags=["client-groups"])
 api_router.include_router(rate_cards.router, prefix="/rate-cards", tags=["rate-cards"])
 api_router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])

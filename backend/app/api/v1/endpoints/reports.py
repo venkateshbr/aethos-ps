@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
@@ -174,16 +174,39 @@ def margin_by_service_line(
 @router.get("/client-profitability")
 def client_profitability(
     client_id: str | None = Query(None, description="Filter to a single client"),
+    client_group_id: str | None = Query(None, description="Filter to members of a client group"),
     period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
     period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> list[dict]:
     """Client profitability from finalized revenue, labour cost, and expenses."""
+    if client_id and client_group_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Use either client_id or client_group_id, not both.",
+        )
     return svc.client_profitability(
         period_start=period_start,
         period_end=period_end,
         client_id=client_id,
+        client_group_id=client_group_id,
+    )
+
+
+@router.get("/client-group-profitability")
+def client_group_profitability(
+    client_group_id: str | None = Query(None, description="Filter to a single client group"),
+    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Client group profitability rollups across active member clients."""
+    return svc.client_group_profitability(
+        period_start=period_start,
+        period_end=period_end,
+        client_group_id=client_group_id,
     )
 
 
