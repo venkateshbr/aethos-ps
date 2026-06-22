@@ -9,11 +9,12 @@ RBAC:
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.service_catalogue import (
@@ -29,8 +30,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+ServiceLineQuery = Annotated[
+    str | None,
+    Query(description="Filter by service line (accounting|tax|cosec|payroll|advisory|other)"),
+]
+ActiveOnlyQuery = Annotated[
+    bool,
+    Query(description="Return only active services (default true)"),
+]
 
-def _service(
+
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> ServiceCatalogueService:
+    return ServiceCatalogueService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> ServiceCatalogueService:
@@ -39,16 +56,10 @@ def _service(
 
 @router.get("", response_model=ServiceCatalogueListResponse)
 async def list_services(
-    service_line: str | None = Query(
-        default=None,
-        description="Filter by service line (accounting|tax|cosec|payroll|advisory|other)",
-    ),
-    active_only: bool = Query(
-        default=True,
-        description="Return only active services (default true)",
-    ),
+    service_line: ServiceLineQuery = None,
+    active_only: ActiveOnlyQuery = True,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: ServiceCatalogueService = Depends(_service),  # noqa: B008
+    svc: ServiceCatalogueService = Depends(_read_service),  # noqa: B008
 ) -> ServiceCatalogueListResponse:
     """List all services in the catalogue.
 
@@ -62,7 +73,7 @@ async def list_services(
 async def create_service(
     payload: ServiceCatalogueCreate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: ServiceCatalogueService = Depends(_service),  # noqa: B008
+    svc: ServiceCatalogueService = Depends(_write_service),  # noqa: B008
 ) -> ServiceCatalogueItem:
     """Create a custom service in the catalogue.
 
@@ -89,7 +100,7 @@ async def create_service(
 async def get_service(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: ServiceCatalogueService = Depends(_service),  # noqa: B008
+    svc: ServiceCatalogueService = Depends(_read_service),  # noqa: B008
 ) -> ServiceCatalogueItem:
     """Retrieve a single service by ID."""
     item = await svc.get_service(id)
@@ -105,7 +116,7 @@ async def update_service(
     id: str,
     payload: ServiceCatalogueUpdate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: ServiceCatalogueService = Depends(_service),  # noqa: B008
+    svc: ServiceCatalogueService = Depends(_write_service),  # noqa: B008
 ) -> ServiceCatalogueItem:
     """Partially update a service.
 
@@ -125,7 +136,7 @@ async def update_service(
 async def deactivate_service(
     id: str,
     _current_user: CurrentUser = require_role(UserRole.owner),  # noqa: B008
-    svc: ServiceCatalogueService = Depends(_service),  # noqa: B008
+    svc: ServiceCatalogueService = Depends(_write_service),  # noqa: B008
 ) -> None:
     """Deactivate a service (soft-delete via is_active=False).
 
