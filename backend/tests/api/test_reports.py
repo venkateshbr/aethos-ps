@@ -24,6 +24,7 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/ap-aging",
     "/api/v1/reports/project-pnl",
     "/api/v1/reports/project-health",
+    "/api/v1/reports/capacity-planning",
     "/api/v1/reports/utilization",
     # /api/v1/reports/wip is xfailed separately (bug #99 — references
     # projects.rate_card_id which does not exist).
@@ -87,3 +88,29 @@ def test_project_health_report_shape(client_a: httpx.Client) -> None:
             "recommended_actions",
         } <= set(row)
         assert 0 <= row["health_score"] <= 100
+
+
+def test_capacity_planning_report_shape(client_a: httpx.Client) -> None:
+    """Capacity planning returns employee utilization rows for the work window."""
+    r = client_a.get("/api/v1/reports/capacity-planning")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        row = body[0]
+        assert {
+            "employee_id",
+            "employee_name",
+            "capacity_hours",
+            "logged_hours",
+            "utilization_pct",
+            "capacity_status",
+            "active_assignments",
+            "recommended_action",
+        } <= set(row)
+        assert row["capacity_status"] in {
+            "overallocated",
+            "full",
+            "underutilized",
+            "balanced",
+        }

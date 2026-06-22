@@ -393,3 +393,83 @@ def test_project_health_scores_rank_riskiest_project_first(mock_db: MagicMock) -
     assert risky["metrics"]["budget_burn_pct"] == 90.0
     assert risky["metrics"]["cap_used_pct"] == 92.0
     assert result[1]["risk_level"] == "healthy"
+
+
+def test_capacity_planning_flags_overallocated_and_underutilized(
+    mock_db: MagicMock,
+) -> None:
+    """Capacity report ranks overallocated staff before underutilized staff."""
+    period_start = "2026-06-15"
+    period_end = "2026-06-21"
+    employees = [
+        {
+            "id": "emp-over",
+            "first_name": "Asha",
+            "last_name": "Rao",
+            "email": "asha@example.com",
+            "department": "Advisory",
+            "practice_area": "advisory",
+            "seniority": "manager",
+            "available_hours_per_week": "40.00",
+            "status": "active",
+        },
+        {
+            "id": "emp-under",
+            "first_name": "Ben",
+            "last_name": "Low",
+            "email": "ben@example.com",
+            "department": "Tax",
+            "practice_area": "tax",
+            "seniority": "associate",
+            "available_hours_per_week": "40.00",
+            "status": "active",
+        },
+    ]
+    _route_tables(
+        mock_db,
+        {
+            "employees": employees,
+            "time_entries": [
+                {
+                    "employee_id": "emp-over",
+                    "hours": "45.00",
+                    "billable": True,
+                    "date": "2026-06-16",
+                },
+                {
+                    "employee_id": "emp-under",
+                    "hours": "10.00",
+                    "billable": True,
+                    "date": "2026-06-16",
+                },
+            ],
+            "project_assignments": [
+                {
+                    "employee_id": "emp-over",
+                    "project_id": "proj-1",
+                    "role": "Manager",
+                    "start_date": "2026-06-01",
+                    "end_date": None,
+                    "projects": {
+                        "id": "proj-1",
+                        "name": "Platform Cleanup",
+                        "status": "active",
+                    },
+                }
+            ],
+        },
+    )
+
+    svc = _make_svc(mock_db)
+    result = svc.capacity_planning(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    assert [row["employee_id"] for row in result] == ["emp-over", "emp-under"]
+    assert result[0]["capacity_status"] == "overallocated"
+    assert result[0]["utilization_pct"] == 112.5
+    assert result[0]["active_assignment_count"] == 1
+    assert result[0]["active_assignments"][0]["project_name"] == "Platform Cleanup"
+    assert result[1]["capacity_status"] == "underutilized"
+    assert result[1]["utilization_pct"] == 25.0

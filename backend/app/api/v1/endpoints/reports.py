@@ -73,6 +73,20 @@ def project_health(
     )
 
 
+@router.get("/capacity-planning")
+def capacity_planning(
+    period_start: str | None = Query(None, description="Capacity window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Capacity window to (YYYY-MM-DD)"),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Employee capacity and utilization planning for a date window."""
+    return svc.capacity_planning(
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @router.get("/utilization")
 def utilization(
     employee_id: str | None = Query(None, description="Filter to a single employee"),

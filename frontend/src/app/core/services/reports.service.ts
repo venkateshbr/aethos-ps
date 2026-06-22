@@ -45,6 +45,34 @@ export interface ProjectHealthRow {
   recommended_actions: string[];
 }
 
+export interface CapacityAssignment {
+  project_id: string;
+  project_name?: string;
+  role?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface CapacityRow {
+  employee_id: string;
+  employee_name: string;
+  email?: string;
+  department?: string;
+  practice_area?: string;
+  seniority?: string;
+  period_start: string;
+  period_end: string;
+  capacity_hours: string;
+  logged_hours: string;
+  billable_hours: string;
+  utilization_pct: number;
+  billable_utilization_pct: number;
+  active_assignment_count: number;
+  active_assignments: CapacityAssignment[];
+  capacity_status: 'overallocated' | 'full' | 'underutilized' | 'balanced';
+  recommended_action: string;
+}
+
 export interface UtilRow {
   employee_id: string;
   total_hours: string;
@@ -101,6 +129,9 @@ export class ReportsService {
 
   getProjectHealth = (): Observable<ProjectHealthRow[]> =>
     this.http.get<ProjectHealthRow[]>(`${this.base}/project-health`);
+
+  getCapacityPlanning = (): Observable<CapacityRow[]> =>
+    this.http.get<CapacityRow[]>(`${this.base}/capacity-planning`);
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

@@ -15,6 +15,7 @@ Report methods:
   9. cost_by_service_line
   10. margin_by_service_line
   11. project_health_scores
+  12. capacity_planning
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
 _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
+_DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
 
 
 class ReportsService:
@@ -1205,6 +1207,160 @@ class ReportsService:
                 )
             )
 
+    # ------------------------------------------------------------------
+    # 12. Capacity Planning
+    # ------------------------------------------------------------------
+
+    def capacity_planning(
+        self,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        """Employee capacity and utilization for a date window.
+
+        This is an operational planning report built only from current schema:
+        employee weekly availability, logged time, billable mix, and active
+        project assignments.  It does not invent forecast hours until the data
+        model supports allocation percentages or scheduled assignment hours.
+        """
+        start, end = _capacity_window(period_start, period_end)
+        capacity_factor = Decimal((end - start).days + 1) / Decimal("7")
+        employees = (
+            self.db.table("employees")
+            .select(
+                "id, first_name, last_name, email, department, practice_area, "
+                "seniority, available_hours_per_week, status"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .eq("status", "active")
+            .execute()
+            .data
+            or []
+        )
+        if not employees:
+            return []
+
+        employee_ids = [str(employee["id"]) for employee in employees]
+        time_by_employee = self._time_entries_by_employee(employee_ids, start, end)
+        assignments_by_employee = self._assignments_by_employee(
+            employee_ids, start, end
+        )
+
+        rows: list[dict] = []
+        for employee in employees:
+            employee_id = str(employee["id"])
+            entries = time_by_employee.get(employee_id, [])
+            assignments = assignments_by_employee.get(employee_id, [])
+            weekly_capacity = (
+                _decimal(employee.get("available_hours_per_week"))
+                or _DEFAULT_WEEKLY_CAPACITY_HOURS
+            )
+            capacity_hours = (weekly_capacity * capacity_factor).quantize(
+                Decimal("0.01")
+            )
+            logged_hours = sum(
+                (_decimal(entry.get("hours")) or Decimal("0")) for entry in entries
+            )
+            billable_hours = sum(
+                (_decimal(entry.get("hours")) or Decimal("0"))
+                for entry in entries
+                if entry.get("billable", True)
+            )
+            utilization_pct = _pct(logged_hours, capacity_hours)
+            billable_utilization_pct = _pct(billable_hours, capacity_hours)
+            capacity_status = _capacity_status(utilization_pct)
+
+            rows.append(
+                {
+                    "employee_id": employee_id,
+                    "employee_name": _employee_name(employee),
+                    "email": employee.get("email"),
+                    "department": employee.get("department"),
+                    "practice_area": employee.get("practice_area"),
+                    "seniority": employee.get("seniority"),
+                    "period_start": start.isoformat(),
+                    "period_end": end.isoformat(),
+                    "capacity_hours": str(capacity_hours),
+                    "logged_hours": str(logged_hours),
+                    "billable_hours": str(billable_hours),
+                    "utilization_pct": utilization_pct,
+                    "billable_utilization_pct": billable_utilization_pct,
+                    "active_assignment_count": len(assignments),
+                    "active_assignments": assignments,
+                    "capacity_status": capacity_status,
+                    "recommended_action": _capacity_action(capacity_status),
+                }
+            )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                _capacity_sort_rank(str(row["capacity_status"])),
+                -float(row["utilization_pct"]),
+                str(row["employee_name"]),
+            ),
+        )
+
+    def _time_entries_by_employee(
+        self,
+        employee_ids: list[str],
+        start: date,
+        end: date,
+    ) -> dict[str, list[dict]]:
+        rows = (
+            self.db.table("time_entries")
+            .select("employee_id, hours, billable, date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("employee_id", employee_ids)
+            .gte("date", start.isoformat())
+            .lte("date", end.isoformat())
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.get("employee_id")), []).append(row)
+        return grouped
+
+    def _assignments_by_employee(
+        self,
+        employee_ids: list[str],
+        start: date,
+        end: date,
+    ) -> dict[str, list[dict]]:
+        rows = (
+            self.db.table("project_assignments")
+            .select(
+                "employee_id, project_id, role, start_date, end_date, "
+                "projects!project_id(id, name, status)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("employee_id", employee_ids)
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            if not _assignment_overlaps(row, start, end):
+                continue
+            project = _embedded_one(row.get("projects"))
+            if project.get("status") in {"completed", "cancelled"}:
+                continue
+            employee_id = str(row.get("employee_id"))
+            grouped.setdefault(employee_id, []).append(
+                {
+                    "project_id": str(row.get("project_id")),
+                    "project_name": project.get("name"),
+                    "role": row.get("role"),
+                    "start_date": row.get("start_date"),
+                    "end_date": row.get("end_date"),
+                }
+            )
+        return grouped
+
 
 def _decimal(value: object) -> Decimal | None:
     if value is None or value == "":
@@ -1282,3 +1438,71 @@ def _unique_actions(drivers: list[dict]) -> list[str]:
         if action and action not in actions:
             actions.append(action)
     return actions
+
+
+def _capacity_window(
+    period_start: str | None,
+    period_end: str | None,
+) -> tuple[date, date]:
+    today = date.today()
+    default_start = today - timedelta(days=today.weekday())
+    start = _parse_date(period_start) or default_start
+    end = _parse_date(period_end) or (start + timedelta(days=6))
+    if end < start:
+        return end, start
+    return start, end
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _pct(numerator: Decimal, denominator: Decimal) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(float(numerator / denominator * 100), 1)
+
+
+def _employee_name(employee: dict) -> str:
+    name = f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip()
+    return name or str(employee.get("email") or employee.get("id") or "Unknown")
+
+
+def _capacity_status(utilization_pct: float) -> str:
+    if utilization_pct >= 110:
+        return "overallocated"
+    if utilization_pct >= 90:
+        return "full"
+    if utilization_pct <= 60:
+        return "underutilized"
+    return "balanced"
+
+
+def _capacity_action(status: str) -> str:
+    if status == "overallocated":
+        return "Rebalance assignments or defer non-critical work this period."
+    if status == "full":
+        return "Avoid adding new work without partner approval."
+    if status == "underutilized":
+        return "Review backlog and assign additional billable work where possible."
+    return "Capacity is within the target operating range."
+
+
+def _capacity_sort_rank(status: str) -> int:
+    return {
+        "overallocated": 0,
+        "underutilized": 1,
+        "full": 2,
+        "balanced": 3,
+    }.get(status, 4)
+
+
+def _assignment_overlaps(row: dict, start: date, end: date) -> bool:
+    assignment_start = _parse_date(row.get("start_date")) or start
+    assignment_end = _parse_date(row.get("end_date")) or end
+    return assignment_start <= end and assignment_end >= start
