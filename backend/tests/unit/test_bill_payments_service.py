@@ -244,3 +244,83 @@ def test_propose_writes_l2_suggestion() -> None:
     assert len(suggestion_calls) == 1
     assert suggestion_calls[0]["autonomy_level"] == 2, "bill_pay_agent must always be L2"
     assert suggestion_calls[0]["agent_name"] == "bill_pay_agent"
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_bill_payment_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import date
+
+    from app.services.inbox_service import InboxService
+
+    calls: list[dict] = []
+
+    class _BillPayments:
+        def __init__(self, _db: object, tenant_id: str) -> None:
+            self.tenant_id = tenant_id
+
+        def create_batch(
+            self,
+            bill_ids: list[str],
+            pay_date: date | None,
+            bank_account_label: str,
+            created_by: str,
+        ) -> dict:
+            calls.append(
+                {
+                    "tenant_id": self.tenant_id,
+                    "bill_ids": bill_ids,
+                    "pay_date": pay_date,
+                    "bank_account_label": bank_account_label,
+                    "created_by": created_by,
+                }
+            )
+            return {"id": "batch-1"}
+
+    monkeypatch.setattr(
+        "app.services.bill_payments_service.BillPaymentsService",
+        _BillPayments,
+    )
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = MagicMock()
+    svc._tenant_id = TENANT_ID
+
+    result = await svc._materialise_bill_payment_batch(
+        {
+            "proposed_bill_ids": ["bill-1", "bill-2"],
+            "proposed_pay_date": "2026-06-30",
+            "bank_account_label": "Operating",
+        }
+    )
+
+    assert result == {"entity_type": "bill_payment_batch", "entity_id": "batch-1"}
+    assert calls == [
+        {
+            "tenant_id": TENANT_ID,
+            "bill_ids": ["bill-1", "bill-2"],
+            "pay_date": date(2026, 6, 30),
+            "bank_account_label": "Operating",
+            "created_by": "bill_pay_agent",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialise_bill_payment_batch_rejects_bad_date() -> None:
+    from fastapi import HTTPException
+
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = MagicMock()
+    svc._tenant_id = TENANT_ID
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc._materialise_bill_payment_batch(
+            {
+                "proposed_bill_ids": ["bill-1"],
+                "proposed_pay_date": "not-a-date",
+            }
+        )
+
+    assert exc_info.value.status_code == 422

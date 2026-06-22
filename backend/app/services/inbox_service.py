@@ -14,6 +14,7 @@ All mutation methods guard against double-processing (status==done → 409).
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -221,6 +222,8 @@ class InboxService:
             return await self._materialise_billing_run(payload)
         elif kind == "send_email":
             return await self._materialise_collections_email(payload)
+        elif kind == "create_bill_payment_batch":
+            return await self._materialise_bill_payment_batch(payload)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -274,7 +277,7 @@ class InboxService:
         billing_run_id = payload.get("billing_run_id")
         if not billing_run_id:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Billing run approval payload must include billing_run_id",
             )
 
@@ -327,7 +330,7 @@ class InboxService:
         ]
         if missing:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Collections email payload missing: {', '.join(missing)}",
             )
 
@@ -345,6 +348,34 @@ class InboxService:
             "entity_id": invoice_id,
             "send_status": result.get("status", "sent"),
         }
+
+    async def _materialise_bill_payment_batch(self, payload: dict) -> dict:
+        bill_ids = payload.get("proposed_bill_ids") or payload.get("bill_ids") or []
+        if not isinstance(bill_ids, list) or not all(isinstance(v, str) for v in bill_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Bill payment proposal must include proposed_bill_ids",
+            )
+
+        pay_date = None
+        if payload.get("proposed_pay_date"):
+            try:
+                pay_date = date.fromisoformat(str(payload["proposed_pay_date"]))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Invalid proposed_pay_date",
+                ) from exc
+
+        from app.services.bill_payments_service import BillPaymentsService
+
+        batch = BillPaymentsService(self._db, self._tenant_id).create_batch(
+            bill_ids,
+            pay_date,
+            str(payload.get("bank_account_label") or ""),
+            created_by="bill_pay_agent",
+        )
+        return {"entity_type": "bill_payment_batch", "entity_id": str(batch["id"])}
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
