@@ -11,11 +11,8 @@ Period format: "YYYY-MM" (e.g. "2026-05").
 
 Locking a period prevents any new journal entries from being posted with an
 entry_date that falls within that period. The accounting_guardian enforces
-this at journal-post time.
-
-Reconciliation check before locking: a full sub-ledger reconciliation
-(AR aging vs invoice totals, AP vs bill totals) is deferred to Week 6.
-For now, the lock is applied immediately with a TODO comment.
+this at journal-post time. Before the lock row is inserted, finalized AR/AP
+sub-ledger rows are reconciled against posted GL references.
 """
 
 from __future__ import annotations
@@ -36,6 +33,7 @@ from app.models.accounting import (
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
 )
+from app.services.close_reconciliation_service import CloseReconciliationService
 from app.services.manual_journal_service import ManualJournalService
 from supabase import Client
 
@@ -160,10 +158,6 @@ async def lock_period(
     """Lock a period, preventing new journal entries.
 
     Requires admin role or higher.
-
-    TODO (Week 6): Before locking, verify all sub-ledger entries in the period
-    reconcile — AR aging must match invoice totals, AP must match bill totals.
-    For now, the lock is applied immediately without the reconciliation check.
     """
     _validate_period(period)
 
@@ -187,6 +181,21 @@ async def lock_period(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Period {period} is already locked",
+        )
+
+    try:
+        reconciliation = CloseReconciliationService(db, tenant_id).check_period(period)
+    except Exception as exc:
+        logger.exception("Failed to reconcile period %s for tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    if not reconciliation.ready:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reconciliation.as_error_detail(),
         )
 
     # Insert the lock

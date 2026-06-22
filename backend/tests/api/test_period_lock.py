@@ -1,13 +1,10 @@
-"""Period lock tests (C27 + F8 reconciliation gap).
+"""Period lock tests (C27 + close reconciliation).
 
 Covers:
 - happy path: admin locks a period; status reflects locked
 - double-lock returns 409
 - non-admin cannot lock (manager 403) — covered in test_rbac_matrix
-- F8: lock should reject if sub-ledger reconciliation fails; today it doesn't
-
-The reconciliation gap (F8) is tested with a documented xfail so the test fails
-*loudly* once Karya implements it (so we don't forget the test exists).
+- lock rejects when finalized sub-ledger rows are missing GL journals
 """
 
 from __future__ import annotations
@@ -58,6 +55,17 @@ def _cleanup_lock(world: SeedWorld, period: str) -> None:
         db = make_service_client()
         db.table("period_locks").delete().eq("tenant_id", world.tenant_a.tenant_id).eq(
             "period", period
+        ).execute()
+    except Exception:
+        pass
+
+
+def _cleanup_invoice(world: SeedWorld, invoice_id: str) -> None:
+    """Delete a test invoice row by tenant + id (best-effort)."""
+    try:
+        db = make_service_client()
+        db.table("invoices").delete().eq("tenant_id", world.tenant_a.tenant_id).eq(
+            "id", invoice_id
         ).execute()
     except Exception:
         pass
@@ -165,33 +173,36 @@ def test_period_lock_cross_tenant_isolation(
         _cleanup_lock(world, period)
 
 
-@pytest.mark.xfail(
-    reason="F8: period lock does not run sub-ledger reconciliation before locking — "
-    "see accounting.py:155-158 TODO and bug filed via Aksha QA suite",
-    strict=False,
-)
 def test_period_lock_rejects_when_subledger_unbalanced(
     admin_client_a: httpx.Client, world: SeedWorld
 ) -> None:
-    """A period with unposted invoices should refuse to lock.
-
-    Today the lock is applied without the reconciliation check. When that
-    feature lands, this test should pass and the xfail decorator should be
-    removed. The xfail is non-strict (XPASS won't error) so the test serves
-    as a regression sentinel.
-
-    To make this test meaningful we'd need to insert an unposted invoice in
-    the target period via the service-role client. For now we just assert the
-    desired behaviour and rely on the xfail.
-    """
+    """A period with a finalized invoice missing its GL journal refuses to lock."""
     period = _unique_future_period()
+    invoice_id = str(uuid.uuid4())
     try:
-        # In a complete impl we'd seed an unposted invoice in this period and
-        # expect the lock to 409. Today the lock succeeds unconditionally.
+        db = make_service_client()
+        db.table("invoices").insert(
+            {
+                "id": invoice_id,
+                "tenant_id": world.tenant_a.tenant_id,
+                "engagement_id": world.tenant_a.engagement_ids[0],
+                "client_id": world.tenant_a.client_ids[0],
+                "currency": world.tenant_a.base_currency,
+                "subtotal": "100.00",
+                "tax_total": "0.00",
+                "total": "100.00",
+                "status": "approved",
+                "issue_date": f"{period}-15",
+                "due_date": f"{period}-28",
+                "notes": "period-lock reconciliation regression fixture",
+            }
+        ).execute()
+
         r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
-        # If F8 were fixed, this would be 409 (unbalanced) or similar.
-        assert r.status_code == 409, (
-            "F8 still open: lock allowed despite (hypothetical) unposted sub-ledger entries"
-        )
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert detail["code"] == "close_reconciliation_failed"
+        assert detail["findings"][0]["code"] == "missing_invoice_journal"
     finally:
+        _cleanup_invoice(world, invoice_id)
         _cleanup_lock(world, period)
