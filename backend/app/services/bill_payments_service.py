@@ -129,6 +129,7 @@ class BillPaymentsService:
             self.db.table("bill_payment_items")
             .select("*, bills(bill_number, client_id, vendor_invoice_number)")
             .eq("batch_id", batch_id)
+            .eq("tenant_id", self.tenant_id)
             .execute()
             .data
             or []
