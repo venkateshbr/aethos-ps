@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.tax_rates import TaxRateCreate, TaxRateResponse, TaxRateUpdate
@@ -23,9 +23,9 @@ router = APIRouter()
 async def list_tax_rates(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[TaxRateResponse]:
-    """List system tax rates plus tenant custom rates."""
+    """List system tax rates plus tenant custom rates using RLS."""
     svc = TaxRatesService(db=db, tenant_id=tenant_id)
     try:
         return await svc.list_tax_rates()

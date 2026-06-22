@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
 
@@ -141,6 +141,7 @@ def client(fake_db: _FakeDb) -> TestClient:
     )
     app.dependency_overrides[get_tenant_id] = lambda: TENANT_A
     app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
