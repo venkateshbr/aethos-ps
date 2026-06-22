@@ -38,7 +38,11 @@ def create_monthly_billing_run(timestamp: int) -> dict:
     db = get_service_role_client()
     today = date.today()
     period_start = today.replace(day=1)
+    return _create_monthly_billing_runs(db, period_start)
 
+
+def _create_monthly_billing_runs(db, period_start: date) -> dict:
+    """Create monthly retainer billing runs across active tenants."""
     # Find all active retainer engagements across this tenant's scope
     tenants_result = (
         db.table("tenants")
@@ -49,11 +53,15 @@ def create_monthly_billing_run(timestamp: int) -> dict:
     tenant_rows = tenants_result.data or []
 
     created = 0
+    skipped = 0
     for tenant_row in tenant_rows:
         tenant_id: str = tenant_row["id"]
         try:
-            _create_run_for_tenant(db, tenant_id, period_start)
-            created += 1
+            row = _create_run_for_tenant(db, tenant_id, period_start)
+            if row is None:
+                skipped += 1
+            else:
+                created += 1
         except Exception:
             logger.error(
                 "billing_run_worker: failed for tenant %s",
@@ -61,7 +69,11 @@ def create_monthly_billing_run(timestamp: int) -> dict:
                 exc_info=True,
             )
 
-    return {"tenants_processed": len(tenant_rows), "runs_created": created}
+    return {
+        "tenants_processed": len(tenant_rows),
+        "runs_created": created,
+        "runs_skipped": skipped,
+    }
 
 
 def _create_run_for_tenant(db, tenant_id: str, period_start: date) -> dict | None:
@@ -88,6 +100,20 @@ def _create_run_for_tenant(db, tenant_id: str, period_start: date) -> dict | Non
         logger.debug(
             "billing_run_worker: no active retainer engagements for tenant %s",
             tenant_id,
+        )
+        return None
+
+    existing = _find_existing_run_for_period(
+        db,
+        tenant_id=tenant_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    if existing:
+        logger.info(
+            "billing_run_worker: duplicate suppressed for tenant %s period %s",
+            tenant_id,
+            period_start.strftime("%Y-%m"),
         )
         return None
 
@@ -130,6 +156,30 @@ def _create_run_for_tenant(db, tenant_id: str, period_start: date) -> dict | Non
         len(engagement_ids),
     )
     return row
+
+
+def _find_existing_run_for_period(
+    db,
+    *,
+    tenant_id: str,
+    period_start: date,
+    period_end: date,
+) -> dict | None:
+    """Return an existing active agent-created run for the same tenant/month."""
+    rows = (
+        db.table("billing_runs")
+        .select("id, status")
+        .eq("tenant_id", tenant_id)
+        .eq("period_start", period_start.isoformat())
+        .eq("period_end", period_end.isoformat())
+        .eq("created_by_agent", "billing_run_agent")
+        .in_("status", ["draft", "reviewed", "approved", "invoiced"])
+        .is_("deleted_at", "null")
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows else None
 
 
 def _create_billing_run_review_task(
