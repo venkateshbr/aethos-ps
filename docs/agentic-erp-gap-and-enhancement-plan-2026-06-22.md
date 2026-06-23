@@ -164,9 +164,9 @@ Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
 - Done/partial 2026-06-23: balance sheet, income statement, and direct cash-flow reports are implemented from posted journal lines with UI tabs. Retained earnings year-end roll-forward and statutory reporting packs remain open.
 - Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks.
-- Partial 2026-06-23: automated accrual and deferred revenue proposal agents exist, but prepaid amortization, recurring journals, and guided close automation remain open.
+- Partial 2026-06-23: automated WIP accrual, deferred revenue release, and milestone recognition proposal agents exist, with close-panel proposal actions. Prepaid amortization, recurring journals, and scheduled close execution remain open.
 - FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
-- Period close is not yet a guided autonomous workflow.
+- Done/partial 2026-06-23: period close is now guided through close status/readiness/package endpoints, a persisted close-task checklist, close-panel proposal actions, and period-lock guards. Fully autonomous scheduled close execution remains open.
 
 ### Agent Platform
 
@@ -293,9 +293,9 @@ Goal: agents perform routine ERP work with humans handling exceptions.
 Engagement-to-cash loops:
 - Partial: engagement intake agent creates engagement/project drafts from documents; rate-card draft depth remains open.
 - Open: time-entry agent drafts/reminds based on calendar/email/project context.
-- Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms.
+- Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
 - Partial: collections agent exists, but behavior-policy-driven reminder loops need demo-grade verification.
-- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer drawdown, percentage-of-completion, and prepaid amortization loops remain open.
+- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer balance/drawdown, percentage-of-completion, and prepaid amortization loops remain open.
 
 Procure-to-pay loops:
 - Done/monitor 2026-06-23: vendor invoice agent extracts, matches, detects duplicates, and suggests GL/service-line/project coding.
@@ -306,7 +306,7 @@ Procure-to-pay loops:
 Record-to-report loops:
 - Done/monitor 2026-06-23: close status/readiness/package endpoints and persisted close calendar/task workflow are implemented.
 - Partial 2026-06-23: reconciliation service checks AR/AP/settlement evidence; full bank/suspense matching remains open.
-- Partial 2026-06-23: accrual/revenue agents propose unbilled revenue and deferred revenue releases; missing-expense/prepaid coverage remains open.
+- Partial 2026-06-23: accrual/revenue agents propose unbilled revenue, deferred revenue releases, and milestone recognition journals; missing-expense/prepaid coverage remains open.
 - Partial 2026-06-23: reporting agent and close package exist; variance-commentary workflow remains open.
 - Done/partial 2026-06-23: period lock includes readiness, pending-review, and close-task guards; autonomous scheduled close execution remains open.
 
