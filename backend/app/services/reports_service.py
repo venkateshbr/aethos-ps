@@ -1927,11 +1927,23 @@ class ReportsService:
                     recommended_action=str(row.get("recommended_action") or "Review staffing."),
                     evidence=[
                         f"Utilization is {row.get('utilization_pct')}%.",
+                        (
+                            "Billable utilization is "
+                            f"{row.get('billable_utilization_pct')}% against target "
+                            f"{row.get('target_billable_utilization_pct')}%."
+                        ),
                         f"Logged {row.get('logged_hours')} of {row.get('capacity_hours')} hours.",
                     ],
                     metrics={
                         "capacity_status": status,
                         "utilization_pct": row.get("utilization_pct"),
+                        "billable_utilization_pct": row.get("billable_utilization_pct"),
+                        "target_billable_utilization_pct": row.get(
+                            "target_billable_utilization_pct"
+                        ),
+                        "billable_utilization_variance_pct": row.get(
+                            "billable_utilization_variance_pct"
+                        ),
                         "capacity_hours": row.get("capacity_hours"),
                         "logged_hours": row.get("logged_hours"),
                     },
@@ -2997,7 +3009,8 @@ class ReportsService:
             self.db.table("employees")
             .select(
                 "id, first_name, last_name, email, department, practice_area, "
-                "seniority, available_hours_per_week, status"
+                "seniority, available_hours_per_week, "
+                "target_billable_utilization_pct, status"
             )
             .eq("tenant_id", self.tenant_id)
             .eq("status", "active")
@@ -3036,7 +3049,19 @@ class ReportsService:
             )
             utilization_pct = _pct(logged_hours, capacity_hours)
             billable_utilization_pct = _pct(billable_hours, capacity_hours)
-            capacity_status = _capacity_status(utilization_pct)
+            target_billable_pct = float(
+                _decimal(employee.get("target_billable_utilization_pct"))
+                or Decimal("75")
+            )
+            billable_variance_pct = round(
+                billable_utilization_pct - target_billable_pct,
+                1,
+            )
+            capacity_status = _capacity_status(
+                utilization_pct,
+                billable_utilization_pct,
+                target_billable_pct,
+            )
 
             rows.append(
                 {
@@ -3053,6 +3078,8 @@ class ReportsService:
                     "billable_hours": str(billable_hours),
                     "utilization_pct": utilization_pct,
                     "billable_utilization_pct": billable_utilization_pct,
+                    "target_billable_utilization_pct": target_billable_pct,
+                    "billable_utilization_variance_pct": billable_variance_pct,
                     "active_assignment_count": len(assignments),
                     "active_assignments": assignments,
                     "capacity_status": capacity_status,
@@ -3937,11 +3964,20 @@ def _employee_name(employee: dict) -> str:
     return name or str(employee.get("email") or employee.get("id") or "Unknown")
 
 
-def _capacity_status(utilization_pct: float) -> str:
+def _capacity_status(
+    utilization_pct: float,
+    billable_utilization_pct: float | None = None,
+    target_billable_pct: float = 75.0,
+) -> str:
     if utilization_pct >= 110:
         return "overallocated"
     if utilization_pct >= 90:
         return "full"
+    if (
+        billable_utilization_pct is not None
+        and billable_utilization_pct < target_billable_pct - 15
+    ):
+        return "underutilized"
     if utilization_pct <= 60:
         return "underutilized"
     return "balanced"

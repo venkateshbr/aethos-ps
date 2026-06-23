@@ -428,6 +428,7 @@ def test_capacity_planning_flags_overallocated_and_underutilized(
             "practice_area": "tax",
             "seniority": "associate",
             "available_hours_per_week": "40.00",
+            "target_billable_utilization_pct": "80.00",
             "status": "active",
         },
     ]
@@ -478,6 +479,8 @@ def test_capacity_planning_flags_overallocated_and_underutilized(
     assert result[0]["active_assignment_count"] == 1
     assert result[0]["active_assignments"][0]["project_name"] == "Platform Cleanup"
     assert result[1]["capacity_status"] == "underutilized"
+    assert result[1]["target_billable_utilization_pct"] == 80.0
+    assert result[1]["billable_utilization_variance_pct"] == -55.0
 
 
 def test_backlog_forecast_uses_contract_billing_wip_and_milestones(

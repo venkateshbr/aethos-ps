@@ -67,6 +67,8 @@ export interface CapacityRow {
   billable_hours: string;
   utilization_pct: number;
   billable_utilization_pct: number;
+  target_billable_utilization_pct: number;
+  billable_utilization_variance_pct: number;
   active_assignment_count: number;
   active_assignments: CapacityAssignment[];
   capacity_status: 'overallocated' | 'full' | 'underutilized' | 'balanced';

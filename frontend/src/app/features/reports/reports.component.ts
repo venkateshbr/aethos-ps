@@ -238,6 +238,13 @@ import {
                         <span [class]="utilChipClass(row.utilization_pct)">{{ row.utilization_pct.toFixed(1) }}%</span>
                       </td>
                     </ng-container>
+                    <ng-container matColumnDef="target_billable_utilization_pct">
+                      <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Billable Target</th>
+                      <td mat-cell *matCellDef="let row" class="text-right text-sm">
+                        <span class="font-mono text-text-primary">{{ row.billable_utilization_pct.toFixed(1) }}%</span>
+                        <span class="text-text-muted"> / {{ row.target_billable_utilization_pct.toFixed(1) }}%</span>
+                      </td>
+                    </ng-container>
                     <ng-container matColumnDef="capacity_status">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Status</th>
                       <td mat-cell *matCellDef="let row">
@@ -1353,7 +1360,7 @@ export class ReportsComponent implements OnInit {
 
   readonly pnlColumns = ['project_name', 'revenue', 'direct_cost', 'gross_margin', 'gross_margin_pct'];
   readonly healthColumns = ['project_name', 'risk_level', 'health_score', 'drivers', 'recommended_actions'];
-  readonly capacityColumns = ['employee_name', 'capacity_hours', 'logged_hours', 'utilization_pct', 'capacity_status', 'recommended_action'];
+  readonly capacityColumns = ['employee_name', 'capacity_hours', 'logged_hours', 'utilization_pct', 'target_billable_utilization_pct', 'capacity_status', 'recommended_action'];
   readonly backlogColumns = ['engagement_name', 'risk_level', 'contracted_value', 'recognized_backlog', 'unbilled_wip', 'next_milestone_due_date', 'recommended_action'];
   readonly profitColumns = ['client_name', 'revenue', 'total_cost', 'gross_margin_pct', 'recommended_action'];
   readonly groupProfitColumns = ['client_group_name', 'revenue', 'gross_margin', 'gross_margin_pct', 'recommended_action'];

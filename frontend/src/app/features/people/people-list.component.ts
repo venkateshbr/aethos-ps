@@ -21,6 +21,7 @@ interface Employee {
   default_bill_rate?: string | null;
   default_bill_rate_currency?: string | null;
   cost_rate?: string | null;
+  target_billable_utilization_pct?: string | null;
   manager_id?: string | null;
   skills: string[];
   has_login: boolean;
@@ -202,6 +203,10 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
             <label class="block text-xs uppercase tracking-wide text-text-muted mb-2">Cost rate / hr</label>
             <input type="number" min="0" step="0.01" formControlName="cost_rate" class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
           </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wide text-text-muted mb-2">Billable utilization target %</label>
+            <input type="number" min="0" max="100" step="0.01" formControlName="target_billable_utilization_pct" class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+          </div>
           @if (editingId()) {
             <div>
               <label class="block text-xs uppercase tracking-wide text-text-muted mb-2">Status</label>
@@ -291,6 +296,7 @@ export class PeopleListComponent implements OnInit {
     default_bill_rate: [null as number | null],
     default_bill_rate_currency: ['' as string],
     cost_rate: [null as number | null],
+    target_billable_utilization_pct: [null as number | null],
     status: ['active' as string],
   });
 
@@ -327,7 +333,8 @@ export class PeopleListComponent implements OnInit {
     this.form.reset({
       first_name: '', last_name: '', email: '', title: '', department: '',
       employment_type: 'full_time', default_bill_rate: null,
-      default_bill_rate_currency: '', cost_rate: null, status: 'active',
+      default_bill_rate_currency: '', cost_rate: null,
+      target_billable_utilization_pct: null, status: 'active',
     });
     this.showPanel.set(true);
   }
@@ -345,6 +352,9 @@ export class PeopleListComponent implements OnInit {
       default_bill_rate: e.default_bill_rate != null ? Number(e.default_bill_rate) : null,
       default_bill_rate_currency: e.default_bill_rate_currency ?? '',
       cost_rate: e.cost_rate != null ? Number(e.cost_rate) : null,
+      target_billable_utilization_pct: e.target_billable_utilization_pct != null
+        ? Number(e.target_billable_utilization_pct)
+        : null,
       status: e.status,
     });
     this.showPanel.set(true);
@@ -374,6 +384,9 @@ export class PeopleListComponent implements OnInit {
         ? v.default_bill_rate_currency.toUpperCase()
         : null,
       cost_rate: v.cost_rate != null ? String(v.cost_rate) : null,
+      target_billable_utilization_pct: v.target_billable_utilization_pct != null
+        ? String(v.target_billable_utilization_pct)
+        : null,
     };
 
     const id = this.editingId();

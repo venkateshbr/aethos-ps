@@ -30,6 +30,7 @@ Done:
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
 - Backlog forecast and milestone-risk reports are available through `/api/v1/reports/backlog-forecast` and `/api/v1/reports/milestone-risk`, surfaced in the Reports Backlog tab, and feed partner/project-manager action queues.
 - Client groups have API, UI, member roles, and profitability rollups.
+- Employee resource profiles now include a billable-utilization target, maintained in the People UI and used by capacity planning/action-queue evidence.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -254,7 +255,7 @@ Work items:
 - Partial 2026-06-23: Service catalogue API/settings/engagement/report integration exists; invoice-line service catalogue linkage still needs tightening.
 - Partial 2026-06-23: Client groups, member roles, UI, and report rollups exist; deeper legal-entity semantics remain open.
 - Partial 2026-06-23: Project budgets, budget hours, and phases exist; deliverables, milestone schedules, and percent-complete remain open.
-- Partial 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, and capacity reporting; utilization target remains open.
+- Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
 
 Acceptance:
 - Partial 2026-06-23: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, and multi-currency, but several Stripe/FX/period-lock/browser assertions remain `test.fixme` in `frontend/e2e/engagement-to-cash.spec.ts`.
