@@ -77,6 +77,29 @@ interface CloseProposalResponse {
   skipped_duplicates: number;
 }
 
+interface CloseVarianceComment {
+  code: string;
+  severity?: string;
+  summary: string;
+  metric?: string;
+  delta?: string;
+  delta_pct?: number | null;
+  current?: string;
+  previous?: string;
+  service_line?: string;
+}
+
+interface ClosePackage {
+  period: string;
+  generated_at: string;
+  previous_period: string;
+  close_status: Record<string, unknown>;
+  gl_summary: Record<string, string | number | null>;
+  previous_gl_summary: Record<string, string | number | null>;
+  working_capital: Record<string, string | number | null>;
+  variance_commentary: CloseVarianceComment[];
+}
+
 interface RecurringJournalTemplateLine {
   id: string;
   account_id: string;
@@ -156,18 +179,77 @@ type FilterChip = 'all' | 'manual' | 'auto';
             <h2 id="close-tasks-title" class="text-sm font-semibold text-text-primary">Month-end close</h2>
             <p class="text-xs text-text-muted mt-0.5">{{ closePeriod() }} · {{ completedCloseTasks() }}/{{ closeTasks().length }} complete</p>
           </div>
-          @if (closeTasks().length === 0 && !closeTasksLoading()) {
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
-              [disabled]="closeTaskAction() === 'bootstrap'"
-              (click)="bootstrapCloseTasks()"
-            >
-              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">playlist_add_check</mat-icon>
-              Start checklist
-            </button>
-          }
+          <div class="flex items-center gap-2">
+            @if (canClose()) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+                [disabled]="closePackageLoading()"
+                (click)="loadClosePackage()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">summarize</mat-icon>
+                Close package
+              </button>
+            }
+            @if (closeTasks().length === 0 && !closeTasksLoading()) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+                [disabled]="closeTaskAction() === 'bootstrap'"
+                (click)="bootstrapCloseTasks()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">playlist_add_check</mat-icon>
+                Start checklist
+              </button>
+            }
+          </div>
         </div>
+        @if (closePackageError()) {
+          <div class="px-4 py-3 text-sm text-confidence-low border-b border-border-default" role="alert">{{ closePackageError() }}</div>
+        }
+        @if (closePackage()) {
+          <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
+            <div class="grid gap-3 md:grid-cols-3 mb-3">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Net income</p>
+                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('gl_summary', 'net_income') | money }}</p>
+                <p class="text-xs text-text-disabled">Prior {{ closePackageValue('previous_gl_summary', 'net_income') | money }}</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Open AR/AP</p>
+                <p class="text-sm font-mono text-text-primary">
+                  {{ closePackageValue('working_capital', 'ar_open_total') | money }}
+                  /
+                  {{ closePackageValue('working_capital', 'ap_open_total') | money }}
+                </p>
+                <p class="text-xs text-text-disabled">AR / AP exposure</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">WIP</p>
+                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('working_capital', 'wip_total') | money }}</p>
+                <p class="text-xs text-text-disabled">Generated {{ closePackage()!.generated_at.slice(0, 10) }}</p>
+              </div>
+            </div>
+            <div class="divide-y divide-border-subtle border border-border-subtle rounded bg-surface">
+              @for (comment of closePackage()!.variance_commentary; track comment.code) {
+                <div class="px-3 py-2">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-sm text-text-primary">{{ comment.summary }}</p>
+                    <span class="rounded px-2 py-0.5 text-xs flex-none" [class]="varianceSeverityClass(comment.severity)">
+                      {{ comment.severity ?? 'info' }}
+                    </span>
+                  </div>
+                  @if (comment.delta || comment.delta_pct !== undefined && comment.delta_pct !== null) {
+                    <p class="text-xs text-text-muted mt-1">
+                      @if (comment.delta) { Delta {{ comment.delta | money }} }
+                      @if (comment.delta_pct !== undefined && comment.delta_pct !== null) { · {{ comment.delta_pct }}% }
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
         @if (canClose()) {
           <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border-default bg-surface-base/60">
             <button
@@ -902,6 +984,9 @@ export class JournalEntriesListComponent implements OnInit {
   closeTasksError = signal<string | null>(null);
   closeTaskAction = signal<string | null>(null);
   closeProposalAction = signal<string | null>(null);
+  closePackage = signal<ClosePackage | null>(null);
+  closePackageLoading = signal(false);
+  closePackageError = signal<string | null>(null);
   recurringTemplates = signal<RecurringJournalTemplate[]>([]);
   recurringTemplatesLoading = signal(false);
   recurringTemplatesError = signal<string | null>(null);
@@ -1034,6 +1119,23 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
         this.closeTasksLoading.set(false);
+      },
+    });
+  }
+
+  loadClosePackage(): void {
+    this.closePackageLoading.set(true);
+    this.closePackageError.set(null);
+    this.http.get<ClosePackage>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-package`,
+    ).subscribe({
+      next: (res) => {
+        this.closePackage.set(res);
+        this.closePackageLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.closePackageError.set(userMessageForError(err, 'Close Package'));
+        this.closePackageLoading.set(false);
       },
     });
   }
@@ -1365,6 +1467,25 @@ export class JournalEntriesListComponent implements OnInit {
       .filter(line => line.direction === 'DR')
       .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
     return total.toFixed(2);
+  }
+
+  closePackageValue(
+    section: 'gl_summary' | 'previous_gl_summary' | 'working_capital',
+    key: string,
+  ): string {
+    const pkg = this.closePackage();
+    const value = pkg?.[section]?.[key];
+    if (value === null || value === undefined) return '0.00';
+    return String(value);
+  }
+
+  varianceSeverityClass(severity: string | undefined): string {
+    switch (severity) {
+      case 'blocker': return 'bg-red-500/15 text-red-300';
+      case 'high': return 'bg-amber-500/15 text-amber-300';
+      case 'medium': return 'bg-blue-500/15 text-blue-300';
+      default: return 'bg-slate-500/15 text-slate-300';
+    }
   }
 
   // ── Badge helpers ─────────────────────────────────────────────────────

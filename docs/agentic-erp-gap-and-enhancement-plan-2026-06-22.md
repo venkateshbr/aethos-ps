@@ -307,7 +307,7 @@ Record-to-report loops:
 - Done/monitor 2026-06-23: close status/readiness/package endpoints and persisted close calendar/task workflow are implemented.
 - Partial 2026-06-23: reconciliation service checks AR/AP/settlement evidence; full bank/suspense matching remains open.
 - Done/partial 2026-06-23: accrual/revenue/prepaid/recurring-journal agents propose unbilled revenue, employee reimbursement expense accruals, deferred revenue releases, milestone recognition, percentage-completion recognition, prepaid amortization, and recurring journals. Broader non-employee missing-expense estimation remains future forecasting depth rather than a launch blocker.
-- Partial 2026-06-23: reporting agent and close package exist; variance-commentary workflow remains open.
+- Done/partial 2026-06-23: reporting agent, close package, deterministic variance commentary, and the Accounting close-package review panel exist; variance commentary is now available in the month-end close UI. Deeper assignment/ownership workflow for commentary follow-up remains future role-queue depth.
 - Done/partial 2026-06-23: period lock includes readiness, pending-review, and close-task guards; autonomous scheduled close execution remains open.
 
 Acceptance:
