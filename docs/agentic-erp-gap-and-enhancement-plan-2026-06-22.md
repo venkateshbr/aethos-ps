@@ -17,6 +17,7 @@ Done:
 - Service-catalogue tests and fixtures are now isolated enough for the backend suite.
 - Frontend environment config uses relative API URLs for local and production builds.
 - `backend/scripts/seed_demo.py --reset` exists and is idempotent for demo tenants.
+- `make demo-ready` now wraps local server startup/reuse, demo reset/seed, API smoke checks, and selected Playwright demo specs.
 - Backend quality gates were restored on PR #256: full backend pytest passed (`861 passed, 57 xfailed, 1 xpassed`), ruff passed, frontend production build passed, and full Chromium Playwright passed (`110 passed, 11 skipped`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
@@ -27,7 +28,7 @@ Done:
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
 
 Still open:
-- There is no single demo-readiness command that starts backend/frontend, resets/seeds the tenant, runs API smoke, and runs the selected demo E2E suite.
+- `make demo-ready` needs to be run against a real demo tenant and captured as launch evidence.
 - Demo report/screenshots were intentionally not regenerated in this pass.
 - Tax rates/settings exist, and invoice drafter can apply tax, but manual invoice creation still stores zero tax and invoice approval still credits total invoice value to revenue instead of splitting tax payable.
 - Deterministic agent replay is represented by schema fields (`trace_id`, `replay_pointer`) but is not yet a runnable replay workflow.
@@ -40,7 +41,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is the one-command demo-readiness target, refreshed evidence report, tax/journal completion, FX/Stripe browser coverage, and deterministic agent replay.
+2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is a real-tenant `make demo-ready` evidence run, refreshed evidence report, tax/journal completion, FX/Stripe browser coverage, and deterministic agent replay.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -201,7 +202,8 @@ Contract status:
 
 4. Partial 2026-06-23: make the demo reproducible.
    - `seed_demo.py --reset` exists and full Chromium E2E passed.
-   - Pending: add a one-command demo-readiness target that starts backend/frontend, resets/seeds the tenant, runs API smoke, and runs selected demo E2E specs.
+   - Done: `make demo-ready` starts/reuses backend/frontend, resets/seeds the tenant, runs API smoke, and runs selected demo E2E specs.
+   - Pending: execute `make demo-ready` against the launch demo tenant and archive the evidence.
    - Pending: regenerate `docs/demo-v2-test-report.md` only when screenshots/report updates are explicitly in scope.
 
 5. Partial 2026-06-23: restore quality gates.
@@ -223,13 +225,13 @@ Work items:
 - Done 2026-06-23: normalize frontend environment configuration.
 - Done 2026-06-23: fix lint and dev dependency drift.
 - Done 2026-06-23: make `seed_demo.py --reset` idempotent against Supabase cloud data.
-- Pending: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
+- Done 2026-06-23: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
 
 Acceptance:
 - Done 2026-06-23: backend pytest passed on PR #256 (`861 passed, 57 xfailed, 1 xpassed`).
 - Done 2026-06-23: `ruff check backend/app backend/tests` passes.
 - Done 2026-06-23: full Chromium Playwright passed (`110 passed, 11 skipped`).
-- Pending: one-command demo readiness run.
+- Pending: `make demo-ready` execution against a real launch demo tenant.
 - Pending: demo report regeneration with current date and evidence.
 
 ### Phase 1: Complete The Professional-Services ERP Spine
@@ -371,7 +373,7 @@ Add these as deterministic scenario docs and Playwright/API specs:
 
 Priority 0:
 - Done 2026-06-23: fix Playwright auth/storage-state.
-- Pending: finish demo reproducibility with a one-command demo-readiness target and refreshed evidence report.
+- Pending: execute `make demo-ready` against the launch demo tenant and refresh the evidence report.
 - Done 2026-06-23: fix manual journal post regression.
 - Done 2026-06-23: resolve invoice approval RBAC decision.
 - Done 2026-06-23: add missing API contracts or remove UI paths.
@@ -399,7 +401,7 @@ Priority 3:
 
 ## Approval Recommendation
 
-Phase 0 is materially complete except for the one-command demo-readiness target and refreshed demo evidence. The fastest path to launch is now:
-- finish the demo-readiness command and evidence report;
+Phase 0 is materially complete except for executing the demo-readiness target against a real launch tenant and refreshing demo evidence. The fastest path to launch is now:
+- run `make demo-ready` for the launch demo tenant and refresh the evidence report;
 - close the remaining tax/journal, FX/Stripe, and deterministic replay gaps;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

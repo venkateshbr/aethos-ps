@@ -57,6 +57,25 @@ docs/            Plan, ADRs, agent catalog
 
 See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 
+## Demo Readiness
+
+Run a clean local demo check against an existing tenant:
+
+```bash
+DEMO_TENANT_ID=<tenant-uuid> make demo-ready
+```
+
+The target starts any missing local backend/frontend servers, runs
+`backend/scripts/seed_demo.py --reset`, checks `/health`, `/api/v1/ping`, and
+`/health/ready`, then runs the selected Playwright demo specs. Override specs
+with:
+
+```bash
+DEMO_TENANT_ID=<tenant-uuid> \
+DEMO_E2E_SPECS="e2e/demo-v2-meridian.spec.ts e2e/r2r-reports-render.spec.ts" \
+make demo-ready
+```
+
 ## Status
 
 **Pre-execution.** Plan v3 approved (pending v4 update for brand + repo separation). Ship target: 6 weeks to public beta.
