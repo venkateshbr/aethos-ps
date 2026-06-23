@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # COA codes used for AP journal posting
 _EXPENSE_ACCOUNT_CODE = "5000"   # Expenses (DR)
 _AP_ACCOUNT_CODE = "2000"        # Accounts Payable (CR)
+_INPUT_TAX_ACCOUNT_CODE = "1300"  # Input Tax Recoverable (DR)
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
@@ -80,24 +81,31 @@ def _build_ap_journal_lines(
     bill_lines: list[dict],
     expense_account_id: str,
     ap_account_id: str,
+    input_tax_account_id: str | None = None,
     bill_total: Decimal,
     bill_number: str,
     currency: str,
 ) -> list[JournalLineSpec]:
-    """Build AP approval journal lines, preserving line-level expense coding."""
+    """Build AP approval journal lines, preserving net expense and recoverable tax."""
     debit_amounts: dict[str, Decimal] = {}
+    input_tax_total = Decimal("0")
     for line in bill_lines:
         account_id = str(line.get("account_id") or expense_account_id)
         line_amount = Decimal(str(line.get("amount") or "0"))
         tax_amount = Decimal(str(line.get("tax_amount") or "0"))
+        input_tax_total += tax_amount
         debit_amounts[account_id] = (
-            debit_amounts.get(account_id, Decimal("0")) + line_amount + tax_amount
+            debit_amounts.get(account_id, Decimal("0")) + line_amount
         )
 
-    debit_total = sum(debit_amounts.values(), Decimal("0"))
+    debit_total = sum(debit_amounts.values(), Decimal("0")) + input_tax_total
     if abs(debit_total - bill_total) > Decimal("0.01"):
         raise ValueError(
             "Bill line totals do not match bill total; cannot post AP journal"
+        )
+    if input_tax_total > Decimal("0") and not input_tax_account_id:
+        raise ValueError(
+            "Input tax recoverable account is not configured; cannot post AP journal"
         )
 
     journal_lines = [
@@ -114,6 +122,17 @@ def _build_ap_journal_lines(
         for account_id, amount in sorted(debit_amounts.items())
         if amount > Decimal("0")
     ]
+    if input_tax_total > Decimal("0"):
+        journal_lines.append(
+            JournalLineSpec(
+                direction="DR",
+                account_code=_INPUT_TAX_ACCOUNT_CODE,
+                account_id=input_tax_account_id,
+                amount=input_tax_total,
+                description=f"Input tax recoverable - {bill_number}",
+                currency=currency,
+            )
+        )
     journal_lines.append(
         JournalLineSpec(
             direction="CR",
@@ -274,12 +293,27 @@ class BillsService:
         # 3. Resolve account IDs from COA
         expense_account_id = await self._repo.get_account_id_by_code(_EXPENSE_ACCOUNT_CODE)
         ap_account_id = await self._repo.get_account_id_by_code(_AP_ACCOUNT_CODE)
-        if not expense_account_id or not ap_account_id:
+        input_tax_total = sum(
+            Decimal(str(line.get("tax_amount") or "0"))
+            for line in lines
+        )
+        input_tax_account_id: str | None = None
+        if input_tax_total > Decimal("0"):
+            input_tax_account_id = await self._repo.get_account_id_by_code(
+                _INPUT_TAX_ACCOUNT_CODE
+            )
+        if (
+            not expense_account_id
+            or not ap_account_id
+            or (input_tax_total > Decimal("0") and not input_tax_account_id)
+        ):
+            expected_codes = [_EXPENSE_ACCOUNT_CODE, _AP_ACCOUNT_CODE]
+            if input_tax_total > Decimal("0"):
+                expected_codes.append(_INPUT_TAX_ACCOUNT_CODE)
             logger.error(
-                "COA accounts missing for tenant %s — expected codes %s and %s",
+                "COA accounts missing for tenant %s — expected codes %s",
                 self._tenant_id,
-                _EXPENSE_ACCOUNT_CODE,
-                _AP_ACCOUNT_CODE,
+                ", ".join(expected_codes),
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -295,6 +329,7 @@ class BillsService:
                 bill_lines=lines,
                 expense_account_id=expense_account_id,
                 ap_account_id=ap_account_id,
+                input_tax_account_id=input_tax_account_id,
                 bill_total=total,
                 bill_number=bill_number,
                 currency=currency,

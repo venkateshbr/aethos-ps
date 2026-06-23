@@ -19,6 +19,7 @@ Done:
 - `backend/scripts/seed_demo.py --reset` exists and is idempotent for demo tenants.
 - `make demo-ready` now wraps local server startup/reuse, demo reset/seed, API smoke checks, and selected Playwright demo specs.
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
+- Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
 - Backend quality gates were restored on PR #256: full backend pytest passed (`861 passed, 57 xfailed, 1 xpassed`), ruff passed, frontend production build passed, and full Chromium Playwright passed (`110 passed, 11 skipped`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
@@ -31,7 +32,6 @@ Done:
 Still open:
 - `make demo-ready` needs to be run against a real demo tenant and captured as launch evidence.
 - Demo report/screenshots were intentionally not regenerated in this pass.
-- Invoice-side tax calculation/posting is implemented; bill-side tax still needs input-tax-recoverable posting instead of rolling tax into expense.
 - Deterministic agent replay is represented by schema fields (`trace_id`, `replay_pointer`) but is not yet a runnable replay workflow.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
 - Launch-grade role-based "what should I do today?" work queues are not yet complete, even though the BI/recommendation endpoints exist.
@@ -42,7 +42,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is a real-tenant `make demo-ready` evidence run, refreshed evidence report, bill-side tax journal completion, FX/Stripe browser coverage, and deterministic agent replay.
+2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is a real-tenant `make demo-ready` evidence run, refreshed evidence report, FX/Stripe browser coverage, and deterministic agent replay.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -111,7 +111,7 @@ Present:
 
 Gaps / status:
 - Partial 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, and mixed terms. Per-unit payroll billing and deeper milestone schedules are still incomplete.
-- Done/partial 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, and invoice approval tax-payable split are implemented. Bill-side input-tax-recoverable posting remains open.
+- Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
 - Partial 2026-06-23: WIP accrual and deferred revenue release proposal endpoints/agents exist, but revenue recognition is not yet a full guided lifecycle across deferred revenue, milestone recognition, retainer drawdown, and percentage-of-completion accounting.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
 - Open: no client portal workflow beyond public invoice payment.
@@ -241,7 +241,7 @@ Goal: close baseline PSA/ERP gaps versus NetSuite and Dynamics Project Operation
 
 Work items:
 - Done 2026-06-23: Accounts API and account picker across accounting/service catalogue/bills.
-- Done/partial 2026-06-23: Tax-rates API, tax defaults, settings UI, invoice drafter tax, manual invoice line tax, and invoice approval tax-payable splitting are implemented. Bill-side input-tax-recoverable journal splitting remains open.
+- Done 2026-06-23: Tax-rates API, tax defaults, settings UI, invoice drafter tax, manual invoice line tax, invoice approval tax-payable splitting, and bill approval input-tax-recoverable splitting are implemented.
 - Done/monitor 2026-06-23: Expenses API and UI list/create completion.
 - Partial 2026-06-23: Billing terms UI supports fixed, T&M, capped T&M, retainer, retainer drawdown, milestone, and mixed. Per-unit payroll billing remains open.
 - Partial 2026-06-23: Rate-card API/UI and engagement picker exist; employee/service-line-specific rate rules need more depth.
@@ -383,7 +383,7 @@ Priority 0:
 
 Priority 1:
 - Done 2026-06-23: accounts and expenses APIs.
-- Done/partial 2026-06-23: tax-rates API/UI and invoice-side line tax/tax-payable journals exist; complete bill-side input-tax-recoverable postings.
+- Done 2026-06-23: tax-rates API/UI, invoice-side line tax/tax-payable journals, and bill-side input-tax-recoverable postings.
 - Partial 2026-06-23: billing terms + rate card UI exists; complete per-unit payroll billing and deeper rate rules.
 - Partial 2026-06-23: service catalogue end-to-end; tighten invoice-line linkage and reporting evidence.
 - Project milestones/deliverables/budgets.
@@ -404,5 +404,5 @@ Priority 3:
 
 Phase 0 is materially complete except for executing the demo-readiness target against a real launch tenant and refreshing demo evidence. The fastest path to launch is now:
 - run `make demo-ready` for the launch demo tenant and refresh the evidence report;
-- close the remaining bill-tax journal, FX/Stripe, and deterministic replay gaps;
+- close the remaining FX/Stripe and deterministic replay gaps;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

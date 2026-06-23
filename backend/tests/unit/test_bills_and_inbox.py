@@ -91,7 +91,7 @@ def test_validate_journal_balance_multi_line() -> None:
     assert validate_journal_balance(lines) is True
 
 
-def test_ap_journal_uses_line_level_expense_accounts() -> None:
+def test_ap_journal_uses_net_expense_accounts_and_input_tax_recoverable() -> None:
     from app.services.bills_service import _build_ap_journal_lines
 
     journal_lines = _build_ap_journal_lines(
@@ -111,6 +111,7 @@ def test_ap_journal_uses_line_level_expense_accounts() -> None:
         ],
         expense_account_id="acct-expense",
         ap_account_id="acct-ap",
+        input_tax_account_id="acct-input-tax",
         bill_total=Decimal("106.00"),
         bill_number="BILL-001",
         currency="USD",
@@ -120,10 +121,12 @@ def test_ap_journal_uses_line_level_expense_accounts() -> None:
     credit_lines = [line for line in journal_lines if line.direction == "CR"]
     by_account = {line.account_id: line for line in debit_lines}
 
-    assert by_account["acct-cloud"].amount == Decimal("66.00")
+    assert by_account["acct-cloud"].amount == Decimal("60.00")
     assert by_account["acct-cloud"].account_code == ""
     assert by_account["acct-expense"].amount == Decimal("40.00")
     assert by_account["acct-expense"].account_code == "5000"
+    assert by_account["acct-input-tax"].amount == Decimal("6.00")
+    assert by_account["acct-input-tax"].account_code == "1300"
     assert credit_lines[0].account_id == "acct-ap"
     assert credit_lines[0].amount == Decimal("106.00")
     assert validate_journal_balance(journal_lines) is True
@@ -139,6 +142,7 @@ def test_ap_journal_groups_lines_with_same_expense_account() -> None:
         ],
         expense_account_id="acct-expense",
         ap_account_id="acct-ap",
+        input_tax_account_id=None,
         bill_total=Decimal("100.00"),
         bill_number="BILL-002",
         currency="USD",
@@ -160,8 +164,26 @@ def test_ap_journal_rejects_line_total_mismatch() -> None:
             ],
             expense_account_id="acct-expense",
             ap_account_id="acct-ap",
+            input_tax_account_id=None,
             bill_total=Decimal("100.00"),
             bill_number="BILL-003",
+            currency="USD",
+        )
+
+
+def test_ap_journal_requires_input_tax_account_for_taxable_bill() -> None:
+    from app.services.bills_service import _build_ap_journal_lines
+
+    with pytest.raises(ValueError, match="Input tax recoverable account"):
+        _build_ap_journal_lines(
+            bill_lines=[
+                {"amount": "100.00", "tax_amount": "10.00", "account_id": None},
+            ],
+            expense_account_id="acct-expense",
+            ap_account_id="acct-ap",
+            input_tax_account_id=None,
+            bill_total=Decimal("110.00"),
+            bill_number="BILL-004",
             currency="USD",
         )
 
