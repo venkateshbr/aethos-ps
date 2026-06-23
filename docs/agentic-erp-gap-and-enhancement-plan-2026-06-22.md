@@ -180,7 +180,7 @@ Present:
 Gaps / status:
 - Done/partial 2026-06-23: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, and a recorded replay manifest. Coverage across every agent-created mutation and live re-execution still need hardening.
 - Done 2026-06-23: central tool registry with per-agent tool/action risk classes exists.
-- Partial 2026-06-23: `agent_workflow_runs` exists as the durable workflow container, and the monthly retainer billing-run worker, weekly time-entry reminder worker, and monthly financial close-preparation worker now record running/skipped/waiting-on-human/failed workflow states. Remaining work is consistent workflow-run adoption across the other long-running Phase 3 workers.
+- Done/monitor 2026-06-23: `agent_workflow_runs` exists as the durable workflow container. The monthly retainer billing-run worker, weekly time-entry reminder worker, monthly financial close-preparation worker, nightly collections worker, and daily project-health worker now record running/skipped/waiting-on-human/failed workflow states. Remaining monitoring is for newly added workers and non-scheduled direct write paths.
 - Queue is `not_configured` in the live readiness check, so scheduled autonomy is not operational in this local/live run.
 - Done 2026-06-23: document preflight scanning masks decoded text and withholds sensitive/adversarial PDF/image content from external LLM calls when detected.
 - Partial 2026-06-23: human corrections become eval candidates and L3 policy fields exist. Runnable eval gate and drift dashboard are still not mature.
@@ -294,7 +294,7 @@ Engagement-to-cash loops:
 - Partial: engagement intake agent creates engagement/project drafts from documents; rate-card draft depth remains open.
 - Partial 2026-06-23: time-entry reminder agent/worker drafts and sends/HITL-routes weekly under-logged-timesheet reminders from employee availability, utilization targets, active project assignments, and logged time; external calendar/email event ingestion remains open.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
-- Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, and the Settings UI exposes the tenant default policy.
+- Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, records durable `agent_workflow_runs` state, and the Settings UI exposes the tenant default policy.
 - Partial 2026-06-23: revenue/accrual/prepaid/recurring-journal agents can propose WIP accruals, employee reimbursement expense accruals, deferred revenue releases, milestone recognition journals from completed project phases, incremental percentage-of-completion recognition journals from fixed-fee/mixed project phase progress, prepaid amortization journals from prepaid bill-line service windows, and recurring journals from active templates; HITL approval posts through the manual journal/accounting guardian path. Retainer drawdown has persisted balance/draw ledger automation in invoicing.
 
 Procure-to-pay loops:
@@ -319,7 +319,7 @@ Acceptance:
 Goal: move beyond transaction automation into operating leverage.
 
 Work items:
-- Done 2026-06-23: project health score covers budget burn, margin erosion, WIP, cap/retainer drawdown, and scope signals; milestone-risk report now surfaces overdue and near-due delivery risk.
+- Done 2026-06-23: project health score covers budget burn, margin erosion, WIP, cap/retainer drawdown, and scope signals; milestone-risk report now surfaces overdue and near-due delivery risk. The daily project-health worker records durable `agent_workflow_runs` state around its tenant sweeps.
 - Done 2026-06-23: scope-change advisor using historical comparables.
 - Done 2026-06-23: pricing and staffing recommendation engine.
 - Done 2026-06-23: client profitability and segment profitability dashboards.

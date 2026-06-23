@@ -33,6 +33,7 @@ from app.services.collections_policy_service import (
 )
 from app.services.resend_service import ResendService
 from app.workers.procrastinate_app import app
+from app.workers.workflow_runs import finish_workflow_run, start_workflow_run
 from supabase import create_client
 
 logger = logging.getLogger(__name__)
@@ -65,153 +66,212 @@ async def collections_worker(timestamp: int) -> dict:
 
     for t in tenants:
         tid = t["id"]
-        deps = AgentDeps(tenant_id=tid, user_id=None, db=db)
-
-        overdue = (
-            db.table("invoices")
-            .select(
-                "id,invoice_number,total,currency,due_date,client_id,stripe_payment_link_url"
-            )
-            .eq("tenant_id", tid)
-            .in_("status", ["sent", "overdue"])
-            .lt("due_date", today)
-            .execute()
-            .data
-            or []
+        workflow_id = start_workflow_run(
+            db,
+            tenant_id=tid,
+            workflow_name="daily_collections",
+            owner_agent_name="collections_agent",
+            current_step="discover_overdue_invoices",
+            goal_snapshot={"as_of": today, "invoice_statuses": ["sent", "overdue"]},
         )
+        tenant_counts = {
+            "overdue_invoices": 0,
+            "sent": 0,
+            "hitl_queued": 0,
+            "skipped_duplicates": 0,
+            "skipped_policy": 0,
+            "invoice_errors": 0,
+        }
 
-        for inv in overdue:
-            try:
-                policy = _resolve_collections_policy(db, tid, inv.get("client_id"))
-                days_overdue = days_overdue_for_invoice(inv)
-                tone = collection_tone_for_days(days_overdue, policy)
-                if tone is None:
-                    skipped_policy += 1
-                    logger.info(
-                        "collections_worker: invoice outside active policy",
-                        extra={
-                            "invoice_id": inv["id"],
-                            "tenant_id": tid,
-                            "days_overdue": days_overdue,
-                            "policy_source": policy.policy_source,
-                        },
-                    )
-                    continue
+        try:
+            deps = AgentDeps(tenant_id=tid, user_id=None, db=db)
 
-                reminder_count = _collections_action_count(db, tid, inv["id"])
-                if reminder_count >= policy.max_reminders_per_invoice:
-                    skipped_policy += 1
-                    logger.info(
-                        "collections_worker: max reminders reached",
-                        extra={
-                            "invoice_id": inv["id"],
-                            "tenant_id": tid,
-                            "reminder_count": reminder_count,
-                        },
-                    )
-                    continue
-
-                draft = draft_collection_email(inv, deps, policy=policy, tone=tone)
-
-                # Resolve client billing email
-                client_result = (
-                    db.table("clients")
-                    .select("billing_address")
-                    .eq("id", inv.get("client_id", ""))
-                    .execute()
+            overdue = (
+                db.table("invoices")
+                .select(
+                    "id,invoice_number,total,currency,due_date,client_id,stripe_payment_link_url"
                 )
-                billing_addr = (
-                    (client_result.data[0] if client_result.data else {}).get(
-                        "billing_address"
-                    )
-                    or {}
-                )
-                email = billing_addr.get("email", "")
-                draft.client_email = email
+                .eq("tenant_id", tid)
+                .in_("status", ["sent", "overdue"])
+                .lt("due_date", today)
+                .execute()
+                .data
+                or []
+            )
+            tenant_counts["overdue_invoices"] = len(overdue)
 
-                if _recent_collections_action_exists(
-                    db,
-                    tid,
-                    inv["id"],
-                    draft.tone,
-                    cooldown_days=policy.cooldown_days,
-                ):
-                    skipped_duplicates += 1
-                    logger.info(
-                        "collections_worker: duplicate suppressed",
-                        extra={
-                            "invoice_id": inv["id"],
-                            "tenant_id": tid,
-                            "tone": draft.tone,
-                        },
-                    )
-                    continue
-
-                # Look up autonomy settings for this agent/action
-                autonomy_result = (
-                    db.table("agent_autonomy_settings")
-                    .select("level,confidence_threshold")
-                    .eq("tenant_id", tid)
-                    .eq("agent_name", "collections_agent")
-                    .eq("action_type", "send_email")
-                    .execute()
-                )
-                autonomy_row = autonomy_result.data[0] if autonomy_result.data else {}
-                level = autonomy_row.get("level", 2)
-                threshold = float(autonomy_row.get("confidence_threshold", 0.80))
-
-                if (
-                    level >= 3
-                    and draft.confidence >= threshold
-                    and email
-                    and policy_allows_auto_send(policy, draft.tone)
-                ):
-                    suggestion = await write_agent_suggestion(
-                        deps,
-                        "collections_agent",
-                        "send_email",
-                        document_id=None,
-                        output=draft.model_dump(mode="json"),
-                        confidence=draft.confidence,
-                        autonomy_level=3,
-                        confidence_threshold=threshold,
-                        related_entity_type="invoice",
-                        related_entity_id=str(inv["id"]),
-                    )
-                    result = resend.send_email(email, draft.subject, draft.body_html)
-                    if result.get("status") == "error":
-                        _mark_suggestion_rejected(db, tid, str(suggestion["id"]))
-                        raise RuntimeError(
-                            f"collections email provider failed: {result.get('error')}"
+            for inv in overdue:
+                try:
+                    policy = _resolve_collections_policy(db, tid, inv.get("client_id"))
+                    days_overdue = days_overdue_for_invoice(inv)
+                    tone = collection_tone_for_days(days_overdue, policy)
+                    if tone is None:
+                        skipped_policy += 1
+                        tenant_counts["skipped_policy"] += 1
+                        logger.info(
+                            "collections_worker: invoice outside active policy",
+                            extra={
+                                "invoice_id": inv["id"],
+                                "tenant_id": tid,
+                                "days_overdue": days_overdue,
+                                "policy_source": policy.policy_source,
+                            },
                         )
-                    sent += 1
-                    logger.info(
-                        "collections_worker: sent email",
+                        continue
+
+                    reminder_count = _collections_action_count(db, tid, inv["id"])
+                    if reminder_count >= policy.max_reminders_per_invoice:
+                        skipped_policy += 1
+                        tenant_counts["skipped_policy"] += 1
+                        logger.info(
+                            "collections_worker: max reminders reached",
+                            extra={
+                                "invoice_id": inv["id"],
+                                "tenant_id": tid,
+                                "reminder_count": reminder_count,
+                            },
+                        )
+                        continue
+
+                    draft = draft_collection_email(inv, deps, policy=policy, tone=tone)
+
+                    # Resolve client billing email
+                    client_result = (
+                        db.table("clients")
+                        .select("billing_address")
+                        .eq("id", inv.get("client_id", ""))
+                        .execute()
+                    )
+                    billing_addr = (
+                        (client_result.data[0] if client_result.data else {}).get(
+                            "billing_address"
+                        )
+                        or {}
+                    )
+                    email = billing_addr.get("email", "")
+                    draft.client_email = email
+
+                    if _recent_collections_action_exists(
+                        db,
+                        tid,
+                        inv["id"],
+                        draft.tone,
+                        cooldown_days=policy.cooldown_days,
+                    ):
+                        skipped_duplicates += 1
+                        tenant_counts["skipped_duplicates"] += 1
+                        logger.info(
+                            "collections_worker: duplicate suppressed",
+                            extra={
+                                "invoice_id": inv["id"],
+                                "tenant_id": tid,
+                                "tone": draft.tone,
+                            },
+                        )
+                        continue
+
+                    # Look up autonomy settings for this agent/action
+                    autonomy_result = (
+                        db.table("agent_autonomy_settings")
+                        .select("level,confidence_threshold")
+                        .eq("tenant_id", tid)
+                        .eq("agent_name", "collections_agent")
+                        .eq("action_type", "send_email")
+                        .execute()
+                    )
+                    autonomy_row = autonomy_result.data[0] if autonomy_result.data else {}
+                    level = autonomy_row.get("level", 2)
+                    threshold = float(autonomy_row.get("confidence_threshold", 0.80))
+
+                    if (
+                        level >= 3
+                        and draft.confidence >= threshold
+                        and email
+                        and policy_allows_auto_send(policy, draft.tone)
+                    ):
+                        suggestion = await write_agent_suggestion(
+                            deps,
+                            "collections_agent",
+                            "send_email",
+                            document_id=None,
+                            output=draft.model_dump(mode="json"),
+                            confidence=draft.confidence,
+                            autonomy_level=3,
+                            confidence_threshold=threshold,
+                            related_entity_type="invoice",
+                            related_entity_id=str(inv["id"]),
+                        )
+                        result = resend.send_email(email, draft.subject, draft.body_html)
+                        if result.get("status") == "error":
+                            _mark_suggestion_rejected(db, tid, str(suggestion["id"]))
+                            raise RuntimeError(
+                                f"collections email provider failed: {result.get('error')}"
+                            )
+                        sent += 1
+                        tenant_counts["sent"] += 1
+                        logger.info(
+                            "collections_worker: sent email",
+                            extra={
+                                "invoice_id": inv["id"],
+                                "tenant_id": tid,
+                                "tone": draft.tone,
+                            },
+                        )
+                    else:
+                        await write_agent_suggestion(
+                            deps,
+                            "collections_agent",
+                            "send_email",
+                            document_id=None,
+                            output=draft.model_dump(mode="json"),
+                            confidence=draft.confidence,
+                            autonomy_level=2,
+                            related_entity_type="invoice",
+                            related_entity_id=str(inv["id"]),
+                        )
+                        hitl += 1
+                        tenant_counts["hitl_queued"] += 1
+
+                except Exception as e:
+                    tenant_counts["invoice_errors"] += 1
+                    logger.error(
+                        "collections_error",
                         extra={
-                            "invoice_id": inv["id"],
+                            "invoice_id": inv.get("id"),
                             "tenant_id": tid,
-                            "tone": draft.tone,
+                            "error": str(e),
                         },
                     )
-                else:
-                    await write_agent_suggestion(
-                        deps,
-                        "collections_agent",
-                        "send_email",
-                        document_id=None,
-                        output=draft.model_dump(mode="json"),
-                        confidence=draft.confidence,
-                        autonomy_level=2,
-                        related_entity_type="invoice",
-                        related_entity_id=str(inv["id"]),
-                    )
-                    hitl += 1
 
-            except Exception as e:
-                logger.error(
-                    "collections_error",
-                    extra={"invoice_id": inv.get("id"), "tenant_id": tid, "error": str(e)},
-                )
+            finish_workflow_run(
+                db,
+                workflow_id,
+                status=(
+                    "waiting_on_human"
+                    if tenant_counts["hitl_queued"]
+                    else "succeeded"
+                ),
+                current_step=(
+                    "hitl_review"
+                    if tenant_counts["hitl_queued"]
+                    else "completed"
+                ),
+                state_snapshot=tenant_counts,
+            )
+        except Exception as exc:
+            finish_workflow_run(
+                db,
+                workflow_id,
+                status="failed",
+                current_step="failed",
+                state_snapshot=tenant_counts,
+                error_message=str(exc),
+            )
+            logger.error(
+                "collections_tenant_error",
+                extra={"tenant_id": tid, "error": str(exc)},
+                exc_info=True,
+            )
 
     logger.info(
         "collections_done",
