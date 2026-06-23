@@ -35,6 +35,7 @@ Done:
 - Project planning now persists budget hours from the UI and exposes project phases as scheduled milestones/deliverables with acceptance criteria and percent-complete tracking through API and UI; milestone-risk/backlog reports already consume these phase schedules.
 - Per-unit billing terms are implemented for payroll/per-employee style services: engagement creation captures billing unit, unit label, quantity, and unit price, computes fixed-fee compatibility totals, and invoice drafts emit quantity x unit-price lines.
 - T&M invoice drafting now honors assignment-level employee override rates and existing client-specific rate-card override rows before falling back to base role rates.
+- Financial close now has persisted close tasks by period, API/UI bootstrap and completion controls, and period lock blocks incomplete bootstrapped tasks.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -161,7 +162,7 @@ Present:
 Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
 - Done/partial 2026-06-23: balance sheet, income statement, and direct cash-flow reports are implemented from posted journal lines with UI tabs. Retained earnings year-end roll-forward and statutory reporting packs remain open.
-- Partial 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, and deferred revenue release proposal endpoints exist. Close calendar/task workflow and full evidence package are still open.
+- Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks.
 - Partial 2026-06-23: automated accrual and deferred revenue proposal agents exist, but prepaid amortization, recurring journals, and guided close automation remain open.
 - FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
 - Period close is not yet a guided autonomous workflow.
@@ -302,11 +303,11 @@ Procure-to-pay loops:
 - Done/monitor 2026-06-23: payment settlement lifecycle exists and posts only after settlement confirmation.
 
 Record-to-report loops:
-- Partial 2026-06-23: close status/readiness/package endpoints exist; close calendar and task workflow remain open.
+- Done/monitor 2026-06-23: close status/readiness/package endpoints and persisted close calendar/task workflow are implemented.
 - Partial 2026-06-23: reconciliation service checks AR/AP/settlement evidence; full bank/suspense matching remains open.
 - Partial 2026-06-23: accrual/revenue agents propose unbilled revenue and deferred revenue releases; missing-expense/prepaid coverage remains open.
 - Partial 2026-06-23: reporting agent and close package exist; variance-commentary workflow remains open.
-- Partial 2026-06-23: period lock exists with readiness checks, but the guided autonomous period-lock workflow remains open.
+- Done/partial 2026-06-23: period lock includes readiness, pending-review, and close-task guards; autonomous scheduled close execution remains open.
 
 Acceptance:
 - Each loop has a happy path, low-confidence HITL path, provider failure path, period-locked path, and manual fallback path.

@@ -41,12 +41,20 @@ class _Query:
         self._order_desc = False
         self._limit: int | None = None
         self._offset = 0
+        self._null_filters: list[str] = []
+        self._insert_payload: dict[str, Any] | list[dict[str, Any]] | None = None
+        self._update_payload: dict[str, Any] | None = None
 
     def select(self, _columns: str = "*", **_kwargs: Any) -> _Query:
         return self
 
     def eq(self, key: str, value: Any) -> _Query:
         self._eq_filters.append((key, value))
+        return self
+
+    def is_(self, key: str, value: Any) -> _Query:
+        if value == "null":
+            self._null_filters.append(key)
         return self
 
     def order(self, key: str, desc: bool = False) -> _Query:
@@ -62,8 +70,39 @@ class _Query:
         self._offset = offset
         return self
 
+    def insert(self, payload: dict[str, Any] | list[dict[str, Any]]) -> _Query:
+        self._insert_payload = deepcopy(payload)
+        return self
+
+    def update(self, payload: dict[str, Any]) -> _Query:
+        self._update_payload = dict(payload)
+        return self
+
     def execute(self) -> _Result:
+        if self._insert_payload is not None:
+            payloads = (
+                self._insert_payload
+                if isinstance(self._insert_payload, list)
+                else [self._insert_payload]
+            )
+            inserted = []
+            for idx, payload in enumerate(payloads, start=1):
+                row = {
+                    "id": f"close-task-created-{idx}",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                    "updated_at": "2026-06-22T00:00:00+00:00",
+                    "deleted_at": None,
+                    **payload,
+                }
+                self.db.tables[self.table].append(row)
+                inserted.append(row)
+            return _Result(deepcopy(inserted))
+
         rows = [row for row in self.db.tables[self.table] if self._matches(row)]
+        if self._update_payload is not None:
+            for row in rows:
+                row.update(self._update_payload)
+            return _Result(deepcopy(rows))
         if self._order_key is not None:
             rows.sort(
                 key=lambda row: str(row.get(self._order_key) or ""),
@@ -76,7 +115,9 @@ class _Query:
         return _Result(deepcopy(rows))
 
     def _matches(self, row: dict[str, Any]) -> bool:
-        return all(row.get(key) == value for key, value in self._eq_filters)
+        return all(row.get(key) == value for key, value in self._eq_filters) and all(
+            row.get(key) is None for key in self._null_filters
+        )
 
 
 class _FakeDb:
@@ -124,6 +165,24 @@ class _FakeDb:
                     "created_by": "manager-2",
                     "posted_at": "2026-06-23T00:00:00+00:00",
                 },
+            ],
+            "accounting_close_tasks": [
+                {
+                    "id": "close-task-1",
+                    "tenant_id": TENANT_ID,
+                    "period": "2026-06",
+                    "code": "trial_balance_review",
+                    "title": "Review trial balance and close package",
+                    "description": "Review close evidence.",
+                    "owner_role": "controller",
+                    "status": "open",
+                    "due_date": "2026-07-05",
+                    "completed_at": None,
+                    "completed_by": None,
+                    "evidence": {},
+                    "order_index": 40,
+                    "deleted_at": None,
+                }
             ],
         }
 
@@ -237,6 +296,9 @@ def test_accounting_read_routes_use_rls_client(
     close_package_response = client.get(
         "/api/v1/accounting/periods/2026-06/close-package"
     )
+    close_tasks_response = client.get(
+        "/api/v1/accounting/periods/2026-06/close-tasks"
+    )
 
     assert periods_response.status_code == 200, periods_response.text
     current_period = date.today().strftime("%Y-%m")
@@ -267,6 +329,8 @@ def test_accounting_read_routes_use_rls_client(
     assert close_readiness_response.json()["ready"] is True
     assert close_package_response.status_code == 200, close_package_response.text
     assert close_package_response.json()["previous_period"] == "2026-05"
+    assert close_tasks_response.status_code == 200, close_tasks_response.text
+    assert close_tasks_response.json()["tasks"][0]["code"] == "trial_balance_review"
 
 
 def test_manual_journal_create_uses_service_role_client(
@@ -317,3 +381,26 @@ def test_manual_journal_create_uses_service_role_client(
     assert response.status_code == 201, response.text
     assert response.json()["id"] == JOURNAL_ID
     post_mock.assert_awaited_once()
+
+
+def test_close_task_bootstrap_and_update_use_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    fake_db.tables["accounting_close_tasks"] = []
+
+    bootstrap = client.post("/api/v1/accounting/periods/2026-06/close-tasks/bootstrap")
+    update = client.patch(
+        "/api/v1/accounting/periods/2026-06/close-tasks/close-task-created-1",
+        json={"status": "done", "evidence": {"reviewed": True}},
+    )
+
+    assert bootstrap.status_code == 200, bootstrap.text
+    assert len(bootstrap.json()["tasks"]) == 5
+    assert update.status_code == 200, update.text
+    body = update.json()
+    assert body["status"] == "done"
+    assert body["completed_by"] == "manager-1"
+    assert body["evidence"] == {"reviewed": True}

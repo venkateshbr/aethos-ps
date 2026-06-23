@@ -45,6 +45,7 @@ from app.services.close_status_service import (
     CloseStatusService,
     close_review_blocker_detail,
 )
+from app.services.close_tasks_service import CloseTasksService
 from app.services.manual_journal_service import ManualJournalService
 from supabase import Client
 
@@ -141,6 +142,30 @@ class PeriodClosePackageResponse(BaseModel):
     variance_commentary: list[dict[str, Any]]
 
 
+class CloseTaskResponse(BaseModel):
+    id: str
+    period: str
+    code: str
+    title: str
+    description: str | None
+    owner_role: str
+    status: str
+    due_date: str | None
+    completed_at: str | None
+    completed_by: str | None
+    evidence: dict[str, Any]
+    order_index: int
+
+
+class CloseTaskListResponse(BaseModel):
+    tasks: list[CloseTaskResponse]
+
+
+class CloseTaskUpdate(BaseModel):
+    status: str | None = None
+    evidence: dict[str, Any] | None = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -175,6 +200,23 @@ def _generate_periods(months_back: int = 12, months_forward: int = 3) -> list[st
             m = 1
             y += 1
     return periods
+
+
+def _task_response(row: dict[str, Any]) -> CloseTaskResponse:
+    return CloseTaskResponse(
+        id=str(row["id"]),
+        period=str(row["period"]),
+        code=str(row["code"]),
+        title=str(row["title"]),
+        description=row.get("description"),
+        owner_role=str(row.get("owner_role") or "finance_manager"),
+        status=str(row.get("status") or "open"),
+        due_date=str(row["due_date"]) if row.get("due_date") else None,
+        completed_at=str(row["completed_at"]) if row.get("completed_at") else None,
+        completed_by=str(row["completed_by"]) if row.get("completed_by") else None,
+        evidence=row.get("evidence") or {},
+        order_index=int(row.get("order_index") or 0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +335,71 @@ async def close_readiness(
         findings=[PeriodCloseFinding(**finding.as_dict()) for finding in result.findings],
         trial_balance_balanced=result.trial_balance_balanced,
     )
+
+
+@router.get("/periods/{period}/close-tasks", response_model=CloseTaskListResponse)
+async def list_close_tasks(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> CloseTaskListResponse:
+    _validate_period(period)
+    tasks = CloseTasksService(db, tenant_id).list_tasks(period)
+    return CloseTaskListResponse(tasks=[_task_response(row) for row in tasks])
+
+
+@router.post("/periods/{period}/close-tasks/bootstrap", response_model=CloseTaskListResponse)
+async def bootstrap_close_tasks(
+    period: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> CloseTaskListResponse:
+    _validate_period(period)
+    tasks = await CloseTasksService(db, tenant_id).bootstrap_tasks(
+        period,
+        current_user.user_id,
+    )
+    return CloseTaskListResponse(tasks=[_task_response(row) for row in tasks])
+
+
+@router.patch("/periods/{period}/close-tasks/{task_id}", response_model=CloseTaskResponse)
+async def update_close_task(
+    period: str,
+    task_id: str,
+    payload: CloseTaskUpdate,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> CloseTaskResponse:
+    _validate_period(period)
+    patch = payload.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No close task fields supplied",
+        )
+    if "status" in patch and patch["status"] not in {
+        "open",
+        "in_progress",
+        "done",
+        "waived",
+        "blocked",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid close task status",
+        )
+    row = await CloseTasksService(db, tenant_id).update_task(
+        period=period,
+        task_id=task_id,
+        patch=patch,
+        actor_id=current_user.user_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Close task not found")
+    return _task_response(row)
 
 
 @router.post("/periods/{period}/propose-wip-accrual")
@@ -416,6 +523,26 @@ async def lock_period(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=close_review_blocker_detail(period, pending_reviews),
+        )
+
+    incomplete_tasks = CloseTasksService(db, tenant_id).incomplete_blocking_tasks(period)
+    if incomplete_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "close_tasks_incomplete",
+                "period": period,
+                "message": "Complete or waive close tasks before locking the period.",
+                "tasks": [
+                    {
+                        "id": str(row["id"]),
+                        "code": str(row["code"]),
+                        "title": str(row["title"]),
+                        "status": str(row.get("status") or "open"),
+                    }
+                    for row in incomplete_tasks
+                ],
+            },
         )
 
     # Insert the lock

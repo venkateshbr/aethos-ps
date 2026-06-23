@@ -55,6 +55,21 @@ interface Account {
   account_type: string;
 }
 
+interface CloseTask {
+  id: string;
+  period: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  owner_role: string;
+  status: 'open' | 'in_progress' | 'done' | 'waived' | 'blocked' | string;
+  due_date?: string | null;
+  completed_at?: string | null;
+  completed_by?: string | null;
+  evidence: Record<string, unknown>;
+  order_index: number;
+}
+
 // ─── Type guard for API error shape ───────────────────────────────────────────
 function isApiError(err: unknown): err is { error?: { detail?: string } } {
   return typeof err === 'object' && err !== null;
@@ -100,6 +115,70 @@ type FilterChip = 'all' | 'manual' | 'auto';
           </button>
         }
       </div>
+
+      <!-- ── Close checklist ────────────────────────────────────────── -->
+      <section class="mb-6 border border-border-default rounded-lg bg-surface-raised overflow-hidden" aria-labelledby="close-tasks-title">
+        <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-border-default">
+          <div>
+            <h2 id="close-tasks-title" class="text-sm font-semibold text-text-primary">Month-end close</h2>
+            <p class="text-xs text-text-muted mt-0.5">{{ closePeriod() }} · {{ completedCloseTasks() }}/{{ closeTasks().length }} complete</p>
+          </div>
+          @if (closeTasks().length === 0 && !closeTasksLoading()) {
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeTaskAction() === 'bootstrap'"
+              (click)="bootstrapCloseTasks()"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">playlist_add_check</mat-icon>
+              Start checklist
+            </button>
+          }
+        </div>
+        @if (closeTasksLoading()) {
+          <div class="px-4 py-3 text-sm text-text-muted">Loading close tasks…</div>
+        } @else if (closeTasksError()) {
+          <div class="px-4 py-3 text-sm text-confidence-low" role="alert">{{ closeTasksError() }}</div>
+        } @else if (closeTasks().length === 0) {
+          <div class="px-4 py-4 text-sm text-text-muted">No close checklist has been started for this period.</div>
+        } @else {
+          <div class="divide-y divide-border-subtle">
+            @for (task of closeTasks(); track task.id) {
+              <div class="px-4 py-3 flex items-start gap-3">
+                <span class="mt-1 w-2 h-2 rounded-full flex-none" [class]="closeTaskDotClass(task.status)" aria-hidden="true"></span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-sm font-medium text-text-primary">{{ task.title }}</p>
+                    <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ closeTaskLabel(task.status) }}</span>
+                    <span class="text-xs text-text-disabled">{{ task.owner_role }}</span>
+                  </div>
+                  @if (task.description) {
+                    <p class="text-xs text-text-muted mt-1">{{ task.description }}</p>
+                  }
+                </div>
+                <div class="flex items-center gap-2 flex-none">
+                  @if (task.status !== 'done') {
+                    <button
+                      type="button"
+                      class="text-xs text-accent-light hover:text-accent transition-colors disabled:opacity-60"
+                      [disabled]="closeTaskAction() === task.id"
+                      (click)="updateCloseTask(task, 'done')"
+                    >Done</button>
+                  }
+                  @if (task.status !== 'waived') {
+                    <button
+                      type="button"
+                      class="text-xs text-text-muted hover:text-text-primary transition-colors disabled:opacity-60"
+                      [disabled]="closeTaskAction() === task.id"
+                      (click)="updateCloseTask(task, 'waived')"
+                    >Waive</button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
 
       <!-- ── Filter chips ───────────────────────────────────────────── -->
       <div class="flex gap-2 mb-5" role="group" aria-label="Filter journal entries">
@@ -614,6 +693,14 @@ export class JournalEntriesListComponent implements OnInit {
   error    = signal<string | null>(null);
   entries  = signal<JournalEntry[]>([]);
   expandedRow = signal<string | null>(null);
+  closePeriod = signal(new Date().toISOString().slice(0, 7));
+  closeTasks = signal<CloseTask[]>([]);
+  closeTasksLoading = signal(false);
+  closeTasksError = signal<string | null>(null);
+  closeTaskAction = signal<string | null>(null);
+  completedCloseTasks = computed(() =>
+    this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
+  );
 
   // RBAC: read role from localStorage (set by login flow)
   // The back-end enforces this too — this is only a UI affordance.
@@ -687,6 +774,7 @@ export class JournalEntriesListComponent implements OnInit {
   // ── Lifecycle ────────────────────────────────────────────────────────
   ngOnInit(): void {
     this.loadEntries();
+    this.loadCloseTasks();
   }
 
   // ── List operations ──────────────────────────────────────────────────
@@ -709,6 +797,59 @@ export class JournalEntriesListComponent implements OnInit {
 
   setFilter(f: FilterChip): void {
     this.activeFilter.set(f);
+  }
+
+  loadCloseTasks(): void {
+    this.closeTasksLoading.set(true);
+    this.closeTasksError.set(null);
+    this.http.get<{ tasks: CloseTask[] }>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks`,
+    ).subscribe({
+      next: (res) => {
+        this.closeTasks.set(res.tasks ?? []);
+        this.closeTasksLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTasksLoading.set(false);
+      },
+    });
+  }
+
+  bootstrapCloseTasks(): void {
+    this.closeTaskAction.set('bootstrap');
+    this.closeTasksError.set(null);
+    this.http.post<{ tasks: CloseTask[] }>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks/bootstrap`,
+      {},
+    ).subscribe({
+      next: (res) => {
+        this.closeTasks.set(res.tasks ?? []);
+        this.closeTaskAction.set(null);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTaskAction.set(null);
+      },
+    });
+  }
+
+  updateCloseTask(task: CloseTask, status: 'done' | 'waived'): void {
+    this.closeTaskAction.set(task.id);
+    this.closeTasksError.set(null);
+    this.http.patch<CloseTask>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks/${task.id}`,
+      { status },
+    ).subscribe({
+      next: (updated) => {
+        this.closeTasks.update(tasks => tasks.map(row => row.id === updated.id ? updated : row));
+        this.closeTaskAction.set(null);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTaskAction.set(null);
+      },
+    });
   }
 
   toggleRow(event: Event, id: string): void {
@@ -885,6 +1026,21 @@ export class JournalEntriesListComponent implements OnInit {
       case 'bill':    return 'bg-amber-500/20 text-amber-300';
       case 'payment': return 'bg-emerald-500/20 text-emerald-300';
       default:        return 'bg-surface text-text-muted';
+    }
+  }
+
+  closeTaskLabel(status: string): string {
+    if (status === 'in_progress') return 'In progress';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  closeTaskDotClass(status: string): string {
+    switch (status) {
+      case 'done': return 'bg-emerald-400';
+      case 'waived': return 'bg-slate-400';
+      case 'blocked': return 'bg-red-400';
+      case 'in_progress': return 'bg-amber-400';
+      default: return 'bg-slate-600';
     }
   }
 }
