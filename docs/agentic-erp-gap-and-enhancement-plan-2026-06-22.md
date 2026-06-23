@@ -264,7 +264,7 @@ Work items:
 - Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
 
 Acceptance:
-- Partial 2026-06-23: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, and multi-currency, but several Stripe/FX/period-lock/browser assertions remain `test.fixme` in `frontend/e2e/engagement-to-cash.spec.ts`.
+- Partial 2026-06-23: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, and multi-currency. Browser/API coverage now asserts invalid Stripe webhook signatures return 400. Remaining `test.fixme` gaps in `frontend/e2e/engagement-to-cash.spec.ts` are provider-delivered Stripe payment/replay/FX settlement scenarios and period-lock UI coverage.
 - Partial 2026-06-23: reports show revenue, labor cost, expense/vendor cost, margin, WIP, utilization, project health, and capacity by several dimensions. Remaining work is launch-grade role workflow and tax/FX presentation depth.
 
 ### Phase 2: Build The Agent Operating Model

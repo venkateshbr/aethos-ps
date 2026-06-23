@@ -766,8 +766,17 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
     // Blocked: requires Stripe test-mode webhook forwarding in CI
   });
 
-  test.fixme('§3.4 invalid webhook signature → 400', async () => {
-    // Blocked: requires sending raw HTTP to webhook endpoint with bad sig
+  test('§3.4 invalid webhook signature → 400', async ({ request }) => {
+    const resp = await request.post(`${API}/api/v1/webhooks/stripe`, {
+      headers: {
+        'stripe-signature': 't=1234567890,v1=deadbeefnotvalid',
+        'content-type': 'application/json',
+      },
+      data: { id: 'evt_e2e_invalid_signature', type: 'checkout.session.completed' },
+    });
+    expect(resp.status()).toBe(400);
+    const body = await resp.json().catch(() => ({}));
+    expect(JSON.stringify(body).toLowerCase()).toContain('signature');
   });
 
   test('§3.5 LLM unavailable → manual invoice creation always succeeds', async ({ request }) => {
