@@ -78,11 +78,21 @@ def test_billing_run_worker_creates_draft_for_retainer_engagement() -> None:
     assert result is not None
     assert result["status"] == "draft"
 
-    # Verify billing run, suggestion, and HITL task were created.
-    billing_run_insert = table_mock.insert.call_args_list[0][0][0]
-    suggestion_insert = table_mock.insert.call_args_list[1][0][0]
-    task_insert = table_mock.insert.call_args_list[2][0][0]
+    # Verify workflow, billing run, suggestion, and HITL task were created.
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    workflow_insert = next(
+        payload for payload in inserts if payload.get("workflow_name")
+    )
+    billing_run_insert = next(
+        payload for payload in inserts if payload.get("engagement_filter")
+    )
+    suggestion_insert = next(
+        payload for payload in inserts if payload.get("agent_name") == "billing_run_agent"
+    )
+    task_insert = next(payload for payload in inserts if payload.get("kind"))
 
+    assert workflow_insert["workflow_name"] == "monthly_retainer_billing_run"
+    assert workflow_insert["status"] == "running"
     assert "eng-001" in billing_run_insert["engagement_filter"]["engagement_ids"]
     assert "eng-002" in billing_run_insert["engagement_filter"]["engagement_ids"]
     assert billing_run_insert["status"] == "draft"
@@ -92,6 +102,10 @@ def test_billing_run_worker_creates_draft_for_retainer_engagement() -> None:
     assert suggestion_insert["hitl_required"] is True
     assert task_insert["kind"] == "approve_billing_run"
     assert task_insert["status"] == "open"
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "waiting_on_human"
+    assert workflow_update["current_step"] == "hitl_review"
+    assert workflow_update["state_snapshot"]["billing_run_id"] == "run-001"
 
 
 def test_billing_run_worker_suppresses_duplicate_period_run() -> None:
@@ -118,7 +132,12 @@ def test_billing_run_worker_suppresses_duplicate_period_run() -> None:
     result = _create_run_for_tenant(db, "tenant-001", date(2026, 6, 1))
 
     assert result is None
-    table_mock.insert.assert_not_called()
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    assert any(payload.get("workflow_name") for payload in inserts)
+    assert not any(payload.get("engagement_filter") for payload in inserts)
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "succeeded"
+    assert workflow_update["state_snapshot"]["result"] == "skipped_duplicate_period"
 
 
 def test_billing_run_worker_skips_when_no_retainer_engagements() -> None:
@@ -141,7 +160,12 @@ def test_billing_run_worker_skips_when_no_retainer_engagements() -> None:
     result = _create_run_for_tenant(db, "tenant-001", date(2026, 6, 1))
 
     assert result is None
-    table_mock.insert.assert_not_called()
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    assert any(payload.get("workflow_name") for payload in inserts)
+    assert not any(payload.get("engagement_filter") for payload in inserts)
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "succeeded"
+    assert workflow_update["state_snapshot"]["result"] == "skipped_no_retainer_engagements"
 
 
 def test_billing_run_worker_counts_created_only_for_actual_new_runs() -> None:

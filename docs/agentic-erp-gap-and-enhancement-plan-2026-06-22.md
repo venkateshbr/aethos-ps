@@ -180,7 +180,7 @@ Present:
 Gaps / status:
 - Done/partial 2026-06-23: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, and a recorded replay manifest. Coverage across every agent-created mutation and live re-execution still need hardening.
 - Done 2026-06-23: central tool registry with per-agent tool/action risk classes exists.
-- Partial 2026-06-23: `agent_workflow_runs` exists as the durable workflow container, but long-running Phase 3 workers do not yet use it consistently.
+- Partial 2026-06-23: `agent_workflow_runs` exists as the durable workflow container, and the monthly retainer billing-run worker now records running/skipped/waiting-on-human/failed workflow states. Remaining work is consistent workflow-run adoption across the other long-running Phase 3 workers.
 - Queue is `not_configured` in the live readiness check, so scheduled autonomy is not operational in this local/live run.
 - Done 2026-06-23: document preflight scanning masks decoded text and withholds sensitive/adversarial PDF/image content from external LLM calls when detected.
 - Partial 2026-06-23: human corrections become eval candidates and L3 policy fields exist. Runnable eval gate and drift dashboard are still not mature.
