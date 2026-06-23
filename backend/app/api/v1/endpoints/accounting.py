@@ -9,6 +9,7 @@ Endpoints:
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
   POST   /api/v1/accounting/periods/{period}/propose-milestone-recognition — HITL milestone recognition
   POST   /api/v1/accounting/periods/{period}/propose-percentage-completion-recognition — HITL POC recognition
+  POST   /api/v1/accounting/periods/{period}/propose-prepaid-amortization — HITL prepaid amortization
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
@@ -528,6 +529,39 @@ async def propose_percentage_completion_recognition(
             revenue_account_code=revenue_account_code,
         )
     except RevenueRecognitionProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-prepaid-amortization")
+async def propose_prepaid_amortization(
+    period: str,
+    prepaid_account_code: str = Query("1500", min_length=1, max_length=20),
+    expense_account_code: str = Query("5000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for prepaid expense amortization."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.prepaid_amortization_agent import (
+        PrepaidAmortizationProposalError,
+        write_prepaid_amortization_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_prepaid_amortization_suggestions(
+            deps,
+            period,
+            prepaid_account_code=prepaid_account_code,
+            expense_account_code=expense_account_code,
+        )
+    except PrepaidAmortizationProposalError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),

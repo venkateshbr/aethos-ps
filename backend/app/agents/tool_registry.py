@@ -76,6 +76,7 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
         "write_money_out",
     ),
     _persisted_action("accrual_agent", "draft_journal", "accounting"),
+    _persisted_action("prepaid_amortization_agent", "draft_journal", "accounting"),
     _persisted_action("revenue_recognition_agent", "draft_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_manual_journal", "accounting"),

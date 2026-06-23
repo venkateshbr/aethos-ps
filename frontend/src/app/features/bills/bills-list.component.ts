@@ -451,6 +451,39 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                       />
                     </div>
                   </div>
+                  <!-- Prepaid schedule -->
+                  <div class="border-t border-border-subtle pt-2">
+                    <label class="inline-flex items-center gap-2 text-xs text-text-secondary">
+                      <input
+                        type="checkbox"
+                        formControlName="is_prepaid"
+                        class="h-4 w-4 rounded border-border-default bg-surface-base text-accent focus:ring-accent"
+                      />
+                      Prepaid expense
+                    </label>
+                    @if (lineAt(i).get('is_prepaid')?.value) {
+                      <div class="grid grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <label [for]="'line-service-start-' + i" class="block text-xs text-text-muted mb-1">Service start</label>
+                          <input
+                            [id]="'line-service-start-' + i"
+                            type="date"
+                            formControlName="service_start_date"
+                            class="w-full px-2 py-1.5 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label [for]="'line-service-end-' + i" class="block text-xs text-text-muted mb-1">Service end</label>
+                          <input
+                            [id]="'line-service-end-' + i"
+                            type="date"
+                            formControlName="service_end_date"
+                            class="w-full px-2 py-1.5 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                          />
+                        </div>
+                      </div>
+                    }
+                  </div>
                   <!-- Line amount display + remove -->
                   <div class="flex items-center justify-between pt-1">
                     <span class="text-xs text-text-muted">
@@ -634,6 +667,9 @@ export class BillsListComponent implements OnInit {
       unit_price:  [0],
       tax_amount:  [0],
       amount:      [{ value: 0, disabled: true }],
+      is_prepaid:  [false],
+      service_start_date: [''],
+      service_end_date:   [''],
     });
   }
 
@@ -649,7 +685,16 @@ export class BillsListComponent implements OnInit {
       notes: '',
     });
     // Reset the first line
-    this.lines.at(0).reset({ description: '', quantity: 1, unit_price: 0, tax_amount: 0, amount: 0 });
+    this.lines.at(0).reset({
+      description: '',
+      quantity: 1,
+      unit_price: 0,
+      tax_amount: 0,
+      amount: 0,
+      is_prepaid: false,
+      service_start_date: '',
+      service_end_date: '',
+    });
     this.createError.set(null);
 
     // Load vendors (kind=vendor or kind=both)
@@ -767,13 +812,19 @@ export class BillsListComponent implements OnInit {
       const price = parseFloat(l.get('unit_price')?.value ?? '0') || 0;
       const amount = +(qty * price).toFixed(2);
       const tax    = +(parseFloat(l.get('tax_amount')?.value ?? '0') || 0).toFixed(2);
-      return {
+      const linePayload: Record<string, unknown> = {
         description: l.get('description')?.value ?? '',
         quantity:    qty,
         unit_price:  price,
         amount,
         tax_amount:  tax,
       };
+      if (l.get('is_prepaid')?.value) {
+        linePayload['is_prepaid'] = true;
+        linePayload['service_start_date'] = l.get('service_start_date')?.value;
+        linePayload['service_end_date'] = l.get('service_end_date')?.value;
+      }
+      return linePayload;
     });
 
     const payload: Record<string, unknown> = {

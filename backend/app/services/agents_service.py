@@ -72,6 +72,11 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
         "Proposes vendor payment batches",
     ),
     (
+        "prepaid_amortization_agent",
+        "Prepaid Amortization Agent",
+        "Drafts prepaid expense amortization journals for month-end close",
+    ),
+    (
         "project_health_agent",
         "Project Health Monitor",
         "Detects budget burn and scope risk in projects",
@@ -92,6 +97,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "collections_agent",
         "copilot_agent",
         "invoice_drafter_agent",
+        "prepaid_amortization_agent",
         "revenue_recognition_agent",
     }
 )

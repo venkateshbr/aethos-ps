@@ -35,9 +35,10 @@ from supabase import Client
 logger = logging.getLogger(__name__)
 
 # COA codes used for AP journal posting
-_EXPENSE_ACCOUNT_CODE = "5000"   # Expenses (DR)
-_AP_ACCOUNT_CODE = "2000"        # Accounts Payable (CR)
+_EXPENSE_ACCOUNT_CODE = "5000"  # Expenses (DR)
+_AP_ACCOUNT_CODE = "2000"  # Accounts Payable (CR)
 _INPUT_TAX_ACCOUNT_CODE = "1300"  # Input Tax Recoverable (DR)
+_PREPAID_ACCOUNT_CODE = "1500"  # Prepaid Expenses (DR on approval, CR on amortization)
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
@@ -52,6 +53,11 @@ def _line_to_response(row: dict) -> BillLineResponse:
         amount=serialise_money(row["amount"]) or "0.00",
         tax_amount=serialise_money(row.get("tax_amount") or "0") or "0.00",
         account_id=str(row["account_id"]) if row.get("account_id") else None,
+        is_prepaid=bool(row.get("is_prepaid")),
+        service_start_date=(
+            str(row["service_start_date"]) if row.get("service_start_date") else None
+        ),
+        service_end_date=(str(row["service_end_date"]) if row.get("service_end_date") else None),
         created_at=str(row["created_at"]),
     )
 
@@ -82,41 +88,51 @@ def _build_ap_journal_lines(
     expense_account_id: str,
     ap_account_id: str,
     input_tax_account_id: str | None = None,
+    prepaid_account_id: str | None = None,
     bill_total: Decimal,
     bill_number: str,
     currency: str,
 ) -> list[JournalLineSpec]:
     """Build AP approval journal lines, preserving net expense and recoverable tax."""
     debit_amounts: dict[str, Decimal] = {}
+    debit_account_codes: dict[str, str] = {}
     input_tax_total = Decimal("0")
     for line in bill_lines:
-        account_id = str(line.get("account_id") or expense_account_id)
+        is_prepaid = bool(line.get("is_prepaid"))
+        if is_prepaid:
+            if not prepaid_account_id:
+                raise ValueError(
+                    "Prepaid expenses account is not configured; cannot post AP journal"
+                )
+            account_id = prepaid_account_id
+            debit_account_codes[account_id] = _PREPAID_ACCOUNT_CODE
+        else:
+            account_id = str(line.get("account_id") or expense_account_id)
+            debit_account_codes[account_id] = (
+                _EXPENSE_ACCOUNT_CODE if account_id == expense_account_id else ""
+            )
         line_amount = Decimal(str(line.get("amount") or "0"))
         tax_amount = Decimal(str(line.get("tax_amount") or "0"))
         input_tax_total += tax_amount
-        debit_amounts[account_id] = (
-            debit_amounts.get(account_id, Decimal("0")) + line_amount
-        )
+        debit_amounts[account_id] = debit_amounts.get(account_id, Decimal("0")) + line_amount
 
     debit_total = sum(debit_amounts.values(), Decimal("0")) + input_tax_total
     if abs(debit_total - bill_total) > Decimal("0.01"):
-        raise ValueError(
-            "Bill line totals do not match bill total; cannot post AP journal"
-        )
+        raise ValueError("Bill line totals do not match bill total; cannot post AP journal")
     if input_tax_total > Decimal("0") and not input_tax_account_id:
-        raise ValueError(
-            "Input tax recoverable account is not configured; cannot post AP journal"
-        )
+        raise ValueError("Input tax recoverable account is not configured; cannot post AP journal")
 
     journal_lines = [
         JournalLineSpec(
             direction="DR",
-            account_code=(
-                _EXPENSE_ACCOUNT_CODE if account_id == expense_account_id else ""
-            ),
+            account_code=debit_account_codes.get(account_id, ""),
             account_id=account_id,
             amount=amount,
-            description=f"Expenses - {bill_number}",
+            description=(
+                f"Prepaid expenses - {bill_number}"
+                if debit_account_codes.get(account_id) == _PREPAID_ACCOUNT_CODE
+                else f"Expenses - {bill_number}"
+            ),
             currency=currency,
         )
         for account_id, amount in sorted(debit_amounts.items())
@@ -240,6 +256,10 @@ class BillsService:
                     not_found_detail="Account not found",
                 )
                 line_payload["account_id"] = line.account_id
+            line_payload["is_prepaid"] = line.is_prepaid
+            if line.is_prepaid:
+                line_payload["service_start_date"] = line.service_start_date.isoformat()
+                line_payload["service_end_date"] = line.service_end_date.isoformat()
             line_row = await self._repo.create_line(bill_id, line_payload)
             lines_rows.append(line_row)
             subtotal += line.amount
@@ -293,21 +313,23 @@ class BillsService:
         # 3. Resolve account IDs from COA
         expense_account_id = await self._repo.get_account_id_by_code(_EXPENSE_ACCOUNT_CODE)
         ap_account_id = await self._repo.get_account_id_by_code(_AP_ACCOUNT_CODE)
-        input_tax_total = sum(
-            Decimal(str(line.get("tax_amount") or "0"))
-            for line in lines
-        )
+        has_prepaid_lines = any(bool(line.get("is_prepaid")) for line in lines)
+        prepaid_account_id: str | None = None
+        if has_prepaid_lines:
+            prepaid_account_id = await self._repo.get_account_id_by_code(_PREPAID_ACCOUNT_CODE)
+        input_tax_total = sum(Decimal(str(line.get("tax_amount") or "0")) for line in lines)
         input_tax_account_id: str | None = None
         if input_tax_total > Decimal("0"):
-            input_tax_account_id = await self._repo.get_account_id_by_code(
-                _INPUT_TAX_ACCOUNT_CODE
-            )
+            input_tax_account_id = await self._repo.get_account_id_by_code(_INPUT_TAX_ACCOUNT_CODE)
         if (
             not expense_account_id
             or not ap_account_id
+            or (has_prepaid_lines and not prepaid_account_id)
             or (input_tax_total > Decimal("0") and not input_tax_account_id)
         ):
             expected_codes = [_EXPENSE_ACCOUNT_CODE, _AP_ACCOUNT_CODE]
+            if has_prepaid_lines:
+                expected_codes.append(_PREPAID_ACCOUNT_CODE)
             if input_tax_total > Decimal("0"):
                 expected_codes.append(_INPUT_TAX_ACCOUNT_CODE)
             logger.error(
@@ -330,6 +352,7 @@ class BillsService:
                 expense_account_id=expense_account_id,
                 ap_account_id=ap_account_id,
                 input_tax_account_id=input_tax_account_id,
+                prepaid_account_id=prepaid_account_id,
                 bill_total=total,
                 bill_number=bill_number,
                 currency=currency,

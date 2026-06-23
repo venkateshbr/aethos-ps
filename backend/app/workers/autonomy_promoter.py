@@ -45,6 +45,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "collections_agent",
         "copilot_agent",
         "invoice_drafter_agent",
+        "prepaid_amortization_agent",
         "revenue_recognition_agent",
     }
 )

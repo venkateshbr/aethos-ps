@@ -489,3 +489,50 @@ def test_percentage_completion_recognition_proposal_uses_service_role_client(
     assert response.status_code == 200, response.text
     assert response.json()["created_count"] == 1
     assert response.json()["proposals"][0]["phase_id"] == "phase-build"
+
+
+def test_prepaid_amortization_proposal_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _write_suggestions(
+        deps: Any,
+        period: str,
+        *,
+        prepaid_account_code: str,
+        expense_account_code: str,
+    ) -> dict[str, Any]:
+        assert deps.db is fake_db
+        assert deps.tenant_id == TENANT_ID
+        assert deps.user_id == "manager-1"
+        assert period == "2026-06"
+        assert prepaid_account_code == "1500"
+        assert expense_account_code == "5000"
+        return {
+            "period": period,
+            "proposal_count": 1,
+            "created_count": 1,
+            "skipped_duplicates": 0,
+            "suggestion_ids": ["suggestion-prepaid-001"],
+            "proposals": [
+                {
+                    "proposal_type": "prepaid_expense_amortization",
+                    "bill_line_id": "bill-line-prepaid",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.agents.prepaid_amortization_agent.write_prepaid_amortization_suggestions",
+        _write_suggestions,
+    )
+
+    response = client.post("/api/v1/accounting/periods/2026-06/propose-prepaid-amortization")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created_count"] == 1
+    assert response.json()["proposals"][0]["bill_line_id"] == "bill-line-prepaid"

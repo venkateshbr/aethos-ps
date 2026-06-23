@@ -243,6 +243,33 @@ def test_close_status_summarizes_pending_percentage_completion_review() -> None:
     )
 
 
+def test_close_status_summarizes_pending_prepaid_amortization_review() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "suggestion-prepaid-amort-001",
+            "agent_name": "prepaid_amortization_agent",
+            "action_type": "draft_journal",
+            "status": "pending",
+            "output_snapshot": {
+                "proposal_type": "prepaid_expense_amortization",
+                "period": "2026-06",
+                "currency": "USD",
+                "line_description": "Annual software subscription",
+                "amortization_amount": "100.00",
+            },
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.pending_reviews[0].summary == (
+        "Review USD prepaid amortization proposal for Annual software subscription: 100.00."
+    )
+
+
 def test_close_status_marks_already_locked_period() -> None:
     tables = _base_tables()
     tables["period_locks"] = [

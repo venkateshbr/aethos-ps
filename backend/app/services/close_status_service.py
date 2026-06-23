@@ -14,6 +14,7 @@ ClosePeriodStatus = Literal["ready", "blocked", "locked"]
 _CLOSE_REVIEW_AGENTS = (
     "accrual_agent",
     "close_agent",
+    "prepaid_amortization_agent",
     "reporting_agent",
     "revenue_recognition_agent",
 )
@@ -301,6 +302,17 @@ def _review_summary(output: dict) -> str:
     deferred_release = output.get("deferred_release_amount")
     if currency and deferred_release:
         return f"Review {currency} deferred revenue release proposal for {deferred_release}."
+    amortization_amount = output.get("amortization_amount")
+    if (
+        output.get("proposal_type") == "prepaid_expense_amortization"
+        and currency
+        and amortization_amount
+    ):
+        description = str(output.get("line_description") or "prepaid expense")
+        return (
+            f"Review {currency} prepaid amortization proposal for "
+            f"{description}: {amortization_amount}."
+        )
     recognition_amount = output.get("recognition_amount")
     if (
         output.get("proposal_type") == "percentage_completion_revenue_recognition"

@@ -258,9 +258,7 @@ def test_bill_read_routes_use_rls_client(
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
     app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
 
-    list_response = client.get(
-        f"/api/v1/bills?status=approved&client_id={CLIENT_ID}&limit=10"
-    )
+    list_response = client.get(f"/api/v1/bills?status=approved&client_id={CLIENT_ID}&limit=10")
     detail_response = client.get(f"/api/v1/bills/{BILL_ID}")
     aging_response = client.get("/api/v1/bills/aging")
 
@@ -298,6 +296,9 @@ def test_bill_create_uses_service_role_client(
                     "unit_price": "75.00",
                     "amount": "150.00",
                     "tax_amount": "15.00",
+                    "is_prepaid": True,
+                    "service_start_date": "2026-07-01",
+                    "service_end_date": "2027-06-30",
                 }
             ],
         },
@@ -309,3 +310,6 @@ def test_bill_create_uses_service_role_client(
     assert response.json()["tax_total"] == "15.00"
     assert response.json()["total"] == "165.00"
     assert response.json()["lines"][0]["id"] == CREATED_LINE_ID
+    assert response.json()["lines"][0]["is_prepaid"] is True
+    assert response.json()["lines"][0]["service_start_date"] == "2026-07-01"
+    assert response.json()["lines"][0]["service_end_date"] == "2027-06-30"

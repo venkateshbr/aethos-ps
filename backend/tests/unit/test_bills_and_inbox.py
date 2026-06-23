@@ -188,6 +188,60 @@ def test_ap_journal_requires_input_tax_account_for_taxable_bill() -> None:
         )
 
 
+def test_ap_journal_capitalizes_prepaid_lines_to_prepaid_asset() -> None:
+    from app.services.bills_service import _build_ap_journal_lines
+
+    journal_lines = _build_ap_journal_lines(
+        bill_lines=[
+            {
+                "amount": "1200.00",
+                "tax_amount": "0.00",
+                "account_id": "acct-software-expense",
+                "is_prepaid": True,
+            },
+        ],
+        expense_account_id="acct-expense",
+        ap_account_id="acct-ap",
+        input_tax_account_id=None,
+        prepaid_account_id="acct-prepaid",
+        bill_total=Decimal("1200.00"),
+        bill_number="BILL-005",
+        currency="USD",
+    )
+
+    debit_lines = [line for line in journal_lines if line.direction == "DR"]
+    credit_lines = [line for line in journal_lines if line.direction == "CR"]
+
+    assert debit_lines[0].account_id == "acct-prepaid"
+    assert debit_lines[0].account_code == "1500"
+    assert debit_lines[0].amount == Decimal("1200.00")
+    assert credit_lines[0].account_id == "acct-ap"
+    assert validate_journal_balance(journal_lines) is True
+
+
+def test_ap_journal_requires_prepaid_account_for_prepaid_line() -> None:
+    from app.services.bills_service import _build_ap_journal_lines
+
+    with pytest.raises(ValueError, match="Prepaid expenses account"):
+        _build_ap_journal_lines(
+            bill_lines=[
+                {
+                    "amount": "1200.00",
+                    "tax_amount": "0.00",
+                    "account_id": None,
+                    "is_prepaid": True,
+                },
+            ],
+            expense_account_id="acct-expense",
+            ap_account_id="acct-ap",
+            input_tax_account_id=None,
+            prepaid_account_id=None,
+            bill_total=Decimal("1200.00"),
+            bill_number="BILL-006",
+            currency="USD",
+        )
+
+
 def test_validate_journal_balance_empty_balances() -> None:
     """Empty list trivially balances."""
     assert validate_journal_balance([]) is True
@@ -272,7 +326,60 @@ def test_bill_line_quantity_must_be_positive() -> None:
     from app.models.bills import BillLineCreate
 
     with pytest.raises(ValidationError):
-        BillLineCreate(description="x", quantity=Decimal("0"), unit_price=Decimal("10"), amount=Decimal("0"))
+        BillLineCreate(
+            description="x", quantity=Decimal("0"), unit_price=Decimal("10"), amount=Decimal("0")
+        )
+
+
+def test_bill_line_prepaid_requires_service_window() -> None:
+    from pydantic import ValidationError
+
+    from app.models.bills import BillLineCreate
+
+    with pytest.raises(ValidationError, match="Prepaid lines require"):
+        BillLineCreate(
+            description="Annual software",
+            unit_price=Decimal("1200"),
+            amount=Decimal("1200"),
+            is_prepaid=True,
+        )
+
+
+def test_bill_line_prepaid_service_window_must_be_ordered() -> None:
+    from datetime import date
+
+    from pydantic import ValidationError
+
+    from app.models.bills import BillLineCreate
+
+    with pytest.raises(ValidationError, match="service_end_date"):
+        BillLineCreate(
+            description="Annual software",
+            unit_price=Decimal("1200"),
+            amount=Decimal("1200"),
+            is_prepaid=True,
+            service_start_date=date(2026, 12, 31),
+            service_end_date=date(2026, 1, 1),
+        )
+
+
+def test_bill_line_prepaid_accepts_valid_service_window() -> None:
+    from datetime import date
+
+    from app.models.bills import BillLineCreate
+
+    line = BillLineCreate(
+        description="Annual software",
+        unit_price=Decimal("1200"),
+        amount=Decimal("1200"),
+        is_prepaid=True,
+        service_start_date=date(2026, 1, 1),
+        service_end_date=date(2026, 12, 31),
+    )
+
+    assert line.is_prepaid is True
+    assert line.service_start_date == date(2026, 1, 1)
+    assert line.service_end_date == date(2026, 12, 31)
 
 
 # ---------------------------------------------------------------------------
@@ -434,7 +541,9 @@ async def test_materialise_routes_draft_kinds(kind: str, expected_method: str) -
     await svc._materialise(kind, {"client_name": "Acme"})
 
     getattr(svc, expected_method).assert_awaited_once()
-    others = {"_materialise_engagement", "_materialise_expense", "_materialise_bill"} - {expected_method}
+    others = {"_materialise_engagement", "_materialise_expense", "_materialise_bill"} - {
+        expected_method
+    }
     for m in others:
         getattr(svc, m).assert_not_awaited()
 

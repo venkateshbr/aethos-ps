@@ -112,6 +112,9 @@ def test_tool_registry_classifies_persisted_agent_actions() -> None:
         "write_money_out"
     )
     assert risk_class_for_action("accrual_agent", "draft_journal") == "accounting"
+    assert risk_class_for_action("prepaid_amortization_agent", "draft_journal") == (
+        "accounting"
+    )
     assert risk_class_for_action("revenue_recognition_agent", "draft_journal") == (
         "accounting"
     )

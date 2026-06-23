@@ -180,6 +180,15 @@ type FilterChip = 'all' | 'manual' | 'auto';
               <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">trending_up</mat-icon>
               Percentage completion
             </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-prepaid-amortization', 'Prepaid amortization')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">event_repeat</mat-icon>
+              Prepaid amortization
+            </button>
           </div>
         }
         @if (closeTasksLoading()) {
