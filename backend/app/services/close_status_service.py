@@ -306,4 +306,11 @@ def _review_summary(output: dict) -> str:
             f"Review {currency} deferred revenue release proposal for "
             f"{deferred_release}."
         )
+    recognition_amount = output.get("recognition_amount")
+    if currency and recognition_amount:
+        phase_name = str(output.get("phase_name") or "milestone")
+        return (
+            f"Review {currency} milestone recognition proposal for "
+            f"{phase_name}: {recognition_amount}."
+        )
     return "Review pending close-related agent proposal."
