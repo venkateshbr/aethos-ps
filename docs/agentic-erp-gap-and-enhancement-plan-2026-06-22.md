@@ -122,8 +122,9 @@ Present:
 
 Gaps / status:
 - Done 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, mixed, and per-unit payroll/per-employee terms.
+- Done 2026-06-23: invoice persistence now supports negative adjustment lines used by capped T&M cap adjustments and retainer-draw offsets while still blocking net-negative invoice totals.
 - Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
-- Partial 2026-06-23: WIP accrual, deferred revenue release, and milestone revenue recognition proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Remaining revenue-recognition depth is retainer drawdown automation, percentage-of-completion accounting, prepaid amortization, and broader schedule management.
+- Partial 2026-06-23: WIP accrual, deferred revenue release, and milestone revenue recognition proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Remaining revenue-recognition depth is retainer balance/drawdown automation, percentage-of-completion accounting, prepaid amortization, and broader schedule management.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
 - Open: no client portal workflow beyond public invoice payment.
 - Done/verification open 2026-06-23: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM time logging remains open for verification in GitHub issue #253.

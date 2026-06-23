@@ -218,6 +218,128 @@ def test_invoice_response_serialises_totals_as_strings() -> None:
     assert response.total == "1000.00"
 
 
+@pytest.mark.asyncio
+async def test_create_invoice_accepts_negative_adjustment_lines(
+    mock_db: MagicMock,
+    tenant_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capped T&M / retainer-draw adjustments can reduce, but not invert, totals."""
+    from app.models.invoices import InvoiceCreate, InvoiceLineCreate
+    from app.services.invoices_service import InvoicesService
+
+    async def _valid_fk(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.services.invoices_service.assert_belongs_to_tenant", _valid_fk)
+
+    svc = InvoicesService(mock_db, tenant_id)
+    created_header = {
+        "id": "inv-adjustment-001",
+        "tenant_id": tenant_id,
+        "engagement_id": "eng-uuid-001",
+        "client_id": "client-uuid-001",
+        "invoice_number": "INV-ADJ",
+        "currency": "USD",
+        "subtotal": "5000.00",
+        "tax_total": "0.00",
+        "total": "5000.00",
+        "status": "draft",
+        "issue_date": None,
+        "due_date": None,
+        "paid_at": None,
+        "stripe_payment_link_id": None,
+        "stripe_payment_link_url": None,
+        "public_token": "tok_adjustment",
+        "sent_at": None,
+        "notes": None,
+        "created_at": "2026-05-01T00:00:00+00:00",
+        "updated_at": "2026-05-01T00:00:00+00:00",
+    }
+    svc._repo.create = AsyncMock(return_value=created_header)
+
+    created_lines: list[dict] = []
+
+    async def _create_line(payload: dict) -> dict:
+        row = {
+            "id": f"line-{len(created_lines) + 1}",
+            "invoice_id": "inv-adjustment-001",
+            "created_at": "2026-05-01T00:00:00+00:00",
+            **payload,
+        }
+        created_lines.append(row)
+        return row
+
+    svc._repo.create_line = AsyncMock(side_effect=_create_line)
+
+    result = await svc.create_invoice(
+        InvoiceCreate(
+            engagement_id="eng-uuid-001",
+            client_id="client-uuid-001",
+            currency="USD",
+            lines=[
+                InvoiceLineCreate(
+                    description="Senior Consultant",
+                    quantity=Decimal("100"),
+                    unit_price=Decimal("100.00"),
+                ),
+                InvoiceLineCreate(
+                    description="Cap adjustment",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal("-5000.00"),
+                ),
+            ],
+        ),
+        created_by="user-uuid-001",
+    )
+
+    assert result.subtotal == "5000.00"
+    assert result.total == "5000.00"
+    svc._repo.create.assert_awaited_once()
+    assert svc._repo.create.await_args.args[0]["subtotal"] == "5000.00"
+    assert created_lines[1]["unit_price"] == "-5000.00"
+    assert created_lines[1]["amount"] == "-5000.00"
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_rejects_net_negative_adjustments(
+    mock_db: MagicMock,
+    tenant_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models.invoices import InvoiceCreate, InvoiceLineCreate
+    from app.services.invoices_service import InvoicesService
+
+    async def _valid_fk(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.services.invoices_service.assert_belongs_to_tenant", _valid_fk)
+
+    svc = InvoicesService(mock_db, tenant_id)
+    svc._repo.create = AsyncMock()
+
+    with pytest.raises(Exception) as exc_info:
+        await svc.create_invoice(
+            InvoiceCreate(
+                engagement_id="eng-uuid-001",
+                client_id="client-uuid-001",
+                currency="USD",
+                lines=[
+                    InvoiceLineCreate(
+                        description="Retainer applied",
+                        quantity=Decimal("1"),
+                        unit_price=Decimal("-5000.00"),
+                    ),
+                ],
+            ),
+            created_by="user-uuid-001",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "negative" in exc_info.value.detail
+    svc._repo.create.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Issue #50 — Connect routing
 # ---------------------------------------------------------------------------

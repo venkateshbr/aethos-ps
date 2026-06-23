@@ -23,7 +23,7 @@ from app.domain.money import serialise_money
 class InvoiceLineCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=1000)
     quantity: Decimal = Field(..., gt=0)
-    unit_price: Decimal = Field(..., ge=0)
+    unit_price: Decimal
     tax_rate_id: str | None = None
     time_entry_id: str | None = None
     expense_id: str | None = None

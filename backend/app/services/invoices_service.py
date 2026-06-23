@@ -170,6 +170,11 @@ class InvoicesService:
             )
 
         total = subtotal + tax_total
+        if subtotal < Decimal("0") or total < Decimal("0"):
+            raise HTTPException(
+                status_code=422,
+                detail="Invoice total cannot be negative after adjustments",
+            )
         invoice_data["subtotal"] = serialise_money(subtotal)
         invoice_data["tax_total"] = serialise_money(tax_total)
         invoice_data["total"] = serialise_money(total)
