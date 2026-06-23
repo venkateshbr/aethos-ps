@@ -8,7 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ProcurementDocumentType = Literal["purchase_order", "service_order"]
+ProcurementDocumentType = Literal["purchase_request", "purchase_order", "service_order"]
+ProcurementOrderType = Literal["purchase_order", "service_order"]
 ProcurementDocumentStatus = Literal["draft", "submitted", "approved", "closed", "cancelled"]
 
 
@@ -55,6 +56,7 @@ class ProcurementDocumentResponse(BaseModel):
     document_type: ProcurementDocumentType
     document_number: str
     client_id: str
+    source_request_id: str | None = None
     status: ProcurementDocumentStatus
     currency: str
     issue_date: str | None
@@ -77,3 +79,7 @@ class ProcurementDocumentResponse(BaseModel):
 class ProcurementDocumentListResponse(BaseModel):
     items: list[ProcurementDocumentResponse]
     total: int
+
+
+class ProcurementConvertRequest(BaseModel):
+    document_type: ProcurementOrderType | None = None

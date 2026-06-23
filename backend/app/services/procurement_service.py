@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 
 from app.domain.money import serialise_money
 from app.models.procurement import (
+    ProcurementConvertRequest,
     ProcurementDocumentCreate,
     ProcurementDocumentListResponse,
     ProcurementDocumentResponse,
@@ -53,6 +54,7 @@ def _document_to_response(
         document_type=row["document_type"],
         document_number=row["document_number"],
         client_id=str(row["client_id"]),
+        source_request_id=str(row["source_request_id"]) if row.get("source_request_id") else None,
         status=row["status"],
         currency=row["currency"],
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
@@ -228,3 +230,88 @@ class ProcurementService:
             },
         )
         return _document_to_response(updated, lines) if updated else None
+
+    async def convert_request_to_order(
+        self,
+        document_id: str,
+        *,
+        payload: ProcurementConvertRequest,
+        converted_by: str,
+    ) -> ProcurementDocumentResponse | None:
+        request = await self._repo.get(document_id)
+        if request is None:
+            return None
+        if request.get("document_type") != "purchase_request":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only purchase requests can be converted to procurement orders",
+            )
+        if request.get("status") != "approved":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Purchase request must be approved before conversion",
+            )
+
+        target_type = payload.document_type
+        if target_type is None:
+            target_type = (
+                "service_order"
+                if request.get("service_start_date") or request.get("service_end_date")
+                else "purchase_order"
+            )
+
+        order_payload = {
+            "document_type": target_type,
+            "client_id": request["client_id"],
+            "currency": request.get("currency") or "USD",
+            "status": "draft",
+            "requested_by": converted_by,
+            "source_request_id": document_id,
+            "notes": request.get("notes"),
+        }
+        for field in (
+            "issue_date",
+            "expected_delivery_date",
+            "service_start_date",
+            "service_end_date",
+        ):
+            if request.get(field):
+                order_payload[field] = str(request[field])
+
+        order = await self._repo.create(order_payload)
+        order_id = str(order["id"])
+
+        subtotal = Decimal("0")
+        tax_total = Decimal("0")
+        order_lines: list[dict] = []
+        for line in await self._repo.get_lines(document_id):
+            line_payload = {
+                "description": line["description"],
+                "quantity": str(line.get("quantity") or "1"),
+                "unit_price": serialise_money(line.get("unit_price") or "0"),
+                "amount": serialise_money(line.get("amount") or "0"),
+                "tax_amount": serialise_money(line.get("tax_amount") or "0"),
+            }
+            if line.get("account_id"):
+                line_payload["account_id"] = line["account_id"]
+            if line.get("service_start_date"):
+                line_payload["service_start_date"] = str(line["service_start_date"])
+            if line.get("service_end_date"):
+                line_payload["service_end_date"] = str(line["service_end_date"])
+            created_line = await self._repo.create_line(order_id, line_payload)
+            order_lines.append(created_line)
+            subtotal += Decimal(str(line.get("amount") or "0"))
+            tax_total += Decimal(str(line.get("tax_amount") or "0"))
+
+        total = subtotal + tax_total
+        await self._repo.update_totals(
+            order_id,
+            subtotal=subtotal,
+            tax_total=tax_total,
+            total=total,
+        )
+        order = await self._repo.get(order_id) or order
+        order["subtotal"] = serialise_money(subtotal)
+        order["tax_total"] = serialise_money(tax_total)
+        order["total"] = serialise_money(total)
+        return _document_to_response(order, order_lines)

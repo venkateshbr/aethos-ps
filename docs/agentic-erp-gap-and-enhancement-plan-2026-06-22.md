@@ -141,7 +141,7 @@ Present:
 - Bill-pay agent that proposes batches as HITL.
 
 Gaps / status:
-- Done/partial 2026-06-23: purchase orders and service orders now have API/UI creation and admin approval, and vendor bills can link to approved orders with deterministic PO/SO match status that blocks AP approval on mismatch/over-tolerance. Purchase-request intake/approval remains future procurement workflow depth.
+- Done/partial 2026-06-23: purchase requests, purchase orders, and service orders now have API/UI creation and admin approval. Approved purchase requests can convert into draft PO/SO documents, and vendor bills can link to approved orders with deterministic PO/SO match status that blocks AP approval on mismatch/over-tolerance. Remaining procurement depth is richer multi-step request routing and cost-center approval policies.
 - Done/partial 2026-06-23: vendor onboarding now persists bank-account, tax-validation, sanctions, and remittance control statuses, exposes them in the contact UI, and requires admin approval before the vendor is marked approved. External bank/tax/sanctions provider validation remains future integration depth.
 - Done/partial 2026-06-23: bill approval now preserves line-level expense coding in the AP journal, but the extraction-to-coding feedback loop still needs stronger closed-loop validation.
 - Partial 2026-06-23: bill-payment export now has integrity metadata and approval/export/send/settlement controls. Bank-native NACHA/BACS/ABA/GIRO/NEFT validation remains future P2P depth.
@@ -409,7 +409,7 @@ Priority 2:
 - Done 2026-06-23: agent dashboard and kill switches.
 
 Priority 3:
-- P2P workflow depth: vendor onboarding controls and PO/service-order bill matching are implemented; remaining depth is purchase requests, bank-native payment validation, provider-backed tax/sanctions/bank verification, and payment optimization.
+- P2P workflow depth: vendor onboarding controls, purchase requests, PO/service-order approval, and bill matching are implemented; remaining depth is multi-step procurement policy routing, bank-native payment validation, provider-backed tax/sanctions/bank verification, and payment optimization.
 - R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, bank/suspense close blockers, and statutory reporting packs are implemented; jurisdiction-specific filing exports remain future compliance depth.
 - Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 

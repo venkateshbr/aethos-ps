@@ -11,6 +11,7 @@ from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.procurement import (
+    ProcurementConvertRequest,
     ProcurementDocumentCreate,
     ProcurementDocumentListResponse,
     ProcurementDocumentResponse,
@@ -92,6 +93,30 @@ async def approve_procurement_document(
     svc: ProcurementService = Depends(_write_service),  # noqa: B008
 ) -> ProcurementDocumentResponse:
     document = await svc.approve_document(document_id, approved_by=current_user.user_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Procurement document not found",
+        )
+    return document
+
+
+@router.post(
+    "/documents/{document_id}/convert-to-order",
+    response_model=ProcurementDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def convert_purchase_request_to_order(
+    document_id: str,
+    payload: ProcurementConvertRequest | None = None,
+    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: ProcurementService = Depends(_write_service),  # noqa: B008
+) -> ProcurementDocumentResponse:
+    document = await svc.convert_request_to_order(
+        document_id,
+        payload=payload or ProcurementConvertRequest(),
+        converted_by=current_user.user_id,
+    )
     if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

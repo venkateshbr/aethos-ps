@@ -18,7 +18,9 @@ pytestmark = pytest.mark.unit
 TENANT_ID = "11111111-1111-1111-1111-111111111111"
 CLIENT_ID = "33333333-3333-4333-8333-333333333333"
 DOCUMENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+REQUEST_ID = "99999999-9999-4999-8999-999999999999"
 CREATED_DOCUMENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+CONVERTED_DOCUMENT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 CREATED_LINE_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 
@@ -103,15 +105,23 @@ class _Query:
 
     def _insert_row(self) -> dict[str, Any]:
         if self.table == "procurement_documents":
+            document_id = (
+                CONVERTED_DOCUMENT_ID
+                if self._insert_payload.get("source_request_id")
+                else CREATED_DOCUMENT_ID
+            )
             return {
-                "id": CREATED_DOCUMENT_ID,
+                "id": document_id,
                 "tenant_id": TENANT_ID,
-                "document_number": "PO-CREATED",
+                "document_number": "SO-CONVERTED"
+                if self._insert_payload.get("source_request_id")
+                else "PO-CREATED",
                 "status": "draft",
                 "subtotal": "0.00",
                 "tax_total": "0.00",
                 "total": "0.00",
                 "matched_bill_total": "0.00",
+                "source_request_id": None,
                 "approved_by": None,
                 "approved_at": None,
                 "created_at": "2026-06-22T00:00:00+00:00",
@@ -167,6 +177,31 @@ class _FakeDb:
                     "created_at": "2026-06-20T00:00:00+00:00",
                     "updated_at": "2026-06-20T00:00:00+00:00",
                     "deleted_at": None,
+                },
+                {
+                    "id": REQUEST_ID,
+                    "tenant_id": TENANT_ID,
+                    "document_type": "purchase_request",
+                    "document_number": "PR-0001",
+                    "client_id": CLIENT_ID,
+                    "source_request_id": None,
+                    "status": "approved",
+                    "currency": "USD",
+                    "issue_date": "2026-06-21",
+                    "expected_delivery_date": "2026-07-15",
+                    "service_start_date": "2026-07-01",
+                    "service_end_date": "2026-07-31",
+                    "subtotal": "300.00",
+                    "tax_total": "30.00",
+                    "total": "330.00",
+                    "matched_bill_total": "0.00",
+                    "requested_by": "manager-1",
+                    "approved_by": "admin-1",
+                    "approved_at": "2026-06-21T00:00:00+00:00",
+                    "notes": "Implementation services request",
+                    "created_at": "2026-06-21T00:00:00+00:00",
+                    "updated_at": "2026-06-21T00:00:00+00:00",
+                    "deleted_at": None,
                 }
             ],
             "procurement_document_lines": [
@@ -183,6 +218,20 @@ class _FakeDb:
                     "service_start_date": None,
                     "service_end_date": None,
                     "created_at": "2026-06-20T00:00:00+00:00",
+                },
+                {
+                    "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                    "tenant_id": TENANT_ID,
+                    "procurement_document_id": REQUEST_ID,
+                    "description": "July implementation services",
+                    "quantity": "1",
+                    "unit_price": "300.00",
+                    "amount": "300.00",
+                    "tax_amount": "30.00",
+                    "account_id": None,
+                    "service_start_date": "2026-07-01",
+                    "service_end_date": "2026-07-31",
+                    "created_at": "2026-06-21T00:00:00+00:00",
                 }
             ],
         }
@@ -275,3 +324,25 @@ def test_procurement_writes_use_service_role_client(
     assert approve_response.status_code == 200, approve_response.text
     assert approve_response.json()["status"] == "approved"
     assert approve_response.json()["approved_by"] == "user-1"
+
+
+def test_approved_purchase_request_can_convert_to_order(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        f"/api/v1/procurement/documents/{REQUEST_ID}/convert-to-order",
+        json={"document_type": "service_order"},
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] == CONVERTED_DOCUMENT_ID
+    assert body["document_type"] == "service_order"
+    assert body["source_request_id"] == REQUEST_ID
+    assert body["status"] == "draft"
+    assert body["total"] == "330.00"
+    assert body["lines"][0]["description"] == "July implementation services"

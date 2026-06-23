@@ -41,9 +41,10 @@ export interface BillSummary {
 
 export interface ProcurementDocumentSummary {
   id: string;
-  document_type: 'purchase_order' | 'service_order';
+  document_type: 'purchase_request' | 'purchase_order' | 'service_order';
   document_number: string;
   client_id: string;
+  source_request_id?: string | null;
   status: string;
   currency: string;
   total: string;
@@ -83,7 +84,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
             aria-label="Create new purchase order or service order"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">assignment</mat-icon>
-            New Order
+            New Procurement
           </button>
           <button
             type="button"
@@ -126,13 +127,13 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
       <!-- ── Purchase orders / service orders ─────────────────────────── -->
       <section class="mb-6" aria-labelledby="procurement-heading">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h2 id="procurement-heading" class="text-base font-semibold text-text-primary">Purchase Orders</h2>
+          <h2 id="procurement-heading" class="text-base font-semibold text-text-primary">Procurement</h2>
           @if (orderActionMessage()) {
             <p class="text-sm text-accent-light" role="status">{{ orderActionMessage() }}</p>
           }
         </div>
         @if (ordersLoading()) {
-          <app-skeleton-rows [count]="2" ariaLabel="Loading purchase orders" />
+          <app-skeleton-rows [count]="2" ariaLabel="Loading procurement documents" />
         } @else if (ordersError()) {
           <div class="rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low flex items-center gap-2"
                role="alert">
@@ -141,7 +142,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           </div>
         } @else if (purchaseOrders().length === 0) {
           <div class="rounded-lg border border-border-default bg-surface px-4 py-5 text-sm text-text-muted">
-            No purchase orders or service orders yet.
+            No purchase requests, purchase orders, or service orders yet.
           </div>
         } @else {
           <div class="rounded-lg overflow-hidden border border-border-default">
@@ -174,6 +175,16 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                     >
                       <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">verified</mat-icon>
                       Approve
+                    </button>
+                  } @else if (order.document_type === 'purchase_request' && order.status === 'approved') {
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+                      [disabled]="orderActionLoading() === order.id"
+                      (click)="convertRequest(order)"
+                    >
+                      <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">call_split</mat-icon>
+                      Convert
                     </button>
                   } @else {
                     <span class="text-xs text-text-disabled">—</span>
@@ -698,7 +709,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
         aria-labelledby="new-order-title"
       >
         <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
-          <h2 id="new-order-title" class="text-base font-semibold text-text-primary">New Order</h2>
+          <h2 id="new-order-title" class="text-base font-semibold text-text-primary">New Procurement Document</h2>
           <button
             class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
             (click)="closeNewOrderForm()"
@@ -722,6 +733,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                 formControlName="document_type"
                 class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
               >
+                <option value="purchase_request">Purchase request</option>
                 <option value="purchase_order">Purchase order</option>
                 <option value="service_order">Service order</option>
               </select>
@@ -921,7 +933,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
             [disabled]="newOrderForm.invalid || orderCreating() || orderLines.length === 0"
             (click)="submitNewOrder()"
           >
-            @if (orderCreating()) { Saving… } @else { Create Order }
+            @if (orderCreating()) { Saving… } @else { Create }
           </button>
         </div>
       </aside>
@@ -972,7 +984,7 @@ export class BillsListComponent implements OnInit {
     lines: this.fb.array([this.buildLine()]),
   });
   newOrderForm = this.fb.nonNullable.group({
-    document_type:          ['purchase_order' as 'purchase_order' | 'service_order'],
+    document_type:          ['purchase_order' as 'purchase_request' | 'purchase_order' | 'service_order'],
     client_id:              ['', [Validators.required]],
     issue_date:             [''],
     expected_delivery_date: [''],
@@ -1435,14 +1447,36 @@ export class BillsListComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.orderActionLoading.set(null);
-        this.ordersError.set(userMessageForError(err, 'Approve purchase order'));
+        this.ordersError.set(userMessageForError(err, 'Approve procurement document'));
+      },
+    });
+  }
+
+  convertRequest(order: ProcurementDocumentSummary): void {
+    this.orderActionLoading.set(order.id);
+    this.orderActionMessage.set(null);
+    this.http.post<ProcurementDocumentSummary>(
+      `/api/v1/procurement/documents/${order.id}/convert-to-order`,
+      {},
+    ).subscribe({
+      next: (created) => {
+        this.purchaseOrders.update((orders) => [created, ...orders]);
+        this.orderActionLoading.set(null);
+        this.orderActionMessage.set(`${order.document_number} converted to ${created.document_number}.`);
+        setTimeout(() => this.orderActionMessage.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.orderActionLoading.set(null);
+        this.ordersError.set(userMessageForError(err, 'Convert purchase request'));
       },
     });
   }
 
   approvedOrderOptions(clientId: string | null | undefined): ProcurementDocumentSummary[] {
     return this.purchaseOrders().filter((order) =>
-      order.status === 'approved' && (!clientId || order.client_id === clientId)
+      order.status === 'approved'
+        && order.document_type !== 'purchase_request'
+        && (!clientId || order.client_id === clientId)
     );
   }
 
@@ -1451,6 +1485,7 @@ export class BillsListComponent implements OnInit {
   }
 
   orderTypeLabel(type: string): string {
+    if (type === 'purchase_request') return 'Purchase request';
     return type === 'service_order' ? 'Service order' : 'Purchase order';
   }
 
