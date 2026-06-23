@@ -11,8 +11,10 @@ from app.agents.revenue_recognition_agent import (
     RevenueRecognitionProposalError,
     build_deferred_revenue_release_proposals,
     build_milestone_revenue_recognition_proposals,
+    build_percentage_completion_revenue_recognition_proposals,
     write_deferred_revenue_release_suggestions,
     write_milestone_revenue_recognition_suggestions,
+    write_percentage_completion_revenue_recognition_suggestions,
 )
 
 pytestmark = pytest.mark.unit
@@ -91,6 +93,12 @@ def _base_tables() -> dict[str, list[dict]]:
                 "tenant_id": TENANT_ID,
                 "id": "deferred-account",
                 "code": "2200",
+                "deleted_at": None,
+            },
+            {
+                "tenant_id": TENANT_ID,
+                "id": "contract-asset-account",
+                "code": "1200",
                 "deleted_at": None,
             },
             {
@@ -279,6 +287,94 @@ def test_build_milestone_revenue_recognition_uses_budget_legacy_fallback() -> No
     assert proposals[0].confidence == 0.68
 
 
+def test_build_percentage_completion_recognition_uses_incremental_progress() -> None:
+    tables = _base_tables()
+    tables["project_phases"][2] = {
+        **tables["project_phases"][2],
+        "name": "Implementation sprint",
+        "status": "active",
+        "start_date": "2026-05-01",
+        "end_date": "2026-08-31",
+        "budget": "9000.00",
+        "revenue_recognition_amount": "20000.00",
+        "percent_complete": "60",
+    }
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "agent_name": "revenue_recognition_agent",
+            "action_type": "draft_journal",
+            "status": "approved",
+            "output_snapshot": {
+                "proposal_type": "percentage_completion_revenue_recognition",
+                "period": "2026-05",
+                "phase_id": "phase-non-milestone",
+                "recognition_amount": "8000.00",
+            },
+        }
+    ]
+
+    proposals = build_percentage_completion_revenue_recognition_proposals(
+        _deps(tables),
+        "2026-06",
+    )
+
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.proposal_type == "percentage_completion_revenue_recognition"
+    assert proposal.phase_id == "phase-non-milestone"
+    assert proposal.billing_arrangement == "fixed_fee"
+    assert proposal.percent_complete == "60"
+    assert proposal.recognition_base_amount == "20000.00"
+    assert proposal.recognizable_to_date == "12000.00"
+    assert proposal.previously_recognized_amount == "8000.00"
+    assert proposal.recognition_amount == "4000.00"
+    assert proposal.amount_source == "revenue_recognition_amount"
+    assert proposal.confidence == 0.84
+    assert proposal.journal_entry["entry_date"] == "2026-06-30"
+    assert proposal.journal_entry["reference"] == (
+        "percentage-completion:2026-06:phase-non-milestone"
+    )
+    assert proposal.journal_entry["lines"][0]["direction"] == "DR"
+    assert proposal.journal_entry["lines"][0]["account_id"] == "contract-asset-account"
+    assert proposal.journal_entry["lines"][1]["direction"] == "CR"
+    assert proposal.journal_entry["lines"][1]["account_id"] == "revenue-account"
+
+
+def test_build_percentage_completion_excludes_milestone_engagements() -> None:
+    tables = _base_tables()
+    tables["project_phases"][0]["status"] = "active"
+    tables["project_phases"][0]["percent_complete"] = "50"
+    tables["project_phases"][2]["percent_complete"] = "0"
+
+    proposals = build_percentage_completion_revenue_recognition_proposals(
+        _deps(tables),
+        "2026-06",
+    )
+
+    assert proposals == []
+
+
+def test_build_percentage_completion_uses_budget_legacy_fallback() -> None:
+    tables = _base_tables()
+    tables["project_phases"][2] = {
+        **tables["project_phases"][2],
+        "status": "active",
+        "revenue_recognition_amount": None,
+        "percent_complete": "50",
+    }
+
+    proposals = build_percentage_completion_revenue_recognition_proposals(
+        _deps(tables),
+        "2026-06",
+    )
+
+    assert len(proposals) == 1
+    assert proposals[0].recognition_amount == "3500.00"
+    assert proposals[0].amount_source == "phase_budget"
+    assert proposals[0].confidence == 0.64
+
+
 def test_build_deferred_revenue_release_returns_empty_without_deferred_account() -> None:
     tables = _base_tables()
     tables["accounts"] = [
@@ -370,6 +466,43 @@ async def test_write_milestone_revenue_recognition_suggestions_writes_l2_hitl(
 
 
 @pytest.mark.asyncio
+async def test_write_percentage_completion_recognition_suggestions_writes_l2_hitl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tables = _base_tables()
+    tables["project_phases"][2] = {
+        **tables["project_phases"][2],
+        "status": "active",
+        "revenue_recognition_amount": "20000.00",
+        "percent_complete": "50",
+    }
+    calls: list[dict] = []
+
+    async def _fake_write(*args: Any, **kwargs: Any) -> dict:
+        calls.append({"deps": args[0], **kwargs})
+        return {"id": "suggestion-poc-001"}
+
+    monkeypatch.setattr(
+        "app.agents.revenue_recognition_agent.write_agent_suggestion",
+        _fake_write,
+    )
+
+    result = await write_percentage_completion_revenue_recognition_suggestions(
+        _deps(tables),
+        "2026-06",
+    )
+
+    assert result["created_count"] == 1
+    assert result["suggestion_ids"] == ["suggestion-poc-001"]
+    assert calls[0]["agent_name"] == "revenue_recognition_agent"
+    assert calls[0]["action_type"] == "draft_journal"
+    assert calls[0]["autonomy_level"] == 2
+    assert calls[0]["related_entity_type"] == "project_phase"
+    assert calls[0]["related_entity_id"] == "phase-non-milestone"
+    assert calls[0]["output"]["recognition_amount"] == "10000.00"
+
+
+@pytest.mark.asyncio
 async def test_write_deferred_revenue_release_suggestions_skips_duplicate() -> None:
     tables = _base_tables()
     tables["agent_suggestions"] = [
@@ -387,6 +520,38 @@ async def test_write_deferred_revenue_release_suggestions_skips_duplicate() -> N
     ]
 
     result = await write_deferred_revenue_release_suggestions(_deps(tables), "2026-06")
+
+    assert result["created_count"] == 0
+    assert result["skipped_duplicates"] == 1
+
+
+@pytest.mark.asyncio
+async def test_write_percentage_completion_recognition_suggestions_skips_duplicate() -> None:
+    tables = _base_tables()
+    tables["project_phases"][2] = {
+        **tables["project_phases"][2],
+        "status": "active",
+        "revenue_recognition_amount": "20000.00",
+        "percent_complete": "50",
+    }
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "agent_name": "revenue_recognition_agent",
+            "action_type": "draft_journal",
+            "status": "approved_with_edits",
+            "output_snapshot": {
+                "proposal_type": "percentage_completion_revenue_recognition",
+                "period": "2026-06",
+                "phase_id": "phase-non-milestone",
+            },
+        }
+    ]
+
+    result = await write_percentage_completion_revenue_recognition_suggestions(
+        _deps(tables),
+        "2026-06",
+    )
 
     assert result["created_count"] == 0
     assert result["skipped_duplicates"] == 1

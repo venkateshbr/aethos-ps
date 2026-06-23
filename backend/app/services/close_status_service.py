@@ -102,9 +102,7 @@ class CloseStatusService:
     def get_status(self, period: str) -> CloseStatusResult:
         """Return the close status and blockers for a period."""
         lock = self._lock_row(period)
-        reconciliation = CloseReconciliationService(self.db, self.tenant_id).check_period(
-            period
-        )
+        reconciliation = CloseReconciliationService(self.db, self.tenant_id).check_period(period)
         pending_reviews = self.pending_close_reviews(period)
 
         subledger_findings = [
@@ -302,11 +300,18 @@ def _review_summary(output: dict) -> str:
         return f"Review {currency} WIP accrual proposal for {wip_value}."
     deferred_release = output.get("deferred_release_amount")
     if currency and deferred_release:
-        return (
-            f"Review {currency} deferred revenue release proposal for "
-            f"{deferred_release}."
-        )
+        return f"Review {currency} deferred revenue release proposal for {deferred_release}."
     recognition_amount = output.get("recognition_amount")
+    if (
+        output.get("proposal_type") == "percentage_completion_revenue_recognition"
+        and currency
+        and recognition_amount
+    ):
+        phase_name = str(output.get("phase_name") or "phase")
+        return (
+            f"Review {currency} percentage-completion recognition proposal for "
+            f"{phase_name}: {recognition_amount}."
+        )
     if currency and recognition_amount:
         phase_name = str(output.get("phase_name") or "milestone")
         return (

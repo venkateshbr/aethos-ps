@@ -8,6 +8,7 @@ Endpoints:
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
   POST   /api/v1/accounting/periods/{period}/propose-milestone-recognition — HITL milestone recognition
+  POST   /api/v1/accounting/periods/{period}/propose-percentage-completion-recognition — HITL POC recognition
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
@@ -246,9 +247,7 @@ async def list_periods(
             detail="An internal error occurred",
         ) from exc
 
-    locked_periods: dict[str, dict] = {
-        row["period"]: row for row in (lock_rows.data or [])
-    }
+    locked_periods: dict[str, dict] = {row["period"]: row for row in (lock_rows.data or [])}
 
     periods = _generate_periods()
     result = []
@@ -502,6 +501,39 @@ async def propose_milestone_recognition(
         ) from exc
 
 
+@router.post("/periods/{period}/propose-percentage-completion-recognition")
+async def propose_percentage_completion_recognition(
+    period: str,
+    asset_account_code: str = Query("1200", min_length=1, max_length=20),
+    revenue_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for percentage-complete phases."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.revenue_recognition_agent import (
+        RevenueRecognitionProposalError,
+        write_percentage_completion_revenue_recognition_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_percentage_completion_revenue_recognition_suggestions(
+            deps,
+            period,
+            asset_account_code=asset_account_code,
+            revenue_account_code=revenue_account_code,
+        )
+    except RevenueRecognitionProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
 @router.post("/periods/{period}/lock", response_model=PeriodLockResponse)
 async def lock_period(
     period: str,
@@ -694,7 +726,9 @@ async def create_manual_journal(
 
 @router.get("/journal-entries", response_model=list[JournalEntryListItem])
 async def list_journal_entries(
-    reference_type: str | None = Query(None, description="Filter by reference_type (e.g. 'manual', 'invoice')"),
+    reference_type: str | None = Query(
+        None, description="Filter by reference_type (e.g. 'manual', 'invoice')"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Maximum rows to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008

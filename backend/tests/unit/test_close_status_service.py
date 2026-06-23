@@ -212,8 +212,34 @@ def test_close_status_summarizes_pending_milestone_recognition_review() -> None:
 
     assert result.status == "blocked"
     assert result.pending_reviews[0].summary == (
-        "Review USD milestone recognition proposal for Discovery sign-off: "
-        "12500.00."
+        "Review USD milestone recognition proposal for Discovery sign-off: 12500.00."
+    )
+
+
+def test_close_status_summarizes_pending_percentage_completion_review() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "suggestion-poc-revrec-001",
+            "agent_name": "revenue_recognition_agent",
+            "action_type": "draft_journal",
+            "status": "pending",
+            "output_snapshot": {
+                "proposal_type": "percentage_completion_revenue_recognition",
+                "period": "2026-06",
+                "currency": "USD",
+                "phase_name": "Implementation sprint",
+                "recognition_amount": "4000.00",
+            },
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.pending_reviews[0].summary == (
+        "Review USD percentage-completion recognition proposal for Implementation sprint: 4000.00."
     )
 
 
