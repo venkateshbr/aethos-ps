@@ -163,7 +163,7 @@ Present:
 Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
 - Done/partial 2026-06-23: balance sheet, income statement, direct cash-flow, and retained-earnings roll-forward reports are implemented from posted journal lines with UI tabs. Statutory reporting packs remain open.
-- Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks.
+- Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks, unmatched bank transactions, and non-zero suspense balances.
 - Done/partial 2026-06-23: automated WIP accrual, employee reimbursement expense accrual, deferred revenue release, milestone recognition, percentage-of-completion recognition, prepaid amortization, and recurring-journal proposal agents exist, with close-panel proposal actions. Recurring journal templates are persisted with UI/API setup and duplicate-suppressed HITL proposals. Scheduled close preparation now runs as a monthly `agent_workflow_runs` workflow that bootstraps close tasks, invokes proposal agents, and stops at human review before posting/locking.
 - FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
 - Done/partial 2026-06-23: period close is now guided through close status/readiness/package endpoints, a persisted close-task checklist, close-panel proposal actions, a scheduled monthly close-preparation worker, and period-lock guards. Auto-posting journals and auto-locking periods remain intentionally human-gated.
@@ -305,7 +305,7 @@ Procure-to-pay loops:
 
 Record-to-report loops:
 - Done/monitor 2026-06-23: close status/readiness/package endpoints and persisted close calendar/task workflow are implemented.
-- Partial 2026-06-23: reconciliation service checks AR/AP/settlement evidence; full bank/suspense matching remains open.
+- Done/partial 2026-06-23: reconciliation service checks AR/AP/settlement evidence and now blocks close on unmatched bank transactions plus non-zero suspense balances. Bank-feed provider ingestion and automated match suggestions remain future integration depth.
 - Done/partial 2026-06-23: accrual/revenue/prepaid/recurring-journal agents propose unbilled revenue, employee reimbursement expense accruals, deferred revenue releases, milestone recognition, percentage-completion recognition, prepaid amortization, and recurring journals. Broader non-employee missing-expense estimation remains future forecasting depth rather than a launch blocker.
 - Done/partial 2026-06-23: reporting agent, close package, deterministic variance commentary, and the Accounting close-package review panel exist; variance commentary is now available in the month-end close UI. Deeper assignment/ownership workflow for commentary follow-up remains future role-queue depth.
 - Done/partial 2026-06-23: period lock includes readiness, pending-review, and close-task guards; scheduled close preparation exists and deliberately leaves posting/period lock to human review.
@@ -410,7 +410,7 @@ Priority 2:
 
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
-- R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, and scheduled close preparation are implemented; bank/suspense reconciliations and statutory reporting packs remain open.
+- R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, and bank/suspense close blockers are implemented; statutory reporting packs remain open.
 - Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 
 ## Approval Recommendation

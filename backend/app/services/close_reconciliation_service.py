@@ -5,8 +5,10 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import ClassVar
 
+from app.models.reports import TrialBalanceReport
 from app.services.reports_service import ReportsService
 from supabase import Client
 
@@ -70,8 +72,10 @@ class CloseReconciliationService:
         findings.extend(self._check_ar_payment_journals(start, end))
         findings.extend(self._check_ap_bill_journals(start, end))
         findings.extend(self._check_ap_payment_journals(start, end))
+        findings.extend(self._check_bank_transaction_matches(start, end))
 
         trial_balance = ReportsService(self.db, self.tenant_id).trial_balance(period)
+        findings.extend(self._check_suspense_balances(period, trial_balance))
         trial_balance_balanced = trial_balance.is_balanced
         if not trial_balance_balanced:
             findings.append(
@@ -212,6 +216,80 @@ class CloseReconciliationService:
             if str(row["id"]) not in posted_ids
         ]
 
+    def _check_bank_transaction_matches(
+        self, start: date, end: date
+    ) -> list[ReconciliationFinding]:
+        transactions = (
+            self.db.table("bank_transactions")
+            .select(
+                "id, external_transaction_id, transaction_date, amount, currency, "
+                "description, status, matched_journal_entry_id"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .gte("transaction_date", start.isoformat())
+            .lte("transaction_date", end.isoformat())
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        match_ids = self._matched_bank_transaction_ids([row["id"] for row in transactions])
+        findings: list[ReconciliationFinding] = []
+        for row in transactions:
+            status = str(row.get("status") or "unmatched")
+            transaction_id = str(row["id"])
+            if status == "ignored":
+                continue
+            if status == "matched" and (
+                row.get("matched_journal_entry_id") or transaction_id in match_ids
+            ):
+                continue
+            findings.append(
+                ReconciliationFinding(
+                    code="unmatched_bank_transaction",
+                    source_table="bank_transactions",
+                    source_id=transaction_id,
+                    source_number=str(
+                        row.get("external_transaction_id")
+                        or row.get("transaction_date")
+                        or transaction_id
+                    ),
+                    reason=(
+                        f"Bank transaction for {row.get('currency')} {row.get('amount')} "
+                        "is not matched to a posted journal entry."
+                    ),
+                    expected_reference_type="bank_reconciliation_match",
+                )
+            )
+        return findings
+
+    def _check_suspense_balances(
+        self,
+        period: str,
+        trial_balance: TrialBalanceReport,
+    ) -> list[ReconciliationFinding]:
+        findings: list[ReconciliationFinding] = []
+        for line in trial_balance.lines:
+            if not _is_suspense_account(line.account_code, line.account_name):
+                continue
+            balance = Decimal(line.net)
+            if balance == 0:
+                continue
+            findings.append(
+                ReconciliationFinding(
+                    code="suspense_account_balance",
+                    source_table="accounts",
+                    source_id=line.account_code,
+                    source_number=line.account_code,
+                    reason=(
+                        f"Suspense account {line.account_code} has an uncleared "
+                        f"balance of {line.net} through {period}."
+                    ),
+                    expected_reference_type="suspense_clearance",
+                )
+            )
+        return findings
+
     def _posted_reference_ids(self, reference_type: str, source_ids: list[str]) -> set[str]:
         if not source_ids:
             return set()
@@ -228,6 +306,26 @@ class CloseReconciliationService:
         )
         return {str(row["reference_id"]) for row in rows if row.get("reference_id")}
 
+    def _matched_bank_transaction_ids(self, transaction_ids: list[str]) -> set[str]:
+        if not transaction_ids:
+            return set()
+        rows = (
+            self.db.table("bank_reconciliation_matches")
+            .select("bank_transaction_id")
+            .eq("tenant_id", self.tenant_id)
+            .in_("bank_transaction_id", transaction_ids)
+            .eq("status", "matched")
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        return {
+            str(row["bank_transaction_id"])
+            for row in rows
+            if row.get("bank_transaction_id")
+        }
+
 
 def _period_bounds(period: str) -> tuple[date, date]:
     year_str, month_str = period.split("-", 1)
@@ -235,3 +333,8 @@ def _period_bounds(period: str) -> tuple[date, date]:
     month = int(month_str)
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, 1), date(year, month, last_day)
+
+
+def _is_suspense_account(code: str, name: str) -> bool:
+    normalised_name = name.lower()
+    return code in {"1999", "9999"} or "suspense" in normalised_name

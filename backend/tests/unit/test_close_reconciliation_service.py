@@ -90,6 +90,7 @@ class _Db:
 def _journal_line(direction: str, amount: str, code: str, period: str) -> dict:
     account_names = {
         "1200": ("Accounts Receivable", "asset"),
+        "1999": ("Suspense", "asset"),
         "2000": ("Accounts Payable", "liability"),
         "4000": ("Revenue", "revenue"),
         "5000": ("Expenses", "expense"),
@@ -315,3 +316,96 @@ def test_blocks_unbalanced_trial_balance() -> None:
     assert result.ready is False
     assert result.trial_balance_balanced is False
     assert [finding.code for finding in result.findings] == ["trial_balance_unbalanced"]
+
+
+def test_blocks_unmatched_bank_transaction() -> None:
+    db = _Db(
+        {
+            "invoices": [],
+            "bills": [],
+            "journal_entries": [],
+            "journal_lines": _balanced_trial_balance_lines(),
+            "bank_transactions": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "id": "bank-tx-1",
+                    "external_transaction_id": "bank-ext-1",
+                    "transaction_date": "2026-06-20",
+                    "amount": "100.00",
+                    "currency": "USD",
+                    "description": "Unmatched receipt",
+                    "status": "unmatched",
+                    "matched_journal_entry_id": None,
+                    "deleted_at": None,
+                }
+            ],
+            "bank_reconciliation_matches": [],
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is False
+    assert [finding.code for finding in result.findings] == ["unmatched_bank_transaction"]
+    assert result.findings[0].expected_reference_type == "bank_reconciliation_match"
+
+
+def test_matched_bank_transaction_does_not_block_close() -> None:
+    db = _Db(
+        {
+            "invoices": [],
+            "bills": [],
+            "journal_entries": [],
+            "journal_lines": _balanced_trial_balance_lines(),
+            "bank_transactions": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "id": "bank-tx-2",
+                    "external_transaction_id": "bank-ext-2",
+                    "transaction_date": "2026-06-20",
+                    "amount": "-75.00",
+                    "currency": "USD",
+                    "description": "Matched payment",
+                    "status": "matched",
+                    "matched_journal_entry_id": None,
+                    "deleted_at": None,
+                }
+            ],
+            "bank_reconciliation_matches": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "bank_transaction_id": "bank-tx-2",
+                    "status": "matched",
+                    "deleted_at": None,
+                }
+            ],
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is True
+    assert result.findings == []
+
+
+def test_blocks_nonzero_suspense_balance() -> None:
+    db = _Db(
+        {
+            "invoices": [],
+            "bills": [],
+            "journal_entries": [],
+            "journal_lines": [
+                _journal_line("DR", "25.00", "1999", "2026-06"),
+                _journal_line("CR", "25.00", "4000", "2026-06"),
+            ],
+            "bank_transactions": [],
+            "bank_reconciliation_matches": [],
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is False
+    assert result.trial_balance_balanced is True
+    assert [finding.code for finding in result.findings] == ["suspense_account_balance"]
+    assert result.findings[0].source_number == "1999"
