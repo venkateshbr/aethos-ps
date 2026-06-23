@@ -39,9 +39,9 @@ Done:
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, `/api/v1/reports/cash-flow`, retained-earnings roll-forward, and `/api/v1/reports/statutory-pack`, plus Reports UI tabs backed by posted journal lines in base currency and tax-control buckets in transaction currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
+- `make demo-ready` was executed against demo tenant `30733766-c54e-40fd-b0c1-49670d0190b6` on local backend/frontend. It reset and seeded the tenant, passed API smoke, and passed the selected Meridian demo Playwright run (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`) with evidence under `frontend/test-results/demo-v2-meridian/`.
 
 Still open:
-- `make demo-ready` needs to be run against a real demo tenant and captured as launch evidence.
 - Demo report/screenshots were intentionally not regenerated in this pass.
 - Recorded agent replay and read-only current-code validation are implemented; full mutating re-execution and external-provider replay remain open.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
@@ -53,7 +53,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is a real-tenant `make demo-ready` evidence run, refreshed evidence report, FX/Stripe browser coverage, and mutating/external-provider agent replay re-execution.
+2026-06-23 status: demo and contract stabilization is materially complete. The remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, FX/Stripe browser coverage, and mutating/external-provider agent replay re-execution.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -214,10 +214,10 @@ Contract status:
    - Add or remove `/accounts`, `/tax-rates`, `/expenses`, `/invoices/draft`, `/bills/{id}/void`.
    - Prefer API routes that match existing UI expectations only when the product contract makes sense.
 
-4. Partial 2026-06-23: make the demo reproducible.
+4. Done/monitor 2026-06-23: make the demo reproducible.
    - `seed_demo.py --reset` exists and full Chromium E2E passed.
    - Done: `make demo-ready` starts/reuses backend/frontend, resets/seeds the tenant, runs API smoke, and runs selected demo E2E specs.
-   - Pending: execute `make demo-ready` against the launch demo tenant and archive the evidence.
+   - Done 2026-06-23: `make demo-ready` executed against tenant `30733766-c54e-40fd-b0c1-49670d0190b6`; seed reset, API smoke, and selected demo Playwright run passed (`23 PASS / 0 FAIL / 24 SKIP`).
    - Pending: regenerate `docs/demo-v2-test-report.md` only when screenshots/report updates are explicitly in scope.
 
 5. Partial 2026-06-23: restore quality gates.
@@ -245,7 +245,7 @@ Acceptance:
 - Done 2026-06-23: backend pytest passed on PR #256 (`861 passed, 57 xfailed, 1 xpassed`).
 - Done 2026-06-23: `ruff check backend/app backend/tests` passes.
 - Done 2026-06-23: full Chromium Playwright passed (`110 passed, 11 skipped`).
-- Pending: `make demo-ready` execution against a real launch demo tenant.
+- Done 2026-06-23: `make demo-ready` executed against tenant `30733766-c54e-40fd-b0c1-49670d0190b6`; seed reset, API smoke, and selected demo Playwright run passed (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`).
 - Pending: demo report regeneration with current date and evidence.
 
 ### Phase 1: Complete The Professional-Services ERP Spine
@@ -388,7 +388,7 @@ Add these as deterministic scenario docs and Playwright/API specs:
 
 Priority 0:
 - Done 2026-06-23: fix Playwright auth/storage-state.
-- Pending: execute `make demo-ready` against the launch demo tenant and refresh the evidence report.
+- Done 2026-06-23: execute `make demo-ready` against demo tenant `30733766-c54e-40fd-b0c1-49670d0190b6`; refresh docs evidence report only when screenshots/report updates are in scope.
 - Done 2026-06-23: fix manual journal post regression.
 - Done 2026-06-23: resolve invoice approval RBAC decision.
 - Done 2026-06-23: add missing API contracts or remove UI paths.
@@ -416,7 +416,7 @@ Priority 3:
 
 ## Approval Recommendation
 
-Phase 0 is materially complete except for executing the demo-readiness target against a real launch tenant and refreshing demo evidence. The fastest path to launch is now:
-- run `make demo-ready` for the launch demo tenant and refresh the evidence report;
+Phase 0 is materially complete; the demo-readiness target has passed against the available launch/demo tenant, and docs evidence refresh remains intentionally separate from this code pass. The fastest path to launch is now:
+- refresh the docs evidence report only when screenshot/report updates are explicitly in scope;
 - close the remaining FX/Stripe and mutating/external-provider replay re-execution gaps;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.
