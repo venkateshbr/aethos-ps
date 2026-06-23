@@ -162,7 +162,7 @@ Present:
 
 Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
-- Done/partial 2026-06-23: balance sheet, income statement, and direct cash-flow reports are implemented from posted journal lines with UI tabs. Retained earnings year-end roll-forward and statutory reporting packs remain open.
+- Done/partial 2026-06-23: balance sheet, income statement, direct cash-flow, and retained-earnings roll-forward reports are implemented from posted journal lines with UI tabs. Statutory reporting packs remain open.
 - Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks.
 - Done/partial 2026-06-23: automated WIP accrual, employee reimbursement expense accrual, deferred revenue release, milestone recognition, percentage-of-completion recognition, prepaid amortization, and recurring-journal proposal agents exist, with close-panel proposal actions. Recurring journal templates are persisted with UI/API setup and duplicate-suppressed HITL proposals. Scheduled close execution remains open.
 - FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
@@ -410,7 +410,7 @@ Priority 2:
 
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
-- R2R close management: close calendar/tasks and recurring-journal templates/proposals are implemented; bank/suspense reconciliations, retained-earnings roll-forward, statutory reporting packs, and scheduled close execution remain open.
+- R2R close management: close calendar/tasks, recurring-journal templates/proposals, and retained-earnings roll-forward are implemented; bank/suspense reconciliations, statutory reporting packs, and scheduled close execution remain open.
 - Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 
 ## Approval Recommendation

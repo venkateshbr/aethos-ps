@@ -17,6 +17,7 @@ from app.models.reports import (
     BalanceSheetReport,
     CashFlowReport,
     IncomeStatementReport,
+    RetainedEarningsRollForwardReport,
     TrialBalanceReport,
 )
 from app.services.reports_service import ReportsService
@@ -198,7 +199,9 @@ def margin_by_service_line(
 def client_profitability(
     client_id: str | None = Query(None, description="Filter to a single client"),
     client_group_id: str | None = Query(None, description="Filter to members of a client group"),
-    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_start: str | None = Query(
+        None, description="Invoice/time/expense date from (YYYY-MM-DD)"
+    ),
     period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
@@ -220,7 +223,9 @@ def client_profitability(
 @router.get("/client-group-profitability")
 def client_group_profitability(
     client_group_id: str | None = Query(None, description="Filter to a single client group"),
-    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_start: str | None = Query(
+        None, description="Invoice/time/expense date from (YYYY-MM-DD)"
+    ),
     period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
@@ -239,7 +244,9 @@ def segment_profitability(
         "service_line",
         description="Data-backed segment dimension.",
     ),
-    period_start: str | None = Query(None, description="Invoice/time/expense date from (YYYY-MM-DD)"),
+    period_start: str | None = Query(
+        None, description="Invoice/time/expense date from (YYYY-MM-DD)"
+    ),
     period_end: str | None = Query(None, description="Invoice/time/expense date to (YYYY-MM-DD)"),
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
@@ -254,7 +261,9 @@ def segment_profitability(
 
 @router.get("/practice-dashboard")
 def practice_dashboard(
-    period_start: str | None = Query(None, description="Practice dashboard window from (YYYY-MM-DD)"),
+    period_start: str | None = Query(
+        None, description="Practice dashboard window from (YYYY-MM-DD)"
+    ),
     period_end: str | None = Query(None, description="Practice dashboard window to (YYYY-MM-DD)"),
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
@@ -346,6 +355,23 @@ def income_statement(
 ) -> IncomeStatementReport:
     """Income statement for a period range."""
     return svc.income_statement(period_start=period_start, period_end=period_end)
+
+
+@router.get(
+    "/retained-earnings-roll-forward",
+    response_model=RetainedEarningsRollForwardReport,
+)
+def retained_earnings_roll_forward(
+    period: str = Query(
+        ...,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period to roll forward (YYYY-MM).",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> RetainedEarningsRollForwardReport:
+    """Retained earnings roll-forward for a selected accounting period."""
+    return svc.retained_earnings_roll_forward(period=period)
 
 
 @router.get("/cash-flow", response_model=CashFlowReport)

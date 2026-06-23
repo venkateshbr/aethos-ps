@@ -42,6 +42,7 @@ from app.models.reports import (
     CashFlowReport,
     FinancialStatementLine,
     IncomeStatementReport,
+    RetainedEarningsRollForwardReport,
     TrialBalanceLine,
     TrialBalanceReport,
 )
@@ -189,9 +190,7 @@ class ReportsService:
         projects = q.execute().data or []
         project_ids = [str(project["id"]) for project in projects]
         engagement_ids = {
-            str(project["engagement_id"])
-            for project in projects
-            if project.get("engagement_id")
+            str(project["engagement_id"]) for project in projects if project.get("engagement_id")
         }
 
         revenue_by_engagement: dict[str, Decimal] = {}
@@ -582,6 +581,31 @@ class ReportsService:
     # 9. Income Statement
     # ------------------------------------------------------------------
 
+    def retained_earnings_roll_forward(
+        self,
+        *,
+        period: str,
+    ) -> RetainedEarningsRollForwardReport:
+        """Return retained earnings movement for a selected period."""
+        previous_period = _previous_period_for(period)
+        beginning = self._retained_earnings_balance(as_of_period=previous_period)
+        activity = self._retained_earnings_balance(
+            period_start=period,
+            period_end=period,
+        )
+        income_statement = self.income_statement(period_start=period, period_end=period)
+        net_income = Decimal(income_statement.net_income)
+        ending = beginning + activity + net_income
+        return RetainedEarningsRollForwardReport(
+            period=period,
+            previous_period=previous_period,
+            beginning_retained_earnings=serialise_money(beginning),
+            current_period_net_income=serialise_money(net_income),
+            retained_earnings_activity=serialise_money(activity),
+            ending_retained_earnings=serialise_money(ending),
+            generated_at=datetime.now(tz=UTC),
+        )
+
     def income_statement(
         self,
         *,
@@ -728,6 +752,26 @@ class ReportsService:
 
         return agg
 
+    def _retained_earnings_balance(
+        self,
+        *,
+        as_of_period: str | None = None,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> Decimal:
+        total = Decimal("0")
+        for (code, name, account_type), totals in self._ledger_account_totals(
+            as_of_period=as_of_period,
+            period_start=period_start,
+            period_end=period_end,
+        ).items():
+            if account_type != "equity":
+                continue
+            if code != "3000" and "retained earnings" not in name.lower():
+                continue
+            total += totals["CR"] - totals["DR"]
+        return total
+
     def _posted_journal_lines(
         self,
         *,
@@ -806,6 +850,7 @@ class ReportsService:
             try:
                 year, month = int(period[:4]), int(period[5:7])
                 import calendar as _calendar
+
                 last_day = _calendar.monthrange(year, month)[1]
                 date_start = f"{year:04d}-{month:02d}-01"
                 date_end = f"{year:04d}-{month:02d}-{last_day:02d}"
@@ -850,16 +895,12 @@ class ReportsService:
                 or []
             )
             eng_service_line = {
-                str(e["id"]): str(e["service_line"])
-                for e in eng_rows
-                if e.get("service_line")
+                str(e["id"]): str(e["service_line"]) for e in eng_rows if e.get("service_line")
             }
 
         # Fetch service_catalogue service_lines in one round-trip.
         svc_ids_needed: set[str] = {
-            str(ln["service_catalogue_id"])
-            for ln in raw_lines
-            if ln.get("service_catalogue_id")
+            str(ln["service_catalogue_id"]) for ln in raw_lines if ln.get("service_catalogue_id")
         }
         svc_service_line: dict[str, str] = {}
         if svc_ids_needed:
@@ -893,17 +934,15 @@ class ReportsService:
                 continue
 
             # Resolve service_line: catalogue > engagement > unclassified.
-            svc_cat_id = str(line["service_catalogue_id"]) if line.get("service_catalogue_id") else None
+            svc_cat_id = (
+                str(line["service_catalogue_id"]) if line.get("service_catalogue_id") else None
+            )
             eng_id = str(inv.get("engagement_id")) if inv.get("engagement_id") else None
             svc_line = (
-                svc_service_line.get(svc_cat_id)
-                if svc_cat_id
-                else None
-            ) or (
-                eng_service_line.get(eng_id)
-                if eng_id
-                else None
-            ) or "unclassified"
+                (svc_service_line.get(svc_cat_id) if svc_cat_id else None)
+                or (eng_service_line.get(eng_id) if eng_id else None)
+                or "unclassified"
+            )
 
             amount = Decimal(str(line.get("amount", "0")))
             by_line[svc_line] = by_line.get(svc_line, Decimal("0")) + amount
@@ -949,6 +988,7 @@ class ReportsService:
             try:
                 year, month = int(period[:4]), int(period[5:7])
                 import calendar as _calendar
+
                 last_day = _calendar.monthrange(year, month)[1]
                 date_start = f"{year:04d}-{month:02d}-01"
                 date_end = f"{year:04d}-{month:02d}-{last_day:02d}"
@@ -1054,9 +1094,7 @@ class ReportsService:
             cost = Decimal(cost_rows[sl]["total_cost"]) if sl in cost_rows else Decimal("0")
             gross_margin = revenue - cost
             margin_pct = (
-                round(float(gross_margin / revenue * 100), 1)
-                if revenue > Decimal("0")
-                else 0.0
+                round(float(gross_margin / revenue * 100), 1) if revenue > Decimal("0") else 0.0
             )
             label = rev_rows.get(sl, cost_rows.get(sl, {})).get("label", sl.title())
             result.append(
@@ -1092,9 +1130,7 @@ class ReportsService:
         service-line coding exists.
         """
         client_ids_filter = (
-            self._client_ids_for_client_group(client_group_id)
-            if client_group_id
-            else None
+            self._client_ids_for_client_group(client_group_id) if client_group_id else None
         )
         facts = self._profitability_facts(
             period_start=period_start,
@@ -1234,9 +1270,7 @@ class ReportsService:
         *,
         group_by: str = "service_line",
     ) -> list[dict]:
-        segment_type = (
-            "client_kind" if group_by == "client_kind" else "service_line"
-        )
+        segment_type = "client_kind" if group_by == "client_kind" else "service_line"
         by_segment: dict[str, dict] = {}
 
         for segment_key, stats in facts[f"by_{segment_type}"].items():
@@ -1699,9 +1733,7 @@ class ReportsService:
                 (practice.get("capacity_status_counts") or {}).get("overallocated", 0)
             )
             critical_project_count = int(practice.get("critical_project_count") or 0)
-            if margin_pct >= Decimal("30") and not (
-                overallocated_count and critical_project_count
-            ):
+            if margin_pct >= Decimal("30") and not (overallocated_count and critical_project_count):
                 continue
             rows.append(
                 _recommendation(
@@ -1749,9 +1781,7 @@ class ReportsService:
             period_end=period_end,
         )
         risky_projects = [
-            row
-            for row in health_rows
-            if _scope_change_drivers(row.get("drivers") or [])
+            row for row in health_rows if _scope_change_drivers(row.get("drivers") or [])
         ]
         if not risky_projects:
             return []
@@ -1916,9 +1946,7 @@ class ReportsService:
                     role="project_manager",
                     source_type="capacity",
                     priority=(
-                        "critical"
-                        if status == "overallocated" and utilization >= 125
-                        else "medium"
+                        "critical" if status == "overallocated" and utilization >= 125 else "medium"
                     ),
                     entity_type="employee",
                     entity_id=str(row["employee_id"]),
@@ -1989,11 +2017,7 @@ class ReportsService:
                 _action_queue_item(
                     role="project_manager",
                     source_type="milestone_risk",
-                    priority=(
-                        "critical"
-                        if row.get("risk_level") == "critical"
-                        else "high"
-                    ),
+                    priority=("critical" if row.get("risk_level") == "critical" else "high"),
                     entity_type="project",
                     entity_id=str(row["project_id"]),
                     entity_name=str(row.get("project_name") or row["project_id"]),
@@ -2039,9 +2063,7 @@ class ReportsService:
                     metrics=dict(row.get("metrics") or {}),
                     route_hint="/app/reports",
                     service_line=(
-                        str(row["service_line"])
-                        if row.get("service_line") is not None
-                        else None
+                        str(row["service_line"]) if row.get("service_line") is not None else None
                     ),
                     period_start=row.get("period_start") or period_start,
                     period_end=row.get("period_end") or period_end,
@@ -2151,11 +2173,7 @@ class ReportsService:
             or []
         )
         project_id_set = set(project_ids)
-        return {
-            str(row["id"]): row
-            for row in rows
-            if str(row.get("id")) in project_id_set
-        }
+        return {str(row["id"]): row for row in rows if str(row.get("id")) in project_id_set}
 
     def _scope_comparable_project_facts(self) -> list[dict]:
         projects = (
@@ -2173,9 +2191,7 @@ class ReportsService:
             or []
         )
         completed = [
-            project
-            for project in projects
-            if str(project.get("status") or "") == "completed"
+            project for project in projects if str(project.get("status") or "") == "completed"
         ]
         if not completed:
             return []
@@ -2188,14 +2204,11 @@ class ReportsService:
         for project in completed:
             project_id = str(project["id"])
             entries = time_by_project.get(project_id, [])
-            logged_hours = sum(
-                (_decimal(entry.get("hours")) or Decimal("0")) for entry in entries
-            )
+            logged_hours = sum((_decimal(entry.get("hours")) or Decimal("0")) for entry in entries)
             billable_hours = sum(
                 (_decimal(entry.get("hours")) or Decimal("0"))
                 for entry in entries
-                if entry.get("billable", True)
-                and entry.get("billing_status") != "non_billable"
+                if entry.get("billable", True) and entry.get("billing_status") != "non_billable"
             )
             if logged_hours <= 0:
                 continue
@@ -2274,9 +2287,7 @@ class ReportsService:
             .data
             or []
         )
-        engagement_by_id = {
-            str(engagement["id"]): engagement for engagement in engagements
-        }
+        engagement_by_id = {str(engagement["id"]): engagement for engagement in engagements}
         engagement_ids = set(engagement_by_id)
 
         projects = []
@@ -2352,7 +2363,9 @@ class ReportsService:
             return {}
         rows = (
             self.db.table("client_group_members")
-            .select("id, group_id, client_id, relationship_role, is_primary, clients!client_id(id, name, kind)")
+            .select(
+                "id, group_id, client_id, relationship_role, is_primary, clients!client_id(id, name, kind)"
+            )
             .eq("tenant_id", self.tenant_id)
             .in_("group_id", group_ids)
             .is_("deleted_at", "null")
@@ -2480,9 +2493,7 @@ class ReportsService:
         if not entries:
             return
 
-        employee_ids = {
-            str(entry["employee_id"]) for entry in entries if entry.get("employee_id")
-        }
+        employee_ids = {str(entry["employee_id"]) for entry in entries if entry.get("employee_id")}
         cost_rates: dict[str, Decimal] = {}
         if employee_ids:
             employees = (
@@ -2601,9 +2612,7 @@ class ReportsService:
 
         project_ids = [str(project["id"]) for project in projects]
         engagement_ids = {
-            str(project["engagement_id"])
-            for project in projects
-            if project.get("engagement_id")
+            str(project["engagement_id"]) for project in projects if project.get("engagement_id")
         }
 
         terms_by_engagement = self._billing_terms_by_engagement(engagement_ids)
@@ -2660,9 +2669,7 @@ class ReportsService:
 
         return sorted(rows, key=lambda row: (row["health_score"], row["project_name"]))
 
-    def _billing_terms_by_engagement(
-        self, engagement_ids: set[str]
-    ) -> dict[str, dict]:
+    def _billing_terms_by_engagement(self, engagement_ids: set[str]) -> dict[str, dict]:
         if not engagement_ids:
             return {}
         rows = (
@@ -2697,9 +2704,7 @@ class ReportsService:
             grouped.setdefault(str(row.get("project_id")), []).append(row)
         return grouped
 
-    def _invoices_by_engagement(
-        self, engagement_ids: set[str]
-    ) -> dict[str, list[dict]]:
+    def _invoices_by_engagement(self, engagement_ids: set[str]) -> dict[str, list[dict]]:
         if not engagement_ids:
             return {}
         rows = (
@@ -2730,9 +2735,7 @@ class ReportsService:
         wip: dict,
         drivers: list[dict],
     ) -> dict[str, object]:
-        logged_hours = sum(
-            (_decimal(row.get("hours")) or Decimal("0")) for row in entries
-        )
+        logged_hours = sum((_decimal(row.get("hours")) or Decimal("0")) for row in entries)
         billable_hours = sum(
             (_decimal(row.get("hours")) or Decimal("0"))
             for row in entries
@@ -2968,8 +2971,7 @@ class ReportsService:
         non_billable = [
             entry
             for entry in recent
-            if not entry.get("billable", True)
-            or entry.get("billing_status") == "non_billable"
+            if not entry.get("billable", True) or entry.get("billing_status") == "non_billable"
         ]
         scope_pct = Decimal(len(non_billable)) / Decimal(len(recent))
         metrics["recent_non_billable_pct"] = round(float(scope_pct * 100), 1)
@@ -3023,9 +3025,7 @@ class ReportsService:
 
         employee_ids = [str(employee["id"]) for employee in employees]
         time_by_employee = self._time_entries_by_employee(employee_ids, start, end)
-        assignments_by_employee = self._assignments_by_employee(
-            employee_ids, start, end
-        )
+        assignments_by_employee = self._assignments_by_employee(employee_ids, start, end)
 
         rows: list[dict] = []
         for employee in employees:
@@ -3033,15 +3033,10 @@ class ReportsService:
             entries = time_by_employee.get(employee_id, [])
             assignments = assignments_by_employee.get(employee_id, [])
             weekly_capacity = (
-                _decimal(employee.get("available_hours_per_week"))
-                or _DEFAULT_WEEKLY_CAPACITY_HOURS
+                _decimal(employee.get("available_hours_per_week")) or _DEFAULT_WEEKLY_CAPACITY_HOURS
             )
-            capacity_hours = (weekly_capacity * capacity_factor).quantize(
-                Decimal("0.01")
-            )
-            logged_hours = sum(
-                (_decimal(entry.get("hours")) or Decimal("0")) for entry in entries
-            )
+            capacity_hours = (weekly_capacity * capacity_factor).quantize(Decimal("0.01"))
+            logged_hours = sum((_decimal(entry.get("hours")) or Decimal("0")) for entry in entries)
             billable_hours = sum(
                 (_decimal(entry.get("hours")) or Decimal("0"))
                 for entry in entries
@@ -3050,8 +3045,7 @@ class ReportsService:
             utilization_pct = _pct(logged_hours, capacity_hours)
             billable_utilization_pct = _pct(billable_hours, capacity_hours)
             target_billable_pct = float(
-                _decimal(employee.get("target_billable_utilization_pct"))
-                or Decimal("75")
+                _decimal(employee.get("target_billable_utilization_pct")) or Decimal("75")
             )
             billable_variance_pct = round(
                 billable_utilization_pct - target_billable_pct,
@@ -3190,9 +3184,7 @@ class ReportsService:
         invoices_by_engagement = self._invoices_by_engagement(engagement_ids)
         wip_by_project = {str(row["project_id"]): row for row in self.wip()}
         phases_by_project = self._project_phases_by_project(project_ids)
-        health_by_project = {
-            str(row["project_id"]): row for row in self.project_health_scores()
-        }
+        health_by_project = {str(row["project_id"]): row for row in self.project_health_scores()}
 
         rows: list[dict] = []
         for engagement in engagements:
@@ -3209,7 +3201,10 @@ class ReportsService:
                 "total",
             )
             unbilled_wip = sum(
-                (_decimal(wip_by_project.get(str(project["id"]), {}).get("wip_value")) or Decimal("0"))
+                (
+                    _decimal(wip_by_project.get(str(project["id"]), {}).get("wip_value"))
+                    or Decimal("0")
+                )
                 for project in projects
             )
             recognized_backlog = max(Decimal("0"), contracted_value - billed_to_date)
@@ -3293,9 +3288,7 @@ class ReportsService:
 
         project_ids = [str(project["id"]) for project in projects]
         phases_by_project = self._project_phases_by_project(project_ids)
-        health_by_project = {
-            str(row["project_id"]): row for row in self.project_health_scores()
-        }
+        health_by_project = {str(row["project_id"]): row for row in self.project_health_scores()}
         today = date.today()
         rows: list[dict] = []
         for project in projects:
@@ -3414,9 +3407,7 @@ def _contracted_value(
     if engagement_total and engagement_total > Decimal("0"):
         return engagement_total, "engagement_total_value"
 
-    project_budget = sum(
-        (_decimal(project.get("budget")) or Decimal("0")) for project in projects
-    )
+    project_budget = sum((_decimal(project.get("budget")) or Decimal("0")) for project in projects)
     if project_budget > Decimal("0"):
         return project_budget, "project_budget"
 
@@ -3492,9 +3483,7 @@ def _backlog_risk_level(
     health_summary: dict[str, int],
     delivery_backlog: Decimal,
 ) -> str:
-    if health_summary["critical_count"] or (
-        overdue_count and delivery_backlog > Decimal("0")
-    ):
+    if health_summary["critical_count"] or (overdue_count and delivery_backlog > Decimal("0")):
         return "critical"
     if overdue_count or health_summary["at_risk_count"] or consumed_pct >= 85:
         return "at_risk"
@@ -3601,9 +3590,7 @@ def _profitability_row(identity: dict[str, object], stats: dict) -> dict[str, ob
     total_cost = labor_cost + expense_cost
     gross_margin = revenue - total_cost
     gross_margin_pct = (
-        round(float(gross_margin / revenue * 100), 1)
-        if revenue > Decimal("0")
-        else 0.0
+        round(float(gross_margin / revenue * 100), 1) if revenue > Decimal("0") else 0.0
     )
 
     return {
@@ -3792,6 +3779,14 @@ def _trial_line_stub(code: str, name: str, account_type: str) -> TrialBalanceLin
     )
 
 
+def _previous_period_for(period: str) -> str:
+    year = int(period[:4])
+    month = int(period[5:7])
+    if month == 1:
+        return f"{year - 1:04d}-12"
+    return f"{year:04d}-{month - 1:02d}"
+
+
 def _append_statement_line(
     lines: list[FinancialStatementLine],
     source: TrialBalanceLine,
@@ -3859,8 +3854,7 @@ def _cash_flow_description(journal: dict, counterpart_rows: list[dict]) -> str:
     if description:
         return description
     counterpart_names = [
-        str((row.get("accounts") or {}).get("name") or "").strip()
-        for row in counterpart_rows
+        str((row.get("accounts") or {}).get("name") or "").strip() for row in counterpart_rows
     ]
     counterpart_names = [name for name in counterpart_names if name]
     if counterpart_names:
@@ -3973,10 +3967,7 @@ def _capacity_status(
         return "overallocated"
     if utilization_pct >= 90:
         return "full"
-    if (
-        billable_utilization_pct is not None
-        and billable_utilization_pct < target_billable_pct - 15
-    ):
+    if billable_utilization_pct is not None and billable_utilization_pct < target_billable_pct - 15:
         return "underutilized"
     if utilization_pct <= 60:
         return "underutilized"
@@ -4140,11 +4131,7 @@ def _action_queue_sort_key(row: dict) -> tuple[int, str, str, str]:
 
 
 def _scope_change_drivers(drivers: list[dict]) -> list[dict]:
-    return [
-        driver
-        for driver in drivers
-        if driver.get("code") in _SCOPE_CHANGE_DRIVER_CODES
-    ]
+    return [driver for driver in drivers if driver.get("code") in _SCOPE_CHANGE_DRIVER_CODES]
 
 
 def _select_scope_comparables(
@@ -4169,8 +4156,7 @@ def _select_scope_comparables(
     same_service_line = [
         comparable
         for comparable in comparables
-        if comparable.get("service_line") == service_line
-        and comparable not in same_billing_model
+        if comparable.get("service_line") == service_line and comparable not in same_billing_model
     ]
     ranked = [*same_billing_model, *same_service_line]
     ranked.sort(
@@ -4198,9 +4184,7 @@ def _scope_fee_adjustment(
     logged_hours = _decimal(metrics.get("logged_hours")) or Decimal("0")
     budget_hours = _decimal(metrics.get("budget_hours"))
     overrun_hours = (
-        max(Decimal("0"), logged_hours - budget_hours)
-        if budget_hours is not None
-        else Decimal("0")
+        max(Decimal("0"), logged_hours - budget_hours) if budget_hours is not None else Decimal("0")
     )
     comparable_rates = [
         rate
@@ -4224,9 +4208,7 @@ def _median_decimal(values: list[Decimal]) -> Decimal:
     middle = len(ordered) // 2
     if len(ordered) % 2:
         return ordered[middle]
-    return ((ordered[middle - 1] + ordered[middle]) / Decimal("2")).quantize(
-        Decimal("0.01")
-    )
+    return ((ordered[middle - 1] + ordered[middle]) / Decimal("2")).quantize(Decimal("0.01"))
 
 
 def _scope_current_metrics(project: dict) -> dict[str, object]:
@@ -4234,16 +4216,12 @@ def _scope_current_metrics(project: dict) -> dict[str, object]:
     logged_hours = _decimal(metrics.get("logged_hours")) or Decimal("0")
     budget_hours = _decimal(metrics.get("budget_hours"))
     overrun_hours = (
-        max(Decimal("0"), logged_hours - budget_hours)
-        if budget_hours is not None
-        else Decimal("0")
+        max(Decimal("0"), logged_hours - budget_hours) if budget_hours is not None else Decimal("0")
     )
     return {
         "logged_hours": str(logged_hours.quantize(Decimal("0.01"))),
         "budget_hours": (
-            str(budget_hours.quantize(Decimal("0.01")))
-            if budget_hours is not None
-            else None
+            str(budget_hours.quantize(Decimal("0.01"))) if budget_hours is not None else None
         ),
         "overrun_hours": str(overrun_hours.quantize(Decimal("0.01"))),
         "budget_burn_pct": metrics.get("budget_burn_pct"),

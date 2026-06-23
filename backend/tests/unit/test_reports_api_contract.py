@@ -229,6 +229,49 @@ def test_balance_sheet_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) ->
     assert response.json()["is_balanced"] is True
 
 
+def test_retained_earnings_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = _FakeDb()
+
+    class _FakeReportsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            assert db is fake_db
+            assert tenant_id == TENANT_ID
+
+        def retained_earnings_roll_forward(self, *, period: str) -> dict[str, Any]:
+            assert period == "2026-06"
+            return {
+                "period": "2026-06",
+                "previous_period": "2026-05",
+                "beginning_retained_earnings": "1000.00",
+                "current_period_net_income": "600.00",
+                "retained_earnings_activity": "-100.00",
+                "ending_retained_earnings": "1500.00",
+                "generated_at": "2026-06-23T00:00:00+00:00",
+            }
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.reports.ReportsService",
+        _FakeReportsService,
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/retained-earnings-roll-forward?period=2026-06")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["ending_retained_earnings"] == "1500.00"
+
+
 def test_backlog_forecast_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_db = _FakeDb()
 

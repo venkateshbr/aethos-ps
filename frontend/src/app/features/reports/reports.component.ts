@@ -29,6 +29,7 @@ import {
   BalanceSheetReport,
   CashFlowReport,
   IncomeStatementReport,
+  RetainedEarningsRollForwardReport,
 } from '../../core/services/reports.service';
 
 @Component({
@@ -869,6 +870,22 @@ import {
                     <span class="text-confidence-low" role="alert">&#9888; Balance sheet does not balance</span>
                   }
                 </div>
+                @if (retainedEarningsLoading()) {
+                  <ng-container *ngTemplateOutlet="tableSkeleton" />
+                } @else if (retainedEarningsError()) {
+                  <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Retained Earnings', retry: loadRetainedEarnings.bind(this) }" />
+                } @else if (retainedEarningsData()) {
+                  <div>
+                    <h3 class="text-sm font-semibold text-text-primary">Retained earnings roll-forward</h3>
+                    <p class="text-xs text-text-muted mb-3">{{ retainedEarningsData()!.previous_period }} to {{ retainedEarningsData()!.period }}</p>
+                    <div class="grid gap-4 md:grid-cols-4">
+                    <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Beginning RE', value: retainedEarningsData()!.beginning_retained_earnings }" />
+                    <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Net Income', value: retainedEarningsData()!.current_period_net_income }" />
+                    <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'RE Activity', value: retainedEarningsData()!.retained_earnings_activity }" />
+                    <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Ending RE', value: retainedEarningsData()!.ending_retained_earnings }" />
+                    </div>
+                  </div>
+                }
                 <div class="grid gap-4 xl:grid-cols-3">
                   <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Assets', rows: balanceSheetData()!.asset_lines, totalLabel: 'Total Assets', total: balanceSheetData()!.total_assets }" />
                   <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Liabilities', rows: balanceSheetData()!.liability_lines, totalLabel: 'Total Liabilities', total: balanceSheetData()!.total_liabilities }" />
@@ -1338,6 +1355,9 @@ export class ReportsComponent implements OnInit {
   balanceSheetLoading = signal(false);
   balanceSheetError = signal(false);
   balanceSheetData = signal<BalanceSheetReport | null>(null);
+  retainedEarningsLoading = signal(false);
+  retainedEarningsError = signal(false);
+  retainedEarningsData = signal<RetainedEarningsRollForwardReport | null>(null);
   incomeStatementLoading = signal(false);
   incomeStatementError = signal(false);
   incomeStatementData = signal<IncomeStatementReport | null>(null);
@@ -1574,6 +1594,7 @@ export class ReportsComponent implements OnInit {
 
   loadFinancialStatements(): void {
     this.loadBalanceSheet();
+    this.loadRetainedEarnings();
     this.loadIncomeStatement();
     this.loadCashFlow();
   }
@@ -1584,6 +1605,15 @@ export class ReportsComponent implements OnInit {
     this.svc.getBalanceSheet(this.statementPeriod || undefined).subscribe({
       next: data => { this.balanceSheetData.set(data); this.balanceSheetLoading.set(false); },
       error: () => { this.balanceSheetError.set(true); this.balanceSheetLoading.set(false); },
+    });
+  }
+
+  loadRetainedEarnings(): void {
+    this.retainedEarningsLoading.set(true);
+    this.retainedEarningsError.set(false);
+    this.svc.getRetainedEarningsRollForward(this.statementPeriod).subscribe({
+      next: data => { this.retainedEarningsData.set(data); this.retainedEarningsLoading.set(false); },
+      error: () => { this.retainedEarningsError.set(true); this.retainedEarningsLoading.set(false); },
     });
   }
 

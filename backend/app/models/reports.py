@@ -57,6 +57,18 @@ class BalanceSheetReport(BaseModel):
     generated_at: datetime
 
 
+class RetainedEarningsRollForwardReport(BaseModel):
+    """Retained earnings movement for one accounting period."""
+
+    period: str
+    previous_period: str
+    beginning_retained_earnings: str
+    current_period_net_income: str
+    retained_earnings_activity: str
+    ending_retained_earnings: str
+    generated_at: datetime
+
+
 class IncomeStatementReport(BaseModel):
     """Income statement for an accounting period range."""
 

@@ -357,6 +357,16 @@ export interface BalanceSheetReport {
   generated_at: string;
 }
 
+export interface RetainedEarningsRollForwardReport {
+  period: string;
+  previous_period: string;
+  beginning_retained_earnings: string;
+  current_period_net_income: string;
+  retained_earnings_activity: string;
+  ending_retained_earnings: string;
+  generated_at: string;
+}
+
 export interface IncomeStatementReport {
   period_start: string | null;
   period_end: string | null;
@@ -465,6 +475,13 @@ export class ReportsService {
     const params = asOfPeriod ? `?as_of_period=${asOfPeriod}` : '';
     return this.http.get<BalanceSheetReport>(`${this.base}/balance-sheet${params}`);
   };
+
+  getRetainedEarningsRollForward = (
+    period: string,
+  ): Observable<RetainedEarningsRollForwardReport> =>
+    this.http.get<RetainedEarningsRollForwardReport>(
+      `${this.base}/retained-earnings-roll-forward?period=${period}`,
+    );
 
   getIncomeStatement = (period?: string): Observable<IncomeStatementReport> => {
     const params = period ? `?period_start=${period}&period_end=${period}` : '';

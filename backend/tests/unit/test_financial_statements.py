@@ -127,10 +127,16 @@ def test_balance_sheet_rolls_current_net_income_into_equity() -> None:
 def test_income_statement_filters_period_range() -> None:
     svc = _service(
         [
-            _journal_line("CR", "2000.00", "4000", "Revenue", "revenue", "2026-06", entry_id="je-1"),
-            _journal_line("DR", "600.00", "5000", "Expenses", "expense", "2026-06", entry_id="je-2"),
+            _journal_line(
+                "CR", "2000.00", "4000", "Revenue", "revenue", "2026-06", entry_id="je-1"
+            ),
+            _journal_line(
+                "DR", "600.00", "5000", "Expenses", "expense", "2026-06", entry_id="je-2"
+            ),
             _journal_line("CR", "999.00", "4000", "Revenue", "revenue", "2026-05", entry_id="je-3"),
-            _journal_line("DR", "111.00", "5000", "Expenses", "expense", "2026-07", entry_id="je-4"),
+            _journal_line(
+                "DR", "111.00", "5000", "Expenses", "expense", "2026-07", entry_id="je-4"
+            ),
         ]
     )
 
@@ -141,6 +147,57 @@ def test_income_statement_filters_period_range() -> None:
     assert report.net_income == "1400.00"
     assert [line.account_code for line in report.revenue_lines] == ["4000"]
     assert [line.account_code for line in report.expense_lines] == ["5000"]
+
+
+def test_retained_earnings_roll_forward_for_selected_period() -> None:
+    svc = _service(
+        [
+            _journal_line(
+                "CR",
+                "1000.00",
+                "3000",
+                "Retained Earnings",
+                "equity",
+                "2026-05",
+                entry_id="je-re-begin",
+            ),
+            _journal_line(
+                "DR",
+                "100.00",
+                "3000",
+                "Retained Earnings",
+                "equity",
+                "2026-06",
+                entry_id="je-re-distribution",
+            ),
+            _journal_line(
+                "CR",
+                "900.00",
+                "4000",
+                "Revenue",
+                "revenue",
+                "2026-06",
+                entry_id="je-revenue",
+            ),
+            _journal_line(
+                "DR",
+                "300.00",
+                "5000",
+                "Expenses",
+                "expense",
+                "2026-06",
+                entry_id="je-expense",
+            ),
+        ]
+    )
+
+    report = svc.retained_earnings_roll_forward(period="2026-06")
+
+    assert report.previous_period == "2026-05"
+    assert report.beginning_retained_earnings == "1000.00"
+    assert report.current_period_net_income == "600.00"
+    assert report.retained_earnings_activity == "-100.00"
+    assert report.ending_retained_earnings == "1500.00"
 
 
 def test_cash_flow_groups_cash_movements_by_statement_section() -> None:
