@@ -269,6 +269,7 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
                 "/api/v1/agents/runs?agent_name=copilot_agent&status=succeeded&limit=10"
             )
             detail_response = client.get("/api/v1/agents/runs/run-1")
+            replay_response = client.post("/api/v1/agents/runs/run-1/replay")
             candidates_response = client.get(
                 "/api/v1/agents/eval-candidates?agent_name=copilot_agent&status=candidate"
             )
@@ -290,6 +291,17 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
 
     assert detail_response.status_code == 200, detail_response.text
     assert [tool["id"] for tool in detail_response.json()["tool_invocations"]] == [
+        "tool-1",
+        "tool-2",
+    ]
+
+    assert replay_response.status_code == 200, replay_response.text
+    replay_body = replay_response.json()
+    assert replay_body["run_id"] == "run-1"
+    assert replay_body["replay_mode"] == "recorded_snapshot"
+    assert replay_body["can_reexecute"] is False
+    assert replay_body["manifest_hash"]
+    assert [step["tool_invocation_id"] for step in replay_body["steps"]] == [
         "tool-1",
         "tool-2",
     ]

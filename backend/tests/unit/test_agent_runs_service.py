@@ -206,6 +206,46 @@ def test_get_agent_run_returns_none_for_missing_run() -> None:
     assert AgentsService(db, "tenant-1").get_agent_run("missing") is None  # type: ignore[arg-type]
 
 
+def test_build_agent_run_replay_returns_recorded_tool_manifest() -> None:
+    db = _Db(
+        {
+            "agent_runs": [_run_row(id="run-1")],
+            "agent_tool_invocations": [
+                _tool_row(
+                    id="tool-1",
+                    agent_run_id="run-1",
+                    created_at="2026-06-22T06:00:00Z",
+                ),
+                _tool_row(
+                    id="tool-2",
+                    agent_run_id="run-1",
+                    tool_name="log_time_entry",
+                    risk_class="write_low_risk",
+                    input_snapshot={"project_id": "proj-1", "hours": "2.00"},
+                    output_snapshot={"time_entry_id": "time-1"},
+                    created_at="2026-06-22T06:00:01Z",
+                ),
+            ],
+        }
+    )
+
+    replay = AgentsService(db, "tenant-1").build_agent_run_replay("run-1")  # type: ignore[arg-type]
+
+    assert replay is not None
+    assert replay["run_id"] == "run-1"
+    assert replay["replay_mode"] == "recorded_snapshot"
+    assert replay["can_reexecute"] is False
+    assert replay["manifest_hash"]
+    assert [step["tool_invocation_id"] for step in replay["steps"]] == ["tool-1", "tool-2"]
+    assert replay["steps"][1]["input_snapshot"] == {"project_id": "proj-1", "hours": "2.00"}
+
+
+def test_build_agent_run_replay_returns_none_for_missing_run() -> None:
+    db = _Db({"agent_runs": [], "agent_tool_invocations": []})
+
+    assert AgentsService(db, "tenant-1").build_agent_run_replay("missing") is None  # type: ignore[arg-type]
+
+
 def test_list_eval_candidates_filters_by_agent_and_status() -> None:
     db = _Db(
         {

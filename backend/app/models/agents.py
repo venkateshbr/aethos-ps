@@ -220,3 +220,37 @@ class AgentRunDetailResponse(AgentRunSummary):
     """Agent run detail with ordered tool invocations."""
 
     tool_invocations: list[AgentToolInvocationResponse]
+
+
+class AgentReplayStepResponse(BaseModel):
+    """One recorded tool-call step in a replay preview."""
+
+    index: int
+    tool_invocation_id: str
+    tool_name: str
+    risk_class: str
+    status: str
+    input_hash: str | None = None
+    output_hash: str | None = None
+    input_snapshot: dict
+    output_snapshot: dict
+    error_message: str | None = None
+    created_at: str
+
+
+class AgentRunReplayResponse(BaseModel):
+    """Deterministic, non-mutating replay package for an agent run."""
+
+    run_id: str
+    agent_name: str
+    status: str
+    replay_mode: str
+    can_reexecute: bool
+    trace_id: str | None = None
+    replay_pointer: str | None = None
+    input_hash: str | None = None
+    output_hash: str | None = None
+    prompt_version: str | None = None
+    model_version: str | None = None
+    manifest_hash: str
+    steps: list[AgentReplayStepResponse]

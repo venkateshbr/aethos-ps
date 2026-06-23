@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from app.agents.tool_registry import risk_class_allows, risk_class_for_action
+from app.services.agent_run_ledger import stable_payload_hash
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -469,6 +470,62 @@ class AgentsService:
             "tool_count": len(tools),
             "failed_tool_count": failed_count,
             "tool_invocations": [self._tool_invocation(tool) for tool in tools],
+        }
+
+    def build_agent_run_replay(self, run_id: str) -> dict | None:
+        """Return a deterministic, non-mutating replay package for a recorded run.
+
+        This is an audit replay, not a live rerun. It reconstructs the ordered
+        tool-call transcript from snapshots already stored in the ledger so an
+        operator can reproduce the agent's inputs and outputs without executing
+        any write-capable tool again.
+        """
+        run = self.get_agent_run(run_id)
+        if run is None:
+            return None
+
+        steps = [
+            {
+                "index": index,
+                "tool_invocation_id": tool["id"],
+                "tool_name": tool["tool_name"],
+                "risk_class": tool["risk_class"],
+                "status": tool["status"],
+                "input_hash": tool.get("input_hash"),
+                "output_hash": tool.get("output_hash"),
+                "input_snapshot": tool.get("input_snapshot") or {},
+                "output_snapshot": tool.get("output_snapshot") or {},
+                "error_message": tool.get("error_message"),
+                "created_at": tool["created_at"],
+            }
+            for index, tool in enumerate(run["tool_invocations"], start=1)
+        ]
+        manifest = {
+            "run_id": run["id"],
+            "agent_name": run["agent_name"],
+            "status": run["status"],
+            "trace_id": run.get("trace_id"),
+            "replay_pointer": run.get("replay_pointer"),
+            "input_hash": run.get("input_hash"),
+            "output_hash": run.get("output_hash"),
+            "prompt_version": run.get("prompt_version"),
+            "model_version": run.get("model_version"),
+            "steps": steps,
+        }
+        return {
+            "run_id": run["id"],
+            "agent_name": run["agent_name"],
+            "status": run["status"],
+            "replay_mode": "recorded_snapshot",
+            "can_reexecute": False,
+            "trace_id": run.get("trace_id"),
+            "replay_pointer": run.get("replay_pointer"),
+            "input_hash": run.get("input_hash"),
+            "output_hash": run.get("output_hash"),
+            "prompt_version": run.get("prompt_version"),
+            "model_version": run.get("model_version"),
+            "manifest_hash": stable_payload_hash(manifest),
+            "steps": steps,
         }
 
     def list_eval_candidates(

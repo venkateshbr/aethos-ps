@@ -51,6 +51,36 @@ interface AgentRunDetail extends AgentRunSummary {
   tool_invocations: AgentToolInvocation[];
 }
 
+interface AgentReplayStep {
+  index: number;
+  tool_invocation_id: string;
+  tool_name: string;
+  risk_class: string;
+  status: string;
+  input_hash: string | null;
+  output_hash: string | null;
+  input_snapshot: Record<string, unknown>;
+  output_snapshot: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+}
+
+interface AgentReplayPreview {
+  run_id: string;
+  agent_name: string;
+  status: string;
+  replay_mode: string;
+  can_reexecute: boolean;
+  trace_id: string | null;
+  replay_pointer: string | null;
+  input_hash: string | null;
+  output_hash: string | null;
+  prompt_version: string | null;
+  model_version: string | null;
+  manifest_hash: string;
+  steps: AgentReplayStep[];
+}
+
 const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
 
 @Component({
@@ -221,6 +251,52 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                 </div>
               }
 
+              <div class="rounded border border-border-default bg-surface-raised px-4 py-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-xs uppercase tracking-wide text-text-disabled">Replay Manifest</div>
+                    <div class="mt-1 truncate font-mono text-xs text-text-secondary">
+                      {{ replayPreview()?.manifest_hash ? shortHash(replayPreview()!.manifest_hash) : '-' }}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="loadReplay(selectedRun()!.id)"
+                    [disabled]="replayLoading()"
+                    class="inline-flex h-9 items-center gap-1.5 rounded border border-border-default px-3 text-sm font-medium text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <mat-icon style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">
+                      {{ replayLoading() ? 'progress_activity' : 'replay' }}
+                    </mat-icon>
+                    Replay
+                  </button>
+                </div>
+
+                @if (replayError()) {
+                  <div class="mt-3 flex items-center gap-2 text-sm text-confidence-low" role="alert">
+                    <mat-icon class="text-base">error_outline</mat-icon>
+                    Replay failed.
+                  </div>
+                }
+
+                @if (replayPreview()) {
+                  <div class="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Mode</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ replayPreview()!.replay_mode }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Steps</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ replayPreview()!.steps.length }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Re-execute</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ replayPreview()!.can_reexecute ? 'yes' : 'no' }}</div>
+                    </div>
+                  </div>
+                }
+              </div>
+
               <div class="overflow-x-auto rounded border border-border-default">
                 <table class="w-full text-sm" aria-label="Agent run tool invocations">
                   <thead>
@@ -286,6 +362,9 @@ export class AgentRunsComponent implements OnInit {
   selectedRun = signal<AgentRunDetail | null>(null);
   detailLoading = signal(false);
   detailError = signal(false);
+  replayLoading = signal(false);
+  replayError = signal(false);
+  replayPreview = signal<AgentReplayPreview | null>(null);
 
   ngOnInit(): void {
     this.load();
@@ -321,12 +400,15 @@ export class AgentRunsComponent implements OnInit {
     if (this.selectedRunId() === runId) {
       this.selectedRunId.set(null);
       this.selectedRun.set(null);
+      this.replayPreview.set(null);
       return;
     }
     this.selectedRunId.set(runId);
     this.detailLoading.set(true);
     this.detailError.set(false);
     this.selectedRun.set(null);
+    this.replayPreview.set(null);
+    this.replayError.set(false);
 
     this.http.get<AgentRunDetail>(`/api/v1/agents/runs/${runId}`).subscribe({
       next: (run) => {
@@ -336,6 +418,21 @@ export class AgentRunsComponent implements OnInit {
       error: () => {
         this.detailLoading.set(false);
         this.detailError.set(true);
+      },
+    });
+  }
+
+  loadReplay(runId: string): void {
+    this.replayLoading.set(true);
+    this.replayError.set(false);
+    this.http.post<AgentReplayPreview>(`/api/v1/agents/runs/${runId}/replay`, {}).subscribe({
+      next: (preview) => {
+        this.replayPreview.set(preview);
+        this.replayLoading.set(false);
+      },
+      error: () => {
+        this.replayLoading.set(false);
+        this.replayError.set(true);
       },
     });
   }
