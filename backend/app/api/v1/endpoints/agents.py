@@ -26,6 +26,7 @@ from app.models.agents import (
     AgentRunDetailResponse,
     AgentRunListResponse,
     AgentRunReplayResponse,
+    AgentRunReplayValidationResponse,
     AgentRunSummary,
     SetAgentControlRequest,
     SetAgentL3PolicyRequest,
@@ -165,6 +166,35 @@ def replay_agent_run(
             detail="Agent run not found",
         )
     return AgentRunReplayResponse(**row)
+
+
+# ---------------------------------------------------------------------------
+# POST /agents/runs/{run_id}/replay/validate
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/replay/validate",
+    response_model=AgentRunReplayValidationResponse,
+    summary="Validate read-only replay steps against current code",
+)
+def validate_agent_run_replay(
+    run_id: str,
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentRunReplayValidationResponse:
+    """Execute supported read-only steps and compare current hashes.
+
+    Mutating, money movement, and accounting tools are explicitly blocked by
+    risk class in this validation mode.
+    """
+    row = svc.build_agent_run_replay_validation(run_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found",
+        )
+    return AgentRunReplayValidationResponse(**row)
 
 
 # ---------------------------------------------------------------------------

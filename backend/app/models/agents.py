@@ -254,3 +254,40 @@ class AgentRunReplayResponse(BaseModel):
     model_version: str | None = None
     manifest_hash: str
     steps: list[AgentReplayStepResponse]
+
+
+class AgentReplayValidationStepResponse(BaseModel):
+    """Current-code dry-run validation for one recorded tool-call step."""
+
+    index: int
+    tool_invocation_id: str
+    tool_name: str
+    recorded_risk_class: str
+    current_risk_class: str
+    recorded_status: str
+    replay_status: str
+    reason: str
+    input_hash: str | None = None
+    recorded_output_hash: str | None = None
+    current_output_hash: str | None = None
+    input_hash_matches: bool | None = None
+    output_hash_matches: bool | None = None
+    duration_ms: int | None = None
+    current_output_snapshot: dict | None = None
+    error_message: str | None = None
+
+
+class AgentRunReplayValidationResponse(BaseModel):
+    """Read-only current-code replay validation for an agent run."""
+
+    run_id: str
+    agent_name: str
+    validation_mode: str
+    overall_status: str
+    can_reexecute: bool
+    manifest_hash: str
+    reexecuted_step_count: int
+    blocked_step_count: int
+    drift_step_count: int
+    failed_step_count: int
+    steps: list[AgentReplayValidationStepResponse]

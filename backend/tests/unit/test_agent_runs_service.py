@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app.services.agent_run_ledger import stable_payload_hash
 from app.services.agents_service import AgentsService
 
 
@@ -12,6 +13,9 @@ class _Query:
         self.rows = rows
         self.filters: list[tuple[str, object]] = []
         self.in_filters: list[tuple[str, list[object]]] = []
+        self.is_filters: list[tuple[str, object]] = []
+        self.gte_filters: list[tuple[str, object]] = []
+        self.lte_filters: list[tuple[str, object]] = []
         self.limit_value: int | None = None
         self.order_column: str | None = None
         self.order_desc = False
@@ -25,6 +29,18 @@ class _Query:
 
     def in_(self, column: str, values: list[object]) -> _Query:
         self.in_filters.append((column, values))
+        return self
+
+    def is_(self, column: str, value: object) -> _Query:
+        self.is_filters.append((column, value))
+        return self
+
+    def gte(self, column: str, value: object) -> _Query:
+        self.gte_filters.append((column, value))
+        return self
+
+    def lte(self, column: str, value: object) -> _Query:
+        self.lte_filters.append((column, value))
         return self
 
     def order(self, column: str, *, desc: bool = False) -> _Query:
@@ -42,6 +58,15 @@ class _Query:
             rows = [row for row in rows if row.get(column) == value]
         for column, values in self.in_filters:
             rows = [row for row in rows if row.get(column) in values]
+        for column, value in self.is_filters:
+            if value == "null":
+                rows = [row for row in rows if row.get(column) is None]
+            else:
+                rows = [row for row in rows if row.get(column) is value]
+        for column, value in self.gte_filters:
+            rows = [row for row in rows if row.get(column) >= value]
+        for column, value in self.lte_filters:
+            rows = [row for row in rows if row.get(column) <= value]
         if self.order_column:
             rows = sorted(
                 rows,
@@ -244,6 +269,112 @@ def test_build_agent_run_replay_returns_none_for_missing_run() -> None:
     db = _Db({"agent_runs": [], "agent_tool_invocations": []})
 
     assert AgentsService(db, "tenant-1").build_agent_run_replay("missing") is None  # type: ignore[arg-type]
+
+
+def test_build_agent_run_replay_validation_executes_read_only_current_code() -> None:
+    tool_input = {"status": "active", "limit": 10}
+    tool_output = {
+        "count": 1,
+        "engagements": [
+            {
+                "id": "eng-1",
+                "name": "Meridian Advisory",
+                "billing_arrangement": "time_and_materials",
+                "currency": "USD",
+                "total_value": "12000.00",
+                "status": "active",
+            }
+        ],
+    }
+    db = _Db(
+        {
+            "agent_runs": [_run_row(id="run-1")],
+            "agent_tool_invocations": [
+                _tool_row(
+                    id="tool-1",
+                    agent_run_id="run-1",
+                    tool_name="query_engagements",
+                    risk_class="read_only",
+                    input_hash=stable_payload_hash(tool_input),
+                    input_snapshot=tool_input,
+                    output_hash=stable_payload_hash(tool_output),
+                    output_snapshot=tool_output,
+                ),
+            ],
+            "engagements": [
+                {
+                    "id": "eng-1",
+                    "tenant_id": "tenant-1",
+                    "name": "Meridian Advisory",
+                    "billing_arrangement": "time_and_materials",
+                    "currency": "USD",
+                    "total_value": "12000.00",
+                    "status": "active",
+                    "deleted_at": None,
+                },
+                {
+                    "id": "eng-2",
+                    "tenant_id": "tenant-1",
+                    "name": "Archived",
+                    "billing_arrangement": "fixed",
+                    "currency": "USD",
+                    "total_value": "5000.00",
+                    "status": "completed",
+                    "deleted_at": None,
+                },
+            ],
+        }
+    )
+
+    validation = AgentsService(db, "tenant-1").build_agent_run_replay_validation("run-1")  # type: ignore[arg-type]
+
+    assert validation is not None
+    assert validation["validation_mode"] == "current_code_dry_run"
+    assert validation["overall_status"] == "matched"
+    assert validation["can_reexecute"] is True
+    assert validation["reexecuted_step_count"] == 1
+    assert validation["blocked_step_count"] == 0
+    assert validation["steps"][0]["replay_status"] == "matched"
+    assert validation["steps"][0]["input_hash_matches"] is True
+    assert validation["steps"][0]["output_hash_matches"] is True
+    assert validation["steps"][0]["current_output_snapshot"] == tool_output
+
+
+def test_build_agent_run_replay_validation_blocks_write_tools() -> None:
+    db = _Db(
+        {
+            "agent_runs": [_run_row(id="run-1")],
+            "agent_tool_invocations": [
+                _tool_row(
+                    id="tool-1",
+                    agent_run_id="run-1",
+                    tool_name="log_time_entry",
+                    risk_class="write_low_risk",
+                    input_snapshot={"project_id": "proj-1", "hours": "2.00"},
+                    output_snapshot={"time_entry_id": "time-1"},
+                ),
+            ],
+        }
+    )
+
+    validation = AgentsService(db, "tenant-1").build_agent_run_replay_validation("run-1")  # type: ignore[arg-type]
+
+    assert validation is not None
+    assert validation["overall_status"] == "blocked"
+    assert validation["can_reexecute"] is False
+    assert validation["reexecuted_step_count"] == 0
+    assert validation["blocked_step_count"] == 1
+    assert validation["steps"][0]["replay_status"] == "blocked_by_risk"
+    assert validation["steps"][0]["current_risk_class"] == "write_low_risk"
+
+
+def test_build_agent_run_replay_validation_returns_none_for_missing_run() -> None:
+    db = _Db({"agent_runs": [], "agent_tool_invocations": []})
+
+    assert (
+        AgentsService(db, "tenant-1").build_agent_run_replay_validation("missing")  # type: ignore[arg-type]
+        is None
+    )
 
 
 def test_list_eval_candidates_filters_by_agent_and_status() -> None:

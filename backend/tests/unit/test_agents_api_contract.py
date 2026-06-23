@@ -13,6 +13,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
+from app.services.agent_run_ledger import stable_payload_hash
 
 pytestmark = pytest.mark.unit
 
@@ -25,7 +26,9 @@ class _Query:
         self.table = table
         self._eq_filters: list[tuple[str, Any]] = []
         self._in_filters: list[tuple[str, list[Any]]] = []
+        self._is_filters: list[tuple[str, Any]] = []
         self._gte_filters: list[tuple[str, Any]] = []
+        self._lte_filters: list[tuple[str, Any]] = []
         self._order_key: str | None = None
         self._order_desc = False
         self._limit: int | None = None
@@ -42,8 +45,16 @@ class _Query:
         self._in_filters.append((key, values))
         return self
 
+    def is_(self, key: str, value: Any) -> _Query:
+        self._is_filters.append((key, value))
+        return self
+
     def gte(self, key: str, value: Any) -> _Query:
         self._gte_filters.append((key, value))
+        return self
+
+    def lte(self, key: str, value: Any) -> _Query:
+        self._lte_filters.append((key, value))
         return self
 
     def order(self, key: str, desc: bool = False) -> _Query:
@@ -110,8 +121,17 @@ class _Query:
         for key, values in self._in_filters:
             if row.get(key) not in values:
                 return False
+        for key, value in self._is_filters:
+            if value == "null":
+                if row.get(key) is not None:
+                    return False
+            elif row.get(key) is not value:
+                return False
         for key, value in self._gte_filters:
             if row.get(key) < value:
+                return False
+        for key, value in self._lte_filters:
+            if row.get(key) > value:
                 return False
         return True
 
@@ -156,18 +176,35 @@ def _run_row(**overrides: Any) -> dict[str, Any]:
 
 
 def _tool_row(**overrides: Any) -> dict[str, Any]:
+    input_snapshot = overrides.get("input_snapshot", {"status": "active", "limit": 10})
+    output_snapshot = overrides.get(
+        "output_snapshot",
+        {
+            "count": 1,
+            "engagements": [
+                {
+                    "id": "eng-1",
+                    "name": "Meridian Advisory",
+                    "billing_arrangement": "time_and_materials",
+                    "currency": "USD",
+                    "total_value": "12000.00",
+                    "status": "active",
+                }
+            ],
+        },
+    )
     row = {
         "id": "tool-1",
         "tenant_id": TENANT_ID,
         "agent_run_id": "run-1",
-        "tool_name": "get_wip",
+        "tool_name": "query_engagements",
         "risk_class": "read_only",
         "status": "succeeded",
         "external_tool_call_id": "call-1",
-        "input_hash": "tool-input",
-        "output_hash": "tool-output",
-        "input_snapshot": {"engagement_id": "eng-1"},
-        "output_snapshot": {"wip": []},
+        "input_hash": stable_payload_hash(input_snapshot),
+        "output_hash": stable_payload_hash(output_snapshot),
+        "input_snapshot": input_snapshot,
+        "output_snapshot": output_snapshot,
         "duration_ms": 12,
         "error_message": None,
         "created_at": "2026-06-22T06:00:00Z",
@@ -212,6 +249,18 @@ class _ReadDb(_DbBase):
                 "agent_tool_invocations": [
                     _tool_row(id="tool-2", status="failed", created_at="2026-06-22T06:00:01Z"),
                     _tool_row(id="tool-1", status="succeeded", created_at="2026-06-22T06:00:00Z"),
+                ],
+                "engagements": [
+                    {
+                        "id": "eng-1",
+                        "tenant_id": TENANT_ID,
+                        "name": "Meridian Advisory",
+                        "billing_arrangement": "time_and_materials",
+                        "currency": "USD",
+                        "total_value": "12000.00",
+                        "status": "active",
+                        "deleted_at": None,
+                    }
                 ],
                 "agent_eval_candidates": [
                     {
@@ -270,6 +319,9 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
             )
             detail_response = client.get("/api/v1/agents/runs/run-1")
             replay_response = client.post("/api/v1/agents/runs/run-1/replay")
+            validation_response = client.post(
+                "/api/v1/agents/runs/run-1/replay/validate"
+            )
             candidates_response = client.get(
                 "/api/v1/agents/eval-candidates?agent_name=copilot_agent&status=candidate"
             )
@@ -305,6 +357,15 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
         "tool-1",
         "tool-2",
     ]
+
+    assert validation_response.status_code == 200, validation_response.text
+    validation_body = validation_response.json()
+    assert validation_body["run_id"] == "run-1"
+    assert validation_body["validation_mode"] == "current_code_dry_run"
+    assert validation_body["overall_status"] == "matched"
+    assert validation_body["reexecuted_step_count"] == 2
+    assert validation_body["blocked_step_count"] == 0
+    assert validation_body["steps"][0]["replay_status"] == "matched"
 
     assert candidates_response.status_code == 200, candidates_response.text
     assert candidates_response.json()["candidates"][0]["id"] == "candidate-1"

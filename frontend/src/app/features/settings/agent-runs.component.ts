@@ -81,6 +81,39 @@ interface AgentReplayPreview {
   steps: AgentReplayStep[];
 }
 
+interface AgentReplayValidationStep {
+  index: number;
+  tool_invocation_id: string;
+  tool_name: string;
+  recorded_risk_class: string;
+  current_risk_class: string;
+  recorded_status: string;
+  replay_status: string;
+  reason: string;
+  input_hash: string | null;
+  recorded_output_hash: string | null;
+  current_output_hash: string | null;
+  input_hash_matches: boolean | null;
+  output_hash_matches: boolean | null;
+  duration_ms: number | null;
+  current_output_snapshot: Record<string, unknown> | null;
+  error_message: string | null;
+}
+
+interface AgentReplayValidationResult {
+  run_id: string;
+  agent_name: string;
+  validation_mode: string;
+  overall_status: string;
+  can_reexecute: boolean;
+  manifest_hash: string;
+  reexecuted_step_count: number;
+  blocked_step_count: number;
+  drift_step_count: number;
+  failed_step_count: number;
+  steps: AgentReplayValidationStep[];
+}
+
 const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
 
 @Component({
@@ -259,17 +292,30 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                       {{ replayPreview()?.manifest_hash ? shortHash(replayPreview()!.manifest_hash) : '-' }}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    (click)="loadReplay(selectedRun()!.id)"
-                    [disabled]="replayLoading()"
-                    class="inline-flex h-9 items-center gap-1.5 rounded border border-border-default px-3 text-sm font-medium text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    <mat-icon style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">
-                      {{ replayLoading() ? 'progress_activity' : 'replay' }}
-                    </mat-icon>
-                    Replay
-                  </button>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      (click)="loadReplay(selectedRun()!.id)"
+                      [disabled]="replayLoading()"
+                      class="inline-flex h-9 items-center gap-1.5 rounded border border-border-default px-3 text-sm font-medium text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <mat-icon style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">
+                        {{ replayLoading() ? 'progress_activity' : 'replay' }}
+                      </mat-icon>
+                      Replay
+                    </button>
+                    <button
+                      type="button"
+                      (click)="validateReplay(selectedRun()!.id)"
+                      [disabled]="validationLoading()"
+                      class="inline-flex h-9 items-center gap-1.5 rounded border border-border-default px-3 text-sm font-medium text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <mat-icon style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">
+                        {{ validationLoading() ? 'progress_activity' : 'rule' }}
+                      </mat-icon>
+                      Validate
+                    </button>
+                  </div>
                 </div>
 
                 @if (replayError()) {
@@ -293,6 +339,64 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                       <div class="uppercase tracking-wide text-text-disabled">Re-execute</div>
                       <div class="mt-1 font-mono text-text-secondary">{{ replayPreview()!.can_reexecute ? 'yes' : 'no' }}</div>
                     </div>
+                  </div>
+                }
+
+                @if (validationError()) {
+                  <div class="mt-3 flex items-center gap-2 text-sm text-confidence-low" role="alert">
+                    <mat-icon class="text-base">error_outline</mat-icon>
+                    Validation failed.
+                  </div>
+                }
+
+                @if (validationResult()) {
+                  <div class="mt-3 grid gap-3 text-xs sm:grid-cols-4">
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Validation</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ statusLabel(validationResult()!.overall_status) }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Re-executed</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ validationResult()!.reexecuted_step_count }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Blocked</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ validationResult()!.blocked_step_count }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Drift</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ validationResult()!.drift_step_count }}</div>
+                    </div>
+                  </div>
+                  <div class="mt-3 overflow-x-auto rounded border border-border-default">
+                    <table class="w-full text-xs" aria-label="Agent replay validation steps">
+                      <thead>
+                        <tr class="border-b border-border-default bg-surface-base text-text-muted">
+                          <th scope="col" class="px-3 py-2 text-left">Tool</th>
+                          <th scope="col" class="px-3 py-2 text-left">Status</th>
+                          <th scope="col" class="px-3 py-2 text-left">Risk</th>
+                          <th scope="col" class="px-3 py-2 text-left">Hashes</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-border-default">
+                        @for (step of validationResult()!.steps; track step.tool_invocation_id) {
+                          <tr>
+                            <td class="px-3 py-2 font-medium text-text-primary">{{ step.tool_name }}</td>
+                            <td class="px-3 py-2">
+                              <span class="inline-flex rounded-full px-2 py-0.5 font-semibold" [class]="statusClass(step.replay_status)">
+                                {{ statusLabel(step.replay_status) }}
+                              </span>
+                              <div class="mt-1 max-w-sm text-text-muted">{{ step.reason }}</div>
+                            </td>
+                            <td class="px-3 py-2 text-text-secondary">{{ riskLabel(step.current_risk_class) }}</td>
+                            <td class="px-3 py-2 font-mono text-text-disabled">
+                              <div>in {{ matchLabel(step.input_hash_matches) }}</div>
+                              <div>out {{ matchLabel(step.output_hash_matches) }}</div>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
                   </div>
                 }
               </div>
@@ -365,6 +469,9 @@ export class AgentRunsComponent implements OnInit {
   replayLoading = signal(false);
   replayError = signal(false);
   replayPreview = signal<AgentReplayPreview | null>(null);
+  validationLoading = signal(false);
+  validationError = signal(false);
+  validationResult = signal<AgentReplayValidationResult | null>(null);
 
   ngOnInit(): void {
     this.load();
@@ -401,6 +508,7 @@ export class AgentRunsComponent implements OnInit {
       this.selectedRunId.set(null);
       this.selectedRun.set(null);
       this.replayPreview.set(null);
+      this.validationResult.set(null);
       return;
     }
     this.selectedRunId.set(runId);
@@ -408,7 +516,9 @@ export class AgentRunsComponent implements OnInit {
     this.detailError.set(false);
     this.selectedRun.set(null);
     this.replayPreview.set(null);
+    this.validationResult.set(null);
     this.replayError.set(false);
+    this.validationError.set(false);
 
     this.http.get<AgentRunDetail>(`/api/v1/agents/runs/${runId}`).subscribe({
       next: (run) => {
@@ -437,6 +547,21 @@ export class AgentRunsComponent implements OnInit {
     });
   }
 
+  validateReplay(runId: string): void {
+    this.validationLoading.set(true);
+    this.validationError.set(false);
+    this.http.post<AgentReplayValidationResult>(`/api/v1/agents/runs/${runId}/replay/validate`, {}).subscribe({
+      next: (result) => {
+        this.validationResult.set(result);
+        this.validationLoading.set(false);
+      },
+      error: () => {
+        this.validationLoading.set(false);
+        this.validationError.set(true);
+      },
+    });
+  }
+
   displayAgent(agentName: string): string {
     return agentName
       .split('_')
@@ -458,12 +583,19 @@ export class AgentRunsComponent implements OnInit {
   }
 
   statusClass(status: string): string {
-    if (status === 'succeeded') return 'bg-emerald-500/15 text-emerald-300';
-    if (status === 'failed') return 'bg-confidence-low/15 text-confidence-low';
+    if (status === 'succeeded' || status === 'matched') return 'bg-emerald-500/15 text-emerald-300';
+    if (status === 'failed' || status === 'drift_detected') return 'bg-confidence-low/15 text-confidence-low';
     if (status === 'running') return 'bg-blue-500/15 text-blue-300';
-    if (status === 'skipped') return 'bg-amber-500/15 text-amber-300';
+    if (status === 'skipped' || status === 'blocked_by_risk' || status === 'unsupported_executor') return 'bg-amber-500/15 text-amber-300';
     if (status === 'cancelled') return 'bg-slate-500/15 text-slate-300';
+    if (status === 'partially_reexecuted' || status === 'executed_no_baseline') return 'bg-blue-500/15 text-blue-300';
     return 'bg-surface text-text-muted';
+  }
+
+  matchLabel(value: boolean | null): string {
+    if (value === true) return 'match';
+    if (value === false) return 'diff';
+    return '-';
   }
 
   shortId(value: string): string {

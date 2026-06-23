@@ -16,12 +16,19 @@ Thresholds mirror autonomy_promoter.py:
 
 from __future__ import annotations
 
+import calendar
 import logging
+import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
-from app.agents.tool_registry import risk_class_allows, risk_class_for_action
-from app.services.agent_run_ledger import stable_payload_hash
+from app.agents.tool_registry import (
+    risk_class_allows,
+    risk_class_for_action,
+    risk_class_for_tool,
+)
+from app.services.agent_run_ledger import safe_snapshot, stable_payload_hash
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -539,6 +546,78 @@ class AgentsService:
             "steps": steps,
         }
 
+    def build_agent_run_replay_validation(self, run_id: str) -> dict | None:
+        """Dry-run read-only replay steps against current code and compare hashes.
+
+        This intentionally does not replay write-capable, money movement, or
+        accounting tools. Those steps are classified as blocked by current risk
+        policy until a dedicated executor with sandbox/compensation semantics
+        exists.
+        """
+        run = self.get_agent_run(run_id)
+        if run is None:
+            return None
+
+        steps = [
+            self._validate_replay_step(run["agent_name"], index, tool)
+            for index, tool in enumerate(run["tool_invocations"], start=1)
+        ]
+        executed_count = sum(
+            1
+            for step in steps
+            if step["replay_status"]
+            in {"matched", "drift_detected", "executed_no_baseline"}
+        )
+        blocked_count = sum(
+            1
+            for step in steps
+            if step["replay_status"] in {"blocked_by_risk", "unsupported_executor"}
+        )
+        drift_count = sum(1 for step in steps if step["replay_status"] == "drift_detected")
+        failed_count = sum(1 for step in steps if step["replay_status"] == "failed")
+
+        if failed_count:
+            overall_status = "failed"
+        elif drift_count:
+            overall_status = "drift_detected"
+        elif executed_count and blocked_count:
+            overall_status = "partially_reexecuted"
+        elif executed_count:
+            overall_status = "matched"
+        elif steps:
+            overall_status = "blocked"
+        else:
+            overall_status = "no_steps"
+
+        manifest = {
+            "run_id": run["id"],
+            "agent_name": run["agent_name"],
+            "validation_mode": "current_code_dry_run",
+            "overall_status": overall_status,
+            "steps": [
+                {
+                    "tool_invocation_id": step["tool_invocation_id"],
+                    "tool_name": step["tool_name"],
+                    "replay_status": step["replay_status"],
+                    "current_output_hash": step.get("current_output_hash"),
+                }
+                for step in steps
+            ],
+        }
+        return {
+            "run_id": run["id"],
+            "agent_name": run["agent_name"],
+            "validation_mode": "current_code_dry_run",
+            "overall_status": overall_status,
+            "can_reexecute": bool(steps) and executed_count == len(steps) and failed_count == 0,
+            "manifest_hash": stable_payload_hash(manifest),
+            "reexecuted_step_count": executed_count,
+            "blocked_step_count": blocked_count,
+            "drift_step_count": drift_count,
+            "failed_step_count": failed_count,
+            "steps": steps,
+        }
+
     def list_eval_candidates(
         self,
         *,
@@ -795,6 +874,222 @@ class AgentsService:
             "updated_at": str(row["updated_at"]),
         }
 
+    def _validate_replay_step(self, agent_name: str, index: int, tool: dict) -> dict:
+        input_snapshot = tool.get("input_snapshot") or {}
+        recorded_input_hash = tool.get("input_hash")
+        recorded_output_hash = tool.get("output_hash")
+        current_risk = risk_class_for_tool(agent_name, tool["tool_name"])
+        base = {
+            "index": index,
+            "tool_invocation_id": tool["id"],
+            "tool_name": tool["tool_name"],
+            "recorded_risk_class": tool["risk_class"],
+            "current_risk_class": current_risk,
+            "recorded_status": tool["status"],
+            "input_hash": recorded_input_hash,
+            "recorded_output_hash": recorded_output_hash,
+            "current_output_hash": None,
+            "input_hash_matches": (
+                stable_payload_hash(input_snapshot) == recorded_input_hash
+                if recorded_input_hash
+                else None
+            ),
+            "output_hash_matches": None,
+            "duration_ms": None,
+            "current_output_snapshot": None,
+            "error_message": None,
+        }
+
+        if current_risk != "read_only":
+            return {
+                **base,
+                "replay_status": "blocked_by_risk",
+                "reason": f"Current tool risk is {current_risk}; dry-run only executes read-only tools",
+            }
+
+        started_at = time.perf_counter()
+        try:
+            current_output = self._execute_current_read_only_tool(
+                agent_name,
+                tool["tool_name"],
+                input_snapshot,
+            )
+        except NotImplementedError as exc:
+            return {
+                **base,
+                "replay_status": "unsupported_executor",
+                "reason": str(exc),
+            }
+        except Exception as exc:  # pragma: no cover - defensive audit path
+            return {
+                **base,
+                "replay_status": "failed",
+                "reason": "Current read-only tool execution failed",
+                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                "error_message": str(exc),
+            }
+
+        current_hash = stable_payload_hash(current_output)
+        output_hash_matches = (
+            current_hash == recorded_output_hash if recorded_output_hash else None
+        )
+        if output_hash_matches is True:
+            replay_status = "matched"
+            reason = "Current read-only output hash matches recorded output"
+        elif output_hash_matches is False:
+            replay_status = "drift_detected"
+            reason = "Current read-only output hash differs from recorded output"
+        else:
+            replay_status = "executed_no_baseline"
+            reason = "Current read-only tool executed; no recorded output hash to compare"
+
+        return {
+            **base,
+            "replay_status": replay_status,
+            "reason": reason,
+            "current_output_hash": current_hash,
+            "output_hash_matches": output_hash_matches,
+            "duration_ms": int((time.perf_counter() - started_at) * 1000),
+            "current_output_snapshot": safe_snapshot(current_output),
+        }
+
+    def _execute_current_read_only_tool(
+        self,
+        agent_name: str,
+        tool_name: str,
+        tool_input: dict[str, Any],
+    ) -> dict:
+        if agent_name == "copilot_agent":
+            if tool_name == "query_engagements":
+                return self._replay_query_engagements(tool_input)
+            if tool_name == "query_time_entries":
+                return self._replay_query_time_entries(tool_input)
+            if tool_name in {"get_ar_aging", "get_ap_aging", "get_wip"}:
+                return self._replay_reporting_tool(tool_name, tool_input)
+
+        if agent_name == "reporting_agent" and tool_name in {
+            "get_ar_aging",
+            "get_ap_aging",
+            "get_wip",
+            "get_project_pnl",
+            "get_utilization",
+            "get_revenue",
+            "get_trial_balance",
+        }:
+            return self._replay_reporting_tool(tool_name, tool_input)
+
+        raise NotImplementedError(
+            f"No current-code dry-run executor is registered for {agent_name}.{tool_name}"
+        )
+
+    def _replay_query_engagements(self, tool_input: dict[str, Any]) -> dict:
+        status = str(tool_input.get("status") or "all")
+        limit = _int_or_default(tool_input.get("limit"), 10)
+        query = (
+            self.db.table("engagements")
+            .select("id, name, billing_arrangement, currency, total_value, status")
+            .eq("tenant_id", self.tenant_id)
+            .is_("deleted_at", "null")
+            .limit(min(max(limit, 1), 50))
+        )
+        if status != "all":
+            query = query.eq("status", status)
+        engagements = query.execute().data or []
+        return {
+            "count": len(engagements),
+            "engagements": [
+                {
+                    "id": str(row["id"]),
+                    "name": row["name"],
+                    "billing_arrangement": row.get("billing_arrangement"),
+                    "currency": row.get("currency"),
+                    "total_value": row.get("total_value"),
+                    "status": row["status"],
+                }
+                for row in engagements
+            ],
+        }
+
+    def _replay_query_time_entries(self, tool_input: dict[str, Any]) -> dict:
+        project_id = tool_input.get("project_id")
+        if not project_id:
+            raise ValueError("query_time_entries replay requires project_id")
+        query = (
+            self.db.table("time_entries")
+            .select("id, date, hours, description, billable, billing_status, employee_id")
+            .eq("tenant_id", self.tenant_id)
+            .eq("project_id", project_id)
+            .is_("deleted_at", "null")
+            .order("date", desc=True)
+            .limit(50)
+        )
+        if tool_input.get("date_from"):
+            query = query.gte("date", tool_input["date_from"])
+        if tool_input.get("date_to"):
+            query = query.lte("date", tool_input["date_to"])
+        entries = query.execute().data or []
+        total_hours = sum(float(row.get("hours", 0)) for row in entries)
+        return {
+            "count": len(entries),
+            "total_hours": round(total_hours, 2),
+            "entries": [
+                {
+                    "id": str(row["id"]),
+                    "date": str(row["date"]),
+                    "hours": str(row["hours"]),
+                    "description": row.get("description") or "",
+                    "billable": row.get("billable"),
+                    "billing_status": row.get("billing_status"),
+                }
+                for row in entries
+            ],
+        }
+
+    def _replay_reporting_tool(self, tool_name: str, tool_input: dict[str, Any]) -> dict:
+        from app.services.reports_service import ReportsService
+
+        svc = ReportsService(self.db, self.tenant_id)  # type: ignore[arg-type]
+        if tool_name == "get_ar_aging":
+            return svc.ar_aging()
+        if tool_name == "get_ap_aging":
+            return svc.ap_aging()
+        if tool_name == "get_wip":
+            return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
+        if tool_name == "get_project_pnl":
+            return {
+                "projects": svc.project_pnl(
+                    project_id=tool_input.get("project_id"),
+                    period_start=tool_input.get("period_start"),
+                    period_end=tool_input.get("period_end"),
+                )
+            }
+        if tool_name == "get_utilization":
+            period_start, period_end = _period_bounds(tool_input.get("period"))
+            return {
+                "utilization": svc.utilization(
+                    employee_id=tool_input.get("employee_id"),
+                    period_start=period_start,
+                    period_end=period_end,
+                ),
+                "period": tool_input.get("period"),
+            }
+        if tool_name == "get_revenue":
+            period_start, period_end = _period_bounds(tool_input.get("period"))
+            return {
+                "revenue_by_engagement": svc.revenue_by_engagement(
+                    period_start=period_start,
+                    period_end=period_end,
+                ),
+                "period": tool_input.get("period"),
+            }
+        if tool_name == "get_trial_balance":
+            return svc.trial_balance(
+                as_of_period=tool_input.get("as_of_period")
+            ).model_dump(mode="json")
+        raise NotImplementedError(
+            f"No current-code dry-run executor is registered for reporting tool {tool_name}"
+        )
+
     @staticmethod
     def _control_response(row: dict, agent_name: str, action_type: str) -> dict:
         circuit_open_until = (
@@ -866,3 +1161,23 @@ def _circuit_is_open(value: object) -> bool:
     except (TypeError, ValueError):
         return False
     return opened_until > datetime.now(UTC)
+
+
+def _period_bounds(period: object) -> tuple[str | None, str | None]:
+    if not period:
+        return None, None
+    raw = str(period)
+    if len(raw) != 7 or raw[4] != "-":
+        return None, None
+    try:
+        year = int(raw[:4])
+        month = int(raw[5:7])
+    except ValueError:
+        return None, None
+    if not (1 <= month <= 12):
+        return None, None
+    last_day = calendar.monthrange(year, month)[1]
+    return (
+        f"{year:04d}-{month:02d}-01",
+        f"{year:04d}-{month:02d}-{last_day:02d}",
+    )
