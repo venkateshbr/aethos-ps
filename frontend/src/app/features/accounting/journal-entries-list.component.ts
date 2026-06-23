@@ -183,6 +183,15 @@ type FilterChip = 'all' | 'manual' | 'auto';
               type="button"
               class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
               [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-expense-accrual', 'Expense accrual')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">request_quote</mat-icon>
+              Expense accrual
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
               (click)="requestCloseProposal('propose-deferred-revenue-release', 'Deferred release')"
             >
               <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">move_up</mat-icon>

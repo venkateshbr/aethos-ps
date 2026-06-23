@@ -162,6 +162,32 @@ def test_close_status_blocks_for_pending_close_review() -> None:
     )
 
 
+def test_close_status_summarizes_pending_employee_reimbursement_accrual() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "suggestion-expense-accrual-001",
+            "agent_name": "accrual_agent",
+            "action_type": "draft_journal",
+            "status": "pending",
+            "output_snapshot": {
+                "proposal_type": "employee_reimbursement_accrual",
+                "period": "2026-06",
+                "currency": "USD",
+                "reimbursement_accrual_amount": "250.00",
+            },
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.pending_reviews[0].summary == (
+        "Review USD employee reimbursement accrual proposal for 250.00."
+    )
+
+
 def test_close_status_blocks_for_pending_revenue_recognition_review() -> None:
     tables = _base_tables()
     tables["agent_suggestions"] = [

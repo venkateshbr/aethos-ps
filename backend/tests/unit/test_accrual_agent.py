@@ -8,7 +8,9 @@ import pytest
 
 from app.agents.accrual_agent import (
     AccrualProposalError,
+    build_employee_reimbursement_accrual_proposals,
     build_wip_accrual_proposals,
+    write_employee_reimbursement_accrual_suggestions,
     write_wip_accrual_suggestions,
 )
 from app.agents.base import AgentDeps
@@ -87,6 +89,18 @@ def _base_tables() -> dict[str, list[dict]]:
         "accounts": [
             {"tenant_id": TENANT_ID, "id": "ar-account", "code": "1200", "deleted_at": None},
             {"tenant_id": TENANT_ID, "id": "rev-account", "code": "4000", "deleted_at": None},
+            {
+                "tenant_id": TENANT_ID,
+                "id": "employee-expense-account",
+                "code": "5100",
+                "deleted_at": None,
+            },
+            {
+                "tenant_id": TENANT_ID,
+                "id": "accrued-reimbursement-account",
+                "code": "2100",
+                "deleted_at": None,
+            },
         ],
         "time_entries": [
             {
@@ -142,6 +156,41 @@ def _base_tables() -> dict[str, list[dict]]:
                 "deleted_at": None,
             },
         ],
+        "project_expenses": [
+            {
+                "tenant_id": TENANT_ID,
+                "id": "expense-1",
+                "project_id": "project-1",
+                "amount": "185.50",
+                "currency": "USD",
+                "expense_date": "2026-06-12",
+                "reimbursable": True,
+                "reimbursed_at": None,
+                "deleted_at": None,
+            },
+            {
+                "tenant_id": TENANT_ID,
+                "id": "expense-2",
+                "project_id": "project-2",
+                "amount": "64.50",
+                "currency": "USD",
+                "expense_date": "2026-06-18",
+                "reimbursable": True,
+                "reimbursed_at": None,
+                "deleted_at": None,
+            },
+            {
+                "tenant_id": TENANT_ID,
+                "id": "expense-reimbursed",
+                "project_id": "project-1",
+                "amount": "100.00",
+                "currency": "USD",
+                "expense_date": "2026-06-20",
+                "reimbursable": True,
+                "reimbursed_at": "2026-06-21T00:00:00+00:00",
+                "deleted_at": None,
+            },
+        ],
         "agent_suggestions": [],
     }
 
@@ -176,6 +225,53 @@ def test_build_wip_accrual_proposal_raises_for_missing_account() -> None:
         build_wip_accrual_proposals(_deps(tables), "2026-06")
 
     assert "4000" in str(exc_info.value)
+
+
+def test_build_employee_reimbursement_accrual_values_unreimbursed_expenses() -> None:
+    proposals = build_employee_reimbursement_accrual_proposals(
+        _deps(_base_tables()),
+        "2026-06",
+    )
+
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.proposal_type == "employee_reimbursement_accrual"
+    assert proposal.period == "2026-06"
+    assert proposal.currency == "USD"
+    assert proposal.expense_ids == ["expense-1", "expense-2"]
+    assert proposal.expense_count == 2
+    assert proposal.project_count == 2
+    assert proposal.reimbursement_accrual_amount == "250.00"
+    assert proposal.journal_entry["entry_date"] == "2026-06-30"
+    assert proposal.journal_entry["lines"][0]["direction"] == "DR"
+    assert proposal.journal_entry["lines"][0]["account_id"] == "employee-expense-account"
+    assert proposal.journal_entry["lines"][1]["direction"] == "CR"
+    assert proposal.journal_entry["lines"][1]["account_id"] == "accrued-reimbursement-account"
+
+
+def test_build_employee_reimbursement_accrual_skips_already_accrued_expense() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "agent_name": "accrual_agent",
+            "action_type": "draft_journal",
+            "status": "approved",
+            "output_snapshot": {
+                "proposal_type": "employee_reimbursement_accrual",
+                "period": "2026-06",
+                "currency": "USD",
+                "expense_ids": ["expense-1"],
+                "reimbursement_accrual_amount": "185.50",
+            },
+        }
+    ]
+
+    proposals = build_employee_reimbursement_accrual_proposals(_deps(tables), "2026-06")
+
+    assert len(proposals) == 1
+    assert proposals[0].expense_ids == ["expense-2"]
+    assert proposals[0].reimbursement_accrual_amount == "64.50"
 
 
 @pytest.mark.asyncio
@@ -222,3 +318,28 @@ async def test_write_wip_accrual_suggestions_skips_duplicate() -> None:
 
     assert result["created_count"] == 0
     assert result["skipped_duplicates"] == 1
+
+
+@pytest.mark.asyncio
+async def test_write_employee_reimbursement_accrual_suggestions_writes_l2_hitl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict] = []
+
+    async def _fake_write(*args: Any, **kwargs: Any) -> dict:
+        calls.append({"deps": args[0], **kwargs})
+        return {"id": "suggestion-expense-accrual-001"}
+
+    monkeypatch.setattr("app.agents.accrual_agent.write_agent_suggestion", _fake_write)
+
+    result = await write_employee_reimbursement_accrual_suggestions(
+        _deps(_base_tables()),
+        "2026-06",
+    )
+
+    assert result["created_count"] == 1
+    assert result["suggestion_ids"] == ["suggestion-expense-accrual-001"]
+    assert calls[0]["agent_name"] == "accrual_agent"
+    assert calls[0]["action_type"] == "draft_journal"
+    assert calls[0]["autonomy_level"] == 2
+    assert calls[0]["output"]["reimbursement_accrual_amount"] == "250.00"

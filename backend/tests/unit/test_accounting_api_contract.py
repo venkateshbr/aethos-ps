@@ -488,6 +488,53 @@ def test_close_task_bootstrap_and_update_use_service_role_client(
     assert body["evidence"] == {"reviewed": True}
 
 
+def test_expense_accrual_proposal_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _write_suggestions(
+        deps: Any,
+        period: str,
+        *,
+        debit_account_code: str,
+        credit_account_code: str,
+    ) -> dict[str, Any]:
+        assert deps.db is fake_db
+        assert deps.tenant_id == TENANT_ID
+        assert deps.user_id == "manager-1"
+        assert period == "2026-06"
+        assert debit_account_code == "5100"
+        assert credit_account_code == "2100"
+        return {
+            "period": period,
+            "proposal_count": 1,
+            "created_count": 1,
+            "skipped_duplicates": 0,
+            "suggestion_ids": ["suggestion-expense-accrual-001"],
+            "proposals": [
+                {
+                    "proposal_type": "employee_reimbursement_accrual",
+                    "expense_ids": ["expense-1"],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.agents.accrual_agent.write_employee_reimbursement_accrual_suggestions",
+        _write_suggestions,
+    )
+
+    response = client.post("/api/v1/accounting/periods/2026-06/propose-expense-accrual")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created_count"] == 1
+    assert response.json()["proposals"][0]["expense_ids"] == ["expense-1"]
+
+
 def test_milestone_recognition_proposal_uses_service_role_client(
     client: TestClient,
     fake_db: _FakeDb,

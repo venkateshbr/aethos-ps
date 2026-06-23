@@ -300,6 +300,16 @@ def _review_summary(output: dict) -> str:
     wip_value = output.get("wip_value")
     if currency and wip_value:
         return f"Review {currency} WIP accrual proposal for {wip_value}."
+    reimbursement_accrual = output.get("reimbursement_accrual_amount")
+    if (
+        output.get("proposal_type") == "employee_reimbursement_accrual"
+        and currency
+        and reimbursement_accrual
+    ):
+        return (
+            f"Review {currency} employee reimbursement accrual proposal for "
+            f"{reimbursement_accrual}."
+        )
     deferred_release = output.get("deferred_release_amount")
     if currency and deferred_release:
         return f"Review {currency} deferred revenue release proposal for {deferred_release}."

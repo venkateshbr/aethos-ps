@@ -6,6 +6,7 @@ Endpoints:
   GET    /api/v1/accounting/periods/{period}/close-package — close review package
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
+  POST   /api/v1/accounting/periods/{period}/propose-expense-accrual — HITL expense accrual
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
   POST   /api/v1/accounting/periods/{period}/propose-milestone-recognition — HITL milestone recognition
   POST   /api/v1/accounting/periods/{period}/propose-percentage-completion-recognition — HITL POC recognition
@@ -488,6 +489,39 @@ async def propose_wip_accrual(
     deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
     try:
         return await write_wip_accrual_suggestions(
+            deps,
+            period,
+            debit_account_code=debit_account_code,
+            credit_account_code=credit_account_code,
+        )
+    except AccrualProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-expense-accrual")
+async def propose_expense_accrual(
+    period: str,
+    debit_account_code: str = Query("5100", min_length=1, max_length=20),
+    credit_account_code: str = Query("2100", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for unreimbursed employee expenses."""
+    _validate_period(period)
+
+    from app.agents.accrual_agent import (
+        AccrualProposalError,
+        write_employee_reimbursement_accrual_suggestions,
+    )
+    from app.agents.base import AgentDeps
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_employee_reimbursement_accrual_suggestions(
             deps,
             period,
             debit_account_code=debit_account_code,

@@ -31,8 +31,11 @@ _DEFAULT_TASKS = [
     ),
     CloseTaskTemplate(
         code="wip_accrual_review",
-        title="Review WIP accrual",
-        description="Generate and approve any unbilled WIP accrual proposal for the period.",
+        title="Review accruals",
+        description=(
+            "Generate and approve unbilled WIP and employee reimbursement "
+            "accrual proposals for the period."
+        ),
         owner_role="finance_manager",
         order_index=20,
     ),
