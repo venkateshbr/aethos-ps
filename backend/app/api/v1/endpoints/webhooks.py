@@ -241,9 +241,35 @@ def _extract_customer_id(event: stripe.Event) -> str | None:
     """Extract the Stripe customer ID from an event object if present."""
     try:
         obj = event.data.object
-        return getattr(obj, "customer", None)
+        customer = _stripe_value(obj, "customer")
+        return str(customer) if customer else None
     except Exception:
         return None
+
+
+def _stripe_value(obj: object, key: str, default: object | None = None) -> object | None:
+    """Read a field from dicts and StripeObject instances.
+
+    StripeObject exposes webhook payload fields through attribute and index
+    access, but nested objects such as ``metadata`` do not implement ``get``.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    getter = getattr(obj, "get", None)
+    if callable(getter):
+        try:
+            return getter(key, default)
+        except TypeError:
+            try:
+                return getter(key)
+            except Exception:
+                pass
+    try:
+        return obj[key]  # type: ignore[index]
+    except Exception:
+        return getattr(obj, key, default)
 
 
 async def _handle_checkout_session_completed(
@@ -262,13 +288,12 @@ async def _handle_checkout_session_completed(
     Uses service-role client — no user session in webhook context.
     """
     session = event.data.object
-    meta = session.get("metadata", {}) if hasattr(session, "get") else {}
-    # stripe.checkout.Session is a StripeObject — use attribute access
-    if not meta:
-        meta = getattr(session, "metadata", {}) or {}
+    meta = _stripe_value(session, "metadata", {}) or {}
 
-    invoice_id: str | None = meta.get("invoice_id")
-    tenant_id: str | None = meta.get("tenant_id")
+    invoice_id_raw = _stripe_value(meta, "invoice_id")
+    tenant_id_raw = _stripe_value(meta, "tenant_id")
+    invoice_id = str(invoice_id_raw) if invoice_id_raw else None
+    tenant_id = str(tenant_id_raw) if tenant_id_raw else None
 
     if not invoice_id or not tenant_id:
         logger.warning(
@@ -277,7 +302,8 @@ async def _handle_checkout_session_completed(
         )
         return
 
-    payment_intent_id: str | None = getattr(session, "payment_intent", None)
+    payment_intent_raw = _stripe_value(session, "payment_intent")
+    payment_intent_id = str(payment_intent_raw) if payment_intent_raw else None
 
     # ------------------------------------------------------------------
     # Idempotency: skip if this payment_intent was already recorded
@@ -323,8 +349,8 @@ async def _handle_checkout_session_completed(
         return
 
     # Amount from Stripe is in the smallest currency unit (cents)
-    amount_total_cents: int = getattr(session, "amount_total", 0) or 0
-    currency: str = (getattr(session, "currency", "usd") or "usd").upper()
+    amount_total_cents = int(_stripe_value(session, "amount_total", 0) or 0)
+    currency = str(_stripe_value(session, "currency", "usd") or "usd").upper()
     amount_received = Decimal(str(amount_total_cents)) / Decimal("100")
 
     # ------------------------------------------------------------------

@@ -75,19 +75,26 @@ class ClientService:
             "name": data.name,
             "kind": data.kind,
             "payment_terms_days": data.payment_terms_days,
-            "vendor_onboarding_status": (
+        }
+        include_vendor_controls = data.kind in _VENDOR_KINDS
+        provided_fields = data.model_fields_set
+        if include_vendor_controls or "vendor_onboarding_status" in provided_fields:
+            payload["vendor_onboarding_status"] = (
                 data.vendor_onboarding_status
                 if data.vendor_onboarding_status is not None
                 else "pending"
                 if data.kind in _VENDOR_KINDS
                 else "not_required"
-            ),
-            "vendor_bank_account_status": data.vendor_bank_account_status,
-            "vendor_tax_validation_status": data.vendor_tax_validation_status,
-            "vendor_sanctions_status": data.vendor_sanctions_status,
-            "vendor_remittance_status": data.vendor_remittance_status,
-            "vendor_payment_controls": data.vendor_payment_controls,
-        }
+            )
+        for field in (
+            "vendor_bank_account_status",
+            "vendor_tax_validation_status",
+            "vendor_sanctions_status",
+            "vendor_remittance_status",
+            "vendor_payment_controls",
+        ):
+            if include_vendor_controls or field in provided_fields:
+                payload[field] = getattr(data, field)
         if data.billing_address is not None:
             payload["billing_address"] = data.billing_address
         if data.tax_id is not None:

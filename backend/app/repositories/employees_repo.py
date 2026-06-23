@@ -9,9 +9,18 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from app.services.postgrest_errors import is_missing_column_error
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+_OPTIONAL_EMPLOYEE_PROFILE_FIELDS = frozenset(
+    {
+        "target_billable_utilization_pct",
+        "practice_area",
+        "seniority",
+    }
+)
 
 
 class EmployeesRepository:
@@ -90,19 +99,50 @@ class EmployeesRepository:
 
     async def create(self, data: dict) -> dict:
         payload = {**data, "tenant_id": self._tenant_id}
-        result = self._db.table("employees").insert(payload).execute()
+        try:
+            result = self._db.table("employees").insert(payload).execute()
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_EMPLOYEE_PROFILE_FIELDS):
+                raise
+            fallback_payload = _without_optional_employee_profile_fields(payload)
+            if fallback_payload == payload:
+                raise
+            logger.warning(
+                "employees table is missing optional profile columns; "
+                "retrying insert without those fields"
+            )
+            result = self._db.table("employees").insert(fallback_payload).execute()
         return result.data[0]
 
     async def update(self, employee_id: str, data: dict) -> dict | None:
         data = {**data, "updated_at": datetime.now(UTC).isoformat()}
-        result = (
-            self._db.table("employees")
-            .update(data)
-            .eq("id", employee_id)
-            .eq("tenant_id", self._tenant_id)
-            .is_("deleted_at", "null")
-            .execute()
-        )
+        try:
+            result = (
+                self._db.table("employees")
+                .update(data)
+                .eq("id", employee_id)
+                .eq("tenant_id", self._tenant_id)
+                .is_("deleted_at", "null")
+                .execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_EMPLOYEE_PROFILE_FIELDS):
+                raise
+            fallback_data = _without_optional_employee_profile_fields(data)
+            if fallback_data == data:
+                raise
+            logger.warning(
+                "employees table is missing optional profile columns; "
+                "retrying update without those fields"
+            )
+            result = (
+                self._db.table("employees")
+                .update(fallback_data)
+                .eq("id", employee_id)
+                .eq("tenant_id", self._tenant_id)
+                .is_("deleted_at", "null")
+                .execute()
+            )
         return result.data[0] if result.data else None
 
     async def soft_delete(self, employee_id: str) -> bool:
@@ -130,3 +170,11 @@ class EmployeesRepository:
             .execute()
         )
         return bool(result.data)
+
+
+def _without_optional_employee_profile_fields(payload: dict) -> dict:
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _OPTIONAL_EMPLOYEE_PROFILE_FIELDS
+    }

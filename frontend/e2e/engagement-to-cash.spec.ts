@@ -17,6 +17,7 @@
  */
 
 import { test, expect, APIRequestContext, APIResponse, Page } from '@playwright/test';
+import { createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -25,6 +26,31 @@ const API = process.env.AETHOS_PS_API_URL ?? 'https://aethos-api.ishirock.com';
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const API_REQUEST_TIMEOUT = 90_000;
+
+function envValue(name: string): string {
+  if (process.env[name]) return process.env[name]!;
+  const candidates = [
+    path.join(__dirname, '..', '..', '.env'),
+    path.join(__dirname, '..', '..', 'backend', '.env'),
+  ];
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) continue;
+    const line = fs
+      .readFileSync(file, 'utf-8')
+      .split(/\r?\n/)
+      .find((row) => row.trim().startsWith(`${name}=`));
+    if (!line) continue;
+    return line.slice(line.indexOf('=') + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  return '';
+}
+
+function stripeSignature(payload: string, secret: string, timestamp = Math.floor(Date.now() / 1000)): string {
+  const signature = createHmac('sha256', secret)
+    .update(`${timestamp}.${payload}`)
+    .digest('hex');
+  return `t=${timestamp},v1=${signature}`;
+}
 
 function loadLoginMeta(): { email: string; password: string } | null {
   if (!fs.existsSync(META_PATH)) return null;
@@ -405,12 +431,104 @@ test.describe('engagement-to-cash — §1 Happy Path (TM, single-currency)', () 
     await expect(page.getByText(/invoice/i).first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test.fixme('§1.5 step 11 — Stripe webhook marks invoice paid; DR Bank / CR AR journal posts', async () => {
-    // Blocked: requires Stripe webhook delivery or test-mode event simulation
+  test('§1.5 step 11 — signed Stripe webhook marks invoice paid; DR Bank / CR AR journal posts', async ({ request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    let invoiceId = createdInvoiceId;
+    let invoice: Record<string, unknown>;
+    if (invoiceId) {
+      const invoiceResp = await request.get(`${API}/api/v1/invoices/${invoiceId}`, {
+        headers: apiHeaders(auth!),
+        timeout: API_REQUEST_TIMEOUT,
+      });
+      await expectOk(invoiceResp, 'fetch approved invoice before webhook');
+      invoice = await invoiceResp.json();
+    } else {
+      invoice = await createApprovedInvoice(
+        request,
+        auth!,
+        { description: 'E2E Stripe paid invoice', quantity: '1', unit_price: '90.00' },
+      );
+      invoiceId = String(invoice.id);
+    }
+
+    const beforePayments = await listPaymentsForInvoice(request, auth!, invoiceId);
+
+    const { response } = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId,
+      amountCents: moneyToCents(invoice.total),
+      currency: String(invoice.currency),
+    });
+    await expectOk(response, 'signed checkout.session.completed webhook');
+
+    const paidResp = await request.get(`${API}/api/v1/invoices/${invoiceId}`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(paidResp, 'fetch paid invoice after webhook');
+    const paid = await paidResp.json();
+    expect(paid.status).toBe('paid');
+    expect(paid.paid_at).toBeTruthy();
+
+    const afterPayments = await listPaymentsForInvoice(request, auth!, invoiceId);
+    expect(afterPayments.length).toBe(beforePayments.length + 1);
+    expect(Number(afterPayments.at(-1)?.amount ?? 0)).toBeCloseTo(Number(invoice.total), 2);
+
+    const journalResp = await request.get(
+      `${API}/api/v1/accounting/journal-entries?reference_type=payment&limit=20`,
+      { headers: apiHeaders(auth!), timeout: API_REQUEST_TIMEOUT },
+    );
+    await expectOk(journalResp, 'list payment journal entries');
+    const journals = await journalResp.json();
+    expect(
+      (journals as Array<{ reference?: string | null }>).some((journal) => journal.reference === invoiceId),
+    ).toBeTruthy();
   });
 
-  test.fixme('§1.5 step 13 — paid invoice drops out of AR aging', async () => {
-    // Blocked: depends on §1.5 step 11 (payment must be recorded first)
+  test('§1.5 step 13 — paid invoice drops out of AR aging', async ({ request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'E2E AR aging payment removal', quantity: '1', unit_price: '125.00' },
+      { issue_date: today, due_date: today },
+    );
+
+    const beforeResp = await request.get(`${API}/api/v1/reports/ar-aging`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(beforeResp, 'AR aging before webhook payment');
+    const before = arTotal(await beforeResp.json());
+
+    const { response } = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId: String(invoice.id),
+      amountCents: moneyToCents(invoice.total),
+      currency: String(invoice.currency),
+    });
+    await expectOk(response, 'signed checkout.session.completed webhook for AR aging');
+
+    const afterResp = await request.get(`${API}/api/v1/reports/ar-aging`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(afterResp, 'AR aging after webhook payment');
+    const after = arTotal(await afterResp.json());
+    expect(before - after).toBeCloseTo(Number(invoice.total), 2);
   });
 });
 
@@ -467,14 +585,121 @@ async function createInvoiceWithLines(
   engagementId: string,
   clientId: string,
   lines: Array<{ description: string; quantity: string; unit_price: string }>,
+  options: { issue_date?: string; due_date?: string; currency?: string } = {},
 ): Promise<Record<string, unknown>> {
   const resp = await request.post(`${API}/api/v1/invoices`, {
     headers: apiHeaders(auth),
-    data: { engagement_id: engagementId, client_id: clientId, currency: 'USD', lines },
+    data: {
+      engagement_id: engagementId,
+      client_id: clientId,
+      currency: options.currency ?? 'USD',
+      issue_date: options.issue_date,
+      due_date: options.due_date,
+      lines,
+    },
     timeout: API_REQUEST_TIMEOUT,
   });
   await expectOk(resp, 'create invoice');
   return resp.json();
+}
+
+function stripeWebhookSecret(): string {
+  const secret = envValue('STRIPE_WEBHOOK_SECRET');
+  if (!secret || secret === 'whsec_REPLACE_ME') return '';
+  return secret;
+}
+
+function moneyToCents(value: unknown): number {
+  return Math.round(Number(value ?? 0) * 100);
+}
+
+function arTotal(report: Record<string, unknown>): number {
+  return Number(report.total ?? 0);
+}
+
+async function listPaymentsForInvoice(
+  request: APIRequestContext,
+  auth: { token: string; tenantId: string },
+  invoiceId: string,
+): Promise<Array<{ invoice_id: string; amount: string; currency: string }>> {
+  const resp = await request.get(`${API}/api/v1/payments?limit=100`, {
+    headers: apiHeaders(auth),
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(resp, 'list payments');
+  const body = await resp.json();
+  return ((body.items ?? []) as Array<{ invoice_id: string; amount: string; currency: string }>)
+    .filter((payment) => payment.invoice_id === invoiceId);
+}
+
+async function postSignedCheckoutCompleted(
+  request: APIRequestContext,
+  args: {
+    secret: string;
+    tenantId: string;
+    invoiceId: string;
+    amountCents: number;
+    currency?: string;
+    eventId?: string;
+    paymentIntentId?: string;
+  },
+): Promise<{ eventId: string; paymentIntentId: string; response: APIResponse }> {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
+  const eventId = args.eventId ?? `evt_e2e_checkout_${suffix}`;
+  const paymentIntentId = args.paymentIntentId ?? `pi_e2e_${suffix}`;
+  const payload = JSON.stringify({
+    id: eventId,
+    object: 'event',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: `cs_test_e2e_${suffix}`,
+        object: 'checkout.session',
+        amount_total: args.amountCents,
+        currency: (args.currency ?? 'USD').toLowerCase(),
+        metadata: {
+          tenant_id: args.tenantId,
+          invoice_id: args.invoiceId,
+        },
+        payment_intent: paymentIntentId,
+        payment_status: 'paid',
+      },
+    },
+  });
+  const response = await request.post(`${API}/api/v1/webhooks/stripe`, {
+    headers: {
+      'content-type': 'application/json',
+      'stripe-signature': stripeSignature(payload, args.secret),
+    },
+    data: payload,
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  return { eventId, paymentIntentId, response };
+}
+
+async function createApprovedInvoice(
+  request: APIRequestContext,
+  auth: { token: string; tenantId: string },
+  line: { description: string; quantity: string; unit_price: string },
+  options: { issue_date?: string; due_date?: string } = {},
+): Promise<Record<string, unknown>> {
+  const { clientId, engagementId } = await createClientAndEngagement(
+    request, auth, 'time_and_materials',
+  );
+  const invoice = await createInvoiceWithLines(
+    request,
+    auth,
+    engagementId,
+    clientId,
+    [line],
+    options,
+  );
+  const approveResp = await request.patch(`${API}/api/v1/invoices/${invoice.id}/approve`, {
+    headers: apiHeaders(auth),
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(approveResp, 'approve invoice for webhook test');
+  return invoice;
 }
 
 // Parse SSE body into typed events
@@ -1105,8 +1330,52 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
     expect(true).toBeTruthy();
   });
 
-  test.fixme('§3.16 Stripe webhook idempotent on replay', async () => {
-    // Blocked: requires Stripe test-mode webhook delivery in CI
+  test('§3.16 Stripe webhook idempotent on replay', async ({ request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'E2E Stripe replay idempotency', quantity: '1', unit_price: '77.00' },
+    );
+
+    const eventId = `evt_e2e_replay_${Date.now()}`;
+    const paymentIntentId = `pi_e2e_replay_${Date.now()}`;
+    const first = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId: String(invoice.id),
+      amountCents: moneyToCents(invoice.total),
+      currency: String(invoice.currency),
+      eventId,
+      paymentIntentId,
+    });
+    await expectOk(first.response, 'first signed checkout.session.completed webhook');
+
+    const second = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId: String(invoice.id),
+      amountCents: moneyToCents(invoice.total),
+      currency: String(invoice.currency),
+      eventId,
+      paymentIntentId,
+    });
+    await expectOk(second.response, 'replayed signed checkout.session.completed webhook');
+
+    const payments = await listPaymentsForInvoice(request, auth!, String(invoice.id));
+    expect(payments).toHaveLength(1);
+
+    const paidResp = await request.get(`${API}/api/v1/invoices/${invoice.id}`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(paidResp, 'fetch replay invoice after webhook replay');
+    expect((await paidResp.json()).status).toBe('paid');
   });
 
   test('§3.17 posted journal edit blocked at API', async ({ request }) => {

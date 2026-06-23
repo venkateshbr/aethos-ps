@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
 from app.models.clients import ClientCreate, ClientUpdate
@@ -174,3 +175,126 @@ def test_list_no_kind_returns_all() -> None:
     eq_calls = [str(c) for c in chain.eq.call_args_list]
     assert not any("kind" in c for c in eq_calls)
     assert len(result) == 3
+
+
+def test_create_retries_without_optional_vendor_control_columns_when_schema_lags() -> None:
+    repo, first_insert, retry_insert = _make_repo_for_stale_vendor_control_create()
+
+    row = asyncio.run(
+        repo.create(
+            {
+                "name": "Supplier Ltd",
+                "kind": "vendor",
+                "payment_terms_days": 30,
+                "vendor_onboarding_status": "pending",
+                "vendor_bank_account_status": "not_provided",
+                "vendor_tax_validation_status": "not_checked",
+                "vendor_sanctions_status": "not_checked",
+                "vendor_remittance_status": "not_configured",
+                "vendor_payment_controls": {},
+            }
+        )
+    )
+
+    assert row["id"] == "vendor-1"
+    first_insert.insert.assert_called_once()
+    retry_insert.insert.assert_called_once()
+    retry_payload = retry_insert.insert.call_args.args[0]
+    assert retry_payload["tenant_id"] == "tenant-123"
+    assert retry_payload["vendor_onboarding_status"] == "pending"
+    assert "vendor_bank_account_status" not in retry_payload
+    assert "vendor_tax_validation_status" not in retry_payload
+    assert "vendor_sanctions_status" not in retry_payload
+    assert "vendor_remittance_status" not in retry_payload
+    assert "vendor_payment_controls" not in retry_payload
+
+
+def test_update_retries_without_optional_vendor_control_columns_when_schema_lags() -> None:
+    repo, first_update, retry_update = _make_repo_for_stale_vendor_control_update()
+
+    row = asyncio.run(
+        repo.update(
+            "vendor-1",
+            {
+                "name": "Supplier Limited",
+                "vendor_bank_account_status": "verified",
+                "vendor_tax_validation_status": "valid",
+            },
+        )
+    )
+
+    assert row is not None
+    assert row["name"] == "Supplier Limited"
+    first_update.update.assert_called_once()
+    retry_update.update.assert_called_once()
+    retry_payload = retry_update.update.call_args.args[0]
+    assert retry_payload == {"name": "Supplier Limited"}
+
+
+def _missing_vendor_column_error() -> APIError:
+    return APIError(
+        {
+            "code": "PGRST204",
+            "message": "Could not find the 'vendor_bank_account_status' column "
+            "of 'clients' in the schema cache",
+        }
+    )
+
+
+def _chain(result: object | None = None, error: Exception | None = None) -> MagicMock:
+    chain = MagicMock()
+    for method in ("select", "eq", "is_", "in_", "ilike", "insert", "update"):
+        getattr(chain, method).return_value = chain
+    if error is not None:
+        chain.execute.side_effect = error
+    else:
+        chain.execute.return_value = result
+    return chain
+
+
+def _make_repo_for_stale_vendor_control_create() -> tuple[ClientRepository, MagicMock, MagicMock]:
+    result = MagicMock()
+    result.data = [
+        {
+            "id": "vendor-1",
+            "tenant_id": "tenant-123",
+            "name": "Supplier Ltd",
+            "kind": "vendor",
+            "payment_terms_days": 30,
+            "vendor_onboarding_status": "pending",
+            "created_at": "2026-01-01T00:00:00",
+        }
+    ]
+    first_insert = _chain(error=_missing_vendor_column_error())
+    retry_insert = _chain(result=result)
+    mock_db = MagicMock()
+    mock_db.table.side_effect = [first_insert, retry_insert]
+    return ClientRepository(db=mock_db, tenant_id="tenant-123"), first_insert, retry_insert
+
+
+def _make_repo_for_stale_vendor_control_update() -> tuple[ClientRepository, MagicMock, MagicMock]:
+    existing = MagicMock()
+    existing.data = [
+        {
+            "id": "vendor-1",
+            "tenant_id": "tenant-123",
+            "name": "Supplier Ltd",
+            "kind": "vendor",
+            "payment_terms_days": 30,
+            "vendor_onboarding_status": "pending",
+            "created_at": "2026-01-01T00:00:00",
+        }
+    ]
+    updated = MagicMock()
+    updated.data = [
+        {
+            **existing.data[0],
+            "name": "Supplier Limited",
+        }
+    ]
+    get_chain = _chain(result=existing)
+    first_update = _chain(error=_missing_vendor_column_error())
+    retry_update = _chain(result=updated)
+    mock_db = MagicMock()
+    mock_db.table.side_effect = [get_chain, first_update, retry_update]
+    return ClientRepository(db=mock_db, tenant_id="tenant-123"), first_update, retry_update

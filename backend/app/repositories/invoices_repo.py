@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
+from app.services.postgrest_errors import is_missing_table_error
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+_PUBLIC_TOKEN_REVOCATIONS_TABLE = "invoice_public_token_revocations"
+_FALLBACK_REVOKED_PUBLIC_TOKENS: dict[str, dict] = {}
 
 
 def _is_uuid(value: str) -> bool:
@@ -93,13 +98,22 @@ class InvoicesRepository:
         """Return a revoked public invoice token row, if the token was retired."""
 
         def _get() -> dict | None:
-            result = (
-                self.db.table("invoice_public_token_revocations")
-                .select("*")
-                .eq("public_token", token)
-                .limit(1)
-                .execute()
-            )
+            try:
+                result = (
+                    self.db.table(_PUBLIC_TOKEN_REVOCATIONS_TABLE)
+                    .select("*")
+                    .eq("public_token", token)
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as exc:
+                if not is_missing_table_error(exc, _PUBLIC_TOKEN_REVOCATIONS_TABLE):
+                    raise
+                logger.warning(
+                    "invoice public token revocation table missing; "
+                    "checking in-process fallback"
+                )
+                return _FALLBACK_REVOKED_PUBLIC_TOKENS.get(token)
             return result.data[0] if result.data else None
 
         return await asyncio.to_thread(_get)
@@ -115,19 +129,35 @@ class InvoicesRepository:
         """Persist a retired public token before the invoice token is rotated."""
 
         def _insert() -> dict:
-            result = (
-                self.db.table("invoice_public_token_revocations")
-                .insert(
-                    {
-                        "tenant_id": invoice["tenant_id"],
-                        "invoice_id": invoice["id"],
-                        "public_token": public_token,
-                        "revoked_by": revoked_by,
-                        "reason": reason,
-                    }
+            row = {
+                "tenant_id": invoice["tenant_id"],
+                "invoice_id": invoice["id"],
+                "public_token": public_token,
+                "revoked_by": revoked_by,
+                "reason": reason,
+            }
+            try:
+                result = (
+                    self.db.table(_PUBLIC_TOKEN_REVOCATIONS_TABLE)
+                    .insert(row)
+                    .execute()
                 )
-                .execute()
-            )
+            except Exception as exc:
+                if not is_missing_table_error(exc, _PUBLIC_TOKEN_REVOCATIONS_TABLE):
+                    raise
+                now = datetime.now(UTC).isoformat()
+                fallback = {
+                    "id": f"fallback:{public_token}",
+                    "created_at": now,
+                    "revoked_at": now,
+                    **row,
+                }
+                _FALLBACK_REVOKED_PUBLIC_TOKENS[public_token] = fallback
+                logger.warning(
+                    "invoice public token revocation table missing; "
+                    "recorded retired token in process memory"
+                )
+                return fallback
             if not result.data:
                 raise RuntimeError("Invoice public token revocation insert returned no data")
             return result.data[0]

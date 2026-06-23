@@ -203,6 +203,33 @@ def test_client_writes_use_service_role_client(
     assert update_response.json()["payment_terms_days"] == 20
 
 
+def test_customer_create_does_not_write_vendor_control_defaults(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/clients",
+        json={
+            "name": "Customer Only",
+            "kind": "customer",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    inserted = fake_db.tables["clients"][-1]
+    assert inserted["name"] == "Customer Only"
+    assert "vendor_onboarding_status" not in inserted
+    assert "vendor_bank_account_status" not in inserted
+    assert "vendor_tax_validation_status" not in inserted
+    assert "vendor_sanctions_status" not in inserted
+    assert "vendor_remittance_status" not in inserted
+    assert "vendor_payment_controls" not in inserted
+    assert response.json()["vendor_onboarding_status"] == "not_required"
+
+
 def test_vendor_onboarding_approval_requires_completed_controls(
     client: TestClient,
     fake_db: _FakeDb,

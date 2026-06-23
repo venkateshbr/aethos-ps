@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.services.postgrest_errors import is_missing_column_error
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,19 @@ _TABLE = "clients"
 CUSTOMER_KINDS: tuple[str, ...] = ("customer", "both")
 # Contacts with these kinds are valid in AP (bill) contexts.
 VENDOR_KINDS: tuple[str, ...] = ("vendor", "both")
+
+_OPTIONAL_VENDOR_CONTROL_FIELDS = frozenset(
+    {
+        "vendor_bank_account_status",
+        "vendor_tax_validation_status",
+        "vendor_sanctions_status",
+        "vendor_remittance_status",
+        "vendor_remittance_email",
+        "vendor_payment_controls",
+        "vendor_onboarding_approved_at",
+        "vendor_onboarding_approved_by",
+    }
+)
 
 
 class ClientRepository:
@@ -72,9 +86,23 @@ class ClientRepository:
 
     async def create(self, data: dict) -> dict:
         payload = {**data, "tenant_id": self.tenant_id}
-        result = await asyncio.to_thread(
-            lambda: self.db.table(_TABLE).insert(payload).execute()
-        )
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_TABLE).insert(payload).execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_VENDOR_CONTROL_FIELDS):
+                raise
+            fallback_payload = _without_optional_vendor_control_fields(payload)
+            if fallback_payload == payload:
+                raise
+            logger.warning(
+                "clients table is missing optional vendor-control columns; "
+                "retrying insert without those fields"
+            )
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_TABLE).insert(fallback_payload).execute()
+            )
         return result.data[0]
 
     async def update(self, id: str, data: dict) -> dict | None:
@@ -82,11 +110,43 @@ class ClientRepository:
         existing = await self.get(id)
         if existing is None:
             return None
-        result = await asyncio.to_thread(
-            lambda: self.db.table(_TABLE)
-            .update(data)
-            .eq("id", id)
-            .eq("tenant_id", self.tenant_id)
-            .execute()
-        )
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_TABLE)
+                .update(data)
+                .eq("id", id)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_VENDOR_CONTROL_FIELDS):
+                raise
+            fallback_data = _without_optional_vendor_control_fields(data)
+            if fallback_data == data:
+                raise
+            if not fallback_data:
+                logger.warning(
+                    "clients table is missing optional vendor-control columns; "
+                    "skipping update because no supported fields remain"
+                )
+                return existing
+            logger.warning(
+                "clients table is missing optional vendor-control columns; "
+                "retrying update without those fields"
+            )
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_TABLE)
+                .update(fallback_data)
+                .eq("id", id)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
         return result.data[0] if result.data else None
+
+
+def _without_optional_vendor_control_fields(payload: dict) -> dict:
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _OPTIONAL_VENDOR_CONTROL_FIELDS
+    }

@@ -7,11 +7,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
+from app.repositories.invoices_repo import _FALLBACK_REVOKED_PUBLIC_TOKENS
 
 pytestmark = pytest.mark.unit
 
@@ -210,6 +212,38 @@ class _FakeDb:
         return _Query(self, name)
 
 
+class _MissingRevocationsDb(_FakeDb):
+    def table(self, name: str) -> _Query | _MissingTableQuery:
+        if name == "invoice_public_token_revocations":
+            return _MissingTableQuery(name)
+        return _Query(self, name)
+
+
+class _MissingTableQuery:
+    def __init__(self, table: str) -> None:
+        self.table = table
+
+    def select(self, *_args: Any, **_kwargs: Any) -> _MissingTableQuery:
+        return self
+
+    def eq(self, *_args: Any, **_kwargs: Any) -> _MissingTableQuery:
+        return self
+
+    def limit(self, *_args: Any, **_kwargs: Any) -> _MissingTableQuery:
+        return self
+
+    def insert(self, *_args: Any, **_kwargs: Any) -> _MissingTableQuery:
+        return self
+
+    def execute(self) -> _Result:
+        raise APIError(
+            {
+                "code": "PGRST205",
+                "message": f"Could not find the table 'public.{self.table}' in the schema cache",
+            }
+        )
+
+
 class _ForbiddenDb:
     def table(self, name: str) -> None:
         raise AssertionError(f"wrong dependency attempted to access {name}")
@@ -356,6 +390,30 @@ def test_invoice_public_token_rotation_revokes_old_token(
             "reason": "rotated",
         }
     ]
+
+
+def test_invoice_public_token_rotation_falls_back_when_revocation_table_missing(
+    client: TestClient,
+) -> None:
+    fake_db = _MissingRevocationsDb()
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="admin-1",
+        email="admin@example.com",
+        role="admin",
+    )
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    _FALLBACK_REVOKED_PUBLIC_TOKENS.clear()
+
+    try:
+        rotate_response = client.post(f"/api/v1/invoices/{INVOICE_ID}/public-token/rotate")
+        old_token_response = client.get("/api/v1/public/invoices/public-token")
+    finally:
+        _FALLBACK_REVOKED_PUBLIC_TOKENS.clear()
+
+    assert rotate_response.status_code == 200, rotate_response.text
+    assert fake_db.tables["invoices"][0]["public_token"] != "public-token"
+    assert old_token_response.status_code == 410, old_token_response.text
 
 
 def test_revoked_public_invoice_token_returns_410(
