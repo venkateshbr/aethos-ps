@@ -217,6 +217,83 @@ def test_draft_tm_with_no_entries_returns_empty_lines() -> None:
     assert draft.total == Decimal("0")
 
 
+def test_draft_tm_uses_assignment_and_client_rate_overrides() -> None:
+    """T&M draft prefers assignment override, then client override, then base role rate."""
+    db = MagicMock()
+    eng = _engagement("time_and_materials")
+    eng["rate_card_id"] = "rc-1"
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-override",
+                    "project_id": "project-1",
+                    "employee_id": "employee-override",
+                    "hours": "2",
+                },
+                {
+                    "id": "time-client",
+                    "project_id": "project-1",
+                    "employee_id": "employee-client",
+                    "hours": "3",
+                },
+            ]
+        elif table_name == "rate_card_lines":
+            result.data = [{"role": "Consultant", "rate": "100.00"}]
+        elif table_name == "rate_card_client_overrides":
+            result.data = [{"role": "Consultant", "rate": "125.00"}]
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-override",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": "150.00",
+                },
+                {
+                    "employee_id": "employee-client",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": None,
+                },
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert [line.unit_price for line in draft.lines] == [
+        Decimal("150.00"),
+        Decimal("125.00"),
+    ]
+    assert [line.amount for line in draft.lines] == [
+        Decimal("300.00"),
+        Decimal("375.00"),
+    ]
+    assert draft.subtotal == Decimal("675.00")
+
+
 # ---------------------------------------------------------------------------
 # Test 5: capped_tm applies cap adjustment when T&M total exceeds cap
 # ---------------------------------------------------------------------------

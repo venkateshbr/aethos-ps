@@ -34,6 +34,7 @@ Done:
 - Service-catalogue linkage is now end-to-end across engagement setup, UI invoice drafting, billing-run invoice materialisation, invoice line create/response contracts, tenant FK validation, persistence, and service-line revenue reporting.
 - Project planning now persists budget hours from the UI and exposes project phases as scheduled milestones/deliverables with acceptance criteria and percent-complete tracking through API and UI; milestone-risk/backlog reports already consume these phase schedules.
 - Per-unit billing terms are implemented for payroll/per-employee style services: engagement creation captures billing unit, unit label, quantity, and unit price, computes fixed-fee compatibility totals, and invoice drafts emit quantity x unit-price lines.
+- T&M invoice drafting now honors assignment-level employee override rates and existing client-specific rate-card override rows before falling back to base role rates.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -254,7 +255,7 @@ Work items:
 - Done 2026-06-23: Tax-rates API, tax defaults, settings UI, invoice drafter tax, manual invoice line tax, invoice approval tax-payable splitting, and bill approval input-tax-recoverable splitting are implemented.
 - Done/monitor 2026-06-23: Expenses API and UI list/create completion.
 - Done 2026-06-23: Billing terms UI supports fixed, T&M, capped T&M, retainer, retainer drawdown, milestone, mixed, and per-unit payroll/per-employee billing.
-- Partial 2026-06-23: Rate-card API/UI and engagement picker exist; employee/service-line-specific rate rules need more depth.
+- Partial 2026-06-23: Rate-card API/UI and engagement picker exist; assignment-level employee override rates and client-specific rate-card overrides are honored in invoice drafting. Service-line-specific price-book segmentation remains open.
 - Done 2026-06-23: Service catalogue API/settings/engagement/report integration exists, and invoice lines now accept, validate, persist, return, and propagate `service_catalogue_id` from UI drafts and billing-run drafts into service-line revenue reporting.
 - Partial 2026-06-23: Client groups, member roles, UI, and report rollups exist; deeper legal-entity semantics remain open.
 - Done 2026-06-23: Project budgets, budget hours, phases, deliverables, milestone schedules, acceptance criteria, and percent-complete tracking are implemented through API/UI and feed milestone-risk/backlog reporting.
@@ -394,7 +395,7 @@ Priority 0:
 Priority 1:
 - Done 2026-06-23: accounts and expenses APIs.
 - Done 2026-06-23: tax-rates API/UI, invoice-side line tax/tax-payable journals, and bill-side input-tax-recoverable postings.
-- Partial 2026-06-23: billing terms including per-unit payroll are implemented; deeper rate-card rules remain open.
+- Partial 2026-06-23: billing terms including per-unit payroll are implemented; employee/client-specific rate overrides are honored, while service-line-specific rate-card segmentation remains open.
 - Done 2026-06-23: service catalogue end-to-end now includes invoice-line linkage and reporting evidence through service-line revenue reports.
 - Done 2026-06-23: project milestones, deliverables, budget hours, and percent-complete tracking.
 - Revenue recognition and tax journals.

@@ -336,49 +336,33 @@ def _draft_tm_lines(
 
     entries = q.execute().data or []
 
-    # Resolve rate card for the engagement
-    rate_card_id = eng.get("rate_card_id")
-    rates: dict[str, Decimal] = {}
-    if rate_card_id:
-        rc_lines = (
-            db.table("rate_card_lines")
-            .select("role, rate")
-            .eq("rate_card_id", rate_card_id)
-            .execute()
-            .data or []
-        )
-        rates = {r["role"]: Decimal(str(r["rate"])) for r in rc_lines}
+    rates = _rate_card_rates(eng, deps)
 
     # Aggregate by role (from project_assignments or a default role field on entry)
     # time_entries don't store role directly; resolve via project_assignments
     if entries:
-        employee_ids = list({e["employee_id"] for e in entries})
-        assignments = (
-            db.table("project_assignments")
-            .select("employee_id, project_id, role")
-            .eq("tenant_id", tenant_id)
-            .in_("project_id", project_ids)
-            .in_("employee_id", employee_ids)
-            .execute()
-            .data or []
+        role_map, override_rate_map = _assignment_rate_context(
+            db,
+            tenant_id,
+            project_ids,
+            entries,
         )
-        # Build (project_id, employee_id) → role map
-        role_map: dict[tuple[str, str], str] = {
-            (a["project_id"], a["employee_id"]): (a["role"] or "Consultant")
-            for a in assignments
-        }
     else:
         role_map = {}
+        override_rate_map = {}
 
-    by_role: dict[str, dict] = defaultdict(lambda: {"hours": Decimal("0"), "ids": []})
+    by_rate: dict[tuple[str, Decimal], dict] = defaultdict(
+        lambda: {"hours": Decimal("0"), "ids": []}
+    )
     for entry in entries:
-        role = role_map.get((entry["project_id"], entry["employee_id"]), "Consultant")
-        by_role[role]["hours"] += Decimal(str(entry["hours"]))
-        by_role[role]["ids"].append(entry["id"])
+        key = (entry["project_id"], entry["employee_id"])
+        role = role_map.get(key, "Consultant")
+        rate = override_rate_map.get(key, rates.get(role, Decimal("0")))
+        by_rate[(role, rate)]["hours"] += Decimal(str(entry["hours"]))
+        by_rate[(role, rate)]["ids"].append(entry["id"])
 
     lines: list[InvoiceLineItem] = []
-    for role, data in by_role.items():
-        rate = rates.get(role, Decimal("0"))
+    for (role, rate), data in by_rate.items():
         hours = data["hours"]
         amount = (hours * rate).quantize(Decimal("0.01"))
         if amount > Decimal("0"):
@@ -414,6 +398,67 @@ def _draft_tm_lines(
         )
 
     return lines
+
+
+def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[str, Decimal]:
+    rate_card_id = eng.get("rate_card_id")
+    if not rate_card_id:
+        return {}
+
+    rates = {
+        row["role"]: Decimal(str(row["rate"]))
+        for row in (
+            deps.db.table("rate_card_lines")
+            .select("role, rate")
+            .eq("rate_card_id", rate_card_id)
+            .execute()
+            .data
+            or []
+        )
+    }
+
+    client_id = eng.get("client_id")
+    if client_id:
+        override_rows = (
+            deps.db.table("rate_card_client_overrides")
+            .select("role, rate")
+            .eq("tenant_id", deps.tenant_id)
+            .eq("rate_card_id", rate_card_id)
+            .eq("client_id", client_id)
+            .execute()
+            .data
+            or []
+        )
+        rates.update({row["role"]: Decimal(str(row["rate"])) for row in override_rows})
+
+    return rates
+
+
+def _assignment_rate_context(
+    db: object,
+    tenant_id: str,
+    project_ids: list[str],
+    entries: list[dict],
+) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], Decimal]]:
+    employee_ids = list({entry["employee_id"] for entry in entries})
+    assignments = (
+        db.table("project_assignments")
+        .select("employee_id, project_id, role, override_rate")
+        .eq("tenant_id", tenant_id)
+        .in_("project_id", project_ids)
+        .in_("employee_id", employee_ids)
+        .execute()
+        .data
+        or []
+    )
+    role_map: dict[tuple[str, str], str] = {}
+    override_rate_map: dict[tuple[str, str], Decimal] = {}
+    for assignment in assignments:
+        key = (assignment["project_id"], assignment["employee_id"])
+        role_map[key] = assignment.get("role") or "Consultant"
+        if assignment.get("override_rate") is not None:
+            override_rate_map[key] = Decimal(str(assignment["override_rate"]))
+    return role_map, override_rate_map
 
 
 def _draft_fixed_fee_line(
@@ -493,35 +538,16 @@ def _mark_capped_overflow_non_billable(
 
     entries = q.execute().data or []
 
-    # Resolve rate card
-    rate_card_id = eng.get("rate_card_id")
-    rates: dict[str, Decimal] = {}
-    if rate_card_id:
-        rc_lines = (
-            db.table("rate_card_lines")
-            .select("role, rate")
-            .eq("rate_card_id", rate_card_id)
-            .execute()
-            .data or []
-        )
-        rates = {r["role"]: Decimal(str(r["rate"])) for r in rc_lines}
+    rates = _rate_card_rates(eng, deps)
 
     # Build role map
     if entries:
-        employee_ids = list({e["employee_id"] for e in entries})
-        assignments = (
-            db.table("project_assignments")
-            .select("employee_id, project_id, role")
-            .eq("tenant_id", tenant_id)
-            .in_("project_id", project_ids)
-            .in_("employee_id", employee_ids)
-            .execute()
-            .data or []
+        role_map, override_rate_map = _assignment_rate_context(
+            db,
+            tenant_id,
+            project_ids,
+            entries,
         )
-        role_map: dict[tuple[str, str], str] = {
-            (a["project_id"], a["employee_id"]): (a["role"] or "Consultant")
-            for a in assignments
-        }
     else:
         return
 
@@ -529,8 +555,9 @@ def _mark_capped_overflow_non_billable(
     overflow_ids: list[str] = []
 
     for entry in entries:
-        role = role_map.get((entry["project_id"], entry["employee_id"]), "Consultant")
-        rate = rates.get(role, Decimal("0"))
+        key = (entry["project_id"], entry["employee_id"])
+        role = role_map.get(key, "Consultant")
+        rate = override_rate_map.get(key, rates.get(role, Decimal("0")))
         entry_amount = (Decimal(str(entry["hours"])) * rate).quantize(Decimal("0.01"))
         if cumulative >= cap:
             overflow_ids.append(entry["id"])
