@@ -13,7 +13,12 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
-from app.models.reports import TrialBalanceReport
+from app.models.reports import (
+    BalanceSheetReport,
+    CashFlowReport,
+    IncomeStatementReport,
+    TrialBalanceReport,
+)
 from app.services.reports_service import ReportsService
 from supabase import Client
 
@@ -290,6 +295,58 @@ def action_queue(
         period_end=period_end,
         limit=limit,
     )
+
+
+@router.get("/balance-sheet", response_model=BalanceSheetReport)
+def balance_sheet(
+    as_of_period: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Cumulative through this accounting period (YYYY-MM). Omit for all-time.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> BalanceSheetReport:
+    """Balance sheet grouped into assets, liabilities, and equity."""
+    return svc.balance_sheet(as_of_period=as_of_period)
+
+
+@router.get("/income-statement", response_model=IncomeStatementReport)
+def income_statement(
+    period_start: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period from (YYYY-MM).",
+    ),
+    period_end: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period to (YYYY-MM).",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> IncomeStatementReport:
+    """Income statement for a period range."""
+    return svc.income_statement(period_start=period_start, period_end=period_end)
+
+
+@router.get("/cash-flow", response_model=CashFlowReport)
+def cash_flow(
+    period_start: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period from (YYYY-MM).",
+    ),
+    period_end: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period to (YYYY-MM).",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> CashFlowReport:
+    """Direct cash-flow statement from posted cash-account journal lines."""
+    return svc.cash_flow(period_start=period_start, period_end=period_end)
 
 
 @router.get("/trial-balance", response_model=TrialBalanceReport)

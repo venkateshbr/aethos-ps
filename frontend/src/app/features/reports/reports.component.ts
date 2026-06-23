@@ -24,6 +24,9 @@ import {
   RevenueRow,
   TrialBalanceReport,
   TrialBalanceLine,
+  BalanceSheetReport,
+  CashFlowReport,
+  IncomeStatementReport,
 } from '../../core/services/reports.service';
 
 @Component({
@@ -736,6 +739,125 @@ import {
             }
           </div>
         </mat-tab>
+
+        <!-- ── Balance Sheet ─────────────────────────────────────────────── -->
+        <mat-tab label="Balance Sheet">
+          <div class="pt-4 space-y-4">
+            <ng-container *ngTemplateOutlet="statementPeriodPicker" />
+
+            @defer (on viewport) {
+              @if (balanceSheetLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (balanceSheetError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Balance Sheet', retry: loadBalanceSheet.bind(this) }" />
+              } @else if (!balanceSheetData()) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'balance sheet data' }" />
+              } @else {
+                <div class="grid gap-4 md:grid-cols-4">
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Assets', value: balanceSheetData()!.total_assets }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Liabilities', value: balanceSheetData()!.total_liabilities }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Equity', value: balanceSheetData()!.total_equity }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'L + E', value: balanceSheetData()!.liabilities_and_equity }" />
+                </div>
+                <div class="text-sm">
+                  @if (balanceSheetData()!.is_balanced) {
+                    <span class="text-accent-light" role="status">&#10003; Balance sheet balances</span>
+                  } @else {
+                    <span class="text-confidence-low" role="alert">&#9888; Balance sheet does not balance</span>
+                  }
+                </div>
+                <div class="grid gap-4 xl:grid-cols-3">
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Assets', rows: balanceSheetData()!.asset_lines, totalLabel: 'Total Assets', total: balanceSheetData()!.total_assets }" />
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Liabilities', rows: balanceSheetData()!.liability_lines, totalLabel: 'Total Liabilities', total: balanceSheetData()!.total_liabilities }" />
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Equity', rows: balanceSheetData()!.equity_lines, totalLabel: 'Total Equity', total: balanceSheetData()!.total_equity }" />
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- ── Income Statement ──────────────────────────────────────────── -->
+        <mat-tab label="Income Statement">
+          <div class="pt-4 space-y-4">
+            <ng-container *ngTemplateOutlet="statementPeriodPicker" />
+
+            @defer (on viewport) {
+              @if (incomeStatementLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (incomeStatementError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Income Statement', retry: loadIncomeStatement.bind(this) }" />
+              } @else if (!incomeStatementData()) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'income statement data' }" />
+              } @else {
+                <div class="grid gap-4 md:grid-cols-3">
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Revenue', value: incomeStatementData()!.total_revenue }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Expenses', value: incomeStatementData()!.total_expenses }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Net Income', value: incomeStatementData()!.net_income }" />
+                </div>
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Revenue', rows: incomeStatementData()!.revenue_lines, totalLabel: 'Total Revenue', total: incomeStatementData()!.total_revenue }" />
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Expenses', rows: incomeStatementData()!.expense_lines, totalLabel: 'Total Expenses', total: incomeStatementData()!.total_expenses }" />
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- ── Cash Flow ─────────────────────────────────────────────────── -->
+        <mat-tab label="Cash Flow">
+          <div class="pt-4 space-y-4">
+            <ng-container *ngTemplateOutlet="statementPeriodPicker" />
+
+            @defer (on viewport) {
+              @if (cashFlowLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (cashFlowError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Cash Flow', retry: loadCashFlow.bind(this) }" />
+              } @else if (!cashFlowData()) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'cash-flow data' }" />
+              } @else {
+                <div class="grid gap-4 md:grid-cols-4">
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Operating', value: cashFlowData()!.net_cash_from_operating }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Investing', value: cashFlowData()!.net_cash_from_investing }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Financing', value: cashFlowData()!.net_cash_from_financing }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Net Change', value: cashFlowData()!.net_change_in_cash }" />
+                </div>
+                <div class="grid gap-4 lg:grid-cols-3">
+                  <ng-container *ngTemplateOutlet="cashFlowSection; context: { title: 'Operating Activities', rows: cashFlowData()!.operating_lines, total: cashFlowData()!.net_cash_from_operating }" />
+                  <ng-container *ngTemplateOutlet="cashFlowSection; context: { title: 'Investing Activities', rows: cashFlowData()!.investing_lines, total: cashFlowData()!.net_cash_from_investing }" />
+                  <ng-container *ngTemplateOutlet="cashFlowSection; context: { title: 'Financing Activities', rows: cashFlowData()!.financing_lines, total: cashFlowData()!.net_cash_from_financing }" />
+                </div>
+                <div class="rounded-lg border border-border-default bg-surface-raised p-4 text-sm">
+                  <div class="flex items-center justify-between py-1">
+                    <span class="text-text-muted">Beginning cash</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.beginning_cash | money }}</span>
+                  </div>
+                  <div class="flex items-center justify-between py-1">
+                    <span class="text-text-muted">Net cash change</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.net_change_in_cash | money }}</span>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between border-t border-border-subtle pt-3 font-semibold">
+                    <span class="text-text-primary">Ending cash</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.ending_cash | money }}</span>
+                  </div>
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
         <!-- ── Trial Balance ──────────────────────────────────────────────── -->
         <mat-tab label="Trial Balance">
           <div class="pt-4">
@@ -828,6 +950,83 @@ import {
     </div>
 
     <!-- ── Shared templates ─────────────────────────────────────────────── -->
+
+    <ng-template #statementPeriodPicker>
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-slate-400 text-sm" for="statement-period">Statement period</label>
+        <input
+          id="statement-period"
+          type="month"
+          [(ngModel)]="statementPeriod"
+          (change)="loadFinancialStatements()"
+          class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          aria-label="Select period for financial statements"
+        />
+      </div>
+    </ng-template>
+
+    <ng-template #statementMetric let-label="label" let-value="value">
+      <div class="rounded-lg border border-border-default bg-surface-raised p-4">
+        <p class="text-xs uppercase tracking-wide text-text-muted">{{ label }}</p>
+        <p class="mt-1 font-mono text-xl font-semibold text-text-primary tabular-nums">{{ value | money }}</p>
+      </div>
+    </ng-template>
+
+    <ng-template #statementSection let-title="title" let-rows="rows" let-totalLabel="totalLabel" let-total="total">
+      <section class="rounded-lg border border-border-default bg-surface-raised">
+        <div class="border-b border-border-subtle px-4 py-3">
+          <h2 class="text-sm font-semibold text-text-primary">{{ title }}</h2>
+        </div>
+        <div class="divide-y divide-border-subtle">
+          @if (rows.length === 0) {
+            <div class="px-4 py-4 text-sm text-text-muted">No activity</div>
+          } @else {
+            @for (line of rows; track line.account_code) {
+              <div class="grid grid-cols-[4rem_1fr_auto] items-center gap-3 px-4 py-2.5 text-sm">
+                <span class="font-mono text-xs text-text-muted">{{ line.account_code }}</span>
+                <span class="text-text-secondary">{{ line.account_name }}</span>
+                <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money }}</span>
+              </div>
+            }
+          }
+        </div>
+        <div class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm font-semibold">
+          <span class="text-text-primary">{{ totalLabel }}</span>
+          <span class="font-mono text-text-primary tabular-nums">{{ total | money }}</span>
+        </div>
+      </section>
+    </ng-template>
+
+    <ng-template #cashFlowSection let-title="title" let-rows="rows" let-total="total">
+      <section class="rounded-lg border border-border-default bg-surface-raised">
+        <div class="border-b border-border-subtle px-4 py-3">
+          <h2 class="text-sm font-semibold text-text-primary">{{ title }}</h2>
+        </div>
+        <div class="divide-y divide-border-subtle">
+          @if (rows.length === 0) {
+            <div class="px-4 py-4 text-sm text-text-muted">No activity</div>
+          } @else {
+            @for (line of rows; track line.journal_entry_id ?? line.description) {
+              <div class="px-4 py-2.5 text-sm">
+                <div class="flex items-start justify-between gap-3">
+                  <span class="text-text-secondary">{{ line.description }}</span>
+                  <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money }}</span>
+                </div>
+                @if (line.reference_type || line.period) {
+                  <p class="mt-1 text-xs text-text-muted">
+                    {{ labelize(line.reference_type) }} · {{ line.period }}
+                  </p>
+                }
+              </div>
+            }
+          }
+        </div>
+        <div class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm font-semibold">
+          <span class="text-text-primary">Net cash</span>
+          <span class="font-mono text-text-primary tabular-nums">{{ total | money }}</span>
+        </div>
+      </section>
+    </ng-template>
 
     <!-- Aging metric cards -->
     <ng-template #agingCards let-data>
@@ -1026,6 +1225,21 @@ export class ReportsComponent implements OnInit {
   revError = signal(false);
   revRows = signal<RevenueRow[]>([]);
 
+  // Financial statements
+  balanceSheetLoading = signal(false);
+  balanceSheetError = signal(false);
+  balanceSheetData = signal<BalanceSheetReport | null>(null);
+  incomeStatementLoading = signal(false);
+  incomeStatementError = signal(false);
+  incomeStatementData = signal<IncomeStatementReport | null>(null);
+  cashFlowLoading = signal(false);
+  cashFlowError = signal(false);
+  cashFlowData = signal<CashFlowReport | null>(null);
+  statementPeriod = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
   // Trial Balance
   tbLoading = signal(false);
   tbError = signal(false);
@@ -1052,6 +1266,7 @@ export class ReportsComponent implements OnInit {
     this.loadUtil();
     this.loadWip();
     this.loadRevenue();
+    this.loadFinancialStatements();
     this.loadTrialBalance();
   }
 
@@ -1220,6 +1435,39 @@ export class ReportsComponent implements OnInit {
     this.svc.getRevenueByEngagement().subscribe({
       next: rows => { this.revRows.set(rows); this.revLoading.set(false); },
       error: () => { this.revError.set(true); this.revLoading.set(false); },
+    });
+  }
+
+  loadFinancialStatements(): void {
+    this.loadBalanceSheet();
+    this.loadIncomeStatement();
+    this.loadCashFlow();
+  }
+
+  loadBalanceSheet(): void {
+    this.balanceSheetLoading.set(true);
+    this.balanceSheetError.set(false);
+    this.svc.getBalanceSheet(this.statementPeriod || undefined).subscribe({
+      next: data => { this.balanceSheetData.set(data); this.balanceSheetLoading.set(false); },
+      error: () => { this.balanceSheetError.set(true); this.balanceSheetLoading.set(false); },
+    });
+  }
+
+  loadIncomeStatement(): void {
+    this.incomeStatementLoading.set(true);
+    this.incomeStatementError.set(false);
+    this.svc.getIncomeStatement(this.statementPeriod || undefined).subscribe({
+      next: data => { this.incomeStatementData.set(data); this.incomeStatementLoading.set(false); },
+      error: () => { this.incomeStatementError.set(true); this.incomeStatementLoading.set(false); },
+    });
+  }
+
+  loadCashFlow(): void {
+    this.cashFlowLoading.set(true);
+    this.cashFlowError.set(false);
+    this.svc.getCashFlow(this.statementPeriod || undefined).subscribe({
+      next: data => { this.cashFlowData.set(data); this.cashFlowLoading.set(false); },
+      error: () => { this.cashFlowError.set(true); this.cashFlowLoading.set(false); },
     });
   }
 

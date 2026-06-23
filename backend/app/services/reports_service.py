@@ -11,17 +11,20 @@ Report methods:
   5. wip                   — unbilled hours x rate (Work In Progress)
   6. revenue_by_engagement — total invoiced per engagement in a period
   7. trial_balance         — DR/CR totals per account, optionally cumulative to period
-  8. revenue_by_service_line
-  9. cost_by_service_line
-  10. margin_by_service_line
-  11. client_profitability
-  12. client_group_profitability
-  13. segment_profitability
-  14. practice_dashboard
-  15. project_health_scores
-  16. capacity_planning
-  17. pricing_staffing_recommendations
-  18. scope_change_advisor
+  8. balance_sheet
+  9. income_statement
+  10. cash_flow
+  11. revenue_by_service_line
+  12. cost_by_service_line
+  13. margin_by_service_line
+  14. client_profitability
+  15. client_group_profitability
+  16. segment_profitability
+  17. practice_dashboard
+  18. project_health_scores
+  19. capacity_planning
+  20. pricing_staffing_recommendations
+  21. scope_change_advisor
 """
 
 from __future__ import annotations
@@ -31,7 +34,15 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from app.domain.money import serialise_money
-from app.models.reports import TrialBalanceLine, TrialBalanceReport
+from app.models.reports import (
+    BalanceSheetReport,
+    CashFlowLine,
+    CashFlowReport,
+    FinancialStatementLine,
+    IncomeStatementReport,
+    TrialBalanceLine,
+    TrialBalanceReport,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -41,6 +52,9 @@ _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
 _TARGET_GROSS_MARGIN_PCT = Decimal("40")
 _SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"}
+_CASH_ACCOUNT_CODES = {"1100"}
+_CASH_ACCOUNT_KEYWORDS = {"bank", "cash"}
+_OPERATING_WORKING_CAPITAL_PREFIXES = ("12", "13", "15", "20", "21", "23")
 _ACTION_QUEUE_ROLES = {
     "all",
     "partner",
@@ -456,56 +470,7 @@ class ReportsService:
         Raises no exceptions on an empty tenant: returns an empty ``lines``
         list with ``is_balanced=True`` and zero grand totals.
         """
-        # ------------------------------------------------------------------
-        # Step 1 — fetch all journal_lines for this tenant joined with
-        # journal_entries (for period filtering) and accounts (for metadata).
-        # Supabase-py uses PostgREST foreign-key embedding.
-        #
-        # PostgREST embed: journal_lines has a FK to journal_entries
-        # (journal_entry_id) and to accounts (account_id).  We embed both.
-        # ------------------------------------------------------------------
-        lines_q = (
-            self.db.table("journal_lines")
-            .select(
-                "direction, base_amount, "
-                "journal_entries!journal_entry_id(period, posted_at), "
-                "accounts!account_id(code, name, account_type)"
-            )
-            .eq("tenant_id", self.tenant_id)
-        )
-        raw_lines: list[dict] = lines_q.execute().data or []
-
-        # ------------------------------------------------------------------
-        # Step 2 — Python-side aggregation (avoids complex GROUP BY via RPC
-        # and keeps the service layer testable with MagicMock).
-        # Filter to posted entries only (posted_at IS NOT NULL).
-        # Optionally filter to period <= as_of_period.
-        # ------------------------------------------------------------------
-        # Per account accumulate DR and CR base amounts.
-        # key: (code, name, account_type)  value: {"DR": Decimal, "CR": Decimal}
-        agg: dict[tuple[str, str, str], dict[str, Decimal]] = {}
-
-        for row in raw_lines:
-            je = row.get("journal_entries") or {}
-            # Skip unposted / draft entries
-            if not je.get("posted_at"):
-                continue
-
-            period = je.get("period", "")
-            if as_of_period and period > as_of_period:
-                continue
-
-            account = row.get("accounts") or {}
-            code: str = account.get("code", "")
-            name: str = account.get("name", "")
-            acct_type: str = account.get("account_type", "")
-            direction: str = row.get("direction", "DR")
-            base_amt = Decimal(str(row.get("base_amount", "0")))
-
-            key = (code, name, acct_type)
-            if key not in agg:
-                agg[key] = {"DR": Decimal("0"), "CR": Decimal("0")}
-            agg[key][direction] += base_amt
+        agg = self._ledger_account_totals(as_of_period=as_of_period)
 
         # ------------------------------------------------------------------
         # Step 3 — build sorted line list and compute grand totals.
@@ -543,7 +508,267 @@ class ReportsService:
         )
 
     # ------------------------------------------------------------------
-    # 8. Revenue by Service Line
+    # 8. Balance Sheet
+    # ------------------------------------------------------------------
+
+    def balance_sheet(self, as_of_period: str | None = None) -> BalanceSheetReport:
+        """Return assets, liabilities, and equity as of a period.
+
+        P&L accounts are not balance-sheet accounts, so current-period net
+        income is rolled into a derived equity line until a year-end close
+        posts it to retained earnings.
+        """
+        tb = self.trial_balance(as_of_period=as_of_period)
+        asset_lines: list[FinancialStatementLine] = []
+        liability_lines: list[FinancialStatementLine] = []
+        equity_lines: list[FinancialStatementLine] = []
+        total_assets = Decimal("0")
+        total_liabilities = Decimal("0")
+        total_equity = Decimal("0")
+        total_revenue = Decimal("0")
+        total_expenses = Decimal("0")
+
+        for line in tb.lines:
+            net = Decimal(line.net)
+            match line.account_type:
+                case "asset":
+                    amount = net
+                    total_assets += amount
+                    _append_statement_line(asset_lines, line, amount)
+                case "liability":
+                    amount = -net
+                    total_liabilities += amount
+                    _append_statement_line(liability_lines, line, amount)
+                case "equity":
+                    amount = -net
+                    total_equity += amount
+                    _append_statement_line(equity_lines, line, amount)
+                case "revenue":
+                    total_revenue += -net
+                case "expense":
+                    total_expenses += net
+
+        current_net_income = total_revenue - total_expenses
+        if current_net_income:
+            total_equity += current_net_income
+            equity_lines.append(
+                FinancialStatementLine(
+                    account_code="current-earnings",
+                    account_name="Current Period Net Income",
+                    account_type="equity",
+                    amount=serialise_money(current_net_income),
+                )
+            )
+
+        liabilities_and_equity = total_liabilities + total_equity
+        return BalanceSheetReport(
+            as_of_period=as_of_period,
+            asset_lines=asset_lines,
+            liability_lines=liability_lines,
+            equity_lines=equity_lines,
+            total_assets=serialise_money(total_assets),
+            total_liabilities=serialise_money(total_liabilities),
+            total_equity=serialise_money(total_equity),
+            liabilities_and_equity=serialise_money(liabilities_and_equity),
+            is_balanced=abs(total_assets - liabilities_and_equity) <= Decimal("0.01"),
+            generated_at=datetime.now(tz=UTC),
+        )
+
+    # ------------------------------------------------------------------
+    # 9. Income Statement
+    # ------------------------------------------------------------------
+
+    def income_statement(
+        self,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> IncomeStatementReport:
+        """Return revenue, expenses, and net income for a period range."""
+        agg = self._ledger_account_totals(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        revenue_lines: list[FinancialStatementLine] = []
+        expense_lines: list[FinancialStatementLine] = []
+        total_revenue = Decimal("0")
+        total_expenses = Decimal("0")
+
+        for (code, name, account_type), totals in sorted(agg.items(), key=lambda x: x[0][0]):
+            debit = totals["DR"]
+            credit = totals["CR"]
+            if account_type == "revenue":
+                amount = credit - debit
+                total_revenue += amount
+                _append_statement_line(
+                    revenue_lines,
+                    _trial_line_stub(code, name, account_type),
+                    amount,
+                )
+            elif account_type == "expense":
+                amount = debit - credit
+                total_expenses += amount
+                _append_statement_line(
+                    expense_lines,
+                    _trial_line_stub(code, name, account_type),
+                    amount,
+                )
+
+        return IncomeStatementReport(
+            period_start=period_start,
+            period_end=period_end,
+            revenue_lines=revenue_lines,
+            expense_lines=expense_lines,
+            total_revenue=serialise_money(total_revenue),
+            total_expenses=serialise_money(total_expenses),
+            net_income=serialise_money(total_revenue - total_expenses),
+            generated_at=datetime.now(tz=UTC),
+        )
+
+    # ------------------------------------------------------------------
+    # 10. Cash Flow
+    # ------------------------------------------------------------------
+
+    def cash_flow(
+        self,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> CashFlowReport:
+        """Return direct cash movements grouped by operating/investing/financing."""
+        rows = self._posted_journal_lines(period_start=period_start, period_end=period_end)
+        by_entry: dict[str, list[dict]] = {}
+        for index, row in enumerate(rows):
+            entry_id = str(row.get("journal_entry_id") or f"row-{index}")
+            by_entry.setdefault(entry_id, []).append(row)
+
+        operating_lines: list[CashFlowLine] = []
+        investing_lines: list[CashFlowLine] = []
+        financing_lines: list[CashFlowLine] = []
+        totals = {
+            "operating": Decimal("0"),
+            "investing": Decimal("0"),
+            "financing": Decimal("0"),
+        }
+
+        for entry_id, entry_rows in by_entry.items():
+            cash_rows = [row for row in entry_rows if _is_cash_account(row)]
+            if not cash_rows:
+                continue
+            counterpart_rows = [row for row in entry_rows if not _is_cash_account(row)]
+            section = _cash_flow_section(counterpart_rows)
+            for row in cash_rows:
+                amount = _cash_delta(row)
+                totals[section] += amount
+                target = {
+                    "operating": operating_lines,
+                    "investing": investing_lines,
+                    "financing": financing_lines,
+                }[section]
+                journal = row.get("journal_entries") or {}
+                target.append(
+                    CashFlowLine(
+                        section=section,
+                        description=_cash_flow_description(journal, counterpart_rows),
+                        amount=serialise_money(amount),
+                        period=journal.get("period"),
+                        journal_entry_id=None if entry_id.startswith("row-") else entry_id,
+                        reference_type=journal.get("reference_type"),
+                    )
+                )
+
+        net_change = totals["operating"] + totals["investing"] + totals["financing"]
+        ending_cash = self._cash_balance(as_of_period=period_end)
+        beginning_cash = ending_cash - net_change
+
+        return CashFlowReport(
+            period_start=period_start,
+            period_end=period_end,
+            operating_lines=operating_lines,
+            investing_lines=investing_lines,
+            financing_lines=financing_lines,
+            net_cash_from_operating=serialise_money(totals["operating"]),
+            net_cash_from_investing=serialise_money(totals["investing"]),
+            net_cash_from_financing=serialise_money(totals["financing"]),
+            net_change_in_cash=serialise_money(net_change),
+            beginning_cash=serialise_money(beginning_cash),
+            ending_cash=serialise_money(ending_cash),
+            generated_at=datetime.now(tz=UTC),
+        )
+
+    def _ledger_account_totals(
+        self,
+        *,
+        as_of_period: str | None = None,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> dict[tuple[str, str, str], dict[str, Decimal]]:
+        rows = self._posted_journal_lines(
+            as_of_period=as_of_period,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        agg: dict[tuple[str, str, str], dict[str, Decimal]] = {}
+
+        for row in rows:
+            account = row.get("accounts") or {}
+            code = str(account.get("code") or "")
+            name = str(account.get("name") or "")
+            account_type = str(account.get("account_type") or "")
+            direction = str(row.get("direction") or "DR")
+            base_amount = Decimal(str(row.get("base_amount", "0")))
+            key = (code, name, account_type)
+            if key not in agg:
+                agg[key] = {"DR": Decimal("0"), "CR": Decimal("0")}
+            agg[key][direction] += base_amount
+
+        return agg
+
+    def _posted_journal_lines(
+        self,
+        *,
+        as_of_period: str | None = None,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> list[dict]:
+        rows = (
+            self.db.table("journal_lines")
+            .select(
+                "journal_entry_id, direction, base_amount, "
+                "journal_entries!journal_entry_id(period, posted_at, description, reference_type), "
+                "accounts!account_id(code, name, account_type)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .execute()
+            .data
+            or []
+        )
+        posted_rows: list[dict] = []
+        for row in rows:
+            journal = row.get("journal_entries") or {}
+            if not journal.get("posted_at"):
+                continue
+            period = str(journal.get("period") or "")
+            if as_of_period and period > as_of_period:
+                continue
+            if period_start and period < period_start:
+                continue
+            if period_end and period > period_end:
+                continue
+            posted_rows.append(row)
+        return posted_rows
+
+    def _cash_balance(self, *, as_of_period: str | None = None) -> Decimal:
+        total = Decimal("0")
+        for (code, name, _account_type), totals in self._ledger_account_totals(
+            as_of_period=as_of_period
+        ).items():
+            if _is_cash_account_by_code_name(code, name):
+                total += totals["DR"] - totals["CR"]
+        return total
+
+    # ------------------------------------------------------------------
+    # 11. Revenue by Service Line
     # ------------------------------------------------------------------
 
     def revenue_by_service_line(self, period: str | None = None) -> list[dict]:
@@ -3084,6 +3309,93 @@ def _embedded_one(value: object) -> dict:
     if isinstance(value, list):
         return value[0] if value else {}
     return value if isinstance(value, dict) else {}
+
+
+def _trial_line_stub(code: str, name: str, account_type: str) -> TrialBalanceLine:
+    return TrialBalanceLine(
+        account_code=code,
+        account_name=name,
+        account_type=account_type,
+        total_dr="0.00",
+        total_cr="0.00",
+        net="0.00",
+    )
+
+
+def _append_statement_line(
+    lines: list[FinancialStatementLine],
+    source: TrialBalanceLine,
+    amount: Decimal,
+) -> None:
+    if amount == Decimal("0"):
+        return
+    lines.append(
+        FinancialStatementLine(
+            account_code=source.account_code,
+            account_name=source.account_name,
+            account_type=source.account_type,
+            amount=serialise_money(amount),
+        )
+    )
+
+
+def _is_cash_account(row: dict) -> bool:
+    account = row.get("accounts") or {}
+    return _is_cash_account_by_code_name(
+        str(account.get("code") or ""),
+        str(account.get("name") or ""),
+    )
+
+
+def _is_cash_account_by_code_name(code: str, name: str) -> bool:
+    lowered = name.lower()
+    return code in _CASH_ACCOUNT_CODES or any(
+        keyword in lowered for keyword in _CASH_ACCOUNT_KEYWORDS
+    )
+
+
+def _cash_delta(row: dict) -> Decimal:
+    amount = Decimal(str(row.get("base_amount", "0")))
+    return amount if row.get("direction") == "DR" else -amount
+
+
+def _cash_flow_section(counterpart_rows: list[dict]) -> str:
+    account_rows = [row.get("accounts") or {} for row in counterpart_rows]
+    for account in account_rows:
+        code = str(account.get("code") or "")
+        account_type = str(account.get("account_type") or "")
+        if account_type in {"revenue", "expense"}:
+            return "operating"
+        if code.startswith(_OPERATING_WORKING_CAPITAL_PREFIXES):
+            return "operating"
+
+    for account in account_rows:
+        account_type = str(account.get("account_type") or "")
+        if account_type == "equity":
+            return "financing"
+        if account_type == "liability":
+            return "financing"
+
+    for account in account_rows:
+        account_type = str(account.get("account_type") or "")
+        if account_type == "asset":
+            return "investing"
+
+    return "operating"
+
+
+def _cash_flow_description(journal: dict, counterpart_rows: list[dict]) -> str:
+    description = str(journal.get("description") or "").strip()
+    if description:
+        return description
+    counterpart_names = [
+        str((row.get("accounts") or {}).get("name") or "").strip()
+        for row in counterpart_rows
+    ]
+    counterpart_names = [name for name in counterpart_names if name]
+    if counterpart_names:
+        return f"Cash movement against {', '.join(sorted(set(counterpart_names)))}"
+    return "Cash movement"
 
 
 def _sum_money(rows: list[dict], key: str) -> Decimal:

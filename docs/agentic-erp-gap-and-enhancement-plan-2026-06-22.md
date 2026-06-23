@@ -30,6 +30,7 @@ Done:
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
 - Client groups have API, UI, member roles, and profitability rollups.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
+- R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
 
 Still open:
@@ -147,12 +148,13 @@ Present:
 - Period locks.
 - Accounting guardian validates journal balance, period lock, and accounts.
 - Trial balance, aging, utilization, WIP, project P&L, revenue and service-line reports.
+- Balance sheet, income statement, and direct cash-flow reports.
 - Manual journal UI exists.
 - R2R close PRD exists: `docs/prd/r2r-financial-close-v1.1.md`.
 
 Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
-- No balance sheet, income statement, cash flow, retained earnings roll-forward, or statutory reporting pack.
+- Done/partial 2026-06-23: balance sheet, income statement, and direct cash-flow reports are implemented from posted journal lines with UI tabs. Retained earnings year-end roll-forward and statutory reporting packs remain open.
 - Partial 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, and deferred revenue release proposal endpoints exist. Close calendar/task workflow and full evidence package are still open.
 - Partial 2026-06-23: automated accrual and deferred revenue proposal agents exist, but prepaid amortization, recurring journals, and guided close automation remain open.
 - FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
@@ -400,7 +402,7 @@ Priority 2:
 
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
-- R2R close management: close calendar/tasks, bank/suspense reconciliations, recurring journals, prepaid amortization, and financial statements.
+- R2R close management: close calendar/tasks, bank/suspense reconciliations, recurring journals, prepaid amortization, retained-earnings roll-forward, and statutory reporting packs.
 - Advanced services intelligence: backlog forecast, overdue milestone risk, personalized assignment queues, and demo-ready recommendation workflows.
 
 ## Approval Recommendation

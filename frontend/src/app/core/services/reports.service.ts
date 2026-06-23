@@ -292,6 +292,61 @@ export interface TrialBalanceReport {
   generated_at: string;
 }
 
+export interface FinancialStatementLine {
+  account_code: string;
+  account_name: string;
+  account_type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense' | string;
+  amount: string;
+}
+
+export interface BalanceSheetReport {
+  as_of_period: string | null;
+  asset_lines: FinancialStatementLine[];
+  liability_lines: FinancialStatementLine[];
+  equity_lines: FinancialStatementLine[];
+  total_assets: string;
+  total_liabilities: string;
+  total_equity: string;
+  liabilities_and_equity: string;
+  is_balanced: boolean;
+  generated_at: string;
+}
+
+export interface IncomeStatementReport {
+  period_start: string | null;
+  period_end: string | null;
+  revenue_lines: FinancialStatementLine[];
+  expense_lines: FinancialStatementLine[];
+  total_revenue: string;
+  total_expenses: string;
+  net_income: string;
+  generated_at: string;
+}
+
+export interface CashFlowLine {
+  section: 'operating' | 'investing' | 'financing' | string;
+  description: string;
+  amount: string;
+  period: string | null;
+  journal_entry_id: string | null;
+  reference_type: string | null;
+}
+
+export interface CashFlowReport {
+  period_start: string | null;
+  period_end: string | null;
+  operating_lines: CashFlowLine[];
+  investing_lines: CashFlowLine[];
+  financing_lines: CashFlowLine[];
+  net_cash_from_operating: string;
+  net_cash_from_investing: string;
+  net_cash_from_financing: string;
+  net_change_in_cash: string;
+  beginning_cash: string;
+  ending_cash: string;
+  generated_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private http = inject(HttpClient);
@@ -353,5 +408,20 @@ export class ReportsService {
   getTrialBalance = (asOfPeriod?: string): Observable<TrialBalanceReport> => {
     const params = asOfPeriod ? `?as_of_period=${asOfPeriod}` : '';
     return this.http.get<TrialBalanceReport>(`${this.base}/trial-balance${params}`);
+  };
+
+  getBalanceSheet = (asOfPeriod?: string): Observable<BalanceSheetReport> => {
+    const params = asOfPeriod ? `?as_of_period=${asOfPeriod}` : '';
+    return this.http.get<BalanceSheetReport>(`${this.base}/balance-sheet${params}`);
+  };
+
+  getIncomeStatement = (period?: string): Observable<IncomeStatementReport> => {
+    const params = period ? `?period_start=${period}&period_end=${period}` : '';
+    return this.http.get<IncomeStatementReport>(`${this.base}/income-statement${params}`);
+  };
+
+  getCashFlow = (period?: string): Observable<CashFlowReport> => {
+    const params = period ? `?period_start=${period}&period_end=${period}` : '';
+    return this.http.get<CashFlowReport>(`${this.base}/cash-flow${params}`);
   };
 }

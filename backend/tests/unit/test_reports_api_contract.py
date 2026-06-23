@@ -181,3 +181,49 @@ def test_action_queue_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert response.status_code == 200, response.text
     assert response.json()[0]["role"] == "partner"
+
+
+def test_balance_sheet_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = _FakeDb()
+
+    class _FakeReportsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            assert db is fake_db
+            assert tenant_id == TENANT_ID
+
+        def balance_sheet(self, *, as_of_period: str | None) -> dict[str, Any]:
+            assert as_of_period == "2026-06"
+            return {
+                "as_of_period": "2026-06",
+                "asset_lines": [],
+                "liability_lines": [],
+                "equity_lines": [],
+                "total_assets": "0.00",
+                "total_liabilities": "0.00",
+                "total_equity": "0.00",
+                "liabilities_and_equity": "0.00",
+                "is_balanced": True,
+                "generated_at": "2026-06-23T00:00:00+00:00",
+            }
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.reports.ReportsService",
+        _FakeReportsService,
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/balance-sheet?as_of_period=2026-06")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["is_balanced"] is True
