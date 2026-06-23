@@ -124,7 +124,7 @@ Gaps / status:
 - Done 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, mixed, and per-unit payroll/per-employee terms.
 - Done 2026-06-23: invoice persistence now supports negative adjustment lines used by capped T&M cap adjustments and retainer-draw offsets while still blocking net-negative invoice totals.
 - Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
-- Partial 2026-06-23: WIP accrual, deferred revenue release, and milestone revenue recognition proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Remaining revenue-recognition depth is retainer balance/drawdown automation, percentage-of-completion accounting, prepaid amortization, and broader schedule management.
+- Partial 2026-06-23: WIP accrual, deferred revenue release, and milestone revenue recognition proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Retainer drawdown now has a persisted ledger, balance-aware invoice offsets, floor warnings from actual draw/balance, and automatic draw entries from invoice creation. Remaining revenue-recognition depth is percentage-of-completion accounting, prepaid amortization, and broader schedule management.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
 - Open: no client portal workflow beyond public invoice payment.
 - Done/verification open 2026-06-23: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM time logging remains open for verification in GitHub issue #253.
@@ -295,7 +295,7 @@ Engagement-to-cash loops:
 - Partial 2026-06-23: time-entry reminder agent/worker drafts and sends/HITL-routes weekly under-logged-timesheet reminders from employee availability, utilization targets, active project assignments, and logged time; external calendar/email event ingestion remains open.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
 - Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, and the Settings UI exposes the tenant default policy.
-- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer balance/drawdown, percentage-of-completion, and prepaid amortization loops remain open.
+- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer drawdown has persisted balance/draw ledger automation in invoicing; percentage-of-completion and prepaid amortization loops remain open.
 
 Procure-to-pay loops:
 - Done/monitor 2026-06-23: vendor invoice agent extracts, matches, detects duplicates, and suggests GL/service-line/project coding.

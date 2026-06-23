@@ -26,6 +26,7 @@ from app.models.invoices import (
 )
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services._validation import assert_belongs_to_tenant
+from app.services.retainer_ledger_service import record_retainer_draw
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -205,11 +206,49 @@ class InvoicesService:
             created_line = await self._repo.create_line(line_data)
             line_rows.append(created_line)
 
+        await self._record_retainer_draw_from_lines(
+            engagement_id=data.engagement_id,
+            invoice_id=invoice_id,
+            currency=data.currency,
+            line_rows=line_rows,
+            created_by=created_by,
+        )
+
         logger.info(
             "Invoice created",
             extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
         )
         return InvoiceResponse.from_db(row, line_rows)
+
+    async def _record_retainer_draw_from_lines(
+        self,
+        *,
+        engagement_id: str,
+        invoice_id: str,
+        currency: str,
+        line_rows: list[dict],
+        created_by: str,
+    ) -> None:
+        draw_amount = Decimal("0")
+        for line in line_rows:
+            description = str(line.get("description") or "").lower()
+            amount = _to_decimal(line.get("amount"))
+            if amount < 0 and "retainer applied" in description:
+                draw_amount += -amount
+
+        if draw_amount <= 0:
+            return
+
+        await record_retainer_draw(
+            self.db,
+            tenant_id=self.tenant_id,
+            engagement_id=engagement_id,
+            invoice_id=invoice_id,
+            amount=draw_amount,
+            currency=currency,
+            description=f"Retainer draw applied to invoice {invoice_id}",
+            created_by_user_id=created_by,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle transitions

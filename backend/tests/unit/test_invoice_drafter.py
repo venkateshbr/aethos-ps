@@ -167,6 +167,68 @@ def test_draft_retainer_returns_monthly_amount() -> None:
     assert draft.total == Decimal("3000.00")
 
 
+def test_draft_retainer_draw_caps_offset_by_ledger_balance() -> None:
+    """Retainer draw offsets use available ledger balance before configured draw."""
+    db = MagicMock()
+    eng = _engagement(
+        "retainer_draw",
+        {"retainer_monthly_amount": "1500.00", "retainer_floor": "500.00"},
+    )
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-1",
+                    "project_id": "project-1",
+                    "employee_id": "employee-1",
+                    "hours": "20",
+                }
+            ]
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-1",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": "100.00",
+                }
+            ]
+        elif table_name == "retainer_ledger_entries":
+            result.data = [
+                {"entry_type": "deposit", "amount": "700.00"},
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    adjustment = next(line for line in draft.lines if line.description == "Retainer applied")
+    assert adjustment.amount == Decimal("-700.00")
+    assert draft.subtotal == Decimal("1300.00")
+    assert "below floor" in draft.summary
+
+
 # ---------------------------------------------------------------------------
 # Test 3: milestone billing returns one line per milestone
 # ---------------------------------------------------------------------------

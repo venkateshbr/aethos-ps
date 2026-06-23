@@ -29,6 +29,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.agents.base import AgentDeps
+from app.services.retainer_ledger_service import retainer_balance_for_engagement
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,20 @@ def _draft_invoice_inner(
 
     elif arrangement == "retainer_draw":
         lines = _draft_tm_lines(eng, deps, period_start, period_end)
-        draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        tm_subtotal = sum(line.amount for line in lines)
+        configured_draw = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        ledger_balance, has_ledger = retainer_balance_for_engagement(
+            deps.db,
+            deps.tenant_id,
+            engagement_id,
+        )
+        if has_ledger:
+            draw_amount = min(tm_subtotal, ledger_balance)
+            if configured_draw > Decimal("0"):
+                draw_amount = min(draw_amount, configured_draw)
+        else:
+            draw_amount = configured_draw
+        draw_amount = min(draw_amount, max(tm_subtotal, Decimal("0")))
         if draw_amount > Decimal("0"):
             lines.append(
                 InvoiceLineItem(
@@ -260,9 +274,18 @@ def _draft_invoice_inner(
     if arrangement == "retainer_draw":
         retainer_floor = Decimal(str(billing.get("retainer_floor") or "0"))
         if retainer_floor > Decimal("0"):
-            draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
-            current_balance = Decimal(
-                str(billing.get("retainer_current_balance") or draw_amount)
+            ledger_balance, has_ledger = retainer_balance_for_engagement(
+                deps.db,
+                deps.tenant_id,
+                engagement_id,
+            )
+            applied_draw = _retainer_draw_amount(lines)
+            configured_draw = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+            draw_amount = applied_draw if applied_draw > 0 else configured_draw
+            current_balance = (
+                ledger_balance
+                if has_ledger
+                else Decimal(str(billing.get("retainer_current_balance") or draw_amount))
             )
             balance_after_draw = current_balance - draw_amount
             if balance_after_draw < retainer_floor:
@@ -290,6 +313,15 @@ def _draft_invoice_inner(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _retainer_draw_amount(lines: list[InvoiceLineItem]) -> Decimal:
+    """Return the positive draw represented by retainer adjustment lines."""
+    draw = Decimal("0")
+    for line in lines:
+        if line.amount < 0 and "retainer applied" in line.description.lower():
+            draw += -line.amount
+    return draw
 
 
 def _draft_tm_lines(

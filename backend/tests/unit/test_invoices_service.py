@@ -340,6 +340,102 @@ async def test_create_invoice_rejects_net_negative_adjustments(
     svc._repo.create.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_create_invoice_records_retainer_draw_ledger_entry(
+    mock_db: MagicMock,
+    tenant_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models.invoices import InvoiceCreate, InvoiceLineCreate
+    from app.services.invoices_service import InvoicesService
+
+    async def _valid_fk(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.services.invoices_service.assert_belongs_to_tenant", _valid_fk)
+
+    existing_result = MagicMock()
+    existing_result.data = []
+    insert_result = MagicMock()
+    insert_result.data = [{"id": "retainer-ledger-1"}]
+    table_chain = MagicMock()
+    table_chain.select.return_value = table_chain
+    table_chain.eq.return_value = table_chain
+    table_chain.is_.return_value = table_chain
+    table_chain.limit.return_value = table_chain
+    table_chain.execute.return_value = existing_result
+    insert_chain = MagicMock()
+    insert_chain.execute.return_value = insert_result
+    table_chain.insert.return_value = insert_chain
+    mock_db.table.return_value = table_chain
+
+    svc = InvoicesService(mock_db, tenant_id)
+    created_header = {
+        "id": "inv-retainer-001",
+        "tenant_id": tenant_id,
+        "engagement_id": "eng-uuid-001",
+        "client_id": "client-uuid-001",
+        "invoice_number": "INV-RET",
+        "currency": "USD",
+        "subtotal": "1200.00",
+        "tax_total": "0.00",
+        "total": "1200.00",
+        "status": "draft",
+        "issue_date": None,
+        "due_date": None,
+        "paid_at": None,
+        "stripe_payment_link_id": None,
+        "stripe_payment_link_url": None,
+        "public_token": "tok_retainer",
+        "sent_at": None,
+        "notes": None,
+        "created_at": "2026-05-01T00:00:00+00:00",
+        "updated_at": "2026-05-01T00:00:00+00:00",
+    }
+    svc._repo.create = AsyncMock(return_value=created_header)
+
+    created_lines: list[dict] = []
+
+    async def _create_line(payload: dict) -> dict:
+        row = {
+            "id": f"line-{len(created_lines) + 1}",
+            "invoice_id": "inv-retainer-001",
+            "created_at": "2026-05-01T00:00:00+00:00",
+            **payload,
+        }
+        created_lines.append(row)
+        return row
+
+    svc._repo.create_line = AsyncMock(side_effect=_create_line)
+
+    await svc.create_invoice(
+        InvoiceCreate(
+            engagement_id="eng-uuid-001",
+            client_id="client-uuid-001",
+            currency="USD",
+            lines=[
+                InvoiceLineCreate(
+                    description="Consultant",
+                    quantity=Decimal("20"),
+                    unit_price=Decimal("100.00"),
+                ),
+                InvoiceLineCreate(
+                    description="Retainer applied",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal("-800.00"),
+                ),
+            ],
+        ),
+        created_by="user-uuid-001",
+    )
+
+    ledger_payload = table_chain.insert.call_args.args[0]
+    assert ledger_payload["entry_type"] == "draw"
+    assert ledger_payload["amount"] == "800.00"
+    assert ledger_payload["engagement_id"] == "eng-uuid-001"
+    assert ledger_payload["invoice_id"] == "inv-retainer-001"
+
+
 # ---------------------------------------------------------------------------
 # Issue #50 — Connect routing
 # ---------------------------------------------------------------------------
