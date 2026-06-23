@@ -77,6 +77,11 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
         "Drafts prepaid expense amortization journals for month-end close",
     ),
     (
+        "recurring_journal_agent",
+        "Recurring Journal Agent",
+        "Drafts recurring journal entries from active close templates",
+    ),
+    (
         "project_health_agent",
         "Project Health Monitor",
         "Detects budget burn and scope risk in projects",
@@ -98,6 +103,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "copilot_agent",
         "invoice_drafter_agent",
         "prepaid_amortization_agent",
+        "recurring_journal_agent",
         "revenue_recognition_agent",
     }
 )
@@ -193,9 +199,7 @@ class AgentsService:
             if is_locked:
                 is_enabled = True
             circuit_open_until = (
-                str(setting["circuit_open_until"])
-                if setting.get("circuit_open_until")
-                else None
+                str(setting["circuit_open_until"]) if setting.get("circuit_open_until") else None
             )
 
             is_eligible = self._is_eligible_for_promotion(
@@ -235,9 +239,7 @@ class AgentsService:
                     "is_circuit_open": _circuit_is_open(circuit_open_until),
                     "l3_opt_in": bool(setting.get("l3_opt_in", False)),
                     "eval_passed_at": (
-                        str(setting["eval_passed_at"])
-                        if setting.get("eval_passed_at")
-                        else None
+                        str(setting["eval_passed_at"]) if setting.get("eval_passed_at") else None
                     ),
                     "eval_score": (
                         str(setting["eval_score"])
@@ -269,9 +271,7 @@ class AgentsService:
             raise AgentAutonomyError(f"Unknown agent: {agent_name!r}")
 
         if agent_name in LOCKED_AGENTS:
-            raise AgentAutonomyError(
-                f"{agent_name!r} is locked at L3 and cannot be changed"
-            )
+            raise AgentAutonomyError(f"{agent_name!r} is locked at L3 and cannot be changed")
 
         if not (_MIN_LEVEL <= level <= _MAX_LEVEL):
             raise AgentAutonomyError(
@@ -597,9 +597,7 @@ class AgentsService:
         stats: dict[str, dict] = {}
         for agent, decided in grouped.items():
             n = len(decided)
-            approved_count = sum(
-                1 for r in decided if r["status"] in _APPROVED_STATUSES
-            )
+            approved_count = sum(1 for r in decided if r["status"] in _APPROVED_STATUSES)
             approval_rate = round(approved_count / n, 4) if n > 0 else None
 
             confidences: list[Decimal] = []
@@ -613,9 +611,7 @@ class AgentsService:
 
             avg_confidence: float | None = None
             if confidences:
-                avg_confidence = round(
-                    float(sum(confidences) / len(confidences)), 4
-                )
+                avg_confidence = round(float(sum(confidences) / len(confidences)), 4)
 
             stats[agent] = {
                 "sample_count": n,
@@ -694,9 +690,7 @@ class AgentsService:
             avg_confidence=stats.get("avg_confidence"),
             sample_count=_int_or_default(stats.get("sample_count"), 0),
         ):
-            raise AgentAutonomyError(
-                "L3 promotion requires sufficient approval history"
-            )
+            raise AgentAutonomyError("L3 promotion requires sufficient approval history")
 
     @staticmethod
     def _validate_agent_control_update(
@@ -824,12 +818,8 @@ class AgentsService:
             "action_type": row.get("action_type", action_type),
             "l3_opt_in": bool(row.get("l3_opt_in", False)),
             "max_auto_risk": row.get("max_auto_risk") or "draft",
-            "eval_passed_at": (
-                str(row["eval_passed_at"]) if row.get("eval_passed_at") else None
-            ),
-            "eval_score": (
-                str(row["eval_score"]) if row.get("eval_score") is not None else None
-            ),
+            "eval_passed_at": (str(row["eval_passed_at"]) if row.get("eval_passed_at") else None),
+            "eval_score": (str(row["eval_score"]) if row.get("eval_score") is not None else None),
         }
 
     @staticmethod
@@ -853,11 +843,7 @@ class AgentsService:
         min_rate = 0.98 if is_money else 0.95
         min_samples = 60 if is_money else 30
 
-        return (
-            sample_count >= min_samples
-            and approval_rate >= min_rate
-            and avg_confidence >= 0.85
-        )
+        return sample_count >= min_samples and approval_rate >= min_rate and avg_confidence >= 0.85
 
 
 def _int_or_default(value: object, default: int) -> int:

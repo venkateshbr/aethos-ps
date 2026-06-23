@@ -15,6 +15,7 @@ _CLOSE_REVIEW_AGENTS = (
     "accrual_agent",
     "close_agent",
     "prepaid_amortization_agent",
+    "recurring_journal_agent",
     "reporting_agent",
     "revenue_recognition_agent",
 )
@@ -312,6 +313,16 @@ def _review_summary(output: dict) -> str:
         return (
             f"Review {currency} prepaid amortization proposal for "
             f"{description}: {amortization_amount}."
+        )
+    if (
+        output.get("proposal_type") == "recurring_journal"
+        and currency
+        and output.get("total_amount")
+    ):
+        template_name = str(output.get("template_name") or "recurring journal")
+        return (
+            f"Review {currency} recurring journal proposal for "
+            f"{template_name}: {output['total_amount']}."
         )
     recognition_amount = output.get("recognition_amount")
     if (

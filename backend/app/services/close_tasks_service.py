@@ -44,6 +44,13 @@ _DEFAULT_TASKS = [
         order_index=30,
     ),
     CloseTaskTemplate(
+        code="recurring_journal_review",
+        title="Review recurring journals",
+        description="Generate and approve recurring journal proposals for active templates.",
+        owner_role="finance_manager",
+        order_index=35,
+    ),
+    CloseTaskTemplate(
         code="trial_balance_review",
         title="Review trial balance and close package",
         description="Review trial balance, variance commentary, and close package evidence.",
@@ -123,13 +130,15 @@ class CloseTasksService:
             payload["completed_by"] = None
 
         result = await asyncio.to_thread(
-            lambda: self.db.table("accounting_close_tasks")
-            .update(payload)
-            .eq("id", task_id)
-            .eq("tenant_id", self.tenant_id)
-            .eq("period", period)
-            .is_("deleted_at", "null")
-            .execute()
+            lambda: (
+                self.db.table("accounting_close_tasks")
+                .update(payload)
+                .eq("id", task_id)
+                .eq("tenant_id", self.tenant_id)
+                .eq("period", period)
+                .is_("deleted_at", "null")
+                .execute()
+            )
         )
         return result.data[0] if result.data else None
 

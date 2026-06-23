@@ -42,6 +42,7 @@ class _Query:
         self._limit: int | None = None
         self._offset = 0
         self._null_filters: list[str] = []
+        self._in_filters: list[tuple[str, list[Any]]] = []
         self._insert_payload: dict[str, Any] | list[dict[str, Any]] | None = None
         self._update_payload: dict[str, Any] | None = None
 
@@ -55,6 +56,10 @@ class _Query:
     def is_(self, key: str, value: Any) -> _Query:
         if value == "null":
             self._null_filters.append(key)
+        return self
+
+    def in_(self, key: str, values: list[Any]) -> _Query:
+        self._in_filters.append((key, values))
         return self
 
     def order(self, key: str, desc: bool = False) -> _Query:
@@ -87,8 +92,12 @@ class _Query:
             )
             inserted = []
             for idx, payload in enumerate(payloads, start=1):
+                if self.table == "accounting_close_tasks":
+                    row_id = f"close-task-created-{idx}"
+                else:
+                    row_id = f"{self.table}-created-{len(self.db.tables[self.table]) + idx}"
                 row = {
-                    "id": f"close-task-created-{idx}",
+                    "id": row_id,
                     "created_at": "2026-06-22T00:00:00+00:00",
                     "updated_at": "2026-06-22T00:00:00+00:00",
                     "deleted_at": None,
@@ -115,8 +124,13 @@ class _Query:
         return _Result(deepcopy(rows))
 
     def _matches(self, row: dict[str, Any]) -> bool:
-        return all(row.get(key) == value for key, value in self._eq_filters) and all(
-            row.get(key) is None for key in self._null_filters
+        return (
+            all(row.get(key) == value for key, value in self._eq_filters)
+            and all(row.get(key) is None for key in self._null_filters)
+            and all(
+                row.get(key) in values or str(row.get(key)) in {str(value) for value in values}
+                for key, values in self._in_filters
+            )
         )
 
 
@@ -183,6 +197,45 @@ class _FakeDb:
                     "order_index": 40,
                     "deleted_at": None,
                 }
+            ],
+            "recurring_journal_templates": [
+                {
+                    "id": "template-rent",
+                    "tenant_id": TENANT_ID,
+                    "name": "Monthly rent accrual",
+                    "description": None,
+                    "schedule_day": 31,
+                    "start_period": "2026-06",
+                    "end_period": None,
+                    "currency": "USD",
+                    "is_active": True,
+                    "created_by": "manager-1",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                    "updated_at": "2026-06-22T00:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "recurring_journal_template_lines": [
+                {
+                    "id": "template-rent-line-1",
+                    "tenant_id": TENANT_ID,
+                    "template_id": "template-rent",
+                    "account_id": "55555555-5555-4555-8555-555555555555",
+                    "direction": "DR",
+                    "amount": "100.00",
+                    "description": None,
+                    "order_index": 0,
+                },
+                {
+                    "id": "template-rent-line-2",
+                    "tenant_id": TENANT_ID,
+                    "template_id": "template-rent",
+                    "account_id": "66666666-6666-4666-8666-666666666666",
+                    "direction": "CR",
+                    "amount": "100.00",
+                    "description": None,
+                    "order_index": 1,
+                },
             ],
         }
 
@@ -289,6 +342,7 @@ def test_accounting_read_routes_use_rls_client(
     close_readiness_response = client.get("/api/v1/accounting/periods/2026-06/close-readiness")
     close_package_response = client.get("/api/v1/accounting/periods/2026-06/close-package")
     close_tasks_response = client.get("/api/v1/accounting/periods/2026-06/close-tasks")
+    recurring_templates_response = client.get("/api/v1/accounting/recurring-journal-templates")
 
     assert periods_response.status_code == 200, periods_response.text
     current_period = date.today().strftime("%Y-%m")
@@ -319,6 +373,9 @@ def test_accounting_read_routes_use_rls_client(
     assert close_package_response.json()["previous_period"] == "2026-05"
     assert close_tasks_response.status_code == 200, close_tasks_response.text
     assert close_tasks_response.json()["tasks"][0]["code"] == "trial_balance_review"
+    assert recurring_templates_response.status_code == 200, recurring_templates_response.text
+    assert recurring_templates_response.json()["templates"][0]["id"] == "template-rent"
+    assert recurring_templates_response.json()["templates"][0]["lines"][0]["direction"] == "DR"
 
 
 def test_manual_journal_create_uses_service_role_client(
@@ -371,6 +428,43 @@ def test_manual_journal_create_uses_service_role_client(
     post_mock.assert_awaited_once()
 
 
+def test_recurring_journal_template_create_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/accounting/recurring-journal-templates",
+        json={
+            "name": "Monthly depreciation",
+            "schedule_day": 31,
+            "start_period": "2026-06",
+            "currency": "USD",
+            "lines": [
+                {
+                    "direction": "DR",
+                    "account_id": "55555555-5555-4555-8555-555555555555",
+                    "amount": "100.00",
+                },
+                {
+                    "direction": "CR",
+                    "account_id": "66666666-6666-4666-8666-666666666666",
+                    "amount": "100.00",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "Monthly depreciation"
+    assert body["schedule_day"] == 31
+    assert len(body["lines"]) == 2
+    assert body["lines"][0]["amount"] == "100.00"
+
+
 def test_close_task_bootstrap_and_update_use_service_role_client(
     client: TestClient,
     fake_db: _FakeDb,
@@ -386,7 +480,7 @@ def test_close_task_bootstrap_and_update_use_service_role_client(
     )
 
     assert bootstrap.status_code == 200, bootstrap.text
-    assert len(bootstrap.json()["tasks"]) == 5
+    assert len(bootstrap.json()["tasks"]) == 6
     assert update.status_code == 200, update.text
     body = update.json()
     assert body["status"] == "done"
@@ -536,3 +630,45 @@ def test_prepaid_amortization_proposal_uses_service_role_client(
     assert response.status_code == 200, response.text
     assert response.json()["created_count"] == 1
     assert response.json()["proposals"][0]["bill_line_id"] == "bill-line-prepaid"
+
+
+def test_recurring_journal_proposal_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _write_suggestions(
+        deps: Any,
+        period: str,
+    ) -> dict[str, Any]:
+        assert deps.db is fake_db
+        assert deps.tenant_id == TENANT_ID
+        assert deps.user_id == "manager-1"
+        assert period == "2026-06"
+        return {
+            "period": period,
+            "proposal_count": 1,
+            "created_count": 1,
+            "skipped_duplicates": 0,
+            "suggestion_ids": ["suggestion-recurring-001"],
+            "proposals": [
+                {
+                    "proposal_type": "recurring_journal",
+                    "template_id": "template-rent",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.agents.recurring_journal_agent.write_recurring_journal_suggestions",
+        _write_suggestions,
+    )
+
+    response = client.post("/api/v1/accounting/periods/2026-06/propose-recurring-journals")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created_count"] == 1
+    assert response.json()["proposals"][0]["template_id"] == "template-rent"

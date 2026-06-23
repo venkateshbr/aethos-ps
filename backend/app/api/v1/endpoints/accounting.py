@@ -10,8 +10,11 @@ Endpoints:
   POST   /api/v1/accounting/periods/{period}/propose-milestone-recognition — HITL milestone recognition
   POST   /api/v1/accounting/periods/{period}/propose-percentage-completion-recognition — HITL POC recognition
   POST   /api/v1/accounting/periods/{period}/propose-prepaid-amortization — HITL prepaid amortization
+  POST   /api/v1/accounting/periods/{period}/propose-recurring-journals — HITL recurring journals
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
+  GET    /api/v1/accounting/recurring-journal-templates — list recurring journal templates
+  POST   /api/v1/accounting/recurring-journal-templates — create recurring journal template
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
   GET    /api/v1/accounting/journal-entries        — list journal entries (viewer+)
 
@@ -41,6 +44,8 @@ from app.models.accounting import (
     JournalEntryListItem,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
+    RecurringJournalTemplateCreate,
+    RecurringJournalTemplateResponse,
 )
 from app.services.close_package_service import ClosePackageService
 from app.services.close_reconciliation_service import CloseReconciliationService
@@ -50,6 +55,9 @@ from app.services.close_status_service import (
 )
 from app.services.close_tasks_service import CloseTasksService
 from app.services.manual_journal_service import ManualJournalService
+from app.services.recurring_journal_templates_service import (
+    RecurringJournalTemplateService,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -167,6 +175,10 @@ class CloseTaskListResponse(BaseModel):
 class CloseTaskUpdate(BaseModel):
     status: str | None = None
     evidence: dict[str, Any] | None = None
+
+
+class RecurringJournalTemplateListResponse(BaseModel):
+    templates: list[RecurringJournalTemplateResponse]
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +415,58 @@ async def update_close_task(
     return _task_response(row)
 
 
+@router.get(
+    "/recurring-journal-templates",
+    response_model=RecurringJournalTemplateListResponse,
+)
+async def list_recurring_journal_templates(
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> RecurringJournalTemplateListResponse:
+    """List recurring journal templates visible to this tenant."""
+    try:
+        templates = await RecurringJournalTemplateService(db, tenant_id).list_templates()
+    except Exception as exc:
+        logger.exception(
+            "Failed to list recurring journal templates for tenant %s",
+            tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+    return RecurringJournalTemplateListResponse(templates=templates)
+
+
+@router.post(
+    "/recurring-journal-templates",
+    response_model=RecurringJournalTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_recurring_journal_template(
+    payload: RecurringJournalTemplateCreate,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> RecurringJournalTemplateResponse:
+    """Create a balanced recurring journal template for month-end close."""
+    try:
+        return await RecurringJournalTemplateService(db, tenant_id).create_template(
+            payload,
+            created_by=current_user.user_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to create recurring journal template for tenant %s",
+            tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+
 @router.post("/periods/{period}/propose-wip-accrual")
 async def propose_wip_accrual(
     period: str,
@@ -562,6 +626,32 @@ async def propose_prepaid_amortization(
             expense_account_code=expense_account_code,
         )
     except PrepaidAmortizationProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-recurring-journals")
+async def propose_recurring_journals(
+    period: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for active recurring templates."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.recurring_journal_agent import (
+        RecurringJournalProposalError,
+        write_recurring_journal_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_recurring_journal_suggestions(deps, period)
+    except RecurringJournalProposalError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),

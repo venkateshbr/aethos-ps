@@ -6,6 +6,8 @@ in JSON per the Aethos money gate (CLAUDE.md).
 
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -14,6 +16,8 @@ from uuid import UUID
 from pydantic import BaseModel, field_validator, model_validator
 
 from app.domain.money import quantise_money
+
+_PERIOD_PATTERN = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 
 # ---------------------------------------------------------------------------
 # Manual Journal Entry — request models
@@ -119,3 +123,105 @@ class JournalEntryListItem(BaseModel):
     reference: str | None = None
     created_by: str
     posted_at: str
+
+
+# ---------------------------------------------------------------------------
+# Recurring Journal Templates
+# ---------------------------------------------------------------------------
+
+
+class RecurringJournalTemplateLineIn(BaseModel):
+    """One line in a recurring journal template."""
+
+    direction: Literal["DR", "CR"]
+    account_id: UUID
+    amount: Decimal
+    description: str | None = None
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("Amount must be positive")
+        result = quantise_money(v)
+        if result is None:
+            raise ValueError("Amount could not be quantised")
+        return result
+
+
+class RecurringJournalTemplateCreate(BaseModel):
+    """Request body for creating a recurring journal template."""
+
+    name: str
+    description: str | None = None
+    schedule_day: int = 31
+    start_period: str
+    end_period: str | None = None
+    currency: str = "USD"
+    is_active: bool = True
+    lines: list[RecurringJournalTemplateLineIn]
+
+    @field_validator("schedule_day")
+    @classmethod
+    def validate_schedule_day(cls, v: int) -> int:
+        if v < 1 or v > 31:
+            raise ValueError("Schedule day must be between 1 and 31")
+        return v
+
+    @field_validator("start_period", "end_period")
+    @classmethod
+    def validate_period(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not _PERIOD_PATTERN.match(v):
+            raise ValueError("Period must be YYYY-MM")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        currency = v.upper().strip()
+        if len(currency) != 3 or not currency.isalpha():
+            raise ValueError("Currency must be a 3-letter ISO code")
+        return currency
+
+    @model_validator(mode="after")
+    def validate_template(self) -> RecurringJournalTemplateCreate:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Template name is required")
+        if self.end_period is not None and self.end_period < self.start_period:
+            raise ValueError("End period must be after start period")
+        if len(self.lines) < 2:
+            raise ValueError("Recurring journal template requires at least 2 lines")
+
+        totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
+        for line in self.lines:
+            totals[line.direction] += line.amount
+        if totals["DR"] != totals["CR"]:
+            raise ValueError("Recurring journal template must balance")
+        return self
+
+
+class RecurringJournalTemplateLineResponse(BaseModel):
+    id: str
+    account_id: str
+    direction: Literal["DR", "CR"]
+    amount: str
+    description: str | None = None
+    order_index: int
+
+
+class RecurringJournalTemplateResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    schedule_day: int
+    start_period: str
+    end_period: str | None
+    currency: str
+    is_active: bool
+    created_by: str | None
+    created_at: str | None
+    updated_at: str | None
+    lines: list[RecurringJournalTemplateLineResponse]

@@ -270,6 +270,33 @@ def test_close_status_summarizes_pending_prepaid_amortization_review() -> None:
     )
 
 
+def test_close_status_summarizes_pending_recurring_journal_review() -> None:
+    tables = _base_tables()
+    tables["agent_suggestions"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "suggestion-recurring-001",
+            "agent_name": "recurring_journal_agent",
+            "action_type": "draft_journal",
+            "status": "pending",
+            "output_snapshot": {
+                "proposal_type": "recurring_journal",
+                "period": "2026-06",
+                "currency": "USD",
+                "template_name": "Monthly depreciation",
+                "total_amount": "750.00",
+            },
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.pending_reviews[0].summary == (
+        "Review USD recurring journal proposal for Monthly depreciation: 750.00."
+    )
+
+
 def test_close_status_marks_already_locked_period() -> None:
     tables = _base_tables()
     tables["period_locks"] = [

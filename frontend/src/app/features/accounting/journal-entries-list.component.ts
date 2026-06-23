@@ -77,6 +77,32 @@ interface CloseProposalResponse {
   skipped_duplicates: number;
 }
 
+interface RecurringJournalTemplateLine {
+  id: string;
+  account_id: string;
+  direction: 'DR' | 'CR';
+  amount: string;
+  description?: string | null;
+  order_index: number;
+}
+
+interface RecurringJournalTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  schedule_day: number;
+  start_period: string;
+  end_period?: string | null;
+  currency: string;
+  is_active: boolean;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  lines: RecurringJournalTemplateLine[];
+}
+
+type JournalFormMode = 'journal' | 'recurring';
+
 // ─── Type guard for API error shape ───────────────────────────────────────────
 function isApiError(err: unknown): err is { error?: { detail?: string } } {
   return typeof err === 'object' && err !== null;
@@ -189,6 +215,62 @@ type FilterChip = 'all' | 'manual' | 'auto';
               <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">event_repeat</mat-icon>
               Prepaid amortization
             </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-recurring-journals', 'Recurring journals')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">repeat</mat-icon>
+              Recurring journals
+            </button>
+          </div>
+          <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 class="text-xs font-semibold text-text-primary uppercase tracking-wide">Recurring templates</h3>
+                <p class="text-xs text-text-muted mt-0.5">Balanced journals generated during month-end close.</p>
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors"
+                (click)="openRecurringTemplateForm()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
+                Template
+              </button>
+            </div>
+            @if (recurringTemplatesLoading()) {
+              <p class="text-xs text-text-muted">Loading templates…</p>
+            } @else if (recurringTemplatesError()) {
+              <p class="text-xs text-confidence-low" role="alert">{{ recurringTemplatesError() }}</p>
+            } @else if (recurringTemplates().length === 0) {
+              <p class="text-xs text-text-muted">No recurring journal templates yet.</p>
+            } @else {
+              <div class="grid gap-2 md:grid-cols-2">
+                @for (template of recurringTemplates(); track template.id) {
+                  <div class="border border-border-subtle rounded bg-surface px-3 py-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-text-primary truncate">{{ template.name }}</p>
+                        <p class="text-xs text-text-muted mt-0.5">
+                          Day {{ template.schedule_day }} · {{ template.start_period }}
+                          @if (template.end_period) {–{{ template.end_period }}}
+                          · {{ template.currency }}
+                        </p>
+                      </div>
+                      <span
+                        class="rounded px-2 py-0.5 text-xs"
+                        [class]="template.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-300'"
+                      >{{ template.is_active ? 'Active' : 'Paused' }}</span>
+                    </div>
+                    <p class="text-xs text-text-disabled mt-1">
+                      {{ template.lines.length }} lines · {{ recurringTemplateDebitTotal(template) | money: template.currency }}
+                    </p>
+                  </div>
+                }
+              </div>
+            }
           </div>
         }
         @if (closeTasksLoading()) {
@@ -463,7 +545,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
         <!-- Panel header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
           <h2 id="journal-form-title" class="text-base font-semibold text-text-primary">
-            Post Manual Journal Entry
+            {{ formMode() === 'recurring' ? 'Create Recurring Journal Template' : 'Post Manual Journal Entry' }}
           </h2>
           <button
             type="button"
@@ -485,49 +567,101 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <!-- Description -->
           <div>
             <label for="jnl-desc" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-              Description <span class="text-confidence-low">*</span>
+              {{ formMode() === 'recurring' ? 'Template name' : 'Description' }} <span class="text-confidence-low">*</span>
             </label>
             <input
               id="jnl-desc"
               type="text"
               formControlName="description"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-              placeholder="Reason for this entry (e.g. Month-end accrual)"
+              [placeholder]="formMode() === 'recurring' ? 'e.g. Monthly depreciation' : 'Reason for this entry (e.g. Month-end accrual)'"
             />
             @if (journalForm.controls.description.touched && journalForm.controls.description.errors?.['required']) {
-              <p class="text-xs text-confidence-low mt-1">Description is required.</p>
+              <p class="text-xs text-confidence-low mt-1">{{ formMode() === 'recurring' ? 'Template name' : 'Description' }} is required.</p>
             }
           </div>
 
-          <!-- Entry Date + Reference (side by side) -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="jnl-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-                Entry Date <span class="text-confidence-low">*</span>
-              </label>
-              <input
-                id="jnl-date"
-                type="date"
-                formControlName="entry_date"
-                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-              />
-              @if (journalForm.controls.entry_date.touched && journalForm.controls.entry_date.errors?.['required']) {
-                <p class="text-xs text-confidence-low mt-1">Date is required.</p>
-              }
+          @if (formMode() === 'journal') {
+            <!-- Entry Date + Reference (side by side) -->
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="jnl-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Entry Date <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="jnl-date"
+                  type="date"
+                  formControlName="entry_date"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+                @if (journalForm.controls.entry_date.touched && journalForm.controls.entry_date.errors?.['required']) {
+                  <p class="text-xs text-confidence-low mt-1">Date is required.</p>
+                }
+              </div>
+              <div>
+                <label for="jnl-ref" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Reference
+                </label>
+                <input
+                  id="jnl-ref"
+                  type="text"
+                  formControlName="reference"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                  placeholder="e.g. Month-end accrual"
+                />
+              </div>
             </div>
-            <div>
-              <label for="jnl-ref" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-                Reference
-              </label>
-              <input
-                id="jnl-ref"
-                type="text"
-                formControlName="reference"
-                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-                placeholder="e.g. Month-end accrual"
-              />
+          } @else {
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="rjt-start" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Start Period <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="rjt-start"
+                  type="month"
+                  formControlName="start_period"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-end" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  End Period
+                </label>
+                <input
+                  id="rjt-end"
+                  type="month"
+                  formControlName="end_period"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-day" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Schedule Day <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="rjt-day"
+                  type="number"
+                  min="1"
+                  max="31"
+                  formControlName="schedule_day"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-currency" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Currency
+                </label>
+                <input
+                  id="rjt-currency"
+                  type="text"
+                  maxlength="3"
+                  formControlName="currency"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary uppercase focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
             </div>
-          </div>
+          }
 
           <!-- Lines table -->
           <div>
@@ -707,9 +841,13 @@ type FilterChip = 'all' | 'manual' | 'auto';
             type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             [disabled]="!isBalanced() || journalForm.invalid || submitting()"
-            (click)="submitJournal()"
+            (click)="formMode() === 'recurring' ? submitRecurringTemplate() : submitJournal()"
           >
-            @if (submitting()) { Posting… } @else { Post Journal Entry }
+            @if (submitting()) {
+              {{ formMode() === 'recurring' ? 'Creating…' : 'Posting…' }}
+            } @else {
+              {{ formMode() === 'recurring' ? 'Create Template' : 'Post Journal Entry' }}
+            }
           </button>
         </div>
       </aside>
@@ -755,6 +893,9 @@ export class JournalEntriesListComponent implements OnInit {
   closeTasksError = signal<string | null>(null);
   closeTaskAction = signal<string | null>(null);
   closeProposalAction = signal<string | null>(null);
+  recurringTemplates = signal<RecurringJournalTemplate[]>([]);
+  recurringTemplatesLoading = signal(false);
+  recurringTemplatesError = signal<string | null>(null);
   completedCloseTasks = computed(() =>
     this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
   );
@@ -803,6 +944,7 @@ export class JournalEntriesListComponent implements OnInit {
   ];
 
   // ── Form state ───────────────────────────────────────────────────────
+  formMode = signal<JournalFormMode>('journal');
   showForm  = signal(false);
   submitting = signal(false);
   formError  = signal<string | null>(null);
@@ -827,6 +969,10 @@ export class JournalEntriesListComponent implements OnInit {
     description: ['', [Validators.required, Validators.maxLength(255)]],
     entry_date:  ['', [Validators.required]],
     reference:   [''],
+    start_period: ['', [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)]],
+    end_period:   [''],
+    schedule_day: [31, [Validators.required, Validators.min(1), Validators.max(31)]],
+    currency:     ['USD', [Validators.required, Validators.pattern(/^[A-Za-z]{3}$/)]],
     lines: this.fb.array([
       this.buildLine(),
       this.buildLine('CR'),
@@ -841,6 +987,7 @@ export class JournalEntriesListComponent implements OnInit {
   ngOnInit(): void {
     this.loadEntries();
     this.loadCloseTasks();
+    this.loadRecurringTemplates();
   }
 
   // ── List operations ──────────────────────────────────────────────────
@@ -878,6 +1025,23 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
         this.closeTasksLoading.set(false);
+      },
+    });
+  }
+
+  loadRecurringTemplates(): void {
+    this.recurringTemplatesLoading.set(true);
+    this.recurringTemplatesError.set(null);
+    this.http.get<{ templates: RecurringJournalTemplate[] }>(
+      '/api/v1/accounting/recurring-journal-templates',
+    ).subscribe({
+      next: (res) => {
+        this.recurringTemplates.set(res.templates ?? []);
+        this.recurringTemplatesLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.recurringTemplatesError.set(userMessageForError(err, 'Recurring Templates'));
+        this.recurringTemplatesLoading.set(false);
       },
     });
   }
@@ -953,12 +1117,17 @@ export class JournalEntriesListComponent implements OnInit {
 
   // ── Form operations ─────────────────────────────────────────────────
   openForm(): void {
+    this.formMode.set('journal');
     const today = new Date().toISOString().split('T')[0];
     // Reset to 2 lines
     this.journalForm.reset({
       description: '',
       entry_date: today,
       reference: '',
+      start_period: today.slice(0, 7),
+      end_period: '',
+      schedule_day: 31,
+      currency: 'USD',
     });
     // Clear lines array and add 2 fresh lines
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
@@ -972,6 +1141,32 @@ export class JournalEntriesListComponent implements OnInit {
     this.filteredAccounts.set([]);
 
     // Load chart of accounts
+    this.loadAccounts();
+    this.showForm.set(true);
+  }
+
+  openRecurringTemplateForm(): void {
+    this.formMode.set('recurring');
+    const today = new Date().toISOString().split('T')[0];
+    this.journalForm.reset({
+      description: '',
+      entry_date: today,
+      reference: '',
+      start_period: this.closePeriod(),
+      end_period: '',
+      schedule_day: 31,
+      currency: 'USD',
+    });
+    while (this.linesArray.length > 0) this.linesArray.removeAt(0);
+    this.linesArray.push(this.buildLine('DR'));
+    this.linesArray.push(this.buildLine('CR'));
+
+    this.formError.set(null);
+    this.drTotal.set('0.00');
+    this.crTotal.set('0.00');
+    this.activeSuggestionLine.set(null);
+    this.filteredAccounts.set([]);
+
     this.loadAccounts();
     this.showForm.set(true);
   }
@@ -1102,6 +1297,65 @@ export class JournalEntriesListComponent implements OnInit {
         this.formError.set(msg);
       },
     });
+  }
+
+  submitRecurringTemplate(): void {
+    this.recomputeTotals();
+    if (!this.isBalanced()) return;
+    if (this.journalForm.invalid) {
+      this.journalForm.markAllAsTouched();
+      this.linesArray.controls.forEach(c => c.markAllAsTouched());
+      return;
+    }
+
+    this.submitting.set(true);
+    this.formError.set(null);
+
+    const v = this.journalForm.getRawValue();
+    const payload = {
+      name: v.description,
+      description: v.reference || undefined,
+      schedule_day: Number(v.schedule_day),
+      start_period: v.start_period,
+      end_period: v.end_period || undefined,
+      currency: v.currency.toUpperCase(),
+      lines: v.lines.map(l => ({
+        direction: l.direction,
+        account_id: l.account_id,
+        amount: parseFloat(l.amount).toFixed(2),
+        description: l.line_description || undefined,
+      })),
+    };
+
+    this.http.post<RecurringJournalTemplate>(
+      '/api/v1/accounting/recurring-journal-templates',
+      payload,
+    ).subscribe({
+      next: (created) => {
+        this.recurringTemplates.update(list => [...list, created].sort((a, b) => a.name.localeCompare(b.name)));
+        this.submitting.set(false);
+        this.closeForm();
+        this.successToast.set(`Recurring template ${created.name} created.`);
+        setTimeout(() => this.successToast.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.submitting.set(false);
+        let msg = 'Could not create recurring journal template. Please try again.';
+        if (isApiError(err) && typeof err.error?.detail === 'string') {
+          msg = err.error.detail;
+        } else {
+          msg = userMessageForError(err, 'Recurring Template');
+        }
+        this.formError.set(msg);
+      },
+    });
+  }
+
+  recurringTemplateDebitTotal(template: RecurringJournalTemplate): string {
+    const total = template.lines
+      .filter(line => line.direction === 'DR')
+      .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+    return total.toFixed(2);
   }
 
   // ── Badge helpers ─────────────────────────────────────────────────────

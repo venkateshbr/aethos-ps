@@ -46,6 +46,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "copilot_agent",
         "invoice_drafter_agent",
         "prepaid_amortization_agent",
+        "recurring_journal_agent",
         "revenue_recognition_agent",
     }
 )
@@ -62,9 +63,7 @@ async def autonomy_promoter_worker(timestamp: int) -> dict:
     """
     _ = timestamp  # provided by Procrastinate periodic; unused
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
-    tenants = (
-        db.table("tenants").select("id").eq("status", "active").execute().data or []
-    )
+    tenants = db.table("tenants").select("id").eq("status", "active").execute().data or []
     proposed = 0
     demoted = 0
 
@@ -114,9 +113,7 @@ def _check_promotions(db, tenant_id: str) -> int:
             continue
 
         approved = [
-            r
-            for r in decided
-            if r["status"] in ("approved", "auto_applied", "approved_with_edits")
+            r for r in decided if r["status"] in ("approved", "auto_applied", "approved_with_edits")
         ]
         edited = [r for r in decided if r["status"] == "approved_with_edits"]
 
@@ -125,15 +122,9 @@ def _check_promotions(db, tenant_id: str) -> int:
 
         approval_rate = Decimal(str(len(approved) / n))
         edit_rate = Decimal(str(len(edited) / len(approved)))
-        avg_conf = sum(
-            Decimal(str(r.get("confidence", "0"))) for r in approved
-        ) / len(approved)
+        avg_conf = sum(Decimal(str(r.get("confidence", "0"))) for r in approved) / len(approved)
 
-        if (
-            approval_rate < min_rate
-            or avg_conf < Decimal("0.85")
-            or edit_rate > Decimal("0.15")
-        ):
+        if approval_rate < min_rate or avg_conf < Decimal("0.85") or edit_rate > Decimal("0.15"):
             continue
 
         # Skip pairs already at L3, locked at L2, or missing required L3 gates.
@@ -243,17 +234,15 @@ def _check_demotions(db, tenant_id: str) -> int:
             continue
 
         approved = [
-            r
-            for r in rows
-            if r["status"] in ("approved", "auto_applied", "approved_with_edits")
+            r for r in rows if r["status"] in ("approved", "auto_applied", "approved_with_edits")
         ]
         rate = Decimal(str(len(approved) / len(rows)))
 
         if rate < Decimal("0.85"):
             # Demote to L2, unlock (clear locked_at_l2 flag)
-            db.table("agent_autonomy_settings").update(
-                {"level": 2, "locked_at_l2": False}
-            ).eq("id", s["id"]).execute()
+            db.table("agent_autonomy_settings").update({"level": 2, "locked_at_l2": False}).eq(
+                "id", s["id"]
+            ).execute()
 
             db.table("hitl_tasks").insert(
                 {
@@ -261,8 +250,7 @@ def _check_demotions(db, tenant_id: str) -> int:
                     "kind": "autonomy_demotion",
                     "priority": "high",
                     "title": (
-                        f"{s['agent_name']} demoted to L2 — "
-                        f"{float(rate * 100):.1f}% approval"
+                        f"{s['agent_name']} demoted to L2 — {float(rate * 100):.1f}% approval"
                     ),
                     "description": "Fell below 85% threshold over 14 days.",
                     "payload": {

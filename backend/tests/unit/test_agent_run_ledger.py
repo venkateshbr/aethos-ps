@@ -105,22 +105,15 @@ def test_tool_registry_classifies_persisted_agent_actions() -> None:
     assert risk_class_for_action("time_entry_agent", "send_time_entry_reminder") == (
         "write_low_risk"
     )
-    assert risk_class_for_action("billing_run_agent", "approve_billing_run") == (
-        "write_money_in"
-    )
+    assert risk_class_for_action("billing_run_agent", "approve_billing_run") == ("write_money_in")
     assert risk_class_for_action("bill_pay_agent", "create_bill_payment_batch") == (
         "write_money_out"
     )
     assert risk_class_for_action("accrual_agent", "draft_journal") == "accounting"
-    assert risk_class_for_action("prepaid_amortization_agent", "draft_journal") == (
-        "accounting"
-    )
-    assert risk_class_for_action("revenue_recognition_agent", "draft_journal") == (
-        "accounting"
-    )
-    assert risk_class_for_action("project_health_agent", "BUDGET_BURN_WARNING") == (
-        "draft"
-    )
+    assert risk_class_for_action("prepaid_amortization_agent", "draft_journal") == ("accounting")
+    assert risk_class_for_action("recurring_journal_agent", "draft_journal") == ("accounting")
+    assert risk_class_for_action("revenue_recognition_agent", "draft_journal") == ("accounting")
+    assert risk_class_for_action("project_health_agent", "BUDGET_BURN_WARNING") == ("draft")
     assert risk_class_for_action("intelligence_agent", "EXPENSE_SPIKE") == "draft"
     assert risk_class_for_action("unknown_agent", "unknown_action") == "draft"
 
@@ -177,9 +170,7 @@ async def test_agent_run_ledger_writes_run_tool_and_completion_rows() -> None:
     assert completion["filters"] == [("id", run_id)]
     assert completion["patch"]["status"] == "succeeded"
     assert completion["patch"]["model_version"] == "openrouter/test-model"
-    assert completion["patch"]["output_hash"] == stable_payload_hash(
-        {"finish_reason": "stop"}
-    )
+    assert completion["patch"]["output_hash"] == stable_payload_hash({"finish_reason": "stop"})
 
 
 @pytest.mark.asyncio

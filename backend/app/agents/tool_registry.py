@@ -77,6 +77,7 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     ),
     _persisted_action("accrual_agent", "draft_journal", "accounting"),
     _persisted_action("prepaid_amortization_agent", "draft_journal", "accounting"),
+    _persisted_action("recurring_journal_agent", "draft_journal", "accounting"),
     _persisted_action("revenue_recognition_agent", "draft_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_manual_journal", "accounting"),
@@ -102,8 +103,7 @@ _RISK_ORDER: dict[ToolRiskClass, int] = {
 }
 
 TOOL_DEFINITIONS: dict[tuple[str, str], AgentToolDefinition] = {
-    (definition.agent_name, definition.tool_name): definition
-    for definition in _TOOL_DEFINITIONS
+    (definition.agent_name, definition.tool_name): definition for definition in _TOOL_DEFINITIONS
 }
 
 
