@@ -70,6 +70,13 @@ interface CloseTask {
   order_index: number;
 }
 
+interface CloseProposalResponse {
+  period: string;
+  proposal_count: number;
+  created_count: number;
+  skipped_duplicates: number;
+}
+
 // ─── Type guard for API error shape ───────────────────────────────────────────
 function isApiError(err: unknown): err is { error?: { detail?: string } } {
   return typeof err === 'object' && err !== null;
@@ -135,6 +142,37 @@ type FilterChip = 'all' | 'manual' | 'auto';
             </button>
           }
         </div>
+        @if (canClose()) {
+          <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border-default bg-surface-base/60">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-wip-accrual', 'WIP accrual')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">inventory</mat-icon>
+              WIP accrual
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-deferred-revenue-release', 'Deferred release')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">move_up</mat-icon>
+              Deferred release
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-milestone-recognition', 'Milestone recognition')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">task_alt</mat-icon>
+              Milestone recognition
+            </button>
+          </div>
+        }
         @if (closeTasksLoading()) {
           <div class="px-4 py-3 text-sm text-text-muted">Loading close tasks…</div>
         } @else if (closeTasksError()) {
@@ -698,6 +736,7 @@ export class JournalEntriesListComponent implements OnInit {
   closeTasksLoading = signal(false);
   closeTasksError = signal<string | null>(null);
   closeTaskAction = signal<string | null>(null);
+  closeProposalAction = signal<string | null>(null);
   completedCloseTasks = computed(() =>
     this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
   );
@@ -708,6 +747,15 @@ export class JournalEntriesListComponent implements OnInit {
     try {
       const raw = localStorage.getItem('aethos_role');
       return raw === 'manager' || raw === 'owner';
+    } catch {
+      return false;
+    }
+  });
+
+  canClose = computed(() => {
+    try {
+      const raw = localStorage.getItem('aethos_role');
+      return raw === 'admin' || raw === 'owner';
     } catch {
       return false;
     }
@@ -848,6 +896,27 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
         this.closeTaskAction.set(null);
+      },
+    });
+  }
+
+  requestCloseProposal(action: string, label: string): void {
+    this.closeProposalAction.set(action);
+    this.closeTasksError.set(null);
+    this.http.post<CloseProposalResponse>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/${action}`,
+      {},
+    ).subscribe({
+      next: (res) => {
+        this.successToast.set(
+          `${label}: ${res.created_count} review task(s), ${res.skipped_duplicates} duplicate(s) skipped.`,
+        );
+        this.closeProposalAction.set(null);
+        this.loadCloseTasks();
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, label));
+        this.closeProposalAction.set(null);
       },
     });
   }

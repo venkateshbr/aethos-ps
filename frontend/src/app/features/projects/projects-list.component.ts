@@ -351,7 +351,7 @@ import { HttpClient } from '@angular/common/http';
                   <div class="mt-3 h-2 rounded-full bg-surface-raised overflow-hidden">
                     <div class="h-full bg-accent" [style.width.%]="phasePercent(phase)"></div>
                   </div>
-                  <div class="mt-3 grid grid-cols-2 gap-3">
+                  <div class="mt-3 grid grid-cols-3 gap-3">
                     <select
                       class="px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
                       [value]="phase.status"
@@ -375,6 +375,17 @@ import { HttpClient } from '@angular/common/http';
                       (change)="updatePhase(phase, { percent_complete: $any($event.target).value })"
                       [attr.aria-label]="'Percent complete for ' + phase.name"
                     />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                      [value]="phase.revenue_recognition_amount || ''"
+                      [disabled]="updatingPhaseId() === phase.id"
+                      (change)="updatePhase(phase, { revenue_recognition_amount: $any($event.target).value || null })"
+                      [attr.aria-label]="'Recognition amount for ' + phase.name"
+                      placeholder="Revenue"
+                    />
                   </div>
                 </div>
               }
@@ -389,10 +400,12 @@ import { HttpClient } from '@angular/common/http';
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
             <textarea formControlName="deliverable_acceptance_criteria" rows="3" placeholder="Acceptance criteria"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"></textarea>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 gap-3">
               <input type="date" formControlName="end_date"
                 class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
               <input type="number" min="0" step="0.01" formControlName="budget" placeholder="Budget"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              <input type="number" min="0" step="0.01" formControlName="revenue_recognition_amount" placeholder="Revenue"
                 class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
               <input type="number" min="0" max="100" step="1" formControlName="percent_complete" placeholder="%"
                 class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
@@ -471,6 +484,7 @@ export class ProjectsListComponent implements OnInit {
     deliverable_acceptance_criteria: [''],
     end_date: [''],
     budget: [null as number | null],
+    revenue_recognition_amount: [null as number | null],
     percent_complete: [0],
   });
 
@@ -630,6 +644,7 @@ export class ProjectsListComponent implements OnInit {
       deliverable_acceptance_criteria: '',
       end_date: '',
       budget: null,
+      revenue_recognition_amount: null,
       percent_complete: 0,
     });
     this.showPhases.set(true);
@@ -669,6 +684,11 @@ export class ProjectsListComponent implements OnInit {
       deliverable_acceptance_criteria: v.deliverable_acceptance_criteria || null,
       end_date: v.end_date || null,
       budget: v.budget != null ? String(v.budget) : null,
+      revenue_recognition_amount: (
+        v.revenue_recognition_amount != null
+          ? String(v.revenue_recognition_amount)
+          : null
+      ),
       percent_complete: String(v.percent_complete ?? 0),
       order_index: this.phases().length,
     }).subscribe({
@@ -680,6 +700,7 @@ export class ProjectsListComponent implements OnInit {
           deliverable_acceptance_criteria: '',
           end_date: '',
           budget: null,
+          revenue_recognition_amount: null,
           percent_complete: 0,
         });
         this.addingPhase.set(false);
@@ -740,6 +761,7 @@ interface ProjectPhase {
   start_date?: string | null;
   end_date?: string | null;
   budget?: string | null;
+  revenue_recognition_amount?: string | null;
   order_index: number;
   deliverable_name?: string | null;
   deliverable_acceptance_criteria?: string | null;

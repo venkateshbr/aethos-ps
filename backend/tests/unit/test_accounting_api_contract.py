@@ -404,3 +404,52 @@ def test_close_task_bootstrap_and_update_use_service_role_client(
     assert body["status"] == "done"
     assert body["completed_by"] == "manager-1"
     assert body["evidence"] == {"reviewed": True}
+
+
+def test_milestone_recognition_proposal_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _write_suggestions(
+        deps: Any,
+        period: str,
+        *,
+        deferred_account_code: str,
+        revenue_account_code: str,
+    ) -> dict[str, Any]:
+        assert deps.db is fake_db
+        assert deps.tenant_id == TENANT_ID
+        assert deps.user_id == "manager-1"
+        assert period == "2026-06"
+        assert deferred_account_code == "2200"
+        assert revenue_account_code == "4000"
+        return {
+            "period": period,
+            "proposal_count": 1,
+            "created_count": 1,
+            "skipped_duplicates": 0,
+            "suggestion_ids": ["suggestion-milestone-001"],
+            "proposals": [
+                {
+                    "proposal_type": "milestone_revenue_recognition",
+                    "phase_id": "phase-discovery",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.agents.revenue_recognition_agent.write_milestone_revenue_recognition_suggestions",
+        _write_suggestions,
+    )
+
+    response = client.post(
+        "/api/v1/accounting/periods/2026-06/propose-milestone-recognition"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created_count"] == 1
+    assert response.json()["proposals"][0]["phase_id"] == "phase-discovery"

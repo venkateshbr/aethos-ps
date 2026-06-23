@@ -88,8 +88,14 @@ class ProjectPhaseCreate(BaseModel):
     deliverable_name: str | None = Field(default=None, max_length=300)
     deliverable_acceptance_criteria: str | None = Field(default=None, max_length=2000)
     percent_complete: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    revenue_recognition_amount: Decimal | None = Field(default=None, ge=0)
 
-    @field_validator("budget", "percent_complete", mode="before")
+    @field_validator(
+        "budget",
+        "percent_complete",
+        "revenue_recognition_amount",
+        mode="before",
+    )
     @classmethod
     def coerce_phase_decimal(cls, v: object) -> Decimal | None:
         if v is None:
@@ -108,8 +114,14 @@ class ProjectPhaseUpdate(BaseModel):
     deliverable_name: str | None = Field(default=None, max_length=300)
     deliverable_acceptance_criteria: str | None = Field(default=None, max_length=2000)
     percent_complete: Decimal | None = Field(default=None, ge=0, le=100)
+    revenue_recognition_amount: Decimal | None = Field(default=None, ge=0)
 
-    @field_validator("budget", "percent_complete", mode="before")
+    @field_validator(
+        "budget",
+        "percent_complete",
+        "revenue_recognition_amount",
+        mode="before",
+    )
     @classmethod
     def coerce_optional_phase_decimal(cls, v: object) -> Decimal | None:
         if v is None:
@@ -131,6 +143,7 @@ class ProjectPhaseResponse(BaseModel):
     deliverable_name: str | None = None
     deliverable_acceptance_criteria: str | None = None
     percent_complete: str
+    revenue_recognition_amount: str | None = None
     created_at: str
     updated_at: str
 
@@ -150,6 +163,9 @@ class ProjectPhaseResponse(BaseModel):
             deliverable_name=row.get("deliverable_name"),
             deliverable_acceptance_criteria=row.get("deliverable_acceptance_criteria"),
             percent_complete=str(row.get("percent_complete") or "0"),
+            revenue_recognition_amount=serialise_money(
+                row.get("revenue_recognition_amount")
+            ),
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
         )

@@ -123,7 +123,7 @@ Present:
 Gaps / status:
 - Done 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, mixed, and per-unit payroll/per-employee terms.
 - Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
-- Partial 2026-06-23: WIP accrual and deferred revenue release proposal endpoints/agents exist, but revenue recognition is not yet a full guided lifecycle across deferred revenue, milestone recognition, retainer drawdown, and percentage-of-completion accounting.
+- Partial 2026-06-23: WIP accrual, deferred revenue release, and milestone revenue recognition proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Remaining revenue-recognition depth is retainer drawdown automation, percentage-of-completion accounting, prepaid amortization, and broader schedule management.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
 - Open: no client portal workflow beyond public invoice payment.
 - Done/verification open 2026-06-23: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM time logging remains open for verification in GitHub issue #253.
@@ -294,7 +294,7 @@ Engagement-to-cash loops:
 - Open: time-entry agent drafts/reminds based on calendar/email/project context.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms.
 - Partial: collections agent exists, but behavior-policy-driven reminder loops need demo-grade verification.
-- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals and deferred revenue releases; full milestone recognition and posting loop remain open.
+- Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer drawdown, percentage-of-completion, and prepaid amortization loops remain open.
 
 Procure-to-pay loops:
 - Done/monitor 2026-06-23: vendor invoice agent extracts, matches, detects duplicates, and suggests GL/service-line/project coding.

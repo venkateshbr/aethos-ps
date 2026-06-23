@@ -114,6 +114,10 @@ class ProjectService:
             payload["end_date"] = data.end_date.isoformat()
         if data.budget is not None:
             payload["budget"] = serialise_money(data.budget)
+        if data.revenue_recognition_amount is not None:
+            payload["revenue_recognition_amount"] = serialise_money(
+                data.revenue_recognition_amount
+            )
         if data.deliverable_name:
             payload["deliverable_name"] = data.deliverable_name
         if data.deliverable_acceptance_criteria:
@@ -133,7 +137,7 @@ class ProjectService:
         for field, value in data.model_dump(exclude_unset=True).items():
             if value is None:
                 payload[field] = None
-            elif field in {"budget"}:
+            elif field in {"budget", "revenue_recognition_amount"}:
                 payload[field] = serialise_money(value)
             elif field in {"percent_complete"}:
                 payload[field] = str(value)

@@ -210,6 +210,7 @@ class _FakeDb:
                     "deliverable_name": "Discovery brief",
                     "deliverable_acceptance_criteria": "Signed off by sponsor",
                     "percent_complete": "40",
+                    "revenue_recognition_amount": "12000.00",
                     "created_at": "2026-06-22T00:00:00+00:00",
                     "updated_at": "2026-06-22T00:00:00+00:00",
                     "deleted_at": None,
@@ -292,6 +293,7 @@ def test_project_read_routes_use_rls_client(
     assert phases_response.status_code == 200, phases_response.text
     assert phases_response.json()[0]["deliverable_name"] == "Discovery brief"
     assert phases_response.json()[0]["percent_complete"] == "40"
+    assert phases_response.json()[0]["revenue_recognition_amount"] == "12000.00"
 
 
 def test_project_create_uses_service_role_client(
@@ -333,6 +335,7 @@ def test_project_phase_create_and_update_use_service_role_client(
             "status": "planning",
             "end_date": "2026-07-15",
             "budget": "15000.00",
+            "revenue_recognition_amount": "20000.00",
             "deliverable_name": "Working process prototype",
             "deliverable_acceptance_criteria": "Sponsor signs UAT checklist",
             "percent_complete": "10",
@@ -343,6 +346,7 @@ def test_project_phase_create_and_update_use_service_role_client(
         "/api/v1/projects/project-alpha/phases/phase-created",
         json={
             "status": "active",
+            "revenue_recognition_amount": "22000.00",
             "percent_complete": "35",
         },
     )
@@ -350,6 +354,8 @@ def test_project_phase_create_and_update_use_service_role_client(
     assert create_response.status_code == 201, create_response.text
     assert create_response.json()["id"] == "phase-created"
     assert create_response.json()["deliverable_name"] == "Working process prototype"
+    assert create_response.json()["revenue_recognition_amount"] == "20000.00"
     assert update_response.status_code == 200, update_response.text
     assert update_response.json()["status"] == "active"
     assert update_response.json()["percent_complete"] == "35"
+    assert update_response.json()["revenue_recognition_amount"] == "22000.00"
