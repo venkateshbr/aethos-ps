@@ -121,3 +121,63 @@ def test_reports_router_uses_rls_client() -> None:
 
     assert response.status_code == 200, response.text
     assert response.json()["total"] == "250.00"
+
+
+def test_action_queue_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = _FakeDb()
+
+    class _FakeReportsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            assert db is fake_db
+            assert tenant_id == TENANT_ID
+
+        def action_queue(
+            self,
+            *,
+            role: str,
+            period_start: str | None,
+            period_end: str | None,
+            limit: int,
+        ) -> list[dict[str, Any]]:
+            assert role == "partner"
+            assert period_start is None
+            assert period_end is None
+            assert limit == 5
+            return [
+                {
+                    "id": "partner:practice_dashboard:practice:advisory",
+                    "role": "partner",
+                    "source_type": "practice_dashboard",
+                    "priority": "critical",
+                    "entity_type": "practice",
+                    "entity_id": "advisory",
+                    "entity_name": "Advisory",
+                    "summary": "Advisory needs partner review.",
+                    "recommended_action": "Run partner recovery review.",
+                    "evidence": ["Critical projects: 1."],
+                    "metrics": {"critical_project_count": 1},
+                    "route_hint": "/app/reports",
+                }
+            ]
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.reports.ReportsService",
+        _FakeReportsService,
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/action-queue?role=partner&limit=5")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["role"] == "partner"

@@ -1240,3 +1240,129 @@ def test_scope_change_advisor_uses_completed_project_comparables(
     ]
     assert row["comparable_projects"][0]["effective_rate"] == "250.00"
     assert "scope-change request" in row["recommended_action"]
+
+
+def test_action_queue_composes_role_specific_items(
+    mock_db: MagicMock,
+) -> None:
+    """Action queue turns existing report evidence into persona queues."""
+    svc = _make_svc(mock_db)
+    svc.ar_aging = MagicMock(
+        return_value={
+            "0_30": "1000.00",
+            "31_60": "0.00",
+            "61_90": "0.00",
+            "over_90": "0.00",
+            "total": "1000.00",
+        }
+    )
+    svc.ap_aging = MagicMock(
+        return_value={
+            "0_30": "500.00",
+            "31_60": "0.00",
+            "61_90": "0.00",
+            "over_90": "250.00",
+            "total": "750.00",
+        }
+    )
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "project_name": "Risky Project",
+                "service_line": "advisory",
+                "health_score": 42,
+                "risk_level": "critical",
+                "drivers": [
+                    {
+                        "summary": "Margin and cap drawdown are critical.",
+                    }
+                ],
+                "recommended_actions": ["Escalate project recovery."],
+            }
+        ]
+    )
+    svc.capacity_planning = MagicMock(
+        return_value=[
+            {
+                "employee_id": "emp-over",
+                "employee_name": "Asha Rao",
+                "practice_area": "advisory",
+                "capacity_status": "overallocated",
+                "utilization_pct": 130.0,
+                "capacity_hours": "40.00",
+                "logged_hours": "52.00",
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "recommended_action": "Reassign delivery work.",
+            }
+        ]
+    )
+    svc.pricing_staffing_recommendations = MagicMock(
+        return_value=[
+            {
+                "recommendation_id": "pricing:client:client-acme",
+                "recommendation_type": "pricing",
+                "priority": "critical",
+                "entity_type": "client",
+                "entity_id": "client-acme",
+                "entity_name": "Acme Corp",
+                "service_line": "advisory",
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "evidence": ["Gross margin is 10%."],
+                "metrics": {"gross_margin_pct": 10.0},
+                "recommended_action": "Reprice before more work.",
+            }
+        ]
+    )
+    svc.scope_change_advisor = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "project_name": "Risky Project",
+                "service_line": "advisory",
+                "risk_level": "critical",
+                "health_score": 42,
+                "scope_signals": ["budget_hours_burn"],
+                "suggested_fee_adjustment": "5000.00",
+                "confidence": "medium",
+                "drivers": [{"summary": "Budget hours exceeded."}],
+                "recommended_action": "Prepare a scope-change request.",
+            }
+        ]
+    )
+    svc.practice_dashboard = MagicMock(
+        return_value=[
+            {
+                "practice_key": "advisory",
+                "practice_label": "Advisory",
+                "critical_project_count": 1,
+                "at_risk_project_count": 1,
+                "gross_margin_pct": 18.0,
+                "avg_project_health_score": 58.0,
+                "recommended_actions": ["Run partner recovery review."],
+            }
+        ]
+    )
+
+    project_manager = svc.action_queue(role="project_manager", limit=20)
+    partner = svc.action_queue(role="partner", limit=20)
+    ap_clerk = svc.action_queue(role="ap_clerk", limit=20)
+
+    assert {item["source_type"] for item in project_manager} >= {
+        "project_health",
+        "capacity",
+        "scope_change",
+    }
+    assert all(item["role"] == "project_manager" for item in project_manager)
+
+    assert {item["source_type"] for item in partner} >= {
+        "pricing_recommendation",
+        "scope_change",
+        "practice_dashboard",
+    }
+    assert all(item["role"] == "partner" for item in partner)
+
+    assert [item["source_type"] for item in ap_clerk] == ["ap_aging"]
+    assert ap_clerk[0]["priority"] == "high"

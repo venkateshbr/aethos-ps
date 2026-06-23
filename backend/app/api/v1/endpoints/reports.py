@@ -271,6 +271,27 @@ def scope_change_advisor(
     )
 
 
+@router.get("/action-queue")
+def action_queue(
+    role: Literal["all", "partner", "finance_manager", "project_manager", "ap_clerk"] = Query(
+        "all",
+        description="Persona queue to return.",
+    ),
+    period_start: str | None = Query(None, description="Queue evidence window from (YYYY-MM-DD)"),
+    period_end: str | None = Query(None, description="Queue evidence window to (YYYY-MM-DD)"),
+    limit: int = Query(50, ge=1, le=100),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Role-specific operating action queue composed from report evidence."""
+    return svc.action_queue(
+        role=role,
+        period_start=period_start,
+        period_end=period_end,
+        limit=limit,
+    )
+
+
 @router.get("/trial-balance", response_model=TrialBalanceReport)
 def get_trial_balance(
     as_of_period: str | None = Query(

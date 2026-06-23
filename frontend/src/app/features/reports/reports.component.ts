@@ -17,6 +17,8 @@ import {
   PracticeDashboardRow,
   PricingStaffingRecommendation,
   ScopeChangeAdvisorRow,
+  ActionQueueItem,
+  ActionQueueRole,
   UtilRow,
   WipRow,
   RevenueRow,
@@ -493,6 +495,68 @@ import {
           </div>
         </mat-tab>
 
+        <!-- Action Queue -->
+        <mat-tab label="Action Queue">
+          <div class="pt-4 space-y-4">
+            <div class="flex flex-wrap gap-2">
+              @for (role of actionQueueRoles; track role.value) {
+                <button
+                  type="button"
+                  (click)="setActionQueueRole(role.value)"
+                  [class]="queueRoleButtonClass(role.value)"
+                >
+                  {{ role.label }}
+                </button>
+              }
+            </div>
+
+            @defer (on viewport) {
+              @if (actionQueueLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (actionQueueError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Action Queue', retry: loadActionQueue.bind(this) }" />
+              } @else if (actionQueueRows().length === 0) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'action queue' }" />
+              } @else {
+                <div class="space-y-3">
+                  @for (row of actionQueueRows(); track row.id) {
+                    <article class="rounded-lg border border-border-default bg-surface-raised p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div class="flex flex-wrap items-center gap-2">
+                            <h2 class="text-sm font-semibold text-text-primary">{{ row.entity_name }}</h2>
+                            <span [class]="priorityChipClass(row.priority)">{{ labelize(row.priority) }}</span>
+                            <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ roleLabel(row.role) }}</span>
+                          </div>
+                          <p class="mt-1 text-xs text-text-muted">
+                            {{ labelize(row.source_type) }} · {{ labelize(row.entity_type) }}
+                          </p>
+                        </div>
+                        @if (row.service_line) {
+                          <span class="rounded bg-indigo-500/10 px-2 py-0.5 text-xs text-indigo-300">{{ serviceLineLabel(row.service_line) }}</span>
+                        }
+                      </div>
+                      <p class="mt-3 text-sm text-text-primary">{{ row.summary }}</p>
+                      <p class="mt-2 text-sm text-text-secondary">{{ row.recommended_action }}</p>
+                      @if (row.evidence.length) {
+                        <ul class="mt-3 space-y-1 text-sm text-text-muted">
+                          @for (evidence of row.evidence.slice(0, 3); track evidence) {
+                            <li>{{ evidence }}</li>
+                          }
+                        </ul>
+                      }
+                    </article>
+                  }
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
         <!-- Scope Advisor -->
         <mat-tab label="Scope Advisor">
           <div class="pt-4">
@@ -929,6 +993,19 @@ export class ReportsComponent implements OnInit {
   recommendationsError = signal(false);
   recommendationRows = signal<PricingStaffingRecommendation[]>([]);
 
+  // Action queue
+  actionQueueLoading = signal(false);
+  actionQueueError = signal(false);
+  actionQueueRows = signal<ActionQueueItem[]>([]);
+  actionQueueRole = signal<ActionQueueRole>('all');
+  readonly actionQueueRoles: { value: ActionQueueRole; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'partner', label: 'Partner' },
+    { value: 'finance_manager', label: 'Finance' },
+    { value: 'project_manager', label: 'Projects' },
+    { value: 'ap_clerk', label: 'AP' },
+  ];
+
   // Scope advisor
   scopeLoading = signal(false);
   scopeError = signal(false);
@@ -998,6 +1075,9 @@ export class ReportsComponent implements OnInit {
         this.loadRecommendations();
         break;
       case 8:
+        this.loadActionQueue();
+        break;
+      case 9:
         this.loadScopeAdvisor();
         break;
     }
@@ -1090,6 +1170,20 @@ export class ReportsComponent implements OnInit {
     this.svc.getPricingStaffingRecommendations().subscribe({
       next: rows => { this.recommendationRows.set(rows); this.recommendationsLoading.set(false); },
       error: () => { this.recommendationsError.set(true); this.recommendationsLoading.set(false); },
+    });
+  }
+
+  setActionQueueRole(role: ActionQueueRole): void {
+    this.actionQueueRole.set(role);
+    this.loadActionQueue();
+  }
+
+  loadActionQueue(): void {
+    this.actionQueueLoading.set(true);
+    this.actionQueueError.set(false);
+    this.svc.getActionQueue(this.actionQueueRole()).subscribe({
+      next: rows => { this.actionQueueRows.set(rows); this.actionQueueLoading.set(false); },
+      error: () => { this.actionQueueError.set(true); this.actionQueueLoading.set(false); },
     });
   }
 
@@ -1187,6 +1281,21 @@ export class ReportsComponent implements OnInit {
       case 'medium': return `${base} bg-confidence-med/10 text-confidence-med`;
       default: return `${base} bg-surface-base text-text-muted border border-border-subtle`;
     }
+  }
+
+  queueRoleButtonClass(role: ActionQueueRole): string {
+    const base = 'h-9 rounded border px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+    if (this.actionQueueRole() === role) {
+      return `${base} border-accent bg-accent/15 text-text-primary`;
+    }
+    return `${base} border-border-default text-text-secondary hover:border-accent/60 hover:text-text-primary`;
+  }
+
+  roleLabel(role: string): string {
+    if (role === 'finance_manager') return 'Finance';
+    if (role === 'project_manager') return 'Projects';
+    if (role === 'ap_clerk') return 'AP';
+    return this.labelize(role);
   }
 
   confidenceChipClass(confidence: string): string {

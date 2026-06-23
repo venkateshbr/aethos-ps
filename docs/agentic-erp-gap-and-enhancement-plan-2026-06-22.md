@@ -27,6 +27,7 @@ Done:
 - Agent controls are surfaced through `/api/v1/agents/*` and Settings UI: run dashboard, eval candidates, L3 policy, kill switches, and per-agent/tool circuit breaker controls.
 - Deterministic recorded replay is available through `POST /api/v1/agents/runs/{run_id}/replay` and the Settings agent-run panel; it reconstructs stored tool-call snapshots without executing tools.
 - Services-business intelligence endpoints and Angular typings now cover project health, capacity planning, client profitability, client-group profitability, segment profitability, practice dashboards, pricing/staffing recommendations, and scope-change advisor.
+- Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
 - Client groups have API, UI, member roles, and profitability rollups.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -36,7 +37,7 @@ Still open:
 - Demo report/screenshots were intentionally not regenerated in this pass.
 - Recorded agent replay is implemented; full re-execution against current code and external providers remains open.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
-- Launch-grade role-based "what should I do today?" work queues are not yet complete, even though the BI/recommendation endpoints exist.
+- Role-based action queues are implemented from report evidence; deeper personalized ownership/assignment queues remain open.
 
 ## Executive Verdict
 
@@ -317,7 +318,7 @@ Work items:
 - Done 2026-06-23: multi-entity client group rollups.
 
 Acceptance:
-- Partial 2026-06-23: evidence-backed recommendations exist through reports endpoints. Role-specific "what should I do today?" work queues for partner, finance manager, project manager, and AP clerk remain open.
+- Done/partial 2026-06-23: evidence-backed recommendations now feed role-specific action queues for partner, finance manager, project manager, and AP clerk personas. Deeper personal ownership, SLA, and assignment queues remain open.
 
 ### Phase 5: Compliance And Enterprise Readiness
 
@@ -400,7 +401,7 @@ Priority 2:
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
 - R2R close management: close calendar/tasks, bank/suspense reconciliations, recurring journals, prepaid amortization, and financial statements.
-- Advanced services intelligence: backlog forecast, overdue milestone risk, role-based action queues, and demo-ready recommendation workflows.
+- Advanced services intelligence: backlog forecast, overdue milestone risk, personalized assignment queues, and demo-ready recommendation workflows.
 
 ## Approval Recommendation
 

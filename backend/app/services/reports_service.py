@@ -41,6 +41,13 @@ _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
 _TARGET_GROSS_MARGIN_PCT = Decimal("40")
 _SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"}
+_ACTION_QUEUE_ROLES = {
+    "all",
+    "partner",
+    "finance_manager",
+    "project_manager",
+    "ap_clerk",
+}
 _SERVICE_LINE_LABELS = {
     "accounting": "Accounting",
     "tax": "Tax",
@@ -1565,6 +1572,267 @@ class ReportsService:
             ),
         )
 
+    # ------------------------------------------------------------------
+    # 16. Role-Based Action Queue
+    # ------------------------------------------------------------------
+
+    def action_queue(
+        self,
+        *,
+        role: str = "all",
+        period_start: str | None = None,
+        period_end: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Compose role-specific operating actions from evidence-backed reports."""
+        role_filter = role if role in _ACTION_QUEUE_ROLES else "all"
+        capped_limit = max(1, min(limit, 100))
+        items: list[dict] = []
+
+        ar_aging = self.ar_aging()
+        ar_total = _decimal(ar_aging.get("total")) or Decimal("0")
+        if ar_total > Decimal("0"):
+            items.append(
+                _action_queue_item(
+                    role="finance_manager",
+                    source_type="ar_aging",
+                    priority="high" if _decimal(ar_aging.get("over_90")) else "medium",
+                    entity_type="receivables",
+                    entity_id="ar-aging",
+                    entity_name="Accounts receivable",
+                    summary=f"Open AR total is {serialise_money(ar_total) or '0.00'}.",
+                    recommended_action="Review overdue invoices and prioritize collections follow-up.",
+                    evidence=[
+                        f"0-30: {ar_aging.get('0_30', '0.00')}",
+                        f"31-60: {ar_aging.get('31_60', '0.00')}",
+                        f"61-90: {ar_aging.get('61_90', '0.00')}",
+                        f"90+: {ar_aging.get('over_90', '0.00')}",
+                    ],
+                    metrics=ar_aging,
+                    route_hint="/app/reports",
+                )
+            )
+
+        ap_aging = self.ap_aging()
+        ap_total = _decimal(ap_aging.get("total")) or Decimal("0")
+        if ap_total > Decimal("0"):
+            priority = "high" if _decimal(ap_aging.get("over_90")) else "medium"
+            for queue_role in ("finance_manager", "ap_clerk"):
+                items.append(
+                    _action_queue_item(
+                        role=queue_role,
+                        source_type="ap_aging",
+                        priority=priority,
+                        entity_type="payables",
+                        entity_id="ap-aging",
+                        entity_name="Accounts payable",
+                        summary=f"Open AP total is {serialise_money(ap_total) or '0.00'}.",
+                        recommended_action="Review approved bills and prepare the next controlled payment run.",
+                        evidence=[
+                            f"0-30: {ap_aging.get('0_30', '0.00')}",
+                            f"31-60: {ap_aging.get('31_60', '0.00')}",
+                            f"61-90: {ap_aging.get('61_90', '0.00')}",
+                            f"90+: {ap_aging.get('over_90', '0.00')}",
+                        ],
+                        metrics=ap_aging,
+                        route_hint="/app/pay-bills",
+                    )
+                )
+
+        for row in self.project_health_scores(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            risk_level = str(row.get("risk_level") or "healthy")
+            if risk_level not in {"at_risk", "critical"}:
+                continue
+            items.append(
+                _action_queue_item(
+                    role="project_manager",
+                    source_type="project_health",
+                    priority="critical" if risk_level == "critical" else "high",
+                    entity_type="project",
+                    entity_id=str(row["project_id"]),
+                    entity_name=str(row.get("project_name") or row["project_id"]),
+                    summary=f"Project health is {risk_level.replace('_', ' ')}.",
+                    recommended_action=(
+                        (row.get("recommended_actions") or ["Review project risk."])[0]
+                    ),
+                    evidence=[
+                        str(driver.get("summary") or driver.get("label") or "")
+                        for driver in row.get("drivers") or []
+                    ],
+                    metrics={
+                        "health_score": row.get("health_score"),
+                        "risk_level": risk_level,
+                        "driver_count": len(row.get("drivers") or []),
+                    },
+                    route_hint=f"/app/projects/{row['project_id']}",
+                    service_line=str(row.get("service_line") or "unclassified"),
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+            )
+
+        for row in self.capacity_planning(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            status = str(row.get("capacity_status") or "balanced")
+            if status not in {"overallocated", "underutilized"}:
+                continue
+            utilization = float(row.get("utilization_pct") or 0)
+            items.append(
+                _action_queue_item(
+                    role="project_manager",
+                    source_type="capacity",
+                    priority=(
+                        "critical"
+                        if status == "overallocated" and utilization >= 125
+                        else "medium"
+                    ),
+                    entity_type="employee",
+                    entity_id=str(row["employee_id"]),
+                    entity_name=str(row.get("employee_name") or row["employee_id"]),
+                    summary=f"Capacity status is {status.replace('_', ' ')}.",
+                    recommended_action=str(row.get("recommended_action") or "Review staffing."),
+                    evidence=[
+                        f"Utilization is {row.get('utilization_pct')}%.",
+                        f"Logged {row.get('logged_hours')} of {row.get('capacity_hours')} hours.",
+                    ],
+                    metrics={
+                        "capacity_status": status,
+                        "utilization_pct": row.get("utilization_pct"),
+                        "capacity_hours": row.get("capacity_hours"),
+                        "logged_hours": row.get("logged_hours"),
+                    },
+                    route_hint="/app/people",
+                    service_line=str(row.get("practice_area") or "unclassified"),
+                    period_start=row.get("period_start") or period_start,
+                    period_end=row.get("period_end") or period_end,
+                )
+            )
+
+        for row in self.pricing_staffing_recommendations(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            recommendation_type = str(row.get("recommendation_type") or "")
+            queue_role = (
+                "project_manager"
+                if recommendation_type == "staffing"
+                else "partner"
+                if recommendation_type in {"practice", "pricing"}
+                else "finance_manager"
+            )
+            items.append(
+                _action_queue_item(
+                    role=queue_role,
+                    source_type=f"{recommendation_type}_recommendation",
+                    priority=str(row.get("priority") or "medium"),
+                    entity_type=str(row.get("entity_type") or "entity"),
+                    entity_id=str(row.get("entity_id") or row.get("recommendation_id")),
+                    entity_name=str(row.get("entity_name") or row.get("recommendation_id")),
+                    summary=f"{row.get('recommendation_type', 'Recommendation')} recommendation.",
+                    recommended_action=str(row.get("recommended_action") or ""),
+                    evidence=[str(item) for item in row.get("evidence") or []],
+                    metrics=dict(row.get("metrics") or {}),
+                    route_hint="/app/reports",
+                    service_line=(
+                        str(row["service_line"])
+                        if row.get("service_line") is not None
+                        else None
+                    ),
+                    period_start=row.get("period_start") or period_start,
+                    period_end=row.get("period_end") or period_end,
+                )
+            )
+
+        for row in self.scope_change_advisor(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            for queue_role in ("partner", "project_manager"):
+                items.append(
+                    _action_queue_item(
+                        role=queue_role,
+                        source_type="scope_change",
+                        priority=_scope_priority(str(row.get("risk_level") or "")),
+                        entity_type="project",
+                        entity_id=str(row["project_id"]),
+                        entity_name=str(row.get("project_name") or row["project_id"]),
+                        summary=(
+                            f"Potential fee adjustment "
+                            f"{row.get('suggested_fee_adjustment', '0.00')}."
+                        ),
+                        recommended_action=str(row.get("recommended_action") or ""),
+                        evidence=[
+                            str(driver.get("summary") or driver.get("label") or "")
+                            for driver in row.get("drivers") or []
+                        ],
+                        metrics={
+                            "health_score": row.get("health_score"),
+                            "risk_level": row.get("risk_level"),
+                            "scope_signals": row.get("scope_signals") or [],
+                            "suggested_fee_adjustment": row.get("suggested_fee_adjustment"),
+                            "confidence": row.get("confidence"),
+                        },
+                        route_hint=f"/app/projects/{row['project_id']}",
+                        service_line=str(row.get("service_line") or "unclassified"),
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
+                )
+
+        for row in self.practice_dashboard(
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            critical_count = int(row.get("critical_project_count") or 0)
+            at_risk_count = int(row.get("at_risk_project_count") or 0)
+            margin_pct = Decimal(str(row.get("gross_margin_pct") or "0"))
+            if not critical_count and not at_risk_count and margin_pct >= Decimal("30"):
+                continue
+            items.append(
+                _action_queue_item(
+                    role="partner",
+                    source_type="practice_dashboard",
+                    priority="critical" if critical_count else "high",
+                    entity_type="practice",
+                    entity_id=str(row["practice_key"]),
+                    entity_name=str(row.get("practice_label") or row["practice_key"]),
+                    summary=f"{row.get('practice_label')} needs partner review.",
+                    recommended_action=(
+                        (row.get("recommended_actions") or ["Review practice performance."])[0]
+                    ),
+                    evidence=[
+                        f"Critical projects: {critical_count}.",
+                        f"At-risk projects: {at_risk_count}.",
+                        f"Gross margin: {row.get('gross_margin_pct')}%.",
+                    ],
+                    metrics={
+                        "critical_project_count": critical_count,
+                        "at_risk_project_count": at_risk_count,
+                        "gross_margin_pct": row.get("gross_margin_pct"),
+                        "avg_project_health_score": row.get("avg_project_health_score"),
+                    },
+                    route_hint="/app/reports",
+                    service_line=str(row.get("practice_key") or "unclassified"),
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+            )
+
+        unique_items: dict[str, dict] = {}
+        for item in items:
+            if _role_matches(str(item["role"]), role_filter):
+                unique_items.setdefault(str(item["id"]), item)
+
+        return sorted(
+            unique_items.values(),
+            key=_action_queue_sort_key,
+        )[:capped_limit]
+
     def _scope_project_contexts(self, project_ids: list[str]) -> dict[str, dict]:
         if not project_ids:
             return {}
@@ -3028,6 +3296,56 @@ def _recommendation_priority_rank(priority: str) -> int:
         "medium": 2,
         "low": 3,
     }.get(priority, 4)
+
+
+def _action_queue_item(
+    *,
+    role: str,
+    source_type: str,
+    priority: str,
+    entity_type: str,
+    entity_id: str,
+    entity_name: str,
+    summary: str,
+    recommended_action: str,
+    evidence: list[str],
+    metrics: dict[str, object],
+    route_hint: str,
+    service_line: str | None = None,
+    period_start: str | None = None,
+    period_end: str | None = None,
+) -> dict[str, object]:
+    item_id = f"{role}:{source_type}:{entity_type}:{entity_id}"
+    return {
+        "id": item_id,
+        "role": role,
+        "source_type": source_type,
+        "priority": priority,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "service_line": service_line,
+        "period_start": period_start,
+        "period_end": period_end,
+        "summary": summary,
+        "recommended_action": recommended_action,
+        "evidence": [item for item in evidence if item],
+        "metrics": metrics,
+        "route_hint": route_hint,
+    }
+
+
+def _role_matches(item_role: str, role_filter: str) -> bool:
+    return role_filter == "all" or item_role == role_filter
+
+
+def _action_queue_sort_key(row: dict) -> tuple[int, str, str, str]:
+    return (
+        _recommendation_priority_rank(str(row.get("priority") or "")),
+        str(row.get("role") or ""),
+        str(row.get("source_type") or ""),
+        str(row.get("entity_name") or ""),
+    )
 
 
 def _scope_change_drivers(drivers: list[dict]) -> list[dict]:
