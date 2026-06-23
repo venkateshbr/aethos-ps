@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,7 @@ class ProcurementDocumentCreate(BaseModel):
     document_type: ProcurementDocumentType = "purchase_order"
     client_id: str = Field(..., description="Vendor contact id")
     currency: str = Field(default="USD", min_length=3, max_length=3)
+    cost_center_code: str | None = Field(default=None, max_length=64)
     issue_date: date | None = None
     expected_delivery_date: date | None = None
     service_start_date: date | None = None
@@ -59,6 +60,10 @@ class ProcurementDocumentResponse(BaseModel):
     source_request_id: str | None = None
     status: ProcurementDocumentStatus
     currency: str
+    cost_center_code: str | None = None
+    approval_required_role: Literal["manager", "admin", "owner"] = "manager"
+    approval_policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    approval_route: list[dict[str, Any]] = Field(default_factory=list)
     issue_date: str | None
     expected_delivery_date: str | None
     service_start_date: str | None

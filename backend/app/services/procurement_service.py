@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.core.rbac import ROLE_HIERARCHY, UserRole
 from app.domain.money import serialise_money
 from app.models.procurement import (
     ProcurementConvertRequest,
@@ -21,6 +23,95 @@ from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
 _VENDOR_KINDS = {"vendor", "both"}
+_MANAGER_APPROVAL_LIMIT = Decimal("5000.00")
+_OWNER_APPROVAL_THRESHOLD = Decimal("50000.00")
+
+
+def _approval_policy_for(
+    *,
+    total: Decimal,
+    currency: str,
+    document_type: str,
+    cost_center_code: str | None,
+) -> dict[str, Any]:
+    """Build the deterministic launch approval route for procurement spend."""
+    if total >= _OWNER_APPROVAL_THRESHOLD:
+        required_role = UserRole.owner
+        reason = "amount_at_or_above_owner_threshold"
+    elif total > _MANAGER_APPROVAL_LIMIT:
+        required_role = UserRole.admin
+        reason = "amount_above_manager_limit"
+    else:
+        required_role = UserRole.manager
+        reason = "amount_within_manager_limit"
+
+    route: list[dict[str, Any]] = []
+    if cost_center_code:
+        route.append(
+            {
+                "step": "cost_center_review",
+                "role": UserRole.manager.value,
+                "cost_center_code": cost_center_code,
+                "reason": "cost_center_coded_request",
+            }
+        )
+    route.append(
+        {
+            "step": "final_approval",
+            "role": required_role.value,
+            "reason": reason,
+        }
+    )
+
+    return {
+        "required_role": required_role.value,
+        "route": route,
+        "snapshot": {
+            "policy_version": "procurement_approval_v1",
+            "document_type": document_type,
+            "currency": currency,
+            "total": serialise_money(total) or "0.00",
+            "cost_center_code": cost_center_code,
+            "manager_limit": serialise_money(_MANAGER_APPROVAL_LIMIT),
+            "owner_threshold": serialise_money(_OWNER_APPROVAL_THRESHOLD),
+            "reason": reason,
+        },
+    }
+
+
+def _approval_patch(
+    *,
+    total: Decimal,
+    currency: str,
+    document_type: str,
+    cost_center_code: str | None,
+) -> dict[str, Any]:
+    policy = _approval_policy_for(
+        total=total,
+        currency=currency,
+        document_type=document_type,
+        cost_center_code=cost_center_code,
+    )
+    return {
+        "approval_required_role": policy["required_role"],
+        "approval_route": policy["route"],
+        "approval_policy_snapshot": policy["snapshot"],
+    }
+
+
+def _role_allows(user_role: str | None, required_role: str) -> bool:
+    try:
+        resolved_user_role = UserRole(str(user_role))
+    except ValueError:
+        resolved_user_role = UserRole.viewer
+    try:
+        resolved_required_role = UserRole(required_role)
+    except ValueError:
+        resolved_required_role = UserRole.owner
+    return (
+        ROLE_HIERARCHY.get(resolved_user_role, 0)
+        >= ROLE_HIERARCHY[resolved_required_role]
+    )
 
 
 def _line_to_response(row: dict) -> ProcurementLineResponse:
@@ -57,6 +148,10 @@ def _document_to_response(
         source_request_id=str(row["source_request_id"]) if row.get("source_request_id") else None,
         status=row["status"],
         currency=row["currency"],
+        cost_center_code=row.get("cost_center_code"),
+        approval_required_role=row.get("approval_required_role") or "manager",
+        approval_policy_snapshot=row.get("approval_policy_snapshot") or {},
+        approval_route=row.get("approval_route") or [],
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
         expected_delivery_date=(
             str(row["expected_delivery_date"]) if row.get("expected_delivery_date") else None
@@ -135,6 +230,8 @@ class ProcurementService:
             "status": "draft",
             "requested_by": requested_by,
         }
+        if data.cost_center_code:
+            payload["cost_center_code"] = data.cost_center_code
         for field in (
             "issue_date",
             "expected_delivery_date",
@@ -180,17 +277,19 @@ class ProcurementService:
             tax_total += line.tax_amount
 
         total = subtotal + tax_total
-        if data.lines:
-            await self._repo.update_totals(
-                document_id,
-                subtotal=subtotal,
-                tax_total=tax_total,
+        update_payload = {
+            "subtotal": serialise_money(subtotal),
+            "tax_total": serialise_money(tax_total),
+            "total": serialise_money(total),
+            **_approval_patch(
                 total=total,
-            )
-            doc_row = await self._repo.get(document_id) or doc_row
-            doc_row["subtotal"] = serialise_money(subtotal)
-            doc_row["tax_total"] = serialise_money(tax_total)
-            doc_row["total"] = serialise_money(total)
+                currency=data.currency,
+                document_type=data.document_type,
+                cost_center_code=data.cost_center_code,
+            ),
+        }
+        updated = await self._repo.update(document_id, update_payload)
+        doc_row = updated or {**doc_row, **update_payload}
 
         return _document_to_response(doc_row, line_rows)
 
@@ -199,6 +298,7 @@ class ProcurementService:
         document_id: str,
         *,
         approved_by: str,
+        approver_role: str,
     ) -> ProcurementDocumentResponse | None:
         row = await self._repo.get(document_id)
         if row is None:
@@ -219,6 +319,17 @@ class ProcurementService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Procurement document total must be greater than zero",
+            )
+        required_role = str(row.get("approval_required_role") or "manager")
+        if not _role_allows(approver_role, required_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "procurement_approval_role_required",
+                    "required_role": required_role,
+                    "approver_role": approver_role,
+                    "approval_route": row.get("approval_route") or [],
+                },
             )
 
         updated = await self._repo.update(
@@ -267,6 +378,7 @@ class ProcurementService:
             "status": "draft",
             "requested_by": converted_by,
             "source_request_id": document_id,
+            "cost_center_code": request.get("cost_center_code"),
             "notes": request.get("notes"),
         }
         for field in (
@@ -304,14 +416,20 @@ class ProcurementService:
             tax_total += Decimal(str(line.get("tax_amount") or "0"))
 
         total = subtotal + tax_total
-        await self._repo.update_totals(
+        update_payload = {
+            "subtotal": serialise_money(subtotal),
+            "tax_total": serialise_money(tax_total),
+            "total": serialise_money(total),
+            **_approval_patch(
+                total=total,
+                currency=order_payload["currency"],
+                document_type=target_type,
+                cost_center_code=order_payload.get("cost_center_code"),
+            ),
+        }
+        updated = await self._repo.update(
             order_id,
-            subtotal=subtotal,
-            tax_total=tax_total,
-            total=total,
+            update_payload,
         )
-        order = await self._repo.get(order_id) or order
-        order["subtotal"] = serialise_money(subtotal)
-        order["tax_total"] = serialise_money(tax_total)
-        order["total"] = serialise_money(total)
+        order = updated or {**order, **update_payload}
         return _document_to_response(order, order_lines)

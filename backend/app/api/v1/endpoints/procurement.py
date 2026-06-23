@@ -92,7 +92,11 @@ async def approve_procurement_document(
     current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     svc: ProcurementService = Depends(_write_service),  # noqa: B008
 ) -> ProcurementDocumentResponse:
-    document = await svc.approve_document(document_id, approved_by=current_user.user_id)
+    document = await svc.approve_document(
+        document_id,
+        approved_by=current_user.user_id,
+        approver_role=current_user.role,
+    )
     if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
