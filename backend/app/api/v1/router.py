@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     invoices,
     localization,
     payments,
+    procurement,
     projects,
     rate_cards,
     reports,
@@ -74,6 +75,7 @@ api_router.include_router(localization.router, prefix="/localization", tags=["lo
 api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"])
 api_router.include_router(bill_payments.router, prefix="/bill-payments", tags=["bill-payments"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
+api_router.include_router(procurement.router, prefix="/procurement", tags=["procurement"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(financial_events.router, prefix="/financial-events", tags=["financial-events"])
 api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["billing-runs"])

@@ -29,6 +29,7 @@ from app.models.bills import (
 )
 from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
+from app.repositories.procurement_repo import ProcurementRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
@@ -39,6 +40,7 @@ _EXPENSE_ACCOUNT_CODE = "5000"  # Expenses (DR)
 _AP_ACCOUNT_CODE = "2000"  # Accounts Payable (CR)
 _INPUT_TAX_ACCOUNT_CODE = "1300"  # Input Tax Recoverable (DR)
 _PREPAID_ACCOUNT_CODE = "1500"  # Prepaid Expenses (DR on approval, CR on amortization)
+_PO_MATCH_TOLERANCE = Decimal("0.01")
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
@@ -67,6 +69,7 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         client_id=str(row["client_id"]),
+        purchase_order_id=str(row["purchase_order_id"]) if row.get("purchase_order_id") else None,
         bill_number=row["bill_number"],
         currency=row["currency"],
         subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
@@ -76,6 +79,8 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
         due_date=str(row["due_date"]) if row.get("due_date") else None,
         vendor_invoice_number=row.get("vendor_invoice_number"),
+        po_match_status=row.get("po_match_status") or "not_linked",
+        po_match_summary=dict(row.get("po_match_summary") or {}),
         notes=row.get("notes"),
         created_at=str(row["created_at"]),
         lines=[_line_to_response(ln) for ln in (lines or [])],
@@ -166,6 +171,7 @@ class BillsService:
     def __init__(self, db: Client, tenant_id: str) -> None:
         self._repo = BillsRepository(db, tenant_id)
         self._clients_repo = ClientRepository(db, tenant_id)
+        self._procurement_repo = ProcurementRepository(db, tenant_id)
         self._db = db
         self._tenant_id = tenant_id
 
@@ -215,12 +221,43 @@ class BillsService:
                 ),
             )
 
+        subtotal = sum((line.amount for line in data.lines), Decimal("0"))
+        tax_total = sum((line.tax_amount for line in data.lines), Decimal("0"))
+        total = subtotal + tax_total
+        po_match_summary: dict[str, object] = {}
+        po_match_status = "not_linked"
+        if data.purchase_order_id is not None:
+            po_match_summary = await self._match_purchase_order(
+                purchase_order_id=data.purchase_order_id,
+                client_id=data.client_id,
+                currency=data.currency,
+                bill_total=total,
+            )
+            po_match_status = str(po_match_summary["status"])
+            if po_match_status == "order_not_found":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Purchase order {data.purchase_order_id!r} not found",
+                )
+            if po_match_status in {"vendor_mismatch", "currency_mismatch", "order_not_approved"}:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": "Bill cannot be linked to this purchase order",
+                        "po_match": po_match_summary,
+                    },
+                )
+
         # 2. INSERT bill (bill_number set by DB trigger)
         bill_data: dict = {
             "client_id": data.client_id,
             "currency": data.currency,
             "status": "draft",
+            "po_match_status": po_match_status,
+            "po_match_summary": po_match_summary,
         }
+        if data.purchase_order_id is not None:
+            bill_data["purchase_order_id"] = data.purchase_order_id
         if data.issue_date is not None:
             bill_data["issue_date"] = data.issue_date.isoformat()
         if data.due_date is not None:
@@ -234,8 +271,6 @@ class BillsService:
         bill_id = str(bill_row["id"])
 
         # 3. INSERT bill lines
-        subtotal = Decimal("0")
-        tax_total = Decimal("0")
         lines_rows: list[dict] = []
 
         for line in data.lines:
@@ -262,10 +297,6 @@ class BillsService:
                 line_payload["service_end_date"] = line.service_end_date.isoformat()
             line_row = await self._repo.create_line(bill_id, line_payload)
             lines_rows.append(line_row)
-            subtotal += line.amount
-            tax_total += line.tax_amount
-
-        total = subtotal + tax_total
 
         # 4. Update totals on the bill
         if data.lines:
@@ -309,6 +340,30 @@ class BillsService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Bill total must be greater than zero",
             )
+
+        if bill.get("purchase_order_id"):
+            po_match_summary = await self._match_purchase_order(
+                purchase_order_id=str(bill["purchase_order_id"]),
+                client_id=str(bill["client_id"]),
+                currency=str(bill.get("currency") or "USD"),
+                bill_total=total,
+                bill_id=bill_id,
+            )
+            await self._repo.update(
+                bill_id,
+                {
+                    "po_match_status": po_match_summary["status"],
+                    "po_match_summary": po_match_summary,
+                },
+            )
+            if po_match_summary["status"] != "matched":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": "Bill does not match the linked purchase order",
+                        "po_match": po_match_summary,
+                    },
+                )
 
         # 3. Resolve account IDs from COA
         expense_account_id = await self._repo.get_account_id_by_code(_EXPENSE_ACCOUNT_CODE)
@@ -401,6 +456,8 @@ class BillsService:
 
         # 6. Update bill status to 'approved'
         await self._repo.update(bill_id, {"status": "approved"})
+        if bill.get("purchase_order_id"):
+            await self._refresh_purchase_order_consumption(str(bill["purchase_order_id"]))
 
         return BillApproveResponse(
             id=bill_id,
@@ -408,6 +465,64 @@ class BillsService:
             journal_entry_id=journal_entry_id,
             message=f"Bill {bill_number} approved and GL journal posted",
         )
+
+    async def _match_purchase_order(
+        self,
+        *,
+        purchase_order_id: str,
+        client_id: str,
+        currency: str,
+        bill_total: Decimal,
+        bill_id: str | None = None,
+    ) -> dict[str, object]:
+        order = await self._procurement_repo.get(purchase_order_id)
+        if order is None:
+            return {
+                "status": "order_not_found",
+                "purchase_order_id": purchase_order_id,
+                "bill_total": serialise_money(bill_total),
+            }
+
+        matched_total = await self._procurement_repo.sum_linked_bill_total(
+            purchase_order_id,
+            exclude_bill_id=bill_id,
+        )
+        order_total = Decimal(str(order.get("total") or "0"))
+        remaining_before_bill = max(order_total - matched_total, Decimal("0"))
+        summary: dict[str, object] = {
+            "status": "matched",
+            "purchase_order_id": str(order["id"]),
+            "purchase_order_number": order.get("document_number"),
+            "purchase_order_type": order.get("document_type"),
+            "order_status": order.get("status"),
+            "order_total": serialise_money(order_total),
+            "matched_bill_total": serialise_money(matched_total),
+            "remaining_before_bill": serialise_money(remaining_before_bill),
+            "bill_total": serialise_money(bill_total),
+            "tolerance": serialise_money(_PO_MATCH_TOLERANCE),
+        }
+
+        if order.get("status") != "approved":
+            summary["status"] = "order_not_approved"
+        elif str(order.get("client_id")) != client_id:
+            summary["status"] = "vendor_mismatch"
+        elif str(order.get("currency") or "").upper() != currency.upper():
+            summary["status"] = "currency_mismatch"
+        elif bill_total > remaining_before_bill + _PO_MATCH_TOLERANCE:
+            summary["status"] = "over_tolerance"
+
+        return summary
+
+    async def _refresh_purchase_order_consumption(self, purchase_order_id: str) -> None:
+        order = await self._procurement_repo.get(purchase_order_id)
+        if order is None:
+            return
+        matched_total = await self._procurement_repo.sum_linked_bill_total(purchase_order_id)
+        order_total = Decimal(str(order.get("total") or "0"))
+        patch: dict[str, object] = {"matched_bill_total": serialise_money(matched_total)}
+        if matched_total >= order_total and order.get("status") == "approved":
+            patch["status"] = "closed"
+        await self._procurement_repo.update(purchase_order_id, patch)
 
     # ------------------------------------------------------------------
     # Void — reverses approved AP journals

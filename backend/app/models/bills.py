@@ -38,6 +38,7 @@ class BillLineCreate(BaseModel):
 
 class BillCreate(BaseModel):
     client_id: str = Field(..., description="Must reference a client with kind='vendor' or 'both'")
+    purchase_order_id: str | None = Field(default=None, description="Approved PO/service order")
     currency: str = Field(default="USD", min_length=3, max_length=3)
     issue_date: date | None = None
     due_date: date | None = None
@@ -65,6 +66,7 @@ class BillResponse(BaseModel):
     id: str
     tenant_id: str
     client_id: str
+    purchase_order_id: str | None = None
     bill_number: str
     currency: str
     subtotal: str  # Decimal as string
@@ -74,6 +76,8 @@ class BillResponse(BaseModel):
     issue_date: str | None
     due_date: str | None
     vendor_invoice_number: str | None
+    po_match_status: str = "not_linked"
+    po_match_summary: dict[str, object] = Field(default_factory=dict)
     notes: str | None
     created_at: str
     lines: list[BillLineResponse] = Field(default_factory=list)

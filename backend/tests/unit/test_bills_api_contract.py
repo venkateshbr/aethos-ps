@@ -23,6 +23,7 @@ BILL_ID = "44444444-4444-4444-8444-444444444444"
 OVERDUE_BILL_ID = "55555555-5555-4555-8555-555555555555"
 CREATED_BILL_ID = "66666666-6666-4666-8666-666666666666"
 CREATED_LINE_ID = "77777777-7777-4777-8777-777777777777"
+PURCHASE_ORDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class _Result:
@@ -149,6 +150,33 @@ class _FakeDb:
                     "deleted_at": None,
                 }
             ],
+            "procurement_documents": [
+                {
+                    "id": PURCHASE_ORDER_ID,
+                    "tenant_id": TENANT_ID,
+                    "document_type": "purchase_order",
+                    "document_number": "PO-0001",
+                    "client_id": CLIENT_ID,
+                    "status": "approved",
+                    "currency": "USD",
+                    "issue_date": today.isoformat(),
+                    "expected_delivery_date": (today + timedelta(days=14)).isoformat(),
+                    "service_start_date": None,
+                    "service_end_date": None,
+                    "subtotal": "200.00",
+                    "tax_total": "20.00",
+                    "total": "220.00",
+                    "matched_bill_total": "0.00",
+                    "requested_by": "manager-1",
+                    "approved_by": "admin-1",
+                    "approved_at": "2026-06-20T00:00:00+00:00",
+                    "notes": None,
+                    "created_at": "2026-06-20T00:00:00+00:00",
+                    "updated_at": "2026-06-20T00:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "procurement_document_lines": [],
             "bill_lines": [
                 {
                     "id": "88888888-8888-4888-8888-888888888888",
@@ -313,3 +341,38 @@ def test_bill_create_uses_service_role_client(
     assert response.json()["lines"][0]["is_prepaid"] is True
     assert response.json()["lines"][0]["service_start_date"] == "2026-07-01"
     assert response.json()["lines"][0]["service_end_date"] == "2027-06-30"
+
+
+def test_bill_create_records_purchase_order_match(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "PO-MATCH-001",
+            "lines": [
+                {
+                    "description": "Implementation tooling",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["purchase_order_id"] == PURCHASE_ORDER_ID
+    assert body["po_match_status"] == "matched"
+    assert body["po_match_summary"]["purchase_order_number"] == "PO-0001"
+    assert body["po_match_summary"]["order_total"] == "220.00"
+    assert body["po_match_summary"]["bill_total"] == "110.00"

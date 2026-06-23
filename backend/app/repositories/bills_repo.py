@@ -174,3 +174,14 @@ class BillsRepository:
             .execute()
         )
         return result.data[0]["id"] if result.data else None
+
+    async def list_linked_to_purchase_order(self, purchase_order_id: str) -> list[dict]:
+        result = await asyncio.to_thread(
+            lambda: self.db.table(_BILLS_TABLE)
+            .select("id,total,status")
+            .eq("tenant_id", self.tenant_id)
+            .eq("purchase_order_id", purchase_order_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        return result.data or []
