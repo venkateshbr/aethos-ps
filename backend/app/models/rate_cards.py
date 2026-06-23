@@ -8,15 +8,19 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.domain.money import serialise_money
 
+ServiceLine = Literal["accounting", "tax", "cosec", "payroll", "advisory", "other"]
+
 
 class RateCardLineCreate(BaseModel):
     role: str = Field(..., min_length=1, max_length=100)
     rate: Decimal = Field(..., ge=Decimal("0"), decimal_places=2)
+    service_line: ServiceLine | None = None
 
     @field_validator("rate", mode="before")
     @classmethod
@@ -34,10 +38,15 @@ class RateCardCreate(BaseModel):
 class RateCardLineResponse(BaseModel):
     role: str
     rate: str  # serialised as string
+    service_line: str | None = None
 
     @classmethod
     def from_db(cls, row: dict) -> RateCardLineResponse:
-        return cls(role=row["role"], rate=serialise_money(row["rate"]) or "0.00")
+        return cls(
+            role=row["role"],
+            rate=serialise_money(row["rate"]) or "0.00",
+            service_line=row.get("service_line"),
+        )
 
 
 class RateCardResponse(BaseModel):

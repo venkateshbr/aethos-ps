@@ -257,7 +257,7 @@ Work items:
 - Done 2026-06-23: Tax-rates API, tax defaults, settings UI, invoice drafter tax, manual invoice line tax, invoice approval tax-payable splitting, and bill approval input-tax-recoverable splitting are implemented.
 - Done/monitor 2026-06-23: Expenses API and UI list/create completion.
 - Done 2026-06-23: Billing terms UI supports fixed, T&M, capped T&M, retainer, retainer drawdown, milestone, mixed, and per-unit payroll/per-employee billing.
-- Partial 2026-06-23: Rate-card API/UI and engagement picker exist; assignment-level employee override rates and client-specific rate-card overrides are honored in invoice drafting. Service-line-specific price-book segmentation remains open.
+- Done/UX depth 2026-06-23: Rate-card API/UI and engagement picker exist; assignment-level employee override rates, client-specific overrides, and service-line-specific role rates are honored in invoice drafting. Remaining price-book work is richer admin UX/reporting around segmented rate books.
 - Done 2026-06-23: Service catalogue API/settings/engagement/report integration exists, and invoice lines now accept, validate, persist, return, and propagate `service_catalogue_id` from UI drafts and billing-run drafts into service-line revenue reporting.
 - Partial 2026-06-23: Client groups, member roles, UI, and report rollups exist; deeper legal-entity semantics remain open.
 - Done 2026-06-23: Project budgets, budget hours, phases, deliverables, milestone schedules, acceptance criteria, and percent-complete tracking are implemented through API/UI and feed milestone-risk/backlog reporting.
@@ -397,7 +397,7 @@ Priority 0:
 Priority 1:
 - Done 2026-06-23: accounts and expenses APIs.
 - Done 2026-06-23: tax-rates API/UI, invoice-side line tax/tax-payable journals, and bill-side input-tax-recoverable postings.
-- Partial 2026-06-23: billing terms including per-unit payroll are implemented; employee/client-specific rate overrides are honored, while service-line-specific rate-card segmentation remains open.
+- Done/UX depth 2026-06-23: billing terms including per-unit payroll are implemented; employee/client-specific rate overrides and service-line-specific rate-card segmentation are honored in invoice drafting. Remaining price-book work is richer admin UX/reporting around segmented rate books.
 - Done 2026-06-23: service catalogue end-to-end now includes invoice-line linkage and reporting evidence through service-line revenue reports.
 - Done 2026-06-23: project milestones, deliverables, budget hours, and percent-complete tracking.
 - Revenue recognition and tax journals.

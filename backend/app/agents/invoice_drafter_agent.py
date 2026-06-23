@@ -357,7 +357,14 @@ def _draft_tm_lines(
     for entry in entries:
         key = (entry["project_id"], entry["employee_id"])
         role = role_map.get(key, "Consultant")
-        rate = override_rate_map.get(key, rates.get(role, Decimal("0")))
+        rate = override_rate_map.get(
+            key,
+            _rate_for_role(
+                rates,
+                role,
+                service_line=eng.get("service_line"),
+            ),
+        )
         by_rate[(role, rate)]["hours"] += Decimal(str(entry["hours"]))
         by_rate[(role, rate)]["ids"].append(entry["id"])
 
@@ -400,16 +407,18 @@ def _draft_tm_lines(
     return lines
 
 
-def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[str, Decimal]:
+def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[tuple[str, str | None], Decimal]:
     rate_card_id = eng.get("rate_card_id")
     if not rate_card_id:
         return {}
 
     rates = {
-        row["role"]: Decimal(str(row["rate"]))
+        (str(row["role"]), _normalise_service_line(row.get("service_line"))): Decimal(
+            str(row["rate"])
+        )
         for row in (
             deps.db.table("rate_card_lines")
-            .select("role, rate")
+            .select("role, rate, service_line")
             .eq("rate_card_id", rate_card_id)
             .execute()
             .data
@@ -421,7 +430,7 @@ def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[str, Decimal]:
     if client_id:
         override_rows = (
             deps.db.table("rate_card_client_overrides")
-            .select("role, rate")
+            .select("role, rate, service_line")
             .eq("tenant_id", deps.tenant_id)
             .eq("rate_card_id", rate_card_id)
             .eq("client_id", client_id)
@@ -429,9 +438,37 @@ def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[str, Decimal]:
             .data
             or []
         )
-        rates.update({row["role"]: Decimal(str(row["rate"])) for row in override_rows})
+        rates.update(
+            {
+                (str(row["role"]), _normalise_service_line(row.get("service_line"))): Decimal(
+                    str(row["rate"])
+                )
+                for row in override_rows
+            }
+        )
 
     return rates
+
+
+def _normalise_service_line(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _rate_for_role(
+    rates: dict[tuple[str, str | None], Decimal],
+    role: str,
+    *,
+    service_line: object,
+) -> Decimal:
+    normalised_service_line = _normalise_service_line(service_line)
+    if normalised_service_line:
+        exact = rates.get((role, normalised_service_line))
+        if exact is not None:
+            return exact
+    return rates.get((role, None), Decimal("0"))
 
 
 def _assignment_rate_context(
@@ -557,7 +594,14 @@ def _mark_capped_overflow_non_billable(
     for entry in entries:
         key = (entry["project_id"], entry["employee_id"])
         role = role_map.get(key, "Consultant")
-        rate = override_rate_map.get(key, rates.get(role, Decimal("0")))
+        rate = override_rate_map.get(
+            key,
+            _rate_for_role(
+                rates,
+                role,
+                service_line=eng.get("service_line"),
+            ),
+        )
         entry_amount = (Decimal(str(entry["hours"])) * rate).quantize(Decimal("0.01"))
         if cumulative >= cap:
             overflow_ids.append(entry["id"])

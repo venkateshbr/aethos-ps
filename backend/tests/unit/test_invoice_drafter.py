@@ -294,6 +294,76 @@ def test_draft_tm_uses_assignment_and_client_rate_overrides() -> None:
     assert draft.subtotal == Decimal("675.00")
 
 
+def test_draft_tm_prefers_service_line_rate_over_generic_role_rate() -> None:
+    """T&M draft uses the engagement service-line rate before generic role rate."""
+    db = MagicMock()
+    eng = _engagement("time_and_materials")
+    eng["rate_card_id"] = "rc-1"
+    eng["service_line"] = "advisory"
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-advisory",
+                    "project_id": "project-1",
+                    "employee_id": "employee-advisory",
+                    "hours": "2",
+                }
+            ]
+        elif table_name == "rate_card_lines":
+            result.data = [
+                {
+                    "role": "Consultant",
+                    "rate": "100.00",
+                    "service_line": None,
+                },
+                {
+                    "role": "Consultant",
+                    "rate": "175.00",
+                    "service_line": "advisory",
+                },
+            ]
+        elif table_name == "rate_card_client_overrides":
+            result.data = []
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-advisory",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": None,
+                }
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].unit_price == Decimal("175.00")
+    assert draft.lines[0].amount == Decimal("350.00")
+
+
 # ---------------------------------------------------------------------------
 # Test 5: capped_tm applies cap adjustment when T&M total exceeds cap
 # ---------------------------------------------------------------------------

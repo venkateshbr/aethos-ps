@@ -99,6 +99,7 @@ class _FakeDb:
                     "rate_card_id": "rate-card-standard",
                     "role": "Senior Consultant",
                     "rate": "275.00",
+                    "service_line": None,
                 }
             ],
         }
@@ -162,10 +163,17 @@ def test_rate_card_create_uses_service_role_client(
             "name": "Created 2026",
             "currency": "USD",
             "effective_date": "2026-07-01",
-            "lines": [{"role": "Manager", "rate": "325.00"}],
+            "lines": [
+                {
+                    "role": "Manager",
+                    "rate": "325.00",
+                    "service_line": "advisory",
+                }
+            ],
         },
     )
 
     assert response.status_code == 201, response.text
     assert response.json()["id"] == "rate-card-created"
     assert response.json()["lines"][0]["role"] == "Manager"
+    assert response.json()["lines"][0]["service_line"] == "advisory"
