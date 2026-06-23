@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import calendar
+import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import ClassVar
 
 from app.models.reports import TrialBalanceReport
+from app.services.postgrest_errors import is_missing_table_error
 from app.services.reports_service import ReportsService
 from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -219,20 +223,29 @@ class CloseReconciliationService:
     def _check_bank_transaction_matches(
         self, start: date, end: date
     ) -> list[ReconciliationFinding]:
-        transactions = (
-            self.db.table("bank_transactions")
-            .select(
-                "id, external_transaction_id, transaction_date, amount, currency, "
-                "description, status, matched_journal_entry_id"
+        try:
+            transactions = (
+                self.db.table("bank_transactions")
+                .select(
+                    "id, external_transaction_id, transaction_date, amount, currency, "
+                    "description, status, matched_journal_entry_id"
+                )
+                .eq("tenant_id", self.tenant_id)
+                .gte("transaction_date", start.isoformat())
+                .lte("transaction_date", end.isoformat())
+                .is_("deleted_at", "null")
+                .execute()
+                .data
+                or []
             )
-            .eq("tenant_id", self.tenant_id)
-            .gte("transaction_date", start.isoformat())
-            .lte("transaction_date", end.isoformat())
-            .is_("deleted_at", "null")
-            .execute()
-            .data
-            or []
-        )
+        except Exception as exc:
+            if is_missing_table_error(exc, "bank_transactions"):
+                logger.warning(
+                    "bank_transactions table missing; skipping bank-feed close blockers",
+                    extra={"tenant_id": self.tenant_id},
+                )
+                return []
+            raise
         match_ids = self._matched_bank_transaction_ids([row["id"] for row in transactions])
         findings: list[ReconciliationFinding] = []
         for row in transactions:
@@ -309,17 +322,26 @@ class CloseReconciliationService:
     def _matched_bank_transaction_ids(self, transaction_ids: list[str]) -> set[str]:
         if not transaction_ids:
             return set()
-        rows = (
-            self.db.table("bank_reconciliation_matches")
-            .select("bank_transaction_id")
-            .eq("tenant_id", self.tenant_id)
-            .in_("bank_transaction_id", transaction_ids)
-            .eq("status", "matched")
-            .is_("deleted_at", "null")
-            .execute()
-            .data
-            or []
-        )
+        try:
+            rows = (
+                self.db.table("bank_reconciliation_matches")
+                .select("bank_transaction_id")
+                .eq("tenant_id", self.tenant_id)
+                .in_("bank_transaction_id", transaction_ids)
+                .eq("status", "matched")
+                .is_("deleted_at", "null")
+                .execute()
+                .data
+                or []
+            )
+        except Exception as exc:
+            if is_missing_table_error(exc, "bank_reconciliation_matches"):
+                logger.warning(
+                    "bank_reconciliation_matches table missing; treating bank transactions as unmatched",
+                    extra={"tenant_id": self.tenant_id},
+                )
+                return set()
+            raise
         return {
             str(row["bank_transaction_id"])
             for row in rows

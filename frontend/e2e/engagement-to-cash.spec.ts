@@ -888,8 +888,107 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
     expect(true).toBeTruthy(); // placeholder — covered by backend unit tests
   });
 
-  test.fixme('§3.11 period-locked post rejected with code period_locked', async () => {
-    // Blocked: period lock UI enforcement not yet shipped
+  test('§3.11 period-locked post rejected with code period_locked', async ({ page, request }) => {
+    test.setTimeout(120_000);
+    let auth = getAuthFromStorage();
+    test.skip(!auth, 'no auth token');
+    await ensureAppRoute(page, '/app/accounting/journals');
+    auth = getAuthFromStorage();
+    test.skip(!auth, 'no auth token after UI session refresh');
+
+    const period = '2098-07';
+    const entryDate = `${period}-15`;
+    const headers = apiHeaders(auth!);
+    const accountsResp = await request.get(`${API}/api/v1/accounts`, {
+      headers,
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(accountsResp, 'list accounts for locked-period journal');
+    const accounts: { id: string; code: string; account_type: string }[] = await accountsResp.json();
+    const accountType = (account: { account_type: string }) =>
+      String(account.account_type || '').toLowerCase();
+    const debitAccount =
+      accounts.find((account) => account.code === '1100') ??
+      accounts.find((account) => accountType(account) === 'asset');
+    const creditAccount =
+      accounts.find((account) => account.code === '4000') ??
+      accounts.find((account) => accountType(account) === 'revenue');
+    test.skip(
+      !debitAccount || !creditAccount || debitAccount.id === creditAccount.id,
+      'tenant chart of accounts is missing distinct asset/revenue accounts',
+    );
+
+    await request.delete(`${API}/api/v1/accounting/periods/${period}/lock`, {
+      headers,
+      timeout: API_REQUEST_TIMEOUT,
+    }).catch(() => null);
+
+    const lockResp = await request.post(`${API}/api/v1/accounting/periods/${period}/lock`, {
+      headers,
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    if (!lockResp.ok() && lockResp.status() !== 409) {
+      await expectOk(lockResp, `lock accounting period ${period}`);
+    }
+
+    try {
+      const apiPostResp = await request.post(`${API}/api/v1/accounting/journal-entries`, {
+        headers,
+        data: {
+          description: 'E2E locked-period API rejection',
+          entry_date: entryDate,
+          reference: 'E2E-PERIOD-LOCK',
+          lines: [
+            { account_id: debitAccount.id, direction: 'DR', amount: '10.00' },
+            { account_id: creditAccount.id, direction: 'CR', amount: '10.00' },
+          ],
+        },
+        timeout: API_REQUEST_TIMEOUT,
+      });
+      expect(apiPostResp.status()).toBe(422);
+      const apiBody = await apiPostResp.json();
+      expect(apiBody.detail?.code).toBe('period_locked');
+      expect(apiBody.detail?.period).toBe(period);
+
+      await ensureAppRoute(page, '/app/accounting/journals');
+      const accountsLoaded = page
+        .waitForResponse((resp) => resp.url().includes('/api/v1/accounts') && resp.ok(), {
+          timeout: 15_000,
+        })
+        .catch(() => null);
+      await page.getByRole('button', { name: /new journal entry/i }).click();
+      await accountsLoaded;
+      const dialog = page.getByRole('dialog', { name: /post manual journal entry/i });
+      await expect(dialog).toBeVisible();
+
+      await dialog.getByLabel('Description *').fill('E2E locked-period UI rejection');
+      await dialog.getByLabel('Entry Date *').fill(entryDate);
+      await dialog.getByLabel('Reference').fill('E2E-PERIOD-LOCK-UI');
+
+      const selectAccountLine = async (line: number, code: string) => {
+        const input = dialog.getByLabel(`Account for line ${line}`);
+        await input.fill(code);
+        const listbox = page.getByRole('listbox', { name: `Account suggestions for line ${line}` });
+        await expect(listbox).toBeVisible({ timeout: 10_000 });
+        await listbox.getByRole('option', { name: new RegExp(`^${code}`) }).click();
+        await expect(input).toHaveValue(new RegExp(`^${code}\\s+—`));
+      };
+
+      await selectAccountLine(1, debitAccount.code);
+      await dialog.getByLabel('Amount for line 1').fill('10.00');
+
+      await selectAccountLine(2, creditAccount.code);
+      await dialog.getByLabel('Amount for line 2').fill('10.00');
+
+      await dialog.getByRole('button', { name: /post journal entry/i }).click();
+      const alert = page.getByRole('alert').filter({ hasText: /locked/i }).first();
+      await expect(alert).toContainText(period, { timeout: 15_000 });
+    } finally {
+      await request.delete(`${API}/api/v1/accounting/periods/${period}/lock`, {
+        headers,
+        timeout: API_REQUEST_TIMEOUT,
+      }).catch(() => null);
+    }
   });
 
   test('§3.12 stale FX rate endpoint returns staleness flag', async ({ request }) => {

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
+from app.services.postgrest_errors import is_missing_table_error
 from supabase import Client
 
 _DONE_STATUSES = {"done", "waived"}
+_TABLE = "accounting_close_tasks"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -76,15 +80,24 @@ class CloseTasksService:
         self.tenant_id = tenant_id
 
     def list_tasks(self, period: str) -> list[dict[str, Any]]:
-        result = (
-            self.db.table("accounting_close_tasks")
-            .select("*")
-            .eq("tenant_id", self.tenant_id)
-            .eq("period", period)
-            .is_("deleted_at", "null")
-            .order("order_index")
-            .execute()
-        )
+        try:
+            result = (
+                self.db.table(_TABLE)
+                .select("*")
+                .eq("tenant_id", self.tenant_id)
+                .eq("period", period)
+                .is_("deleted_at", "null")
+                .order("order_index")
+                .execute()
+            )
+        except Exception as exc:
+            if is_missing_table_error(exc, _TABLE):
+                logger.warning(
+                    "accounting_close_tasks table missing; treating period as having no close tasks",
+                    extra={"tenant_id": self.tenant_id, "period": period},
+                )
+                return []
+            raise
         return result.data or []
 
     async def bootstrap_tasks(self, period: str, created_by: str) -> list[dict[str, Any]]:
@@ -110,9 +123,16 @@ class CloseTasksService:
                 }
             )
         if payloads:
-            await asyncio.to_thread(
-                lambda: self.db.table("accounting_close_tasks").insert(payloads).execute()
-            )
+            try:
+                await asyncio.to_thread(lambda: self.db.table(_TABLE).insert(payloads).execute())
+            except Exception as exc:
+                if is_missing_table_error(exc, _TABLE):
+                    logger.warning(
+                        "accounting_close_tasks table missing; skipping close task bootstrap",
+                        extra={"tenant_id": self.tenant_id, "period": period},
+                    )
+                    return []
+                raise
         return await asyncio.to_thread(lambda: self.list_tasks(period))
 
     async def update_task(
@@ -132,17 +152,30 @@ class CloseTasksService:
             payload["completed_at"] = None
             payload["completed_by"] = None
 
-        result = await asyncio.to_thread(
-            lambda: (
-                self.db.table("accounting_close_tasks")
-                .update(payload)
-                .eq("id", task_id)
-                .eq("tenant_id", self.tenant_id)
-                .eq("period", period)
-                .is_("deleted_at", "null")
-                .execute()
+        try:
+            result = await asyncio.to_thread(
+                lambda: (
+                    self.db.table(_TABLE)
+                    .update(payload)
+                    .eq("id", task_id)
+                    .eq("tenant_id", self.tenant_id)
+                    .eq("period", period)
+                    .is_("deleted_at", "null")
+                    .execute()
+                )
             )
-        )
+        except Exception as exc:
+            if is_missing_table_error(exc, _TABLE):
+                logger.warning(
+                    "accounting_close_tasks table missing; close task update cannot be applied",
+                    extra={
+                        "tenant_id": self.tenant_id,
+                        "period": period,
+                        "task_id": task_id,
+                    },
+                )
+                return None
+            raise
         return result.data[0] if result.data else None
 
     def incomplete_blocking_tasks(self, period: str) -> list[dict[str, Any]]:

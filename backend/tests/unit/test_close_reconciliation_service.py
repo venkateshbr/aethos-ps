@@ -87,6 +87,18 @@ class _Db:
         return _Query(self.tables.get(name, []))
 
 
+class _MissingBankTransactionsDb(_Db):
+    def table(self, name: str) -> _Query:
+        if name == "bank_transactions":
+            raise RuntimeError(
+                {
+                    "code": "PGRST205",
+                    "message": "Could not find the table 'public.bank_transactions' in the schema cache",
+                }
+            )
+        return super().table(name)
+
+
 def _journal_line(direction: str, amount: str, code: str, period: str) -> dict:
     account_names = {
         "1200": ("Accounts Receivable", "asset"),
@@ -386,6 +398,23 @@ def test_matched_bank_transaction_does_not_block_close() -> None:
 
     assert result.ready is True
     assert result.findings == []
+
+
+def test_missing_bank_transactions_table_does_not_crash_close_readiness() -> None:
+    db = _MissingBankTransactionsDb(
+        {
+            "invoices": [],
+            "bills": [],
+            "journal_entries": [],
+            "journal_lines": _balanced_trial_balance_lines(),
+        }
+    )
+
+    result = CloseReconciliationService(db, TENANT_ID).check_period("2026-06")  # type: ignore[arg-type]
+
+    assert result.ready is True
+    assert result.findings == []
+    assert result.trial_balance_balanced is True
 
 
 def test_blocks_nonzero_suspense_balance() -> None:

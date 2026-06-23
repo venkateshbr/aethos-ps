@@ -127,8 +127,22 @@ interface RecurringJournalTemplate {
 type JournalFormMode = 'journal' | 'recurring';
 
 // ─── Type guard for API error shape ───────────────────────────────────────────
-function isApiError(err: unknown): err is { error?: { detail?: string } } {
+type ApiErrorDetail = string | { code?: string; period?: string; message?: string };
+
+function isApiError(err: unknown): err is { error?: { detail?: ApiErrorDetail } } {
   return typeof err === 'object' && err !== null;
+}
+
+function journalErrorMessage(err: unknown): string | null {
+  if (!isApiError(err)) return null;
+  const detail = err.error?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail?.code === 'period_locked') {
+    const period = detail.period ? ` ${detail.period}` : '';
+    return `Accounting period${period} is locked. Choose an open entry date or unlock the period before posting.`;
+  }
+  if (detail?.message) return detail.message;
+  return null;
 }
 
 // ─── Filter type ──────────────────────────────────────────────────────────────
@@ -773,8 +787,8 @@ type FilterChip = 'all' | 'manual' | 'auto';
             </div>
 
             <div formArrayName="lines" class="space-y-2">
-              @for (ctrl of linesArray.controls; track $index) {
-                <div [formGroupName]="$index"
+              @for (ctrl of linesArray.controls; track $index; let lineIndex = $index) {
+                <div [formGroupName]="lineIndex"
                      class="grid grid-cols-[1fr_64px_140px_120px_32px] gap-2 items-start">
 
                   <!-- Account picker -->
@@ -782,26 +796,26 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="account_search"
-                      [attr.aria-label]="'Account for line ' + ($index + 1)"
-                      [attr.id]="'jnl-acct-' + $index"
+                      [attr.aria-label]="'Account for line ' + (lineIndex + 1)"
+                      [attr.id]="'jnl-acct-' + lineIndex"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
                       placeholder="Search account…"
-                      (input)="onAccountSearch($index)"
+                      (input)="onAccountSearch(lineIndex)"
                       autocomplete="off"
                     />
                     <!-- Dropdown suggestions -->
-                    @if (activeSuggestionLine() === $index && filteredAccounts().length > 0) {
+                    @if (activeSuggestionLine() === lineIndex && filteredAccounts().length > 0) {
                       <div
                         class="absolute z-50 mt-1 w-72 bg-surface-raised border border-border-default rounded shadow-xl max-h-52 overflow-y-auto"
                         role="listbox"
-                        [attr.aria-label]="'Account suggestions for line ' + ($index + 1)"
+                        [attr.aria-label]="'Account suggestions for line ' + (lineIndex + 1)"
                       >
                         @for (acct of filteredAccounts(); track acct.id) {
                           <button
                             type="button"
                             role="option"
                             class="w-full text-left px-3 py-2.5 text-sm hover:bg-surface transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                            (click)="selectAccount($index, acct)"
+                            (click)="selectAccount(lineIndex, acct)"
                           >
                             <span class="font-mono text-xs text-text-muted mr-2">{{ acct.code }}</span>
                             <span class="text-text-primary">{{ acct.name }}</span>
@@ -810,7 +824,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                         }
                       </div>
                     }
-                    @if (getLineControl($index, 'account_id').touched && !getLineControl($index, 'account_id').value) {
+                    @if (getLineControl(lineIndex, 'account_id').touched && !getLineControl(lineIndex, 'account_id').value) {
                       <p class="text-xs text-confidence-low mt-0.5">Select an account.</p>
                     }
                   </div>
@@ -819,7 +833,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                   <div>
                     <select
                       formControlName="direction"
-                      [attr.aria-label]="'Direction for line ' + ($index + 1)"
+                      [attr.aria-label]="'Direction for line ' + (lineIndex + 1)"
                       class="w-full px-2 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
                     >
                       <option value="DR">DR</option>
@@ -832,15 +846,15 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="amount"
-                      [attr.aria-label]="'Amount for line ' + ($index + 1)"
+                      [attr.aria-label]="'Amount for line ' + (lineIndex + 1)"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono text-right"
                       placeholder="0.00"
                       (input)="recomputeTotals()"
                     />
-                    @if (getLineControl($index, 'amount').touched && getLineControl($index, 'amount').errors?.['required']) {
+                    @if (getLineControl(lineIndex, 'amount').touched && getLineControl(lineIndex, 'amount').errors?.['required']) {
                       <p class="text-xs text-confidence-low mt-0.5">Required.</p>
                     }
-                    @if (getLineControl($index, 'amount').touched && getLineControl($index, 'amount').errors?.['pattern']) {
+                    @if (getLineControl(lineIndex, 'amount').touched && getLineControl(lineIndex, 'amount').errors?.['pattern']) {
                       <p class="text-xs text-confidence-low mt-0.5">Enter a valid number.</p>
                     }
                   </div>
@@ -850,7 +864,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="line_description"
-                      [attr.aria-label]="'Note for line ' + ($index + 1)"
+                      [attr.aria-label]="'Note for line ' + (lineIndex + 1)"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
                       placeholder="Optional"
                     />
@@ -862,8 +876,8 @@ type FilterChip = 'all' | 'manual' | 'auto';
                       type="button"
                       class="text-text-disabled hover:text-confidence-low transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low rounded disabled:opacity-30"
                       [disabled]="linesArray.length <= 2"
-                      [attr.aria-label]="'Remove line ' + ($index + 1)"
-                      (click)="removeLine($index)"
+                      [attr.aria-label]="'Remove line ' + (lineIndex + 1)"
+                      (click)="removeLine(lineIndex)"
                     >
                       <mat-icon style="font-size:1rem;width:1rem;height:1rem;">close</mat-icon>
                     </button>
@@ -1399,12 +1413,7 @@ export class JournalEntriesListComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.submitting.set(false);
-        let msg = 'Could not post journal entry. Please try again.';
-        if (isApiError(err) && typeof err.error?.detail === 'string') {
-          msg = err.error.detail;
-        } else {
-          msg = userMessageForError(err, 'Journal Entry');
-        }
+        const msg = journalErrorMessage(err) ?? userMessageForError(err, 'Journal Entry');
         this.formError.set(msg);
       },
     });
