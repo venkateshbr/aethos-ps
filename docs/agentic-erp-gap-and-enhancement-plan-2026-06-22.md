@@ -20,6 +20,7 @@ Done:
 - `make demo-ready` now wraps local server startup/reuse, demo reset/seed, API smoke checks, and selected Playwright demo specs.
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
 - Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
+- Local frontend runtime is pinned to supported Node 20 via root `.nvmrc` and frontend package `engines`; CI and Docker already use Node 20.
 - Backend quality gates were restored on PR #256: full backend pytest passed (`861 passed, 57 xfailed, 1 xpassed`), ruff passed, frontend production build passed, and full Chromium Playwright passed (`110 passed, 11 skipped`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
@@ -210,7 +211,7 @@ Contract status:
 5. Partial 2026-06-23: restore quality gates.
    - Done: `ruff` passes.
    - Done: backend dev dependencies include Hypothesis and the full backend suite passed.
-   - Pending: pin a supported Node version for Angular 19.
+   - Done 2026-06-23: pin a supported Node 20 runtime for Angular 19 local development.
    - Pending: make `/health/ready` queue status green when workers are required for the demo.
 
 ## Enhancement Plan

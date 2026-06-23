@@ -57,6 +57,14 @@ docs/            Plan, ADRs, agent catalog
 
 See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 
+## Local Runtime
+
+Use Node 20 for the Angular workspace. The repo pins `.nvmrc` to Node 20.19.0 because Angular 19 rejects unsupported local runtimes such as Node 24.
+
+```bash
+nvm use
+```
+
 ## Demo Readiness
 
 Run a clean local demo check against an existing tenant:

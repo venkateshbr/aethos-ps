@@ -1,6 +1,10 @@
 {
   "name": "aethos-ps",
   "version": "0.1.0",
+  "engines": {
+    "node": "^20.11.1",
+    "npm": ">=10"
+  },
   "scripts": {
     "start": "ng serve --port 4201",
     "build": "ng build",
