@@ -20,6 +20,7 @@ CLIENT_ID = "22222222-2222-2222-2222-222222222222"
 ENGAGEMENT_ID = "33333333-3333-3333-3333-333333333333"
 INVOICE_ID = "44444444-4444-4444-8444-444444444444"
 CREATED_INVOICE_ID = "55555555-5555-4555-8555-555555555555"
+TAX_RATE_ID = "88888888-8888-4888-8888-888888888888"
 
 
 class _Result:
@@ -146,6 +147,15 @@ class _FakeDb:
                     "created_at": "2026-06-22T00:00:00+00:00",
                 }
             ],
+            "tax_rates": [
+                {
+                    "id": TAX_RATE_ID,
+                    "tenant_id": None,
+                    "rate": "0.1000",
+                    "is_active": True,
+                    "deleted_at": None,
+                }
+            ],
             "invoices": [
                 {
                     "id": INVOICE_ID,
@@ -250,3 +260,42 @@ def test_invoice_create_uses_service_role_client(
     assert response.status_code == 201, response.text
     assert response.json()["id"] == CREATED_INVOICE_ID
     assert response.json()["lines"][0]["amount"] == "200.00"
+
+
+def test_invoice_create_applies_line_tax_from_visible_tax_rate(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/invoices",
+        json={
+            "engagement_id": ENGAGEMENT_ID,
+            "client_id": CLIENT_ID,
+            "currency": "USD",
+            "lines": [
+                {
+                    "description": "Taxable advisory",
+                    "quantity": "2",
+                    "unit_price": "100.00",
+                    "tax_rate_id": TAX_RATE_ID,
+                },
+                {
+                    "description": "Untaxed advisory",
+                    "quantity": "1",
+                    "unit_price": "50.00",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["subtotal"] == "250.00"
+    assert body["tax_total"] == "20.00"
+    assert body["total"] == "270.00"
+    assert body["lines"][0]["tax_rate_id"] == TAX_RATE_ID
+    assert body["lines"][0]["tax_amount"] == "20.00"
+    assert body["lines"][1]["tax_amount"] == "0.00"

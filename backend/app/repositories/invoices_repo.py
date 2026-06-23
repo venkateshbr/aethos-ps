@@ -145,6 +145,33 @@ class InvoicesRepository:
 
         return await asyncio.to_thread(_create)
 
+    async def get_tax_rate(self, tax_rate_id: str) -> dict | None:
+        """Return an active system or tenant tax rate visible to this tenant."""
+        if not _is_uuid(tax_rate_id):
+            return None
+
+        def _get() -> dict | None:
+            result = (
+                self.db.table("tax_rates")
+                .select("id, tenant_id, rate, is_active")
+                .eq("id", tax_rate_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            if not rows:
+                return None
+            row = rows[0]
+            row_tenant = row.get("tenant_id")
+            if row_tenant is not None and str(row_tenant) != self.tenant_id:
+                return None
+            if not bool(row.get("is_active", True)):
+                return None
+            return row
+
+        return await asyncio.to_thread(_get)
+
     # ------------------------------------------------------------------
     # Account lookup (for journal posting)
     # ------------------------------------------------------------------

@@ -18,7 +18,12 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
-from app.models.invoices import InvoiceCreate, InvoiceResponse, PublicInvoiceResponse
+from app.models.invoices import (
+    InvoiceCreate,
+    InvoiceLineCreate,
+    InvoiceResponse,
+    PublicInvoiceResponse,
+)
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
@@ -32,6 +37,14 @@ def _to_decimal(value: str | int | float | None, default: str = "0") -> Decimal:
         return Decimal(str(value)) if value is not None else Decimal(default)
     except InvalidOperation:
         return Decimal(default)
+
+
+def _quantize_money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"))
+
+
+def _line_amount(line: InvoiceLineCreate) -> Decimal:
+    return _quantize_money(line.quantity * line.unit_price)
 
 
 class InvoicesService:
@@ -104,12 +117,48 @@ class InvoicesService:
         if data.notes:
             invoice_data["notes"] = data.notes
 
-        # Compute totals from lines
+        # Validate line-level FKs and compute totals before inserting the invoice.
+        # If any line is invalid, no draft header is left behind.
         subtotal = Decimal("0")
         tax_total = Decimal("0")
+        line_payloads: list[dict] = []
         for line in data.lines:
-            line_amount = (line.quantity * line.unit_price).quantize(Decimal("0.01"))
+            line_amount = _line_amount(line)
+            tax_amount = Decimal("0")
+            tax_rate_id: str | None = None
+
+            if line.tax_rate_id:
+                tax_row = await self._repo.get_tax_rate(line.tax_rate_id)
+                if tax_row is None:
+                    raise HTTPException(status_code=404, detail="Tax rate not found")
+                tax_rate_id = str(tax_row["id"])
+                tax_rate = _to_decimal(tax_row.get("rate"))
+                tax_amount = _quantize_money(line_amount * tax_rate)
+            if line.time_entry_id:
+                await assert_belongs_to_tenant(
+                    self.db, "time_entries", line.time_entry_id, self.tenant_id,
+                    not_found_detail="Time entry not found",
+                )
+            if line.expense_id:
+                await assert_belongs_to_tenant(
+                    self.db, "project_expenses", line.expense_id, self.tenant_id,
+                    not_found_detail="Expense not found",
+                )
+
             subtotal += line_amount
+            tax_total += tax_amount
+            line_payloads.append(
+                {
+                    "description": line.description,
+                    "quantity": str(line.quantity),
+                    "unit_price": serialise_money(line.unit_price),
+                    "amount": serialise_money(line_amount),
+                    "tax_rate_id": tax_rate_id,
+                    "tax_amount": serialise_money(tax_amount),
+                    "time_entry_id": line.time_entry_id,
+                    "expense_id": line.expense_id,
+                }
+            )
 
         total = subtotal + tax_total
         invoice_data["subtotal"] = serialise_money(subtotal)
@@ -121,35 +170,22 @@ class InvoicesService:
 
         # Insert lines
         line_rows: list[dict] = []
-        for line in data.lines:
-            line_amount = (line.quantity * line.unit_price).quantize(Decimal("0.01"))
+        for payload in line_payloads:
             line_data: dict = {
                 "tenant_id": self.tenant_id,
                 "invoice_id": invoice_id,
-                "description": line.description,
-                "quantity": str(line.quantity),
-                "unit_price": serialise_money(line.unit_price),
-                "amount": serialise_money(line_amount),
-                "tax_amount": "0.00",
+                "description": payload["description"],
+                "quantity": payload["quantity"],
+                "unit_price": payload["unit_price"],
+                "amount": payload["amount"],
+                "tax_amount": payload["tax_amount"],
             }
-            if line.tax_rate_id:
-                await assert_belongs_to_tenant(
-                    self.db, "tax_rates", line.tax_rate_id, self.tenant_id,
-                    not_found_detail="Tax rate not found",
-                )
-                line_data["tax_rate_id"] = line.tax_rate_id
-            if line.time_entry_id:
-                await assert_belongs_to_tenant(
-                    self.db, "time_entries", line.time_entry_id, self.tenant_id,
-                    not_found_detail="Time entry not found",
-                )
-                line_data["time_entry_id"] = line.time_entry_id
-            if line.expense_id:
-                await assert_belongs_to_tenant(
-                    self.db, "project_expenses", line.expense_id, self.tenant_id,
-                    not_found_detail="Expense not found",
-                )
-                line_data["expense_id"] = line.expense_id
+            if payload["tax_rate_id"]:
+                line_data["tax_rate_id"] = payload["tax_rate_id"]
+            if payload["time_entry_id"]:
+                line_data["time_entry_id"] = payload["time_entry_id"]
+            if payload["expense_id"]:
+                line_data["expense_id"] = payload["expense_id"]
             created_line = await self._repo.create_line(line_data)
             line_rows.append(created_line)
 
@@ -166,7 +202,7 @@ class InvoicesService:
     async def approve_invoice(self, invoice_id: str, approved_by: str) -> InvoiceResponse:
         """Move invoice to approved status and post AR journal.
 
-        Journal: DR 1200 Accounts Receivable / CR 4000 Revenue
+        Journal: DR 1200 Accounts Receivable / CR 4000 Revenue + CR 2300 Sales Tax Payable.
         """
         row = await self._repo.get_by_id(invoice_id)
         if row is None:
@@ -178,11 +214,16 @@ class InvoicesService:
             )
 
         total = _to_decimal(row.get("total"))
+        subtotal = _to_decimal(row.get("subtotal"))
+        tax_total = _to_decimal(row.get("tax_total"))
         currency = row.get("currency", "USD")
         invoice_number = row.get("invoice_number", invoice_id[:8])
 
         # Resolve account IDs by code
-        acct_map = await self._repo.get_account_ids_by_codes(["1200", "4000"])
+        account_codes = ["1200", "4000"]
+        if tax_total > Decimal("0"):
+            account_codes.append("2300")
+        acct_map = await self._repo.get_account_ids_by_codes(account_codes)
 
         lines = [
             JournalLineSpec(
@@ -196,12 +237,23 @@ class InvoicesService:
             JournalLineSpec(
                 direction="CR",
                 account_code="4000",
-                amount=total,
+                amount=subtotal,
                 description=f"Revenue for invoice {invoice_number}",
                 account_id=acct_map.get("4000"),
                 currency=currency,
             ),
         ]
+        if tax_total > Decimal("0"):
+            lines.append(
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="2300",
+                    amount=tax_total,
+                    description=f"Sales tax payable for invoice {invoice_number}",
+                    account_id=acct_map.get("2300"),
+                    currency=currency,
+                )
+            )
 
         entry_date = (
             row.get("issue_date")

@@ -349,6 +349,43 @@ def test_approve_invoice_raises_409_if_not_draft(
     assert "approved" in exc_info.value.detail.lower()
 
 
+def test_approve_invoice_splits_tax_to_sales_tax_payable(
+    mock_db: MagicMock,
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    """Approval journal credits revenue for subtotal and 2300 for tax."""
+    from app.services.invoices_service import InvoicesService
+
+    svc = InvoicesService(mock_db, tenant_id)
+    taxable_invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="draft"),
+        "subtotal": "1000.00",
+        "tax_total": "100.00",
+        "total": "1100.00",
+    }
+    approved_invoice = {**taxable_invoice, "status": "approved"}
+
+    svc._repo.get_by_id = AsyncMock(return_value=taxable_invoice)
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1200": "acct-ar", "4000": "acct-revenue", "2300": "acct-tax"}
+    )
+    svc._repo.update = AsyncMock(return_value=approved_invoice)
+    svc._repo.list_lines = AsyncMock(return_value=[])
+
+    with patch("app.services.invoices_service.post_journal") as post_journal_mock:
+        result = asyncio.run(svc.approve_invoice(invoice_id, approved_by="user-uuid-001"))
+
+    assert result.status == "approved"
+    svc._repo.get_account_ids_by_codes.assert_awaited_once_with(["1200", "4000", "2300"])
+    journal_lines = post_journal_mock.call_args.kwargs["lines"]
+    assert [(line.direction, line.account_code, line.amount) for line in journal_lines] == [
+        ("DR", "1200", Decimal("1100.00")),
+        ("CR", "4000", Decimal("1000.00")),
+        ("CR", "2300", Decimal("100.00")),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Issue #51 — Connect OAuth URL includes required parameters
 # ---------------------------------------------------------------------------
