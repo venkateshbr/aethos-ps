@@ -39,6 +39,7 @@ class _Query:
         self._order_key: str | None = None
         self._limit: int | None = None
         self._insert_payload: dict[str, Any] | None = None
+        self._update_payload: dict[str, Any] | None = None
 
     def select(self, columns: str = "*", **_kwargs: Any) -> _Query:
         self._select = columns
@@ -65,11 +66,20 @@ class _Query:
         self._insert_payload = dict(payload)
         return self
 
+    def update(self, payload: dict[str, Any]) -> _Query:
+        self._update_payload = dict(payload)
+        return self
+
     def execute(self) -> _Result:
         if self._insert_payload is not None:
             row = self._insert_row()
             self.db.tables[self.table].append(row)
             return _Result([deepcopy(row)])
+        if self._update_payload is not None:
+            rows = self._filtered_rows()
+            for row in rows:
+                row.update(self._update_payload)
+            return _Result(deepcopy(rows))
 
         rows = [self._with_embeds(row) for row in self._filtered_rows()]
         if self._order_key is not None:
@@ -192,6 +202,7 @@ class _FakeDb:
                     "deleted_at": None,
                 }
             ],
+            "invoice_public_token_revocations": [],
         }
         self.client_by_id = {str(row["id"]): row for row in self.tables["clients"]}
 
@@ -313,3 +324,56 @@ def test_invoice_create_applies_line_tax_from_visible_tax_rate(
     assert body["lines"][0]["tax_rate_id"] == TAX_RATE_ID
     assert body["lines"][0]["tax_amount"] == "20.00"
     assert body["lines"][1]["tax_amount"] == "0.00"
+
+
+def test_invoice_public_token_rotation_revokes_old_token(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="admin-1",
+        email="admin@example.com",
+        role="admin",
+    )
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(f"/api/v1/invoices/{INVOICE_ID}/public-token/rotate")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["id"] == INVOICE_ID
+    assert body["public_token"] != "public-token"
+    assert fake_db.tables["invoices"][0]["public_token"] == body["public_token"]
+    assert fake_db.tables["invoice_public_token_revocations"] == [
+        {
+            "id": "66666666-6666-4666-8666-666666666666",
+            "created_at": "2026-06-22T00:00:00+00:00",
+            "tenant_id": TENANT_ID,
+            "invoice_id": INVOICE_ID,
+            "public_token": "public-token",
+            "revoked_by": "admin-1",
+            "reason": "rotated",
+        }
+    ]
+
+
+def test_revoked_public_invoice_token_returns_410(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["invoice_public_token_revocations"].append(
+        {
+            "id": "revoked-token-1",
+            "tenant_id": TENANT_ID,
+            "invoice_id": INVOICE_ID,
+            "public_token": "retired-public-token",
+            "revoked_by": "admin-1",
+            "reason": "rotated",
+        }
+    )
+
+    response = client.get("/api/v1/public/invoices/retired-public-token")
+
+    assert response.status_code == 410, response.text
+    assert "expired" in response.json()["detail"].lower()

@@ -89,6 +89,51 @@ class InvoicesRepository:
 
         return await asyncio.to_thread(_get)
 
+    async def get_revoked_public_token(self, token: str) -> dict | None:
+        """Return a revoked public invoice token row, if the token was retired."""
+
+        def _get() -> dict | None:
+            result = (
+                self.db.table("invoice_public_token_revocations")
+                .select("*")
+                .eq("public_token", token)
+                .limit(1)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+
+        return await asyncio.to_thread(_get)
+
+    async def revoke_public_token(
+        self,
+        *,
+        invoice: dict,
+        public_token: str,
+        revoked_by: str,
+        reason: str = "rotated",
+    ) -> dict:
+        """Persist a retired public token before the invoice token is rotated."""
+
+        def _insert() -> dict:
+            result = (
+                self.db.table("invoice_public_token_revocations")
+                .insert(
+                    {
+                        "tenant_id": invoice["tenant_id"],
+                        "invoice_id": invoice["id"],
+                        "public_token": public_token,
+                        "revoked_by": revoked_by,
+                        "reason": reason,
+                    }
+                )
+                .execute()
+            )
+            if not result.data:
+                raise RuntimeError("Invoice public token revocation insert returned no data")
+            return result.data[0]
+
+        return await asyncio.to_thread(_insert)
+
     async def create(self, data: dict) -> dict:
         def _create() -> dict:
             result = self.db.table("invoices").insert(data).execute()

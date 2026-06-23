@@ -1141,8 +1141,40 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     // Blocked: requires Stripe payment simulation with different FX rate
   });
 
-  test.fixme('E6 public token rotated mid-payment → old 410, new works', async () => {
-    // Blocked: token rotation not yet implemented
+  test('E6 public token rotated mid-payment → old 410, new works', async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    test.skip(!auth, 'no auth token');
+
+    const { clientId, engagementId } = await createClientAndEngagement(
+      request, auth!, 'time_and_materials',
+    );
+    const inv = await createInvoiceWithLines(request, auth!, engagementId, clientId, [
+      { description: 'Token rotation test', quantity: '1', unit_price: '75.00' },
+    ]);
+    const invoiceId = String(inv.id || '');
+    const oldToken = String(inv.public_token || '');
+    expect(invoiceId).toBeTruthy();
+    test.skip(!oldToken, 'invoice public_token missing');
+
+    const rotateResp = await request.post(
+      `${API}/api/v1/invoices/${invoiceId}/public-token/rotate`,
+      { headers: apiHeaders(auth!) },
+    );
+    await expectOk(rotateResp, 'rotate public invoice token');
+    const rotated = await rotateResp.json() as { public_token?: string };
+    const newToken = rotated.public_token || '';
+    expect(newToken).toBeTruthy();
+    expect(newToken).not.toBe(oldToken);
+
+    const oldResp = await request.get(`${API}/api/v1/public/invoices/${oldToken}`);
+    expect(oldResp.status()).toBe(410);
+
+    const newResp = await request.get(`${API}/api/v1/public/invoices/${newToken}`);
+    await expectOk(newResp, 'fetch rotated public invoice token');
+
+    await page.goto(`${BASE}/p/${newToken}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(/invoice/i).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('E7 delete project with unbilled effort → 409 Conflict', async ({ request }) => {

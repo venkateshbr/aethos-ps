@@ -6,6 +6,7 @@ Routes:
   GET  /invoices/{id}                — get with lines (viewer+)
   PATCH /invoices/{id}/approve       — approve + AR journal (admin+)
   POST  /invoices/{id}/send          — send + Stripe Payment Link (admin+)
+  POST  /invoices/{id}/public-token/rotate — rotate customer-facing token (admin+)
 
 Public (no auth):
   GET /public/invoices/{token}       — fetch by public_token for /p/:token page
@@ -160,6 +161,20 @@ async def send_invoice(
     return await svc.send_invoice(invoice_id, sent_by=current_user.user_id)
 
 
+@router.post("/{invoice_id}/public-token/rotate", response_model=InvoiceResponse)
+async def rotate_invoice_public_token(
+    invoice_id: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: InvoicesService = Depends(_write_service),  # noqa: B008
+) -> InvoiceResponse:
+    """Rotate the unauthenticated invoice URL token.
+
+    The previous token is retained in a revocation table so public clients get
+    an explicit 410 Gone instead of a generic 404.
+    """
+    return await svc.rotate_public_token(invoice_id, rotated_by=current_user.user_id)
+
+
 @router.post("/{invoice_id}/payments", response_model=InvoiceResponse)
 async def record_manual_payment(
     invoice_id: str,
@@ -208,6 +223,12 @@ async def get_public_invoice(
     repo = InvoicesRepository(db, "")
     row = await repo.get_by_public_token(token)
     if row is None:
+        revoked = await repo.get_revoked_public_token(token)
+        if revoked is not None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Invoice link has expired",
+            )
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Now fetch lines scoped to the actual tenant

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from datetime import UTC, date
 from datetime import datetime as _dt
 from decimal import Decimal, InvalidOperation
@@ -80,6 +81,33 @@ class InvoicesService:
             raise HTTPException(status_code=404, detail="Invoice not found")
         lines = await self._repo.list_lines(invoice_id)
         return InvoiceResponse.from_db(row, lines)
+
+    async def rotate_public_token(
+        self,
+        invoice_id: str,
+        *,
+        rotated_by: str,
+    ) -> InvoiceResponse:
+        """Rotate the unauthenticated public invoice token and revoke the old one."""
+        row = await self._repo.get_by_id(invoice_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        old_token = row.get("public_token")
+        if old_token:
+            await self._repo.revoke_public_token(
+                invoice=row,
+                public_token=str(old_token),
+                revoked_by=rotated_by,
+            )
+
+        new_token = secrets.token_urlsafe(24)
+        updated = await self._repo.update(invoice_id, {"public_token": new_token})
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        lines = await self._repo.list_lines(invoice_id)
+        return InvoiceResponse.from_db(updated, lines)
 
     async def get_by_public_token(self, token: str) -> PublicInvoiceResponse:
         """Fetch invoice for the public payment page — no auth required."""
