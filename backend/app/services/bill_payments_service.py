@@ -22,6 +22,7 @@ from fastapi import HTTPException
 
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
+from app.domain.payment_optimization import build_payment_optimization
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class BillPaymentsService:
         # Verify all bills are approved and belong to tenant
         bills = (
             self.db.table("bills")
-            .select("id, total, currency, status, client_id")
+            .select("id, bill_number, total, currency, status, client_id, due_date, vendor_invoice_number")
             .eq("tenant_id", self.tenant_id)
             .in_("id", bill_ids)
             .is_("deleted_at", "null")
@@ -69,7 +70,13 @@ class BillPaymentsService:
             )
 
         total = sum(Decimal(str(b["total"])) for b in bills)
+        currencies = {str(b["currency"]) for b in bills}
+        if len(currencies) > 1:
+            raise HTTPException(422, "Bill payment batches must contain a single currency")
         currency = bills[0]["currency"] if bills else "USD"
+        effective_pay_date = pay_date or date.today()
+        optimization = build_payment_optimization(bills, pay_date=effective_pay_date)
+        bills = optimization.ranked_bills
 
         batch = (
             self.db.table("bill_payment_batches")
@@ -79,8 +86,10 @@ class BillPaymentsService:
                     "total": serialise_money(total),
                     "currency": currency,
                     "bank_account_label": bank_account_label,
-                    "pay_date": pay_date.isoformat() if pay_date else date.today().isoformat(),
+                    "pay_date": effective_pay_date.isoformat(),
                     "created_by": created_by,
+                    "optimization_summary": optimization.summary,
+                    "risk_review_required": optimization.risk_review_required,
                 }
             )
             .execute()
@@ -108,7 +117,12 @@ class BillPaymentsService:
                 "bill_count": len(bills),
             },
         )
-        return {**batch, "items": items}
+        return {
+            **batch,
+            "items": items,
+            "optimization_summary": optimization.summary,
+            "risk_review_required": optimization.risk_review_required,
+        }
 
     # ------------------------------------------------------------------
     # Read

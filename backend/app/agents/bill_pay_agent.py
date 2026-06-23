@@ -15,6 +15,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.agents.base import AgentDeps
+from app.domain.payment_optimization import build_payment_optimization
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class BillPayProposal(BaseModel):
     confidence: float = Field(default=0.92, ge=0.0, le=1.0)
     early_pay_discount_captured: bool = False
     flagged_for_review: list[dict] = []  # bills with unusual amounts
+    optimization_summary: dict = Field(default_factory=dict)
 
 
 def find_duplicate_payment_proposal(
@@ -107,20 +109,22 @@ def propose_payment_batch(
     total = sum(Decimal(str(b["total"])) for b in bills)
     currency = bills[0]["currency"] if bills else "USD"
 
-    # Earliest due date among bills that have one
-    due_dates = [b["due_date"] for b in bills if b.get("due_date")]
-    proposed_pay_date = min(due_dates) if due_dates else date.today().isoformat()
+    # Earliest due date among bills that have one; never propose a past pay date.
+    due_dates = [
+        date.fromisoformat(str(b["due_date"])[:10])
+        for b in bills
+        if b.get("due_date")
+    ]
+    today = date.today()
+    proposed_pay_date_value = max(today, min(due_dates)) if due_dates else today
+    proposed_pay_date = proposed_pay_date_value.isoformat()
+    optimization = build_payment_optimization(
+        bills,
+        pay_date=proposed_pay_date_value,
+    )
+    bills = optimization.ranked_bills
 
-    flagged: list[dict] = []
-    for b in bills:
-        if Decimal(str(b.get("total", "0"))) > Decimal("50000"):
-            flagged.append(
-                {
-                    "bill_id": b["id"],
-                    "bill_number": b.get("bill_number", ""),
-                    "reason": "high value — manual review recommended",
-                }
-            )
+    flagged: list[dict] = list(optimization.summary.get("manual_review_flags") or [])
 
     logger.info(
         "bill_pay_agent_proposed",
@@ -140,9 +144,10 @@ def propose_payment_batch(
         rationale=(
             f"Proposing {len(bills)} bill(s) due within {due_within_days} days. "
             f"Total: {currency} {total}."
-            + (f" {len(flagged)} high-value bill(s) flagged for review." if flagged else "")
+            + (f" {len(flagged)} payment review flag(s)." if flagged else "")
         ),
         flagged_for_review=flagged,
+        optimization_summary=optimization.summary,
     )
 
 

@@ -82,6 +82,69 @@ def test_create_batch_requires_approved_bills(mock_db: MagicMock) -> None:
     assert "approved" in exc_info.value.detail.lower()
 
 
+def test_create_batch_records_payment_optimization(mock_db: MagicMock) -> None:
+    """create_batch stores ranked payment context and manual-review flags."""
+    from datetime import date
+
+    bills = [
+        {
+            "id": "bill-low",
+            "bill_number": "BILL-LOW",
+            "total": "1000.00",
+            "currency": "USD",
+            "status": "approved",
+            "client_id": "client-1",
+            "due_date": "2026-06-30",
+            "vendor_invoice_number": "VIN-LOW",
+        },
+        {
+            "id": "bill-high",
+            "bill_number": "BILL-HIGH",
+            "total": "75000.00",
+            "currency": "USD",
+            "status": "approved",
+            "client_id": "client-2",
+            "due_date": "2026-06-20",
+            "vendor_invoice_number": "VIN-HIGH",
+        },
+    ]
+    bills_chain = _chain(bills)
+    batch_chain = _chain([{"id": "batch-001", "status": "draft"}])
+    items_chain = _chain([])
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        if table_name == "bills":
+            return bills_chain
+        if table_name == "bill_payment_batches":
+            return batch_chain
+        if table_name == "bill_payment_items":
+            return items_chain
+        raise AssertionError(table_name)
+
+    mock_db.table.side_effect = table_side_effect
+    svc = _make_svc(mock_db)
+
+    result = svc.create_batch(
+        ["bill-low", "bill-high"],
+        date(2026, 6, 23),
+        "Operating Account",
+        USER_ID,
+    )
+
+    batch_payload = batch_chain.insert.call_args.args[0]
+    assert batch_payload["risk_review_required"] is True
+    assert batch_payload["optimization_summary"]["ranked_bill_ids"] == [
+        "bill-high",
+        "bill-low",
+    ]
+    assert batch_payload["optimization_summary"]["manual_review_flags"][0]["bill_id"] == (
+        "bill-high"
+    )
+    item_payload = items_chain.insert.call_args.args[0]
+    assert [item["bill_id"] for item in item_payload] == ["bill-high", "bill-low"]
+    assert result["risk_review_required"] is True
+
+
 # ---------------------------------------------------------------------------
 # 2. export_csv produces a header row + data rows
 # ---------------------------------------------------------------------------
@@ -404,6 +467,7 @@ def test_propose_writes_l2_suggestion() -> None:
     assert isinstance(proposal, BillPayProposal)
     assert proposal.confidence <= 1.0
     assert proposal.confidence >= 0.0
+    assert proposal.optimization_summary["ranked_bill_ids"] == ["bill-x1"]
 
     # Now verify that write_agent_suggestion is called with autonomy_level=2
     suggestion_calls: list[dict] = []
@@ -443,6 +507,51 @@ def test_propose_writes_l2_suggestion() -> None:
     assert len(suggestion_calls) == 1
     assert suggestion_calls[0]["autonomy_level"] == 2, "bill_pay_agent must always be L2"
     assert suggestion_calls[0]["agent_name"] == "bill_pay_agent"
+
+
+def test_bill_pay_agent_prioritizes_overdue_high_value_bills() -> None:
+    """The bill-pay agent uses deterministic payment optimization ranking."""
+    from app.agents.base import AgentDeps
+    from app.agents.bill_pay_agent import propose_payment_batch
+
+    mock_db = MagicMock()
+    bills = [
+        {
+            "id": "bill-standard",
+            "bill_number": "BILL-STD",
+            "total": "1000.00",
+            "currency": "USD",
+            "due_date": "2026-12-31",
+            "vendor_invoice_number": "STD",
+            "client_id": "clt-1",
+        },
+        {
+            "id": "bill-urgent",
+            "bill_number": "BILL-URG",
+            "total": "75000.00",
+            "currency": "USD",
+            "due_date": "2026-01-01",
+            "vendor_invoice_number": "URG",
+            "client_id": "clt-2",
+        },
+    ]
+    chain = MagicMock()
+    chain_result = MagicMock()
+    chain_result.data = bills
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.is_.return_value = chain
+    chain.lte.return_value = chain
+    chain.limit.return_value = chain
+    chain.execute.return_value = chain_result
+    mock_db.table.return_value = chain
+
+    deps = AgentDeps(tenant_id=TENANT_ID, user_id=USER_ID, db=mock_db)
+    proposal = propose_payment_batch(deps, due_within_days=7)
+
+    assert proposal.proposed_bill_ids[0] == "bill-urgent"
+    assert proposal.optimization_summary["ranked_bill_ids"][0] == "bill-urgent"
+    assert proposal.flagged_for_review[0]["bill_id"] == "bill-urgent"
 
 
 def test_bill_pay_duplicate_proposal_matches_bill_set() -> None:
