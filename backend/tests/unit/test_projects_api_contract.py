@@ -35,6 +35,7 @@ class _Query:
         self._limit: int | None = None
         self._single = False
         self._insert_payload: dict[str, Any] | None = None
+        self._update_payload: dict[str, Any] | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> _Query:
         return self
@@ -73,19 +74,42 @@ class _Query:
         self._insert_payload = dict(payload)
         return self
 
+    def update(self, payload: dict[str, Any]) -> _Query:
+        self._update_payload = dict(payload)
+        return self
+
     def execute(self) -> _Result:
         if self._insert_payload is not None:
-            row = {
-                "id": "project-created",
-                "code": "PRJ-0003",
-                "budget": None,
-                "status": "planning",
-                "created_at": "2026-06-22T00:00:00+00:00",
-                "deleted_at": None,
-                **self._insert_payload,
-            }
+            if self.table == "project_phases":
+                row = {
+                    "id": "phase-created",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                    "updated_at": "2026-06-22T00:00:00+00:00",
+                    "deleted_at": None,
+                    **self._insert_payload,
+                }
+            else:
+                row = {
+                    "id": "project-created",
+                    "code": "PRJ-0003",
+                    "budget": None,
+                    "budget_hours": None,
+                    "status": "planning",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                    "deleted_at": None,
+                    **self._insert_payload,
+                }
             self.db.tables[self.table].append(row)
             return _Result([row])
+
+        if self._update_payload is not None:
+            rows = self._filtered_rows()
+            updated_rows: list[dict[str, Any]] = []
+            for row in rows:
+                row.update(self._update_payload)
+                row["updated_at"] = "2026-06-23T00:00:00+00:00"
+                updated_rows.append(row)
+            return _Result(updated_rows)
 
         rows = self._filtered_rows()
         if self._order_key is not None:
@@ -133,7 +157,10 @@ class _FakeDb:
                     "name": "Alpha",
                     "currency": "USD",
                     "budget": "50000.00",
+                    "budget_hours": "300.00",
                     "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-07-31",
                     "created_at": "2026-06-22T00:00:00+00:00",
                     "deleted_at": None,
                 },
@@ -145,7 +172,10 @@ class _FakeDb:
                     "name": "Beta",
                     "currency": "USD",
                     "budget": "30000.00",
+                    "budget_hours": None,
                     "status": "planning",
+                    "start_date": None,
+                    "end_date": None,
                     "created_at": "2026-06-21T00:00:00+00:00",
                     "deleted_at": None,
                 },
@@ -157,10 +187,33 @@ class _FakeDb:
                     "name": "Other Tenant",
                     "currency": "USD",
                     "budget": "1.00",
+                    "budget_hours": None,
                     "status": "active",
+                    "start_date": None,
+                    "end_date": None,
                     "created_at": "2026-06-22T00:00:00+00:00",
                     "deleted_at": None,
                 },
+            ],
+            "project_phases": [
+                {
+                    "id": "phase-1",
+                    "tenant_id": TENANT_ID,
+                    "project_id": "project-alpha",
+                    "name": "Discovery",
+                    "description": None,
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-15",
+                    "budget": "10000.00",
+                    "order_index": 0,
+                    "deliverable_name": "Discovery brief",
+                    "deliverable_acceptance_criteria": "Signed off by sponsor",
+                    "percent_complete": "40",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                    "updated_at": "2026-06-22T00:00:00+00:00",
+                    "deleted_at": None,
+                }
             ],
             "project_assignments": [
                 {
@@ -226,6 +279,7 @@ def test_project_read_routes_use_rls_client(
     list_response = client.get("/api/v1/projects?engagement_id=eng-1&limit=10")
     detail_response = client.get("/api/v1/projects/project-alpha")
     assignments_response = client.get("/api/v1/projects/project-alpha/assignments")
+    phases_response = client.get("/api/v1/projects/project-alpha/phases")
 
     assert list_response.status_code == 200, list_response.text
     assert len(list_response.json()) == 1
@@ -235,6 +289,9 @@ def test_project_read_routes_use_rls_client(
     assert assignments_response.status_code == 200, assignments_response.text
     assert assignments_response.json()["items"][0]["id"] == "assignment-1"
     assert assignments_response.json()["items"][0]["employee_name"] == "Taylor Consultant"
+    assert phases_response.status_code == 200, phases_response.text
+    assert phases_response.json()[0]["deliverable_name"] == "Discovery brief"
+    assert phases_response.json()[0]["percent_complete"] == "40"
 
 
 def test_project_create_uses_service_role_client(
@@ -251,6 +308,7 @@ def test_project_create_uses_service_role_client(
             "name": "Created Project",
             "currency": "USD",
             "budget": "12000.00",
+            "budget_hours": "80",
         },
     )
 
@@ -258,3 +316,40 @@ def test_project_create_uses_service_role_client(
     assert response.json()["id"] == "project-created"
     assert response.json()["tenant_id"] == TENANT_ID
     assert response.json()["engagement_id"] == "eng-1"
+    assert response.json()["budget_hours"] == "80"
+
+
+def test_project_phase_create_and_update_use_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    create_response = client.post(
+        "/api/v1/projects/project-alpha/phases",
+        json={
+            "name": "Build",
+            "status": "planning",
+            "end_date": "2026-07-15",
+            "budget": "15000.00",
+            "deliverable_name": "Working process prototype",
+            "deliverable_acceptance_criteria": "Sponsor signs UAT checklist",
+            "percent_complete": "10",
+            "order_index": 1,
+        },
+    )
+    update_response = client.patch(
+        "/api/v1/projects/project-alpha/phases/phase-created",
+        json={
+            "status": "active",
+            "percent_complete": "35",
+        },
+    )
+
+    assert create_response.status_code == 201, create_response.text
+    assert create_response.json()["id"] == "phase-created"
+    assert create_response.json()["deliverable_name"] == "Working process prototype"
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["status"] == "active"
+    assert update_response.json()["percent_complete"] == "35"

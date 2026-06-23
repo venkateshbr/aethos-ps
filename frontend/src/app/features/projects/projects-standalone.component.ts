@@ -15,7 +15,6 @@ type ProjectStatus = 'all' | 'active' | 'on_hold' | 'completed' | 'cancelled';
 
 interface ProjectRow extends ProjectSummary {
   engagement_name?: string;
-  budget_hours?: number | null;
   hours_logged?: number | null;
 }
 
@@ -222,7 +221,7 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
                 % Used
               </th>
               <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle">
-                @if (row.budget_hours != null && row.budget_hours > 0) {
+                @if (toNumber(row.budget_hours) > 0) {
                   @let pct = calcPct(row.hours_logged, row.budget_hours);
                   <div class="flex items-center gap-2">
                     <div class="flex-1 h-1.5 rounded-full bg-surface overflow-hidden" aria-hidden="true">
@@ -603,9 +602,15 @@ export class ProjectsStandaloneComponent implements OnInit {
     this.router.navigate(['/app/engagements', engagementId]);
   }
 
-  calcPct(logged: number | null | undefined, budget: number | null | undefined): number {
-    if (budget == null || budget === 0 || logged == null) return 0;
-    return (logged / budget) * 100;
+  toNumber(value: string | number | null | undefined): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  calcPct(logged: number | null | undefined, budget: string | number | null | undefined): number {
+    const budgetValue = this.toNumber(budget);
+    if (budgetValue === 0 || logged == null) return 0;
+    return (logged / budgetValue) * 100;
   }
 
   progressBarClass(pct: number): string {

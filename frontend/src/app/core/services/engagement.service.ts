@@ -79,10 +79,14 @@ export interface EngagementCreate {
 export interface ProjectSummary {
   id: string;
   name: string;
+  description?: string | null;
   code?: string | null;  // PRJ-0001 (migration 0021)
   engagement_id: string;
   currency: string;
   budget: string | null;
+  budget_hours?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
   status: string;
 }
 

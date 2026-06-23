@@ -22,7 +22,13 @@ from app.models.assignments import (
     AssignmentResponse,
 )
 from app.models.expenses import ExpenseCreate, ExpenseResponse
-from app.models.projects import ProjectCreate, ProjectResponse
+from app.models.projects import (
+    ProjectCreate,
+    ProjectPhaseCreate,
+    ProjectPhaseResponse,
+    ProjectPhaseUpdate,
+    ProjectResponse,
+)
 from app.services.assignments_service import AssignmentsService
 from app.services.expenses_service import ExpensesService
 from app.services.projects_service import ProjectService
@@ -122,6 +128,40 @@ async def delete_project(
 ) -> None:
     """Soft-delete a project. Returns 409 if unbilled time entries exist."""
     await svc.delete_project(id)
+
+
+@router.get("/{id}/phases", response_model=list[ProjectPhaseResponse])
+async def list_project_phases(
+    id: str,
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    svc: ProjectService = Depends(_read_service),  # noqa: B008
+) -> list[ProjectPhaseResponse]:
+    return await svc.list_phases(id)
+
+
+@router.post(
+    "/{id}/phases",
+    response_model=ProjectPhaseResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project_phase(
+    id: str,
+    payload: ProjectPhaseCreate,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: ProjectService = Depends(_write_service),  # noqa: B008
+) -> ProjectPhaseResponse:
+    return await svc.create_phase(id, payload)
+
+
+@router.patch("/{id}/phases/{phase_id}", response_model=ProjectPhaseResponse)
+async def update_project_phase(
+    id: str,
+    phase_id: str,
+    payload: ProjectPhaseUpdate,
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    svc: ProjectService = Depends(_write_service),  # noqa: B008
+) -> ProjectPhaseResponse:
+    return await svc.update_phase(id, phase_id, payload)
 
 
 # ---------------------------------------------------------------------------

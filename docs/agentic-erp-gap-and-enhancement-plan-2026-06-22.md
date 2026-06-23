@@ -32,6 +32,7 @@ Done:
 - Client groups have API, UI, member roles, and profitability rollups.
 - Employee resource profiles now include a billable-utilization target, maintained in the People UI and used by capacity planning/action-queue evidence.
 - Service-catalogue linkage is now end-to-end across engagement setup, UI invoice drafting, billing-run invoice materialisation, invoice line create/response contracts, tenant FK validation, persistence, and service-line revenue reporting.
+- Project planning now persists budget hours from the UI and exposes project phases as scheduled milestones/deliverables with acceptance criteria and percent-complete tracking through API and UI; milestone-risk/backlog reports already consume these phase schedules.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -117,7 +118,7 @@ Present:
 - Billing runs and a Meridian demo narrative.
 
 Gaps / status:
-- Partial 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, and mixed terms. Per-unit payroll billing and deeper milestone schedules are still incomplete.
+- Partial 2026-06-23: billing terms UI now supports fixed, T&M, retainer, retainer drawdown, milestone, capped T&M, and mixed terms. Per-unit payroll billing remains open.
 - Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
 - Partial 2026-06-23: WIP accrual and deferred revenue release proposal endpoints/agents exist, but revenue recognition is not yet a full guided lifecycle across deferred revenue, milestone recognition, retainer drawdown, and percentage-of-completion accounting.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
@@ -255,7 +256,7 @@ Work items:
 - Partial 2026-06-23: Rate-card API/UI and engagement picker exist; employee/service-line-specific rate rules need more depth.
 - Done 2026-06-23: Service catalogue API/settings/engagement/report integration exists, and invoice lines now accept, validate, persist, return, and propagate `service_catalogue_id` from UI drafts and billing-run drafts into service-line revenue reporting.
 - Partial 2026-06-23: Client groups, member roles, UI, and report rollups exist; deeper legal-entity semantics remain open.
-- Partial 2026-06-23: Project budgets, budget hours, and phases exist; deliverables, milestone schedules, and percent-complete remain open.
+- Done 2026-06-23: Project budgets, budget hours, phases, deliverables, milestone schedules, acceptance criteria, and percent-complete tracking are implemented through API/UI and feed milestone-risk/backlog reporting.
 - Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
 
 Acceptance:
@@ -394,7 +395,7 @@ Priority 1:
 - Done 2026-06-23: tax-rates API/UI, invoice-side line tax/tax-payable journals, and bill-side input-tax-recoverable postings.
 - Partial 2026-06-23: billing terms + rate card UI exists; complete per-unit payroll billing and deeper rate rules.
 - Done 2026-06-23: service catalogue end-to-end now includes invoice-line linkage and reporting evidence through service-line revenue reports.
-- Project milestones/deliverables/budgets.
+- Done 2026-06-23: project milestones, deliverables, budget hours, and percent-complete tracking.
 - Revenue recognition and tax journals.
 
 Priority 2:

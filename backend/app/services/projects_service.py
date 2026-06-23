@@ -8,7 +8,13 @@ import logging
 from fastapi import HTTPException
 
 from app.domain.money import serialise_money
-from app.models.projects import ProjectCreate, ProjectResponse
+from app.models.projects import (
+    ProjectCreate,
+    ProjectPhaseCreate,
+    ProjectPhaseResponse,
+    ProjectPhaseUpdate,
+    ProjectResponse,
+)
 from app.repositories.projects_repo import ProjectRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
@@ -70,10 +76,82 @@ class ProjectService:
             "currency": currency,
             "status": "planning",
         }
+        if data.description:
+            payload["description"] = data.description
         if data.budget is not None:
             payload["budget"] = serialise_money(data.budget)
+        if data.budget_hours is not None:
+            payload["budget_hours"] = str(data.budget_hours)
+        if data.start_date is not None:
+            payload["start_date"] = data.start_date.isoformat()
+        if data.end_date is not None:
+            payload["end_date"] = data.end_date.isoformat()
         row = await self._repo.create(payload)
         return ProjectResponse.from_db(row)
+
+    async def list_phases(self, project_id: str) -> list[ProjectPhaseResponse]:
+        await self._assert_project_exists(project_id)
+        rows = await self._repo.list_phases(project_id)
+        return [ProjectPhaseResponse.from_db(row) for row in rows]
+
+    async def create_phase(
+        self,
+        project_id: str,
+        data: ProjectPhaseCreate,
+    ) -> ProjectPhaseResponse:
+        await self._assert_project_exists(project_id)
+        payload: dict = {
+            "name": data.name,
+            "status": data.status,
+            "order_index": data.order_index,
+            "percent_complete": str(data.percent_complete),
+        }
+        if data.description:
+            payload["description"] = data.description
+        if data.start_date is not None:
+            payload["start_date"] = data.start_date.isoformat()
+        if data.end_date is not None:
+            payload["end_date"] = data.end_date.isoformat()
+        if data.budget is not None:
+            payload["budget"] = serialise_money(data.budget)
+        if data.deliverable_name:
+            payload["deliverable_name"] = data.deliverable_name
+        if data.deliverable_acceptance_criteria:
+            payload["deliverable_acceptance_criteria"] = data.deliverable_acceptance_criteria
+
+        row = await self._repo.create_phase(project_id, payload)
+        return ProjectPhaseResponse.from_db(row)
+
+    async def update_phase(
+        self,
+        project_id: str,
+        phase_id: str,
+        data: ProjectPhaseUpdate,
+    ) -> ProjectPhaseResponse:
+        await self._assert_project_exists(project_id)
+        payload: dict = {}
+        for field, value in data.model_dump(exclude_unset=True).items():
+            if value is None:
+                payload[field] = None
+            elif field in {"budget"}:
+                payload[field] = serialise_money(value)
+            elif field in {"percent_complete"}:
+                payload[field] = str(value)
+            elif field in {"start_date", "end_date"}:
+                payload[field] = value.isoformat()
+            else:
+                payload[field] = value
+        if not payload:
+            existing = await self._repo.list_phases(project_id)
+            for row in existing:
+                if str(row["id"]) == phase_id:
+                    return ProjectPhaseResponse.from_db(row)
+            raise HTTPException(status_code=404, detail="Project phase not found")
+
+        row = await self._repo.update_phase(project_id, phase_id, payload)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Project phase not found")
+        return ProjectPhaseResponse.from_db(row)
 
     async def delete_project(self, project_id: str) -> None:
         """Soft-delete a project. Blocks if unbilled time entries exist."""
@@ -108,4 +186,13 @@ class ProjectService:
             .eq("id", project_id)
             .eq("tenant_id", self._tenant_id)
             .execute()
+        )
+
+    async def _assert_project_exists(self, project_id: str) -> None:
+        await assert_belongs_to_tenant(
+            self._db,
+            "projects",
+            project_id,
+            self._tenant_id,
+            not_found_detail="Project not found",
         )
