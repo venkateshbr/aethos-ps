@@ -121,6 +121,31 @@ def test_draft_fixed_fee_carries_service_catalogue_id() -> None:
     assert draft.lines[0].service_catalogue_id == "svc-001"
 
 
+def test_draft_fixed_fee_uses_per_unit_billing_terms() -> None:
+    """Per-employee payroll terms draft quantity x unit price invoice lines."""
+    db = MagicMock()
+    eng = _engagement(
+        "fixed_fee",
+        {
+            "billing_unit": "per_employee",
+            "unit_label": "Employees",
+            "unit_quantity": "42",
+            "unit_price": "18.50",
+        },
+    )
+    _set_engagement_mock(db, eng)
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].description == "Employees: Test Engagement"
+    assert draft.lines[0].quantity == Decimal("42")
+    assert draft.lines[0].unit_price == Decimal("18.50")
+    assert draft.lines[0].amount == Decimal("777.00")
+    assert draft.subtotal == Decimal("777.00")
+
+
 # ---------------------------------------------------------------------------
 # Test 2: retainer billing returns single monthly retainer line
 # ---------------------------------------------------------------------------

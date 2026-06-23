@@ -196,6 +196,70 @@ async def test_create_engagement_persists_service_rate_card_description_and_term
 
 
 @pytest.mark.asyncio
+async def test_create_engagement_persists_per_unit_billing_terms() -> None:
+    from app.models.engagements import BillingTerms, EngagementCreate
+
+    row = {
+        **_engagement_row(currency="USD"),
+        "billing_arrangement": "fixed_fee",
+        "total_value": None,
+        "service_line": "payroll",
+        "service_catalogue_id": "service-payroll-001",
+    }
+    terms_row = {
+        "fixed_fee_amount": "777.00",
+        "milestone_total": None,
+        "retainer_monthly_amount": None,
+        "retainer_floor": None,
+        "retainer_rollover": False,
+        "cap_amount": None,
+        "billing_unit": "per_employee",
+        "unit_label": "Employees",
+        "unit_quantity": "42",
+        "unit_price": "18.50",
+    }
+    svc = _service_with_repo_mocks(row)
+    svc._repo.create_billing_terms = AsyncMock(return_value=terms_row)
+
+    with patch(
+        "app.services.engagements_service.assert_belongs_to_tenant",
+        new_callable=AsyncMock,
+    ):
+        result = await svc.create_engagement(
+            EngagementCreate(
+                client_id="client-service-001",
+                name="Monthly Payroll",
+                billing_arrangement="fixed_fee",
+                currency="USD",
+                service_line="payroll",
+                service_catalogue_id="service-payroll-001",
+                billing_terms=BillingTerms(
+                    billing_unit="per_employee",
+                    unit_label="Employees",
+                    unit_quantity="42",
+                    unit_price="18.50",
+                ),
+            )
+        )
+
+    assert result.billing_terms is not None
+    assert result.billing_terms.fixed_fee_amount == "777.00"
+    assert result.billing_terms.billing_unit == "per_employee"
+    assert result.billing_terms.unit_quantity == "42"
+    assert result.billing_terms.unit_price == "18.50"
+    svc._repo.create_billing_terms.assert_awaited_once_with(
+        ENGAGEMENT_ID,
+        {
+            "fixed_fee_amount": "777.00",
+            "billing_unit": "per_employee",
+            "unit_label": "Employees",
+            "unit_quantity": "42",
+            "unit_price": "18.50",
+        },
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_engagement_blocks_cross_tenant_service_catalogue_item() -> None:
     from app.models.engagements import EngagementCreate
 

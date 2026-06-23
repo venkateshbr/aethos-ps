@@ -23,6 +23,10 @@ export interface EngagementSummary {
     retainer_floor?: string | null;
     retainer_rollover?: boolean | null;
     cap_amount?: string | null;
+    billing_unit?: string | null;
+    unit_label?: string | null;
+    unit_quantity?: string | null;
+    unit_price?: string | null;
   } | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -73,6 +77,10 @@ export interface EngagementCreate {
     retainer_floor?: string | null;
     retainer_rollover?: boolean | null;
     cap_amount?: string | null;
+    billing_unit?: string | null;
+    unit_label?: string | null;
+    unit_quantity?: string | null;
+    unit_price?: string | null;
   } | null;
 }
 

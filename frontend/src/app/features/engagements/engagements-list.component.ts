@@ -50,6 +50,10 @@ interface EngagementCreateFormValue {
   retainer_floor: string;
   retainer_rollover: boolean;
   cap_amount: string;
+  billing_unit: string;
+  unit_label: string;
+  unit_quantity: string;
+  unit_price: string;
   start_date: string;
   end_date: string;
   description: string;
@@ -442,7 +446,7 @@ function formatBillingArrangement(arrangement: string): string {
           </div>
 
           <!-- Billing terms -->
-          @if (showFixedFeeTerms()) {
+          @if (showFixedFeeTerms() && !showUnitTerms()) {
             <div>
               <label for="eng-fixed-fee" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Fixed fee amount</label>
               <input
@@ -452,6 +456,35 @@ function formatBillingArrangement(arrangement: string): string {
                 class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
                 placeholder="e.g. 25000.00"
               />
+            </div>
+          }
+
+          @if (showUnitTerms()) {
+            <div class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="eng-unit-qty" class="block text-xs uppercase tracking-wide text-text-muted mb-2">{{ unitQuantityLabel() }}</label>
+                  <input
+                    id="eng-unit-qty"
+                    type="text"
+                    formControlName="unit_quantity"
+                    class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                    placeholder="e.g. 42"
+                  />
+                </div>
+                <div>
+                  <label for="eng-unit-price" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Unit price</label>
+                  <input
+                    id="eng-unit-price"
+                    type="text"
+                    formControlName="unit_price"
+                    class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                    placeholder="e.g. 18.50"
+                  />
+                </div>
+              </div>
+              <input type="hidden" formControlName="billing_unit" />
+              <input type="hidden" formControlName="unit_label" />
             </div>
           }
 
@@ -625,6 +658,10 @@ export class EngagementsListComponent implements OnInit {
     retainer_floor:      [''],
     retainer_rollover:   [false],
     cap_amount:          [''],
+    billing_unit:        [''],
+    unit_label:          [''],
+    unit_quantity:       [''],
+    unit_price:          [''],
     start_date:          [''],
     end_date:            [''],
     description:         [''],
@@ -699,6 +736,10 @@ export class EngagementsListComponent implements OnInit {
       retainer_floor: '',
       retainer_rollover: false,
       cap_amount: '',
+      billing_unit: '',
+      unit_label: '',
+      unit_quantity: '',
+      unit_price: '',
       start_date: '',
       end_date: '',
       description: '',
@@ -782,6 +823,16 @@ export class EngagementsListComponent implements OnInit {
     return arrangement === 'fixed_fee' || arrangement === 'mixed';
   }
 
+  showUnitTerms(): boolean {
+    return ['per_employee', 'per_entity', 'per_event'].includes(
+      this.createForm.controls.billing_unit.value,
+    );
+  }
+
+  unitQuantityLabel(): string {
+    return this.unitLabelForBillingUnit(this.createForm.controls.billing_unit.value);
+  }
+
   showRetainerTerms(): boolean {
     const arrangement = this.createForm.controls.billing_arrangement.value;
     return arrangement === 'retainer' || arrangement === 'retainer_draw';
@@ -804,9 +855,17 @@ export class EngagementsListComponent implements OnInit {
     const patch: Partial<EngagementCreateFormValue> = {
       service_line: service.service_line,
       currency: service.default_currency || this.createForm.controls.currency.value || 'USD',
+      billing_unit: service.billing_unit,
+      unit_label: this.unitLabelForBillingUnit(service.billing_unit),
+      unit_quantity: '',
+      unit_price: '',
     };
     if (arrangement) patch.billing_arrangement = arrangement;
-    if (service.default_rate && !this.createForm.controls.total_value.value) {
+    if (this.isUnitBilling(service.billing_unit)) {
+      patch.fixed_fee_amount = '';
+      patch.total_value = '';
+      patch.unit_price = service.default_rate ?? '';
+    } else if (service.default_rate && !this.createForm.controls.total_value.value) {
       patch.total_value = service.default_rate;
       if (arrangement === 'fixed_fee') patch.fixed_fee_amount = service.default_rate;
       if (arrangement === 'retainer') patch.retainer_monthly_amount = service.default_rate;
@@ -828,6 +887,17 @@ export class EngagementsListComponent implements OnInit {
     return map[unit] ?? null;
   }
 
+  private isUnitBilling(unit: string): boolean {
+    return ['per_employee', 'per_entity', 'per_event'].includes(unit);
+  }
+
+  private unitLabelForBillingUnit(unit: string): string {
+    if (unit === 'per_employee') return 'Employees';
+    if (unit === 'per_entity') return 'Entities';
+    if (unit === 'per_event') return 'Events';
+    return 'Units';
+  }
+
   private buildBillingTerms(v: EngagementCreateFormValue): EngagementCreate['billing_terms'] {
     const terms: NonNullable<EngagementCreate['billing_terms']> = {};
     if (v.fixed_fee_amount) terms.fixed_fee_amount = v.fixed_fee_amount;
@@ -836,6 +906,10 @@ export class EngagementsListComponent implements OnInit {
     if (v.retainer_floor) terms.retainer_floor = v.retainer_floor;
     if (v.retainer_rollover) terms.retainer_rollover = v.retainer_rollover;
     if (v.cap_amount) terms.cap_amount = v.cap_amount;
+    if (v.billing_unit) terms.billing_unit = v.billing_unit;
+    if (v.unit_label) terms.unit_label = v.unit_label;
+    if (v.unit_quantity) terms.unit_quantity = v.unit_quantity;
+    if (v.unit_price) terms.unit_price = v.unit_price;
     return Object.keys(terms).length ? terms : null;
   }
 }

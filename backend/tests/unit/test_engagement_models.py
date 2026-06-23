@@ -118,6 +118,19 @@ def test_billing_terms_supports_milestone_and_retainer_rollover() -> None:
     assert terms.retainer_rollover is True
 
 
+def test_billing_terms_supports_per_unit_payroll_terms() -> None:
+    terms = BillingTerms(
+        billing_unit="per_employee",
+        unit_label="Employees",
+        unit_quantity="42",
+        unit_price="18.50",
+    )
+
+    assert terms.billing_unit == "per_employee"
+    assert terms.unit_quantity == Decimal("42")
+    assert terms.unit_price == Decimal("18.50")
+
+
 # ---------------------------------------------------------------------------
 # EngagementResponse.from_db
 # ---------------------------------------------------------------------------
@@ -261,6 +274,10 @@ def test_engagement_billing_terms_response_quantises_each_field() -> None:
             "retainer_floor": None,
             "retainer_rollover": True,
             "cap_amount": "75000.5",
+            "billing_unit": "per_employee",
+            "unit_label": "Employees",
+            "unit_quantity": "42",
+            "unit_price": "18.5",
         }
     )
     assert terms.fixed_fee_amount == "50000.00"
@@ -269,3 +286,7 @@ def test_engagement_billing_terms_response_quantises_each_field() -> None:
     assert terms.retainer_floor is None
     assert terms.retainer_rollover is True
     assert terms.cap_amount == "75000.50"
+    assert terms.billing_unit == "per_employee"
+    assert terms.unit_label == "Employees"
+    assert terms.unit_quantity == "42"
+    assert terms.unit_price == "18.50"

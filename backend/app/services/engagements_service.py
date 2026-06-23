@@ -198,6 +198,12 @@ class EngagementService:
 
 def _billing_terms_to_dict(terms: BillingTerms) -> dict:
     result: dict = {}
+    if (
+        terms.fixed_fee_amount is None
+        and terms.unit_quantity is not None
+        and terms.unit_price is not None
+    ):
+        terms.fixed_fee_amount = terms.unit_quantity * terms.unit_price
     if terms.fixed_fee_amount is not None:
         result["fixed_fee_amount"] = serialise_money(terms.fixed_fee_amount)
     if terms.milestone_total is not None:
@@ -210,4 +216,12 @@ def _billing_terms_to_dict(terms: BillingTerms) -> dict:
         result["retainer_rollover"] = terms.retainer_rollover
     if terms.cap_amount is not None:
         result["cap_amount"] = serialise_money(terms.cap_amount)
+    if terms.billing_unit:
+        result["billing_unit"] = terms.billing_unit
+    if terms.unit_label:
+        result["unit_label"] = terms.unit_label
+    if terms.unit_quantity is not None:
+        result["unit_quantity"] = str(terms.unit_quantity)
+    if terms.unit_price is not None:
+        result["unit_price"] = serialise_money(terms.unit_price)
     return result

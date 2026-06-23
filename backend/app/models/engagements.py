@@ -23,6 +23,10 @@ class BillingTerms(BaseModel):
     retainer_floor: Decimal | None = None
     retainer_rollover: bool | None = None
     cap_amount: Decimal | None = None
+    billing_unit: str | None = Field(default=None, max_length=50)
+    unit_label: str | None = Field(default=None, max_length=100)
+    unit_quantity: Decimal | None = None
+    unit_price: Decimal | None = None
 
     @field_validator(
         "fixed_fee_amount",
@@ -30,6 +34,8 @@ class BillingTerms(BaseModel):
         "retainer_monthly_amount",
         "retainer_floor",
         "cap_amount",
+        "unit_quantity",
+        "unit_price",
         mode="before",
     )
     @classmethod
@@ -96,6 +102,10 @@ class EngagementBillingTermsResponse(BaseModel):
     retainer_floor: str | None
     retainer_rollover: bool
     cap_amount: str | None
+    billing_unit: str | None = None
+    unit_label: str | None = None
+    unit_quantity: str | None = None
+    unit_price: str | None = None
 
     @classmethod
     def from_db(cls, row: dict) -> EngagementBillingTermsResponse:
@@ -106,6 +116,14 @@ class EngagementBillingTermsResponse(BaseModel):
             retainer_floor=serialise_money(row.get("retainer_floor")),
             retainer_rollover=bool(row.get("retainer_rollover")),
             cap_amount=serialise_money(row.get("cap_amount")),
+            billing_unit=row.get("billing_unit"),
+            unit_label=row.get("unit_label"),
+            unit_quantity=(
+                str(row["unit_quantity"])
+                if row.get("unit_quantity") is not None
+                else None
+            ),
+            unit_price=serialise_money(row.get("unit_price")),
         )
 
 

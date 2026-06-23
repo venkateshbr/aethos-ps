@@ -166,14 +166,7 @@ def _draft_invoice_inner(
         lines = _draft_tm_lines(eng, deps, period_start, period_end)
 
     elif arrangement == "fixed_fee":
-        amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
-        lines = [
-            InvoiceLineItem(
-                description=f"Fixed Fee: {eng['name']}",
-                unit_price=amount,
-                amount=amount,
-            )
-        ]
+        lines = [_draft_fixed_fee_line(eng, billing)]
 
     elif arrangement == "retainer":
         amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
@@ -229,13 +222,7 @@ def _draft_invoice_inner(
         # unbilled time entries/expenses above the base are added as T&M lines.
         fixed_amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
         if fixed_amount > Decimal("0"):
-            lines = [
-                InvoiceLineItem(
-                    description=f"Fixed fee — {eng.get('name', 'engagement')}",
-                    unit_price=fixed_amount,
-                    amount=fixed_amount,
-                )
-            ]
+            lines = [_draft_fixed_fee_line(eng, billing, label="Fixed fee")]
         else:
             lines = []
         # Append T&M lines for any unbilled work in the period
@@ -427,6 +414,34 @@ def _draft_tm_lines(
         )
 
     return lines
+
+
+def _draft_fixed_fee_line(
+    eng: dict,
+    billing: dict,
+    *,
+    label: str = "Fixed Fee",
+) -> InvoiceLineItem:
+    unit_quantity = billing.get("unit_quantity")
+    unit_price = billing.get("unit_price")
+    if unit_quantity is not None and unit_price is not None:
+        quantity = Decimal(str(unit_quantity))
+        price = Decimal(str(unit_price))
+        amount = (quantity * price).quantize(Decimal("0.01"))
+        unit_label = billing.get("unit_label") or "Units"
+        return InvoiceLineItem(
+            description=f"{unit_label}: {eng['name']}",
+            quantity=quantity,
+            unit_price=price,
+            amount=amount,
+        )
+
+    amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
+    return InvoiceLineItem(
+        description=f"{label}: {eng['name']}",
+        unit_price=amount,
+        amount=amount,
+    )
 
 
 def _mark_capped_overflow_non_billable(
