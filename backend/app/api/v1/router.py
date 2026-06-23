@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     chat,
     client_groups,
     clients,
+    collections_policy,
     documents,
     employees,
     engagements,
@@ -53,6 +54,7 @@ api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"]
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
+api_router.include_router(collections_policy.router, prefix="/collections", tags=["collections"])
 api_router.include_router(client_groups.router, prefix="/client-groups", tags=["client-groups"])
 api_router.include_router(rate_cards.router, prefix="/rate-cards", tags=["rate-cards"])
 api_router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])

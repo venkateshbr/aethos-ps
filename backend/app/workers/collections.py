@@ -4,7 +4,8 @@ Schedule: daily at 06:00 UTC (configured via Procrastinate periodic decorator).
 
 For each active tenant, queries overdue invoices (status in ['sent','overdue']
 with due_date < today) and either:
-  - L3 + confidence >= threshold + email known → sends immediately via Resend
+  - policy allows the tone + L3 + confidence >= threshold + email known → sends
+    immediately via Resend
   - Otherwise → creates an agent_suggestion / hitl_task for human review
 
 Graceful degradation: per-invoice exceptions are caught and logged; the
@@ -17,9 +18,19 @@ import logging
 from datetime import date, timedelta
 
 from app.agents.base import AgentDeps
-from app.agents.collections_agent import draft_collection_email
+from app.agents.collections_agent import (
+    collection_tone_for_days,
+    days_overdue_for_invoice,
+    draft_collection_email,
+    policy_allows_auto_send,
+)
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.config import settings
+from app.models.collections_policy import CollectionsPolicyConfig
+from app.services.collections_policy_service import (
+    default_collections_policy,
+    row_to_collections_policy,
+)
 from app.services.resend_service import ResendService
 from app.workers.procrastinate_app import app
 from supabase import create_client
@@ -37,7 +48,7 @@ async def collections_worker(timestamp: int) -> dict:
 
     Returns
     -------
-    ``{"sent": int, "hitl_queued": int, "skipped_duplicates": int}``
+    ``{"sent": int, "hitl_queued": int, "skipped_duplicates": int, "skipped_policy": int}``
     """
     _ = timestamp  # provided by Procrastinate periodic; we use date.today() instead
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
@@ -50,6 +61,7 @@ async def collections_worker(timestamp: int) -> dict:
     sent = 0
     hitl = 0
     skipped_duplicates = 0
+    skipped_policy = 0
 
     for t in tenants:
         tid = t["id"]
@@ -70,7 +82,36 @@ async def collections_worker(timestamp: int) -> dict:
 
         for inv in overdue:
             try:
-                draft = draft_collection_email(inv, deps)
+                policy = _resolve_collections_policy(db, tid, inv.get("client_id"))
+                days_overdue = days_overdue_for_invoice(inv)
+                tone = collection_tone_for_days(days_overdue, policy)
+                if tone is None:
+                    skipped_policy += 1
+                    logger.info(
+                        "collections_worker: invoice outside active policy",
+                        extra={
+                            "invoice_id": inv["id"],
+                            "tenant_id": tid,
+                            "days_overdue": days_overdue,
+                            "policy_source": policy.policy_source,
+                        },
+                    )
+                    continue
+
+                reminder_count = _collections_action_count(db, tid, inv["id"])
+                if reminder_count >= policy.max_reminders_per_invoice:
+                    skipped_policy += 1
+                    logger.info(
+                        "collections_worker: max reminders reached",
+                        extra={
+                            "invoice_id": inv["id"],
+                            "tenant_id": tid,
+                            "reminder_count": reminder_count,
+                        },
+                    )
+                    continue
+
+                draft = draft_collection_email(inv, deps, policy=policy, tone=tone)
 
                 # Resolve client billing email
                 client_result = (
@@ -88,7 +129,13 @@ async def collections_worker(timestamp: int) -> dict:
                 email = billing_addr.get("email", "")
                 draft.client_email = email
 
-                if _recent_collections_action_exists(db, tid, inv["id"], draft.tone):
+                if _recent_collections_action_exists(
+                    db,
+                    tid,
+                    inv["id"],
+                    draft.tone,
+                    cooldown_days=policy.cooldown_days,
+                ):
                     skipped_duplicates += 1
                     logger.info(
                         "collections_worker: duplicate suppressed",
@@ -113,7 +160,12 @@ async def collections_worker(timestamp: int) -> dict:
                 level = autonomy_row.get("level", 2)
                 threshold = float(autonomy_row.get("confidence_threshold", 0.80))
 
-                if level >= 3 and draft.confidence >= threshold and email:
+                if (
+                    level >= 3
+                    and draft.confidence >= threshold
+                    and email
+                    and policy_allows_auto_send(policy, draft.tone)
+                ):
                     suggestion = await write_agent_suggestion(
                         deps,
                         "collections_agent",
@@ -163,9 +215,63 @@ async def collections_worker(timestamp: int) -> dict:
 
     logger.info(
         "collections_done",
-        extra={"sent": sent, "hitl": hitl, "skipped_duplicates": skipped_duplicates},
+        extra={
+            "sent": sent,
+            "hitl": hitl,
+            "skipped_duplicates": skipped_duplicates,
+            "skipped_policy": skipped_policy,
+        },
     )
-    return {"sent": sent, "hitl_queued": hitl, "skipped_duplicates": skipped_duplicates}
+    return {
+        "sent": sent,
+        "hitl_queued": hitl,
+        "skipped_duplicates": skipped_duplicates,
+        "skipped_policy": skipped_policy,
+    }
+
+
+def _resolve_collections_policy(
+    db,
+    tenant_id: str,
+    client_id: str | None,
+) -> CollectionsPolicyConfig:
+    """Resolve client override, tenant default, then system default."""
+    try:
+        if client_id:
+            rows = (
+                db.table("collections_policies")
+                .select("*")
+                .eq("tenant_id", tenant_id)
+                .eq("client_id", client_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if rows:
+                return row_to_collections_policy(rows[0], source="client_override")
+
+        rows = (
+            db.table("collections_policies")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .is_("client_id", "null")
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            return row_to_collections_policy(rows[0], source="tenant_default")
+    except Exception:
+        logger.warning(
+            "collections_worker: collections policy lookup failed; using system default",
+            extra={"tenant_id": tenant_id, "client_id": client_id},
+            exc_info=True,
+        )
+    return default_collections_policy()
 
 
 def _recent_collections_action_exists(
@@ -173,9 +279,11 @@ def _recent_collections_action_exists(
     tenant_id: str,
     invoice_id: str,
     tone: str,
+    *,
+    cooldown_days: int = COLLECTIONS_COOLDOWN_DAYS,
 ) -> bool:
     """Suppress repeat reminders for the same invoice/tone within the cooldown."""
-    cutoff = (date.today() - timedelta(days=COLLECTIONS_COOLDOWN_DAYS)).isoformat()
+    cutoff = (date.today() - timedelta(days=cooldown_days)).isoformat()
     rows = (
         db.table("agent_suggestions")
         .select("id, related_entity_id, output_snapshot")
@@ -198,6 +306,36 @@ def _recent_collections_action_exists(
         if same_invoice and output.get("tone") == tone:
             return True
     return False
+
+
+def _collections_action_count(
+    db,
+    tenant_id: str,
+    invoice_id: str,
+) -> int:
+    """Count prior unresolved/accepted reminders for an invoice."""
+    rows = (
+        db.table("agent_suggestions")
+        .select("id, related_entity_id, output_snapshot")
+        .eq("tenant_id", tenant_id)
+        .eq("agent_name", "collections_agent")
+        .eq("action_type", "send_email")
+        .in_("status", list(_DECIDED_COLLECTION_STATUSES))
+        .execute()
+        .data
+        or []
+    )
+    count = 0
+    for row in rows:
+        output = row.get("output_snapshot") or {}
+        if not isinstance(output, dict):
+            continue
+        same_invoice = str(row.get("related_entity_id") or output.get("invoice_id")) == str(
+            invoice_id
+        )
+        if same_invoice:
+            count += 1
+    return count
 
 
 def _mark_suggestion_rejected(db, tenant_id: str, suggestion_id: str) -> None:

@@ -294,7 +294,7 @@ Engagement-to-cash loops:
 - Partial: engagement intake agent creates engagement/project drafts from documents; rate-card draft depth remains open.
 - Open: time-entry agent drafts/reminds based on calendar/email/project context.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
-- Partial: collections agent exists, but behavior-policy-driven reminder loops need demo-grade verification.
+- Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, and the Settings UI exposes the tenant default policy.
 - Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer balance/drawdown, percentage-of-completion, and prepaid amortization loops remain open.
 
 Procure-to-pay loops:

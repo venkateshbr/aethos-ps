@@ -6,6 +6,7 @@ import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
 import { AgentRunsComponent } from './agent-runs.component';
 import { IntegrationsComponent } from './integrations.component';
+import { CollectionsPolicyComponent } from './collections-policy.component';
 
 @Component({
   selector: 'app-settings',
@@ -18,6 +19,7 @@ import { IntegrationsComponent } from './integrations.component';
     ServicesComponent,
     AgentRunsComponent,
     IntegrationsComponent,
+    CollectionsPolicyComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -63,6 +65,13 @@ import { IntegrationsComponent } from './integrations.component';
             Tax Rates
           </h2>
           <app-tax-rates />
+        </section>
+
+        <section aria-labelledby="collections-heading">
+          <h2 id="collections-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Accounts Receivable
+          </h2>
+          <app-collections-policy />
         </section>
 
         <!-- Autonomy section (#209) -->
