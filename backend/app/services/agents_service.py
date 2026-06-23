@@ -62,6 +62,11 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
         "Drafts payment reminder emails for overdue invoices",
     ),
     (
+        "time_entry_agent",
+        "Time Entry Agent",
+        "Drafts weekly reminders for under-logged assigned staff",
+    ),
+    (
         "bill_pay_agent",
         "Bill Pay Agent",
         "Proposes vendor payment batches",

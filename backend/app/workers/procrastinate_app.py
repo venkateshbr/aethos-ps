@@ -41,5 +41,6 @@ app = App(
         "app.workers.billing_run_worker",
         "app.workers.project_health_worker",
         "app.workers.intelligence_worker",
+        "app.workers.time_entry_reminder_worker",
     ],
 )

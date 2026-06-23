@@ -228,6 +228,8 @@ class InboxService:
             return await self._materialise_billing_run(payload)
         elif kind == "send_email":
             return await self._materialise_collections_email(payload)
+        elif kind == "send_time_entry_reminder":
+            return await self._materialise_time_entry_reminder(payload)
         elif kind == "create_bill_payment_batch":
             return await self._materialise_bill_payment_batch(payload)
         elif kind in ("draft_journal", "create_journal", "create_manual_journal"):
@@ -354,6 +356,42 @@ class InboxService:
         return {
             "entity_type": "collections_email",
             "entity_id": invoice_id,
+            "send_status": result.get("status", "sent"),
+        }
+
+    async def _materialise_time_entry_reminder(self, payload: dict) -> dict:
+        employee_email = str(payload.get("employee_email") or "").strip()
+        subject = str(payload.get("subject") or "").strip()
+        body_html = str(payload.get("body_html") or "").strip()
+        employee_id = str(payload.get("employee_id") or "").strip() or None
+
+        missing = [
+            name
+            for name, value in (
+                ("employee_email", employee_email),
+                ("subject", subject),
+                ("body_html", body_html),
+            )
+            if not value
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Time entry reminder payload missing: {', '.join(missing)}",
+            )
+
+        from app.services.resend_service import ResendService
+
+        result = ResendService().send_email(employee_email, subject, body_html)
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Time entry reminder failed: {result.get('error', 'unknown error')}",
+            )
+
+        return {
+            "entity_type": "time_entry_reminder",
+            "entity_id": employee_id,
             "send_status": result.get("status", "sent"),
         }
 

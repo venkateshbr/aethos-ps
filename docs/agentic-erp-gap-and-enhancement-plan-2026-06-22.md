@@ -180,7 +180,7 @@ Present:
 Gaps / status:
 - Done/partial 2026-06-23: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, and a recorded replay manifest. Coverage across every agent-created mutation and live re-execution still need hardening.
 - Done 2026-06-23: central tool registry with per-agent tool/action risk classes exists.
-- Partial 2026-06-23: `agent_workflow_runs` exists as the durable workflow container, and the monthly retainer billing-run worker now records running/skipped/waiting-on-human/failed workflow states. Remaining work is consistent workflow-run adoption across the other long-running Phase 3 workers.
+- Partial 2026-06-23: `agent_workflow_runs` exists as the durable workflow container, and the monthly retainer billing-run worker plus weekly time-entry reminder worker now record running/skipped/waiting-on-human/failed workflow states. Remaining work is consistent workflow-run adoption across the other long-running Phase 3 workers.
 - Queue is `not_configured` in the live readiness check, so scheduled autonomy is not operational in this local/live run.
 - Done 2026-06-23: document preflight scanning masks decoded text and withholds sensitive/adversarial PDF/image content from external LLM calls when detected.
 - Partial 2026-06-23: human corrections become eval candidates and L3 policy fields exist. Runnable eval gate and drift dashboard are still not mature.
@@ -292,7 +292,7 @@ Goal: agents perform routine ERP work with humans handling exceptions.
 
 Engagement-to-cash loops:
 - Partial: engagement intake agent creates engagement/project drafts from documents; rate-card draft depth remains open.
-- Open: time-entry agent drafts/reminds based on calendar/email/project context.
+- Partial 2026-06-23: time-entry reminder agent/worker drafts and sends/HITL-routes weekly under-logged-timesheet reminders from employee availability, utilization targets, active project assignments, and logged time; external calendar/email event ingestion remains open.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
 - Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, and the Settings UI exposes the tenant default policy.
 - Partial 2026-06-23: revenue/accrual agents can propose WIP accruals, deferred revenue releases, and milestone recognition journals from completed project phases; HITL approval posts through the manual journal/accounting guardian path. Retainer balance/drawdown, percentage-of-completion, and prepaid amortization loops remain open.

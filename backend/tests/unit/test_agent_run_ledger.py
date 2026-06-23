@@ -99,6 +99,12 @@ def test_tool_registry_classifies_copilot_tools() -> None:
 def test_tool_registry_classifies_persisted_agent_actions() -> None:
     assert action_type_for_tool("collections_agent", "send_email") == "send_email"
     assert risk_class_for_action("collections_agent", "send_email") == "write_money_in"
+    assert action_type_for_tool("time_entry_agent", "send_time_entry_reminder") == (
+        "send_time_entry_reminder"
+    )
+    assert risk_class_for_action("time_entry_agent", "send_time_entry_reminder") == (
+        "write_low_risk"
+    )
     assert risk_class_for_action("billing_run_agent", "approve_billing_run") == (
         "write_money_in"
     )

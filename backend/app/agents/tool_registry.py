@@ -66,6 +66,11 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     _persisted_action("billing_run_agent", "approve_billing_run", "write_money_in"),
     _persisted_action("collections_agent", "send_email", "write_money_in"),
     _persisted_action(
+        "time_entry_agent",
+        "send_time_entry_reminder",
+        "write_low_risk",
+    ),
+    _persisted_action(
         "bill_pay_agent",
         "create_bill_payment_batch",
         "write_money_out",
