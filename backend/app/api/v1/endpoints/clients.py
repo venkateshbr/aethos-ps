@@ -86,3 +86,15 @@ async def update_client(
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     return client
+
+
+@router.post("/{id}/vendor-onboarding/approve", response_model=ClientResponse)
+async def approve_vendor_onboarding(
+    id: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: ClientService = Depends(_write_service),  # noqa: B008
+) -> ClientResponse:
+    client = await svc.approve_vendor_onboarding(id, current_user.user_id)
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    return client

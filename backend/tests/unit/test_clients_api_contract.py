@@ -198,5 +198,60 @@ def test_client_writes_use_service_role_client(
     assert create_response.status_code == 201, create_response.text
     assert create_response.json()["id"] == "client-created"
     assert create_response.json()["tenant_id"] == TENANT_ID
+    assert create_response.json()["vendor_onboarding_status"] == "pending"
     assert update_response.status_code == 200, update_response.text
     assert update_response.json()["payment_terms_days"] == 20
+
+
+def test_vendor_onboarding_approval_requires_completed_controls(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post("/api/v1/clients/client-bravo/vendor-onboarding/approve")
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["message"] == "Vendor onboarding controls are incomplete"
+    assert detail["unmet_controls"] == [
+        "bank account must be verified",
+        "tax validation must be valid",
+        "sanctions screening must be clear",
+        "remittance controls must be verified",
+    ]
+
+
+def test_vendor_onboarding_approval_sets_audit_fields(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    patch_response = client.patch(
+        "/api/v1/clients/client-bravo",
+        json={
+            "vendor_bank_account_status": "verified",
+            "vendor_tax_validation_status": "valid",
+            "vendor_sanctions_status": "clear",
+            "vendor_remittance_status": "verified",
+            "vendor_remittance_email": "remittance@bravo.example.com",
+            "vendor_payment_controls": {"requires_dual_approval": True},
+        },
+    )
+    approve_response = client.post("/api/v1/clients/client-bravo/vendor-onboarding/approve")
+
+    assert patch_response.status_code == 200, patch_response.text
+    assert approve_response.status_code == 200, approve_response.text
+    body = approve_response.json()
+    assert body["vendor_onboarding_status"] == "approved"
+    assert body["vendor_bank_account_status"] == "verified"
+    assert body["vendor_tax_validation_status"] == "valid"
+    assert body["vendor_sanctions_status"] == "clear"
+    assert body["vendor_remittance_status"] == "verified"
+    assert body["vendor_remittance_email"] == "remittance@bravo.example.com"
+    assert body["vendor_payment_controls"] == {"requires_dual_approval": True}
+    assert body["vendor_onboarding_approved_by"] == "user-1"
+    assert body["vendor_onboarding_approved_at"] is not None

@@ -142,7 +142,7 @@ Present:
 
 Gaps / status:
 - No purchase requests, purchase orders, service orders, or PO matching.
-- Vendor onboarding lacks bank-account verification, sanctions/tax validation, remittance controls, and approval workflow.
+- Done/partial 2026-06-23: vendor onboarding now persists bank-account, tax-validation, sanctions, and remittance control statuses, exposes them in the contact UI, and requires admin approval before the vendor is marked approved. External bank/tax/sanctions provider validation remains future integration depth.
 - Done/partial 2026-06-23: bill approval now preserves line-level expense coding in the AP journal, but the extraction-to-coding feedback loop still needs stronger closed-loop validation.
 - Partial 2026-06-23: bill-payment export now has integrity metadata and approval/export/send/settlement controls. Bank-native NACHA/BACS/ABA/GIRO/NEFT validation remains future P2P depth.
 - Done 2026-06-23: `mark-sent` is no longer the terminal lifecycle; settlement is implemented.
@@ -299,7 +299,7 @@ Engagement-to-cash loops:
 
 Procure-to-pay loops:
 - Done/monitor 2026-06-23: vendor invoice agent extracts, matches, detects duplicates, and suggests GL/service-line/project coding.
-- Vendor onboarding agent validates tax IDs, bank details, and approvals.
+- Done/partial 2026-06-23: vendor onboarding controls and admin approval are implemented in the contact API/UI; automated provider-driven validation remains future agent/integration depth.
 - Done/partial 2026-06-23: AP payment agent proposes payment batches with money-out controls; cash/discount/risk optimization needs more depth.
 - Done/monitor 2026-06-23: payment settlement lifecycle exists and posts only after settlement confirmation.
 
@@ -409,7 +409,7 @@ Priority 2:
 - Done 2026-06-23: agent dashboard and kill switches.
 
 Priority 3:
-- P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
+- P2P workflow depth: vendor onboarding controls are implemented; remaining depth is PO/service orders, bank-native payment validation, provider-backed tax/sanctions/bank verification, and payment optimization.
 - R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, bank/suspense close blockers, and statutory reporting packs are implemented; jurisdiction-specific filing exports remain future compliance depth.
 - Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 

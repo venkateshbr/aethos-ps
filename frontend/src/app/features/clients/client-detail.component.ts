@@ -26,6 +26,11 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
 import { userMessageForError } from '../../core/utils/error-message';
 
 type ContactKind = 'customer' | 'vendor' | 'both';
+type VendorOnboardingStatus = 'not_required' | 'pending' | 'approved' | 'blocked';
+type VendorBankAccountStatus = 'not_provided' | 'pending_verification' | 'verified' | 'failed';
+type VendorTaxValidationStatus = 'not_checked' | 'valid' | 'warning' | 'failed';
+type VendorSanctionsStatus = 'not_checked' | 'clear' | 'potential_match' | 'blocked';
+type VendorRemittanceStatus = 'not_configured' | 'configured' | 'verified' | 'blocked';
 type ClientGroupType =
   | 'family_office'
   | 'portfolio'
@@ -50,6 +55,15 @@ interface ContactDetail {
   phone?: string | null;
   kind: ContactKind;
   created_at: string;
+  vendor_onboarding_status?: VendorOnboardingStatus;
+  vendor_bank_account_status?: VendorBankAccountStatus;
+  vendor_tax_validation_status?: VendorTaxValidationStatus;
+  vendor_sanctions_status?: VendorSanctionsStatus;
+  vendor_remittance_status?: VendorRemittanceStatus;
+  vendor_remittance_email?: string | null;
+  vendor_payment_controls?: Record<string, unknown>;
+  vendor_onboarding_approved_at?: string | null;
+  vendor_onboarding_approved_by?: string | null;
 }
 
 interface ContactOption {
@@ -507,6 +521,93 @@ function daysSince(dateStr: string | null): number | null {
 
         <!-- AP section — vendors and both -->
         @if (isVendor()) {
+          <section class="mb-8" aria-labelledby="vendor-onboarding-heading">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <h2 id="vendor-onboarding-heading" class="text-base font-semibold text-text-primary">Vendor Onboarding</h2>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                [disabled]="vendorApprovalSaving() || contact()!.vendor_onboarding_status === 'approved' || !vendorControlsReady()"
+                (click)="approveVendorOnboarding()"
+                aria-label="Approve vendor onboarding"
+              >
+                <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">verified</mat-icon>
+                @if (vendorApprovalSaving()) { Approving… } @else { Approve }
+              </button>
+            </div>
+
+            <div class="rounded-lg border border-border-default bg-surface p-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Onboarding</dt>
+                  <dd>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="vendorStatusClass(contact()!.vendor_onboarding_status)">
+                      {{ statusLabel(contact()!.vendor_onboarding_status) }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Bank</dt>
+                  <dd>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="vendorStatusClass(contact()!.vendor_bank_account_status)">
+                      {{ statusLabel(contact()!.vendor_bank_account_status) }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Tax</dt>
+                  <dd>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="vendorStatusClass(contact()!.vendor_tax_validation_status)">
+                      {{ statusLabel(contact()!.vendor_tax_validation_status) }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Sanctions</dt>
+                  <dd>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="vendorStatusClass(contact()!.vendor_sanctions_status)">
+                      {{ statusLabel(contact()!.vendor_sanctions_status) }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Remittance</dt>
+                  <dd>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="vendorStatusClass(contact()!.vendor_remittance_status)">
+                      {{ statusLabel(contact()!.vendor_remittance_status) }}
+                    </span>
+                  </dd>
+                </div>
+              </div>
+
+              <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Remittance Email</dt>
+                  <dd class="text-text-primary">{{ contact()!.vendor_remittance_email || 'Not provided' }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Approved</dt>
+                  <dd class="text-text-primary">
+                    @if (contact()!.vendor_onboarding_approved_at) {
+                      {{ contact()!.vendor_onboarding_approved_at | date: 'medium' }}
+                    } @else {
+                      Not approved
+                    }
+                  </dd>
+                </div>
+              </div>
+
+              @if (vendorApprovalMessage()) {
+                <p class="mt-3 text-sm text-text-muted">{{ vendorApprovalMessage() }}</p>
+              }
+              @if (vendorApprovalError()) {
+                <div class="mt-3 rounded border border-confidence-low/30 bg-confidence-low/10 px-3 py-2 text-sm text-confidence-low" role="alert">
+                  {{ vendorApprovalError() }}
+                </div>
+              }
+            </div>
+          </section>
+
           <section class="mb-8" aria-labelledby="ap-heading">
             <div class="flex items-center justify-between mb-3">
               <h2 id="ap-heading" class="text-base font-semibold text-text-primary">Outstanding Bills</h2>
@@ -667,6 +768,94 @@ function daysSince(dateStr: string | null): number | null {
             </select>
           </div>
 
+          @if (isVendorKind(editForm.controls.kind.value)) {
+            <div class="rounded-lg border border-border-default bg-surface-base p-4 space-y-4">
+              <h3 class="text-sm font-semibold text-text-primary">Vendor controls</h3>
+              <div>
+                <label for="edit-vendor-onboarding" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Onboarding
+                </label>
+                <select
+                  id="edit-vendor-onboarding"
+                  formControlName="vendor_onboarding_status"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of vendorOnboardingOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="edit-vendor-bank" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Bank Account
+                </label>
+                <select
+                  id="edit-vendor-bank"
+                  formControlName="vendor_bank_account_status"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of vendorBankOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="edit-vendor-tax" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Tax Validation
+                </label>
+                <select
+                  id="edit-vendor-tax"
+                  formControlName="vendor_tax_validation_status"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of vendorTaxOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="edit-vendor-sanctions" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Sanctions
+                </label>
+                <select
+                  id="edit-vendor-sanctions"
+                  formControlName="vendor_sanctions_status"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of vendorSanctionsOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="edit-vendor-remittance" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Remittance
+                </label>
+                <select
+                  id="edit-vendor-remittance"
+                  formControlName="vendor_remittance_status"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                >
+                  @for (option of vendorRemittanceOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label for="edit-vendor-remittance-email" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Remittance Email
+                </label>
+                <input
+                  id="edit-vendor-remittance-email"
+                  type="email"
+                  formControlName="vendor_remittance_email"
+                  class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                  placeholder="payments@example.com"
+                />
+              </div>
+            </div>
+          }
+
           @if (editError()) {
             <div
               role="alert"
@@ -715,6 +904,8 @@ export class ClientDetailComponent implements OnInit {
   billsLoading = signal(false);
   billsError   = signal<string | null>(null);
   bills        = signal<BillSummary[]>([]);
+  vendorApprovalSaving = signal(false);
+  vendorApprovalError  = signal<string | null>(null);
 
   // Related entities
   groupsLoading = signal(false);
@@ -756,6 +947,36 @@ export class ClientDetailComponent implements OnInit {
     { label: 'Billing entity', value: 'billing_entity' },
     { label: 'Other', value: 'other' },
   ];
+  readonly vendorOnboardingOptions: { label: string; value: VendorOnboardingStatus }[] = [
+    { label: 'Pending', value: 'pending' },
+    { label: 'Approved', value: 'approved' },
+    { label: 'Blocked', value: 'blocked' },
+    { label: 'Not required', value: 'not_required' },
+  ];
+  readonly vendorBankOptions: { label: string; value: VendorBankAccountStatus }[] = [
+    { label: 'Not provided', value: 'not_provided' },
+    { label: 'Pending verification', value: 'pending_verification' },
+    { label: 'Verified', value: 'verified' },
+    { label: 'Failed', value: 'failed' },
+  ];
+  readonly vendorTaxOptions: { label: string; value: VendorTaxValidationStatus }[] = [
+    { label: 'Not checked', value: 'not_checked' },
+    { label: 'Valid', value: 'valid' },
+    { label: 'Warning', value: 'warning' },
+    { label: 'Failed', value: 'failed' },
+  ];
+  readonly vendorSanctionsOptions: { label: string; value: VendorSanctionsStatus }[] = [
+    { label: 'Not checked', value: 'not_checked' },
+    { label: 'Clear', value: 'clear' },
+    { label: 'Potential match', value: 'potential_match' },
+    { label: 'Blocked', value: 'blocked' },
+  ];
+  readonly vendorRemittanceOptions: { label: string; value: VendorRemittanceStatus }[] = [
+    { label: 'Not configured', value: 'not_configured' },
+    { label: 'Configured', value: 'configured' },
+    { label: 'Verified', value: 'verified' },
+    { label: 'Blocked', value: 'blocked' },
+  ];
 
   // Edit panel
   showEditPanel = signal(false);
@@ -767,6 +988,12 @@ export class ClientDetailComponent implements OnInit {
     email: [''],
     phone: [''],
     kind:  ['customer' as ContactKind, [Validators.required]],
+    vendor_onboarding_status: ['pending' as VendorOnboardingStatus],
+    vendor_bank_account_status: ['not_provided' as VendorBankAccountStatus],
+    vendor_tax_validation_status: ['not_checked' as VendorTaxValidationStatus],
+    vendor_sanctions_status: ['not_checked' as VendorSanctionsStatus],
+    vendor_remittance_status: ['not_configured' as VendorRemittanceStatus],
+    vendor_remittance_email: [''],
   });
 
   // Computed helpers
@@ -790,6 +1017,21 @@ export class ClientDetailComponent implements OnInit {
       .reduce((sum, b) => sum + Number(b.total), 0)
       .toFixed(2),
   );
+  vendorControlsReady = computed(() => {
+    const c = this.contact();
+    return !!c
+      && c.vendor_bank_account_status === 'verified'
+      && c.vendor_tax_validation_status === 'valid'
+      && c.vendor_sanctions_status === 'clear'
+      && c.vendor_remittance_status === 'verified';
+  });
+  vendorApprovalMessage = computed(() => {
+    const c = this.contact();
+    if (!c) return null;
+    if (c.vendor_onboarding_status === 'approved') return 'Vendor onboarding is approved for payment runs.';
+    if (this.vendorControlsReady()) return 'Controls are complete and ready for admin approval.';
+    return 'Bank, tax, sanctions, and remittance controls must be verified before approval.';
+  });
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
@@ -885,6 +1127,12 @@ export class ClientDetailComponent implements OnInit {
       email: c.email ?? '',
       phone: c.phone ?? '',
       kind:  c.kind,
+      vendor_onboarding_status: c.vendor_onboarding_status ?? 'pending',
+      vendor_bank_account_status: c.vendor_bank_account_status ?? 'not_provided',
+      vendor_tax_validation_status: c.vendor_tax_validation_status ?? 'not_checked',
+      vendor_sanctions_status: c.vendor_sanctions_status ?? 'not_checked',
+      vendor_remittance_status: c.vendor_remittance_status ?? 'not_configured',
+      vendor_remittance_email: c.vendor_remittance_email ?? '',
     });
     this.editError.set(null);
     this.showEditPanel.set(true);
@@ -992,16 +1240,25 @@ export class ClientDetailComponent implements OnInit {
     this.editError.set(null);
 
     const v = this.editForm.getRawValue();
+    const nextKind = v.kind as ContactKind;
     const payload: Partial<ContactDetail> = {
       name:  v.name,
       email: v.email || null,
       phone: v.phone || null,
-      kind:  v.kind as ContactKind,
+      kind:  nextKind,
     };
 
-    // TODO (#212): PATCH /api/v1/clients/{id} — verify endpoint exists in Karya.
-    // If missing, Karya should add it in a follow-up; this component is wired
-    // for it and will work once the backend route is live.
+    if (this.isVendorKind(nextKind)) {
+      payload.vendor_onboarding_status = v.vendor_onboarding_status;
+      payload.vendor_bank_account_status = v.vendor_bank_account_status;
+      payload.vendor_tax_validation_status = v.vendor_tax_validation_status;
+      payload.vendor_sanctions_status = v.vendor_sanctions_status;
+      payload.vendor_remittance_status = v.vendor_remittance_status;
+      payload.vendor_remittance_email = v.vendor_remittance_email || null;
+    } else {
+      payload.vendor_onboarding_status = 'not_required';
+    }
+
     this.http.patch<ContactDetail>(`/api/v1/clients/${c.id}`, payload).subscribe({
       next: (updated) => {
         this.contact.set(updated);
@@ -1021,6 +1278,26 @@ export class ClientDetailComponent implements OnInit {
     });
   }
 
+  approveVendorOnboarding(): void {
+    const c = this.contact();
+    if (!c || c.vendor_onboarding_status === 'approved' || !this.vendorControlsReady()) return;
+
+    this.vendorApprovalSaving.set(true);
+    this.vendorApprovalError.set(null);
+    this.http.post<ContactDetail>(`/api/v1/clients/${c.id}/vendor-onboarding/approve`, {}).subscribe({
+      next: (updated) => {
+        this.contact.set(updated);
+        this.vendorApprovalSaving.set(false);
+        this.saveMessage.set('Vendor onboarding approved.');
+        setTimeout(() => this.saveMessage.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.vendorApprovalSaving.set(false);
+        this.vendorApprovalError.set(userMessageForError(err, 'Approve vendor onboarding'));
+      },
+    });
+  }
+
   // ── Display helpers ──────────────────────────────────────────────────────
 
   kindLabel(kind: ContactKind): string {
@@ -1036,6 +1313,39 @@ export class ClientDetailComponent implements OnInit {
       case 'customer': return 'bg-blue-500/20 text-blue-300';
       case 'vendor':   return 'bg-amber-500/20 text-amber-300';
       case 'both':     return 'bg-purple-500/20 text-purple-300';
+    }
+  }
+
+  isVendorKind(kind: ContactKind | string | null | undefined): boolean {
+    return kind === 'vendor' || kind === 'both';
+  }
+
+  statusLabel(value: string | null | undefined): string {
+    if (!value) return 'Not set';
+    return value
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  vendorStatusClass(value: string | null | undefined): string {
+    switch (value) {
+      case 'approved':
+      case 'verified':
+      case 'valid':
+      case 'clear':
+        return 'bg-emerald-500/20 text-emerald-300';
+      case 'pending':
+      case 'pending_verification':
+      case 'warning':
+      case 'configured':
+        return 'bg-amber-500/20 text-amber-300';
+      case 'failed':
+      case 'blocked':
+      case 'potential_match':
+        return 'bg-confidence-low/20 text-confidence-low';
+      default:
+        return 'bg-surface-raised text-text-muted';
     }
   }
 
