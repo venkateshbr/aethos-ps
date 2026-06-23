@@ -27,6 +27,7 @@ class InvoiceLineCreate(BaseModel):
     tax_rate_id: str | None = None
     time_entry_id: str | None = None
     expense_id: str | None = None
+    service_catalogue_id: str | None = None
 
 
 class InvoiceLineResponse(BaseModel):
@@ -40,6 +41,7 @@ class InvoiceLineResponse(BaseModel):
     tax_amount: str
     time_entry_id: str | None
     expense_id: str | None
+    service_catalogue_id: str | None
     created_at: datetime
 
     @classmethod
@@ -57,6 +59,11 @@ class InvoiceLineResponse(BaseModel):
             tax_amount=serialise_money(row.get("tax_amount") or "0") or "0.00",
             time_entry_id=str(row["time_entry_id"]) if row.get("time_entry_id") else None,
             expense_id=str(row["expense_id"]) if row.get("expense_id") else None,
+            service_catalogue_id=(
+                str(row["service_catalogue_id"])
+                if row.get("service_catalogue_id")
+                else None
+            ),
             created_at=row["created_at"],
         )
 

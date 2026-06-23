@@ -31,6 +31,7 @@ Done:
 - Backlog forecast and milestone-risk reports are available through `/api/v1/reports/backlog-forecast` and `/api/v1/reports/milestone-risk`, surfaced in the Reports Backlog tab, and feed partner/project-manager action queues.
 - Client groups have API, UI, member roles, and profitability rollups.
 - Employee resource profiles now include a billable-utilization target, maintained in the People UI and used by capacity planning/action-queue evidence.
+- Service-catalogue linkage is now end-to-end across engagement setup, UI invoice drafting, billing-run invoice materialisation, invoice line create/response contracts, tenant FK validation, persistence, and service-line revenue reporting.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
@@ -252,7 +253,7 @@ Work items:
 - Done/monitor 2026-06-23: Expenses API and UI list/create completion.
 - Partial 2026-06-23: Billing terms UI supports fixed, T&M, capped T&M, retainer, retainer drawdown, milestone, and mixed. Per-unit payroll billing remains open.
 - Partial 2026-06-23: Rate-card API/UI and engagement picker exist; employee/service-line-specific rate rules need more depth.
-- Partial 2026-06-23: Service catalogue API/settings/engagement/report integration exists; invoice-line service catalogue linkage still needs tightening.
+- Done 2026-06-23: Service catalogue API/settings/engagement/report integration exists, and invoice lines now accept, validate, persist, return, and propagate `service_catalogue_id` from UI drafts and billing-run drafts into service-line revenue reporting.
 - Partial 2026-06-23: Client groups, member roles, UI, and report rollups exist; deeper legal-entity semantics remain open.
 - Partial 2026-06-23: Project budgets, budget hours, and phases exist; deliverables, milestone schedules, and percent-complete remain open.
 - Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
@@ -392,7 +393,7 @@ Priority 1:
 - Done 2026-06-23: accounts and expenses APIs.
 - Done 2026-06-23: tax-rates API/UI, invoice-side line tax/tax-payable journals, and bill-side input-tax-recoverable postings.
 - Partial 2026-06-23: billing terms + rate card UI exists; complete per-unit payroll billing and deeper rate rules.
-- Partial 2026-06-23: service catalogue end-to-end; tighten invoice-line linkage and reporting evidence.
+- Done 2026-06-23: service catalogue end-to-end now includes invoice-line linkage and reporting evidence through service-line revenue reports.
 - Project milestones/deliverables/budgets.
 - Revenue recognition and tax journals.
 

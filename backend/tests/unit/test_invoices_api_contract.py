@@ -21,6 +21,7 @@ ENGAGEMENT_ID = "33333333-3333-3333-3333-333333333333"
 INVOICE_ID = "44444444-4444-4444-8444-444444444444"
 CREATED_INVOICE_ID = "55555555-5555-4555-8555-555555555555"
 TAX_RATE_ID = "88888888-8888-4888-8888-888888888888"
+SERVICE_CATALOGUE_ID = "99999999-9999-4999-8999-999999999999"
 
 
 class _Result:
@@ -144,7 +145,17 @@ class _FakeDb:
                     "tax_amount": "0.00",
                     "time_entry_id": None,
                     "expense_id": None,
+                    "service_catalogue_id": None,
                     "created_at": "2026-06-22T00:00:00+00:00",
+                }
+            ],
+            "service_catalogue": [
+                {
+                    "id": SERVICE_CATALOGUE_ID,
+                    "tenant_id": TENANT_ID,
+                    "name": "Managed Transformation Office",
+                    "service_line": "advisory",
+                    "deleted_at": None,
                 }
             ],
             "tax_rates": [
@@ -252,6 +263,7 @@ def test_invoice_create_uses_service_role_client(
                     "description": "Implementation support",
                     "quantity": "2",
                     "unit_price": "100.00",
+                    "service_catalogue_id": SERVICE_CATALOGUE_ID,
                 }
             ],
         },
@@ -260,6 +272,8 @@ def test_invoice_create_uses_service_role_client(
     assert response.status_code == 201, response.text
     assert response.json()["id"] == CREATED_INVOICE_ID
     assert response.json()["lines"][0]["amount"] == "200.00"
+    assert response.json()["lines"][0]["service_catalogue_id"] == SERVICE_CATALOGUE_ID
+    assert fake_db.tables["invoice_lines"][-1]["service_catalogue_id"] == SERVICE_CATALOGUE_ID
 
 
 def test_invoice_create_applies_line_tax_from_visible_tax_rate(

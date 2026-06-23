@@ -10,6 +10,7 @@ export interface PublicInvoiceLine {
   unit_price: string;
   amount: string;
   currency: string;
+  service_catalogue_id?: string | null;
 }
 
 export interface PublicInvoice {

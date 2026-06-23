@@ -92,6 +92,7 @@ async def _draft_invoices_for_run(
                     tax_rate_id=line.tax_rate_id,
                     time_entry_id=line.time_entry_id,
                     expense_id=line.expense_id,
+                    service_catalogue_id=line.service_catalogue_id,
                 )
                 for line in invoice_draft.lines
             ]

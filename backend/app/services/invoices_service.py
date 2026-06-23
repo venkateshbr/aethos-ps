@@ -144,6 +144,14 @@ class InvoicesService:
                     self.db, "project_expenses", line.expense_id, self.tenant_id,
                     not_found_detail="Expense not found",
                 )
+            if line.service_catalogue_id:
+                await assert_belongs_to_tenant(
+                    self.db,
+                    "service_catalogue",
+                    line.service_catalogue_id,
+                    self.tenant_id,
+                    not_found_detail="Service catalogue item not found",
+                )
 
             subtotal += line_amount
             tax_total += tax_amount
@@ -157,6 +165,7 @@ class InvoicesService:
                     "tax_amount": serialise_money(tax_amount),
                     "time_entry_id": line.time_entry_id,
                     "expense_id": line.expense_id,
+                    "service_catalogue_id": line.service_catalogue_id,
                 }
             )
 
@@ -186,6 +195,8 @@ class InvoicesService:
                 line_data["time_entry_id"] = payload["time_entry_id"]
             if payload["expense_id"]:
                 line_data["expense_id"] = payload["expense_id"]
+            if payload["service_catalogue_id"]:
+                line_data["service_catalogue_id"] = payload["service_catalogue_id"]
             created_line = await self._repo.create_line(line_data)
             line_rows.append(created_line)
 

@@ -47,6 +47,7 @@ class InvoiceLineItem(BaseModel):
     tax_amount: Decimal = Decimal("0")
     time_entry_id: str | None = None
     expense_id: str | None = None
+    service_catalogue_id: str | None = None
 
 
 class InvoiceDraft(BaseModel):
@@ -247,6 +248,15 @@ def _draft_invoice_inner(
             engagement_id,
         )
         lines = []
+
+    service_catalogue_id = str(eng["service_catalogue_id"]) if eng.get("service_catalogue_id") else None
+    if service_catalogue_id:
+        lines = [
+            line
+            if line.service_catalogue_id
+            else line.model_copy(update={"service_catalogue_id": service_catalogue_id})
+            for line in lines
+        ]
 
     # Apply tax to each positive line
     lines = _apply_tax(lines, deps, currency)

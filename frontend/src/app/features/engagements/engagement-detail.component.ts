@@ -679,6 +679,7 @@ export class EngagementDetailComponent implements OnInit {
         quantity: String(entry.hours),
         unit_price: this.rateFor(entry),
         time_entry_id: entry.id,
+        service_catalogue_id: eng.service_catalogue_id ?? null,
       });
     }
     if (this.includeExtra()) {
@@ -686,6 +687,7 @@ export class EngagementDetailComponent implements OnInit {
         description: String(this.extraDescription() ?? '').trim(),
         quantity: String(this.extraQty() ?? '0'),
         unit_price: String(this.extraUnitPrice() ?? '0'),
+        service_catalogue_id: eng.service_catalogue_id ?? null,
       });
     }
 

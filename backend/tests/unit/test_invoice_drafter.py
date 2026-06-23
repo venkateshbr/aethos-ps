@@ -33,7 +33,11 @@ def _make_deps(db: MagicMock) -> AgentDeps:
     return AgentDeps(tenant_id="tenant-1", user_id="user-1", db=db)
 
 
-def _engagement(billing_arrangement: str, billing_terms: dict | None = None) -> dict:
+def _engagement(
+    billing_arrangement: str,
+    billing_terms: dict | None = None,
+    service_catalogue_id: str | None = None,
+) -> dict:
     return {
         "id": "eng-1",
         "name": "Test Engagement",
@@ -41,6 +45,7 @@ def _engagement(billing_arrangement: str, billing_terms: dict | None = None) -> 
         "currency": "USD",
         "billing_arrangement": billing_arrangement,
         "rate_card_id": None,
+        "service_catalogue_id": service_catalogue_id,
         "engagement_billing_terms": billing_terms or {},
         "clients": {"id": "client-1", "name": "ACME Corp"},
     }
@@ -97,6 +102,23 @@ def test_draft_fixed_fee_returns_correct_amount() -> None:
     assert draft.subtotal == Decimal("5000.00")
     assert draft.tax_total == Decimal("0")
     assert draft.total == Decimal("5000.00")
+
+
+def test_draft_fixed_fee_carries_service_catalogue_id() -> None:
+    """Engagement service catalogue linkage is preserved on draft invoice lines."""
+    db = MagicMock()
+    eng = _engagement(
+        "fixed_fee",
+        {"fixed_fee_amount": "5000.00"},
+        service_catalogue_id="svc-001",
+    )
+    _set_engagement_mock(db, eng)
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].service_catalogue_id == "svc-001"
 
 
 # ---------------------------------------------------------------------------

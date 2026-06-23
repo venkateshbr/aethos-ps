@@ -60,6 +60,7 @@ def _make_invoice_draft(engagement_id: str = "eng-001") -> MagicMock:
                 quantity=Decimal("1"),
                 unit_price=Decimal("3000.00"),
                 amount=Decimal("3000.00"),
+                service_catalogue_id="svc-001",
             )
         ],
         subtotal=Decimal("3000.00"),
@@ -125,6 +126,8 @@ def test_approve_billing_run_creates_invoice_for_each_draft() -> None:
 
     # create_invoice must have been called once per engagement
     assert mock_invoice_svc.create_invoice.call_count == 2
+    first_invoice = mock_invoice_svc.create_invoice.call_args_list[0][0][0]
+    assert first_invoice.lines[0].service_catalogue_id == "svc-001"
 
 
 # ---------------------------------------------------------------------------
