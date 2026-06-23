@@ -402,6 +402,45 @@ export interface CashFlowReport {
   generated_at: string;
 }
 
+export interface StatutoryTaxCurrencyBucket {
+  currency: string;
+  output_tax_collected: string;
+  input_tax_recoverable: string;
+  net_tax_payable: string;
+}
+
+export interface StatutoryTaxSummary {
+  tax_label: string;
+  tax_authority_label: string;
+  base_currency: string;
+  transaction_currency_buckets: StatutoryTaxCurrencyBucket[];
+  ledger_output_tax_payable_balance: string;
+  ledger_input_tax_recoverable_balance: string;
+  ledger_net_tax_payable: string;
+}
+
+export interface StatutoryReportingPack {
+  period_start: string;
+  period_end: string;
+  as_of_period: string;
+  country: string;
+  market: string;
+  base_currency: string;
+  locale: string;
+  timezone: string;
+  tax_label: string;
+  tax_authority_label: string;
+  tax_collection_model: string;
+  reporting_periods: string[];
+  trial_balance: TrialBalanceReport;
+  balance_sheet: BalanceSheetReport;
+  income_statement: IncomeStatementReport;
+  cash_flow: CashFlowReport;
+  retained_earnings_roll_forward: RetainedEarningsRollForwardReport;
+  tax_summary: StatutoryTaxSummary;
+  generated_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private http = inject(HttpClient);
@@ -492,4 +531,9 @@ export class ReportsService {
     const params = period ? `?period_start=${period}&period_end=${period}` : '';
     return this.http.get<CashFlowReport>(`${this.base}/cash-flow${params}`);
   };
+
+  getStatutoryPack = (period: string): Observable<StatutoryReportingPack> =>
+    this.http.get<StatutoryReportingPack>(
+      `${this.base}/statutory-pack?period_start=${period}&period_end=${period}`,
+    );
 }

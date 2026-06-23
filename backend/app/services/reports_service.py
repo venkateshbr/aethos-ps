@@ -31,6 +31,7 @@ Report methods:
 
 from __future__ import annotations
 
+import calendar
 import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -43,14 +44,19 @@ from app.models.reports import (
     FinancialStatementLine,
     IncomeStatementReport,
     RetainedEarningsRollForwardReport,
+    StatutoryReportingPack,
+    StatutoryTaxCurrencyBucket,
+    StatutoryTaxSummary,
     TrialBalanceLine,
     TrialBalanceReport,
 )
+from app.services.localization_service import get_market_profile
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 _FINAL_INVOICE_STATUSES = ["approved", "sent", "paid", "overdue"]
+_FINAL_BILL_STATUSES = ["approved", "partially_paid", "paid"]
 _RETAINER_BILLING_MODELS = {"retainer", "retainer_draw"}
 _DEFAULT_WEEKLY_CAPACITY_HOURS = Decimal("40")
 _TARGET_GROSS_MARGIN_PCT = Decimal("40")
@@ -724,6 +730,49 @@ class ReportsService:
             generated_at=datetime.now(tz=UTC),
         )
 
+    def statutory_reporting_pack(
+        self,
+        *,
+        period_start: str,
+        period_end: str | None = None,
+        tenant_metadata: dict | None = None,
+    ) -> StatutoryReportingPack:
+        """Return a composed statutory pack for finance review/export."""
+        period_end = period_end or period_start
+        context = _statutory_context(tenant_metadata)
+        trial_balance = self.trial_balance(as_of_period=period_end)
+        return StatutoryReportingPack(
+            period_start=period_start,
+            period_end=period_end,
+            as_of_period=period_end,
+            country=context["country"],
+            market=context["market"],
+            base_currency=context["base_currency"],
+            locale=context["locale"],
+            timezone=context["timezone"],
+            tax_label=context["tax_label"],
+            tax_authority_label=context["tax_authority_label"],
+            tax_collection_model=context["tax_collection_model"],
+            reporting_periods=list(context["reporting_periods"]),
+            trial_balance=trial_balance,
+            balance_sheet=self.balance_sheet(as_of_period=period_end),
+            income_statement=self.income_statement(
+                period_start=period_start,
+                period_end=period_end,
+            ),
+            cash_flow=self.cash_flow(period_start=period_start, period_end=period_end),
+            retained_earnings_roll_forward=self.retained_earnings_roll_forward(
+                period=period_end,
+            ),
+            tax_summary=self._statutory_tax_summary(
+                period_start=period_start,
+                period_end=period_end,
+                trial_balance=trial_balance,
+                context=context,
+            ),
+            generated_at=datetime.now(tz=UTC),
+        )
+
     def _ledger_account_totals(
         self,
         *,
@@ -814,6 +863,79 @@ class ReportsService:
             if _is_cash_account_by_code_name(code, name):
                 total += totals["DR"] - totals["CR"]
         return total
+
+    def _statutory_tax_summary(
+        self,
+        *,
+        period_start: str,
+        period_end: str,
+        trial_balance: TrialBalanceReport,
+        context: dict,
+    ) -> StatutoryTaxSummary:
+        start_date, end_date = _period_date_bounds(period_start, period_end)
+        output_by_currency = self._document_tax_totals_by_currency(
+            table_name="invoices",
+            statuses=_FINAL_INVOICE_STATUSES,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        input_by_currency = self._document_tax_totals_by_currency(
+            table_name="bills",
+            statuses=_FINAL_BILL_STATUSES,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        currencies = sorted(set(output_by_currency) | set(input_by_currency))
+        buckets = [
+            StatutoryTaxCurrencyBucket(
+                currency=currency,
+                output_tax_collected=serialise_money(output_by_currency.get(currency, 0)),
+                input_tax_recoverable=serialise_money(input_by_currency.get(currency, 0)),
+                net_tax_payable=serialise_money(
+                    output_by_currency.get(currency, Decimal("0"))
+                    - input_by_currency.get(currency, Decimal("0"))
+                ),
+            )
+            for currency in currencies
+        ]
+        output_balance, input_balance = _ledger_tax_balances(trial_balance)
+        return StatutoryTaxSummary(
+            tax_label=str(context["tax_label"]),
+            tax_authority_label=str(context["tax_authority_label"]),
+            base_currency=str(context["base_currency"]),
+            transaction_currency_buckets=buckets,
+            ledger_output_tax_payable_balance=serialise_money(output_balance),
+            ledger_input_tax_recoverable_balance=serialise_money(input_balance),
+            ledger_net_tax_payable=serialise_money(output_balance - input_balance),
+        )
+
+    def _document_tax_totals_by_currency(
+        self,
+        *,
+        table_name: str,
+        statuses: list[str],
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, Decimal]:
+        rows = (
+            self.db.table(table_name)
+            .select("currency, tax_total, status, issue_date")
+            .eq("tenant_id", self.tenant_id)
+            .in_("status", statuses)
+            .gte("issue_date", start_date.isoformat())
+            .lte("issue_date", end_date.isoformat())
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        totals: dict[str, Decimal] = {}
+        for row in rows:
+            currency = str(row.get("currency") or "USD")
+            totals[currency] = totals.get(currency, Decimal("0")) + Decimal(
+                str(row.get("tax_total") or "0")
+            )
+        return totals
 
     # ------------------------------------------------------------------
     # 11. Revenue by Service Line
@@ -3785,6 +3907,44 @@ def _previous_period_for(period: str) -> str:
     if month == 1:
         return f"{year - 1:04d}-12"
     return f"{year:04d}-{month - 1:02d}"
+
+
+def _period_date_bounds(period_start: str, period_end: str) -> tuple[date, date]:
+    start_year = int(period_start[:4])
+    start_month = int(period_start[5:7])
+    end_year = int(period_end[:4])
+    end_month = int(period_end[5:7])
+    last_day = calendar.monthrange(end_year, end_month)[1]
+    return date(start_year, start_month, 1), date(end_year, end_month, last_day)
+
+
+def _statutory_context(tenant_metadata: dict | None) -> dict[str, object]:
+    metadata = tenant_metadata or {}
+    country = str(metadata.get("country") or "US").upper()
+    profile = get_market_profile(country) or get_market_profile("US")
+    assert profile is not None
+    return {
+        "country": profile.country,
+        "market": profile.market,
+        "base_currency": str(metadata.get("base_currency") or profile.base_currency),
+        "locale": str(metadata.get("locale") or profile.locale),
+        "timezone": str(metadata.get("timezone") or profile.timezone),
+        "tax_label": profile.tax_label,
+        "tax_authority_label": profile.tax_authority_label,
+        "tax_collection_model": profile.tax_collection_model,
+        "reporting_periods": profile.reporting_periods,
+    }
+
+
+def _ledger_tax_balances(trial_balance: TrialBalanceReport) -> tuple[Decimal, Decimal]:
+    output_tax_payable = Decimal("0")
+    input_tax_recoverable = Decimal("0")
+    for line in trial_balance.lines:
+        if line.account_code == "2300":
+            output_tax_payable += -Decimal(line.net)
+        elif line.account_code == "1300":
+            input_tax_recoverable += Decimal(line.net)
+    return output_tax_payable, input_tax_recoverable
 
 
 def _append_statement_line(

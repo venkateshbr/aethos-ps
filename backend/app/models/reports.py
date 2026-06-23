@@ -108,3 +108,48 @@ class CashFlowReport(BaseModel):
     beginning_cash: str
     ending_cash: str
     generated_at: datetime
+
+
+class StatutoryTaxCurrencyBucket(BaseModel):
+    """Tax summary bucket in the source transaction currency."""
+
+    currency: str
+    output_tax_collected: str
+    input_tax_recoverable: str
+    net_tax_payable: str
+
+
+class StatutoryTaxSummary(BaseModel):
+    """Tax control totals for a statutory reporting pack."""
+
+    tax_label: str
+    tax_authority_label: str
+    base_currency: str
+    transaction_currency_buckets: list[StatutoryTaxCurrencyBucket]
+    ledger_output_tax_payable_balance: str
+    ledger_input_tax_recoverable_balance: str
+    ledger_net_tax_payable: str
+
+
+class StatutoryReportingPack(BaseModel):
+    """Composed statutory reporting pack for a selected accounting period range."""
+
+    period_start: str
+    period_end: str
+    as_of_period: str
+    country: str
+    market: str
+    base_currency: str
+    locale: str
+    timezone: str
+    tax_label: str
+    tax_authority_label: str
+    tax_collection_model: str
+    reporting_periods: list[str]
+    trial_balance: TrialBalanceReport
+    balance_sheet: BalanceSheetReport
+    income_statement: IncomeStatementReport
+    cash_flow: CashFlowReport
+    retained_earnings_roll_forward: RetainedEarningsRollForwardReport
+    tax_summary: StatutoryTaxSummary
+    generated_at: datetime

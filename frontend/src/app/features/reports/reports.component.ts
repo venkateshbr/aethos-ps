@@ -30,6 +30,7 @@ import {
   CashFlowReport,
   IncomeStatementReport,
   RetainedEarningsRollForwardReport,
+  StatutoryReportingPack,
 } from '../../core/services/reports.service';
 
 @Component({
@@ -978,6 +979,105 @@ import {
           </div>
         </mat-tab>
 
+        <!-- ── Statutory Pack ────────────────────────────────────────────── -->
+        <mat-tab label="Statutory Pack">
+          <div class="pt-4 space-y-4">
+            <ng-container *ngTemplateOutlet="statementPeriodPicker" />
+
+            @defer (on viewport) {
+              @if (statutoryPackLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (statutoryPackError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Statutory Pack', retry: loadStatutoryPack.bind(this) }" />
+              } @else if (!statutoryPackData()) {
+                <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'statutory pack data' }" />
+              } @else {
+                <div class="grid gap-4 md:grid-cols-4">
+                  <div class="rounded-lg border border-border-default bg-surface-raised p-4">
+                    <p class="text-xs uppercase tracking-wide text-text-muted">Market</p>
+                    <p class="mt-1 text-xl font-semibold text-text-primary">{{ statutoryPackData()!.market }}</p>
+                  </div>
+                  <div class="rounded-lg border border-border-default bg-surface-raised p-4">
+                    <p class="text-xs uppercase tracking-wide text-text-muted">Base Currency</p>
+                    <p class="mt-1 text-xl font-semibold text-text-primary">{{ statutoryPackData()!.base_currency }}</p>
+                  </div>
+                  <div class="rounded-lg border border-border-default bg-surface-raised p-4">
+                    <p class="text-xs uppercase tracking-wide text-text-muted">Tax</p>
+                    <p class="mt-1 text-xl font-semibold text-text-primary">{{ statutoryPackData()!.tax_label }}</p>
+                  </div>
+                  <div class="rounded-lg border border-border-default bg-surface-raised p-4">
+                    <p class="text-xs uppercase tracking-wide text-text-muted">Authority</p>
+                    <p class="mt-1 text-xl font-semibold text-text-primary">{{ statutoryPackData()!.tax_authority_label }}</p>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-4">
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Net Income', value: statutoryPackData()!.income_statement.net_income }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Ending Cash', value: statutoryPackData()!.cash_flow.ending_cash }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Ending RE', value: statutoryPackData()!.retained_earnings_roll_forward.ending_retained_earnings }" />
+                  <ng-container *ngTemplateOutlet="statementMetric; context: { label: 'Tax Payable', value: statutoryPackData()!.tax_summary.ledger_net_tax_payable }" />
+                </div>
+
+                <section class="rounded-lg border border-border-default bg-surface-raised">
+                  <div class="border-b border-border-subtle px-4 py-3">
+                    <h2 class="text-sm font-semibold text-text-primary">Tax controls</h2>
+                  </div>
+                  <div class="grid divide-y divide-border-subtle p-4 md:grid-cols-3 md:divide-x md:divide-y-0">
+                    <div class="pb-3 md:pb-0 md:pr-4">
+                      <p class="text-xs uppercase tracking-wide text-text-muted">Output Tax</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_output_tax_payable_balance | money }}</p>
+                    </div>
+                    <div class="py-3 md:px-4 md:py-0">
+                      <p class="text-xs uppercase tracking-wide text-text-muted">Input Tax</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_input_tax_recoverable_balance | money }}</p>
+                    </div>
+                    <div class="pt-3 md:pl-4 md:pt-0">
+                      <p class="text-xs uppercase tracking-wide text-text-muted">Net Tax</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_net_tax_payable | money }}</p>
+                    </div>
+                  </div>
+                  <div class="overflow-x-auto border-t border-border-subtle">
+                    <table class="w-full text-sm" aria-label="Statutory tax currency buckets">
+                      <thead class="bg-surface-base/50 text-xs uppercase tracking-wide text-text-muted">
+                        <tr>
+                          <th scope="col" class="px-4 py-3 text-left">Currency</th>
+                          <th scope="col" class="px-4 py-3 text-right">Output Tax</th>
+                          <th scope="col" class="px-4 py-3 text-right">Input Tax</th>
+                          <th scope="col" class="px-4 py-3 text-right">Net Tax</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-border-subtle">
+                        @for (bucket of statutoryPackData()!.tax_summary.transaction_currency_buckets; track bucket.currency) {
+                          <tr>
+                            <td class="px-4 py-2.5 text-text-secondary">{{ bucket.currency }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.output_tax_collected | money }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.input_tax_recoverable | money }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.net_tax_payable | money }}</td>
+                          </tr>
+                        } @empty {
+                          <tr>
+                            <td colspan="4" class="px-4 py-4 text-sm text-text-muted">No tax activity</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <div class="grid gap-4 lg:grid-cols-3">
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Assets', rows: statutoryPackData()!.balance_sheet.asset_lines, totalLabel: 'Total Assets', total: statutoryPackData()!.balance_sheet.total_assets }" />
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Liabilities', rows: statutoryPackData()!.balance_sheet.liability_lines, totalLabel: 'Total Liabilities', total: statutoryPackData()!.balance_sheet.total_liabilities }" />
+                  <ng-container *ngTemplateOutlet="statementSection; context: { title: 'Equity', rows: statutoryPackData()!.balance_sheet.equity_lines, totalLabel: 'Total Equity', total: statutoryPackData()!.balance_sheet.total_equity }" />
+                </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
         <!-- ── Trial Balance ──────────────────────────────────────────────── -->
         <mat-tab label="Trial Balance">
           <div class="pt-4">
@@ -1364,6 +1464,9 @@ export class ReportsComponent implements OnInit {
   cashFlowLoading = signal(false);
   cashFlowError = signal(false);
   cashFlowData = signal<CashFlowReport | null>(null);
+  statutoryPackLoading = signal(false);
+  statutoryPackError = signal(false);
+  statutoryPackData = signal<StatutoryReportingPack | null>(null);
   statementPeriod = (() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1597,6 +1700,7 @@ export class ReportsComponent implements OnInit {
     this.loadRetainedEarnings();
     this.loadIncomeStatement();
     this.loadCashFlow();
+    this.loadStatutoryPack();
   }
 
   loadBalanceSheet(): void {
@@ -1632,6 +1736,15 @@ export class ReportsComponent implements OnInit {
     this.svc.getCashFlow(this.statementPeriod || undefined).subscribe({
       next: data => { this.cashFlowData.set(data); this.cashFlowLoading.set(false); },
       error: () => { this.cashFlowError.set(true); this.cashFlowLoading.set(false); },
+    });
+  }
+
+  loadStatutoryPack(): void {
+    this.statutoryPackLoading.set(true);
+    this.statutoryPackError.set(false);
+    this.svc.getStatutoryPack(this.statementPeriod).subscribe({
+      next: data => { this.statutoryPackData.set(data); this.statutoryPackLoading.set(false); },
+      error: () => { this.statutoryPackError.set(true); this.statutoryPackLoading.set(false); },
     });
   }
 

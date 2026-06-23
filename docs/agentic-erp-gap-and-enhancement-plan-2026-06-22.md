@@ -37,7 +37,7 @@ Done:
 - T&M invoice drafting now honors assignment-level employee override rates and existing client-specific rate-card override rows before falling back to base role rates.
 - Financial close now has persisted close tasks by period, API/UI bootstrap and completion controls, and period lock blocks incomplete bootstrapped tasks.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
-- R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
+- R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, `/api/v1/reports/cash-flow`, retained-earnings roll-forward, and `/api/v1/reports/statutory-pack`, plus Reports UI tabs backed by posted journal lines in base currency and tax-control buckets in transaction currency.
 - Financial-event audit log, authenticated read RLS reduction, document preflight PII/prompt-injection handling, localization profiles, and integration catalog are implemented under Phase 5.
 
 Still open:
@@ -162,10 +162,10 @@ Present:
 
 Gaps / status:
 - Done 2026-06-23: manual journal post regression is fixed; the service uses the current `reference_id` schema path.
-- Done/partial 2026-06-23: balance sheet, income statement, direct cash-flow, and retained-earnings roll-forward reports are implemented from posted journal lines with UI tabs. Statutory reporting packs remain open.
+- Done/partial 2026-06-23: balance sheet, income statement, direct cash-flow, retained-earnings roll-forward, and statutory reporting pack reports are implemented from posted journal lines with UI tabs. Jurisdiction-specific e-filing/forms remain future compliance depth.
 - Done/monitor 2026-06-23: close status, close readiness, close package, reconciliation services, WIP accrual proposal, deferred revenue release proposal endpoints, and persisted close task workflow exist; period lock now blocks incomplete bootstrapped close tasks, unmatched bank transactions, and non-zero suspense balances.
 - Done/partial 2026-06-23: automated WIP accrual, employee reimbursement expense accrual, deferred revenue release, milestone recognition, percentage-of-completion recognition, prepaid amortization, and recurring-journal proposal agents exist, with close-panel proposal actions. Recurring journal templates are persisted with UI/API setup and duplicate-suppressed HITL proposals. Scheduled close preparation now runs as a monthly `agent_workflow_runs` workflow that bootstraps close tasks, invokes proposal agents, and stops at human review before posting/locking.
-- FX is partially implemented but not consistently surfaced in reports as transaction currency plus base currency.
+- Done/partial 2026-06-23: statutory pack tax controls now surface transaction-currency tax buckets alongside base-ledger tax balances. Broader FX presentation across every operational report remains future polish.
 - Done/partial 2026-06-23: period close is now guided through close status/readiness/package endpoints, a persisted close-task checklist, close-panel proposal actions, a scheduled monthly close-preparation worker, and period-lock guards. Auto-posting journals and auto-locking periods remain intentionally human-gated.
 
 ### Agent Platform
@@ -410,7 +410,7 @@ Priority 2:
 
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
-- R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, and bank/suspense close blockers are implemented; statutory reporting packs remain open.
+- R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, bank/suspense close blockers, and statutory reporting packs are implemented; jurisdiction-specific filing exports remain future compliance depth.
 - Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 
 ## Approval Recommendation

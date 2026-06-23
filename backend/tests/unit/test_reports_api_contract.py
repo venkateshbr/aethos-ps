@@ -89,7 +89,16 @@ class _FakeDb:
                     "status": "approved",
                     "deleted_at": None,
                 },
-            ]
+            ],
+            "tenants": [
+                {
+                    "id": TENANT_ID,
+                    "country": "GB",
+                    "base_currency": "GBP",
+                    "timezone": "Europe/London",
+                    "locale": "en-GB",
+                }
+            ],
         }
 
     def table(self, name: str) -> _Query:
@@ -270,6 +279,131 @@ def test_retained_earnings_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch
 
     assert response.status_code == 200, response.text
     assert response.json()["ending_retained_earnings"] == "1500.00"
+
+
+def test_statutory_pack_route_uses_rls_client_and_tenant_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_rls_db = _FakeDb()
+    fake_tenant_db = _FakeDb()
+
+    class _FakeReportsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            assert db is fake_rls_db
+            assert tenant_id == TENANT_ID
+
+        def statutory_reporting_pack(
+            self,
+            *,
+            period_start: str,
+            period_end: str,
+            tenant_metadata: dict[str, Any],
+        ) -> dict[str, Any]:
+            assert period_start == "2026-06"
+            assert period_end == "2026-06"
+            assert tenant_metadata["country"] == "GB"
+            assert tenant_metadata["base_currency"] == "GBP"
+            generated_at = "2026-06-23T00:00:00+00:00"
+            return {
+                "period_start": "2026-06",
+                "period_end": "2026-06",
+                "as_of_period": "2026-06",
+                "country": "GB",
+                "market": "UK",
+                "base_currency": "GBP",
+                "locale": "en-GB",
+                "timezone": "Europe/London",
+                "tax_label": "VAT",
+                "tax_authority_label": "HMRC",
+                "tax_collection_model": "vat",
+                "reporting_periods": ["monthly", "quarterly", "annual"],
+                "trial_balance": {
+                    "as_of_period": "2026-06",
+                    "lines": [],
+                    "grand_total_dr": "0.00",
+                    "grand_total_cr": "0.00",
+                    "is_balanced": True,
+                    "generated_at": generated_at,
+                },
+                "balance_sheet": {
+                    "as_of_period": "2026-06",
+                    "asset_lines": [],
+                    "liability_lines": [],
+                    "equity_lines": [],
+                    "total_assets": "0.00",
+                    "total_liabilities": "0.00",
+                    "total_equity": "0.00",
+                    "liabilities_and_equity": "0.00",
+                    "is_balanced": True,
+                    "generated_at": generated_at,
+                },
+                "income_statement": {
+                    "period_start": "2026-06",
+                    "period_end": "2026-06",
+                    "revenue_lines": [],
+                    "expense_lines": [],
+                    "total_revenue": "0.00",
+                    "total_expenses": "0.00",
+                    "net_income": "0.00",
+                    "generated_at": generated_at,
+                },
+                "cash_flow": {
+                    "period_start": "2026-06",
+                    "period_end": "2026-06",
+                    "operating_lines": [],
+                    "investing_lines": [],
+                    "financing_lines": [],
+                    "net_cash_from_operating": "0.00",
+                    "net_cash_from_investing": "0.00",
+                    "net_cash_from_financing": "0.00",
+                    "net_change_in_cash": "0.00",
+                    "beginning_cash": "0.00",
+                    "ending_cash": "0.00",
+                    "generated_at": generated_at,
+                },
+                "retained_earnings_roll_forward": {
+                    "period": "2026-06",
+                    "previous_period": "2026-05",
+                    "beginning_retained_earnings": "0.00",
+                    "current_period_net_income": "0.00",
+                    "retained_earnings_activity": "0.00",
+                    "ending_retained_earnings": "0.00",
+                    "generated_at": generated_at,
+                },
+                "tax_summary": {
+                    "tax_label": "VAT",
+                    "tax_authority_label": "HMRC",
+                    "base_currency": "GBP",
+                    "transaction_currency_buckets": [],
+                    "ledger_output_tax_payable_balance": "0.00",
+                    "ledger_input_tax_recoverable_balance": "0.00",
+                    "ledger_net_tax_payable": "0.00",
+                },
+                "generated_at": generated_at,
+            }
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.reports.ReportsService",
+        _FakeReportsService,
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_rls_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_tenant_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/statutory-pack?period_start=2026-06")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["market"] == "UK"
+    assert response.json()["tax_label"] == "VAT"
 
 
 def test_backlog_forecast_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:

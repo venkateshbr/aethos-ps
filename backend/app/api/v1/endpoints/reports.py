@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_user_rls_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.reports import (
@@ -18,6 +18,7 @@ from app.models.reports import (
     CashFlowReport,
     IncomeStatementReport,
     RetainedEarningsRollForwardReport,
+    StatutoryReportingPack,
     TrialBalanceReport,
 )
 from app.services.reports_service import ReportsService
@@ -374,6 +375,31 @@ def retained_earnings_roll_forward(
     return svc.retained_earnings_roll_forward(period=period)
 
 
+@router.get("/statutory-pack", response_model=StatutoryReportingPack)
+def statutory_pack(
+    period_start: str = Query(
+        ...,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period from (YYYY-MM).",
+    ),
+    period_end: str | None = Query(
+        None,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Accounting period to (YYYY-MM). Defaults to period_start.",
+    ),
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    tenant_db: Client = Depends(get_service_role_client),  # noqa: B008
+    _user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> StatutoryReportingPack:
+    """Composed financial statements and tax controls for statutory review."""
+    return svc.statutory_reporting_pack(
+        period_start=period_start,
+        period_end=period_end or period_start,
+        tenant_metadata=_tenant_metadata(tenant_db, tenant_id),
+    )
+
+
 @router.get("/cash-flow", response_model=CashFlowReport)
 def cash_flow(
     period_start: str | None = Query(
@@ -413,3 +439,15 @@ def get_trial_balance(
     RBAC: viewer+ (same as other read-only reports).
     """
     return svc.trial_balance(as_of_period=as_of_period)
+
+
+def _tenant_metadata(db: Client, tenant_id: str) -> dict:
+    rows = (
+        db.table("tenants")
+        .select("country, base_currency, timezone, locale")
+        .eq("id", tenant_id)
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows else {}
