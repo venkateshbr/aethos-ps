@@ -73,6 +73,49 @@ export interface CapacityRow {
   recommended_action: string;
 }
 
+export interface BacklogForecastRow {
+  engagement_id: string;
+  engagement_name: string;
+  client_id?: string | null;
+  client_name?: string | null;
+  service_line: string;
+  currency: string;
+  billing_arrangement?: string | null;
+  status?: string | null;
+  contracted_value: string;
+  contract_basis: string;
+  billed_to_date: string;
+  unbilled_wip: string;
+  recognized_backlog: string;
+  delivery_backlog: string;
+  consumed_pct: number;
+  project_count: number;
+  overdue_milestone_count: number;
+  next_milestone_due_date?: string | null;
+  latest_delivery_date?: string | null;
+  critical_project_count: number;
+  at_risk_project_count: number;
+  risk_level: 'healthy' | 'watch' | 'at_risk' | 'critical' | string;
+  recommended_action: string;
+}
+
+export interface MilestoneRiskRow {
+  milestone_id: string;
+  milestone_name: string;
+  milestone_status?: string | null;
+  project_id: string;
+  project_name: string;
+  engagement_id?: string | null;
+  engagement_name?: string | null;
+  service_line: string;
+  due_date: string;
+  days_until_due: number;
+  risk_level: 'watch' | 'at_risk' | 'critical' | string;
+  project_health_score?: number | null;
+  project_risk_level?: string | null;
+  recommended_action: string;
+}
+
 export interface ClientProfitabilityRow {
   client_id: string;
   client_name: string;
@@ -366,6 +409,12 @@ export class ReportsService {
 
   getCapacityPlanning = (): Observable<CapacityRow[]> =>
     this.http.get<CapacityRow[]>(`${this.base}/capacity-planning`);
+
+  getBacklogForecast = (): Observable<BacklogForecastRow[]> =>
+    this.http.get<BacklogForecastRow[]>(`${this.base}/backlog-forecast`);
+
+  getMilestoneRisk = (): Observable<MilestoneRiskRow[]> =>
+    this.http.get<MilestoneRiskRow[]>(`${this.base}/milestone-risk`);
 
   getClientProfitability = (clientGroupId?: string): Observable<ClientProfitabilityRow[]> =>
     this.http.get<ClientProfitabilityRow[]>(

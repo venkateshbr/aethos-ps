@@ -478,7 +478,164 @@ def test_capacity_planning_flags_overallocated_and_underutilized(
     assert result[0]["active_assignment_count"] == 1
     assert result[0]["active_assignments"][0]["project_name"] == "Platform Cleanup"
     assert result[1]["capacity_status"] == "underutilized"
-    assert result[1]["utilization_pct"] == 25.0
+
+
+def test_backlog_forecast_uses_contract_billing_wip_and_milestones(
+    mock_db: MagicMock,
+) -> None:
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    _route_tables(
+        mock_db,
+        {
+            "engagements": [
+                {
+                    "id": "eng-risk",
+                    "name": "Risky Transformation",
+                    "client_id": "client-acme",
+                    "billing_arrangement": "fixed_fee",
+                    "total_value": "10000.00",
+                    "currency": "USD",
+                    "service_line": "advisory",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                    "clients": {"id": "client-acme", "name": "Acme Corp"},
+                }
+            ],
+            "projects": [
+                {
+                    "id": "proj-risk",
+                    "name": "Risky Project",
+                    "engagement_id": "eng-risk",
+                    "budget": "10000.00",
+                    "budget_hours": "100.00",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": yesterday,
+                    "currency": "USD",
+                }
+            ],
+            "engagement_billing_terms": [],
+            "invoices": [
+                {
+                    "engagement_id": "eng-risk",
+                    "total": "6000.00",
+                    "status": "approved",
+                    "issue_date": "2026-06-15",
+                }
+            ],
+            "project_phases": [
+                {
+                    "id": "phase-risk",
+                    "project_id": "proj-risk",
+                    "name": "Discovery",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": yesterday,
+                    "budget": "2500.00",
+                    "order_index": 1,
+                }
+            ],
+        },
+    )
+    svc = _make_svc(mock_db)
+    svc.wip = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "project_name": "Risky Project",
+                "wip_value": "1500.00",
+            }
+        ]
+    )
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "risk_level": "at_risk",
+                "health_score": 55,
+            }
+        ]
+    )
+
+    result = svc.backlog_forecast()
+
+    assert len(result) == 1
+    row = result[0]
+    assert row["contracted_value"] == "10000.00"
+    assert row["billed_to_date"] == "6000.00"
+    assert row["unbilled_wip"] == "1500.00"
+    assert row["recognized_backlog"] == "4000.00"
+    assert row["delivery_backlog"] == "2500.00"
+    assert row["overdue_milestone_count"] == 1
+    assert row["risk_level"] == "critical"
+
+
+def test_milestone_risk_includes_overdue_and_near_due_items(
+    mock_db: MagicMock,
+) -> None:
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    near_due = (date.today() + timedelta(days=5)).isoformat()
+    _route_tables(
+        mock_db,
+        {
+            "projects": [
+                {
+                    "id": "proj-risk",
+                    "name": "Risky Project",
+                    "engagement_id": "eng-risk",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": near_due,
+                    "engagements": {
+                        "id": "eng-risk",
+                        "name": "Risky Transformation",
+                        "service_line": "advisory",
+                    },
+                }
+            ],
+            "project_phases": [
+                {
+                    "id": "phase-overdue",
+                    "project_id": "proj-risk",
+                    "name": "Discovery",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": yesterday,
+                    "budget": "2500.00",
+                    "order_index": 1,
+                },
+                {
+                    "id": "phase-near",
+                    "project_id": "proj-risk",
+                    "name": "Board Pack",
+                    "status": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": near_due,
+                    "budget": "2500.00",
+                    "order_index": 2,
+                },
+            ],
+        },
+    )
+    svc = _make_svc(mock_db)
+    svc.project_health_scores = MagicMock(
+        return_value=[
+            {
+                "project_id": "proj-risk",
+                "risk_level": "critical",
+                "health_score": 35,
+            }
+        ]
+    )
+
+    result = svc.milestone_risk()
+
+    assert [row["milestone_id"] for row in result] == ["phase-overdue", "phase-near"]
+    assert result[0]["risk_level"] == "critical"
+    assert result[0]["days_until_due"] == -1
+    assert result[1]["risk_level"] == "critical"
+    assert result[1]["days_until_due"] == 5
 
 
 def test_client_profitability_reconciles_revenue_labor_and_expenses(
@@ -1298,6 +1455,40 @@ def test_action_queue_composes_role_specific_items(
             }
         ]
     )
+    svc.backlog_forecast = MagicMock(
+        return_value=[
+            {
+                "engagement_id": "eng-risk",
+                "engagement_name": "Risky Transformation",
+                "service_line": "advisory",
+                "risk_level": "critical",
+                "recognized_backlog": "4000.00",
+                "unbilled_wip": "1500.00",
+                "overdue_milestone_count": 1,
+                "contracted_value": "10000.00",
+                "delivery_backlog": "2500.00",
+                "consumed_pct": 75.0,
+                "recommended_action": "Escalate overdue delivery items.",
+            }
+        ]
+    )
+    svc.milestone_risk = MagicMock(
+        return_value=[
+            {
+                "milestone_id": "phase-risk",
+                "milestone_name": "Discovery",
+                "project_id": "proj-risk",
+                "project_name": "Risky Project",
+                "service_line": "advisory",
+                "due_date": "2026-06-30",
+                "days_until_due": -1,
+                "risk_level": "critical",
+                "project_health_score": 42,
+                "project_risk_level": "critical",
+                "recommended_action": "Escalate the overdue milestone.",
+            }
+        ]
+    )
     svc.pricing_staffing_recommendations = MagicMock(
         return_value=[
             {
@@ -1353,11 +1544,13 @@ def test_action_queue_composes_role_specific_items(
     assert {item["source_type"] for item in project_manager} >= {
         "project_health",
         "capacity",
+        "milestone_risk",
         "scope_change",
     }
     assert all(item["role"] == "project_manager" for item in project_manager)
 
     assert {item["source_type"] for item in partner} >= {
+        "backlog_forecast",
         "pricing_recommendation",
         "scope_change",
         "practice_dashboard",

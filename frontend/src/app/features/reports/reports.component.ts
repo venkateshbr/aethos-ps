@@ -11,6 +11,8 @@ import {
   PnlRow,
   ProjectHealthRow,
   CapacityRow,
+  BacklogForecastRow,
+  MilestoneRiskRow,
   ClientProfitabilityRow,
   ClientGroupProfitabilityRow,
   SegmentProfitabilityRow,
@@ -250,6 +252,100 @@ import {
                     <tr mat-row *matRowDef="let row; columns: capacityColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
                   </table>
                 </div>
+              }
+            } @placeholder {
+              <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
+            } @loading {
+              <ng-container *ngTemplateOutlet="tableSkeleton" />
+            }
+          </div>
+        </mat-tab>
+
+        <!-- Backlog Forecast -->
+        <mat-tab label="Backlog">
+          <div class="pt-4 space-y-5">
+            @defer (on viewport) {
+              @if (backlogLoading()) {
+                <ng-container *ngTemplateOutlet="tableSkeleton" />
+              } @else if (backlogError()) {
+                <ng-container *ngTemplateOutlet="errorState; context: { $implicit: 'Backlog Forecast', retry: loadBacklog.bind(this) }" />
+              } @else {
+                <section>
+                  <h2 class="mb-3 text-sm font-semibold text-text-primary">Engagement Backlog</h2>
+                  @if (backlogRows().length === 0) {
+                    <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'backlog forecast data' }" />
+                  } @else {
+                    <div class="overflow-x-auto rounded-lg border border-border-default">
+                      <table mat-table [dataSource]="backlogRows()" class="w-full bg-surface-raised">
+                        <ng-container matColumnDef="engagement_name">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Engagement</th>
+                          <td mat-cell *matCellDef="let row" class="text-sm">
+                            <div class="font-medium text-text-primary">{{ row.engagement_name }}</div>
+                            <div class="text-xs text-text-muted">{{ row.client_name ?? 'No client' }} · {{ serviceLineLabel(row.service_line) }}</div>
+                          </td>
+                        </ng-container>
+                        <ng-container matColumnDef="risk_level">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Risk</th>
+                          <td mat-cell *matCellDef="let row">
+                            <span [class]="riskChipClass(row.risk_level)">{{ labelize(row.risk_level) }}</span>
+                          </td>
+                        </ng-container>
+                        <ng-container matColumnDef="contracted_value">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Contract</th>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.contracted_value | money: row.currency }}</td>
+                        </ng-container>
+                        <ng-container matColumnDef="recognized_backlog">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Backlog</th>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.recognized_backlog | money: row.currency }}</td>
+                        </ng-container>
+                        <ng-container matColumnDef="unbilled_wip">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">WIP</th>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-secondary tabular-nums">{{ row.unbilled_wip | money: row.currency }}</td>
+                        </ng-container>
+                        <ng-container matColumnDef="next_milestone_due_date">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Next Due</th>
+                          <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary">{{ row.next_milestone_due_date ?? '—' }}</td>
+                        </ng-container>
+                        <ng-container matColumnDef="recommended_action">
+                          <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Action</th>
+                          <td mat-cell *matCellDef="let row" class="text-sm text-text-secondary">{{ row.recommended_action }}</td>
+                        </ng-container>
+                        <tr mat-header-row *matHeaderRowDef="backlogColumns" class="bg-surface-base/50"></tr>
+                        <tr mat-row *matRowDef="let row; columns: backlogColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
+                      </table>
+                    </div>
+                  }
+                </section>
+
+                <section>
+                  <h2 class="mb-3 text-sm font-semibold text-text-primary">Milestone Risk</h2>
+                  @if (milestoneRows().length === 0) {
+                    <div class="rounded-lg border border-border-default bg-surface-raised p-4 text-sm text-text-muted">
+                      No overdue or near-due milestones.
+                    </div>
+                  } @else {
+                    <div class="space-y-3">
+                      @for (row of milestoneRows(); track row.milestone_id) {
+                        <article class="rounded-lg border border-border-default bg-surface-raised p-4">
+                          <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="text-sm font-semibold text-text-primary">{{ row.milestone_name }}</h3>
+                                <span [class]="riskChipClass(row.risk_level)">{{ labelize(row.risk_level) }}</span>
+                              </div>
+                              <p class="mt-1 text-xs text-text-muted">{{ row.project_name }} · {{ serviceLineLabel(row.service_line) }}</p>
+                            </div>
+                            <div class="text-right">
+                              <p class="text-sm font-mono text-text-primary">{{ row.due_date }}</p>
+                              <p class="text-xs text-text-muted">{{ milestoneDueLabel(row.days_until_due) }}</p>
+                            </div>
+                          </div>
+                          <p class="mt-3 text-sm text-text-secondary">{{ row.recommended_action }}</p>
+                        </article>
+                      }
+                    </div>
+                  }
+                </section>
               }
             } @placeholder {
               <div><ng-container *ngTemplateOutlet="tableSkeleton" /></div>
@@ -1171,6 +1267,12 @@ export class ReportsComponent implements OnInit {
   capacityError = signal(false);
   capacityRows = signal<CapacityRow[]>([]);
 
+  // Backlog and milestones
+  backlogLoading = signal(false);
+  backlogError = signal(false);
+  backlogRows = signal<BacklogForecastRow[]>([]);
+  milestoneRows = signal<MilestoneRiskRow[]>([]);
+
   // Profitability
   clientProfitLoading = signal(false);
   clientProfitError = signal(false);
@@ -1252,6 +1354,7 @@ export class ReportsComponent implements OnInit {
   readonly pnlColumns = ['project_name', 'revenue', 'direct_cost', 'gross_margin', 'gross_margin_pct'];
   readonly healthColumns = ['project_name', 'risk_level', 'health_score', 'drivers', 'recommended_actions'];
   readonly capacityColumns = ['employee_name', 'capacity_hours', 'logged_hours', 'utilization_pct', 'capacity_status', 'recommended_action'];
+  readonly backlogColumns = ['engagement_name', 'risk_level', 'contracted_value', 'recognized_backlog', 'unbilled_wip', 'next_milestone_due_date', 'recommended_action'];
   readonly profitColumns = ['client_name', 'revenue', 'total_cost', 'gross_margin_pct', 'recommended_action'];
   readonly groupProfitColumns = ['client_group_name', 'revenue', 'gross_margin', 'gross_margin_pct', 'recommended_action'];
   readonly segmentColumns = ['segment_label', 'revenue', 'gross_margin_pct', 'client_count'];
@@ -1279,20 +1382,23 @@ export class ReportsComponent implements OnInit {
         this.loadCapacity();
         break;
       case 5:
+        this.loadBacklog();
+        break;
+      case 6:
         this.loadProfitability();
         this.loadGroupProfitability();
         this.loadSegmentProfitability();
         break;
-      case 6:
+      case 7:
         this.loadPracticeDashboard();
         break;
-      case 7:
+      case 8:
         this.loadRecommendations();
         break;
-      case 8:
+      case 9:
         this.loadActionQueue();
         break;
-      case 9:
+      case 10:
         this.loadScopeAdvisor();
         break;
     }
@@ -1340,6 +1446,27 @@ export class ReportsComponent implements OnInit {
     this.svc.getCapacityPlanning().subscribe({
       next: rows => { this.capacityRows.set(rows); this.capacityLoading.set(false); },
       error: () => { this.capacityError.set(true); this.capacityLoading.set(false); },
+    });
+  }
+
+  loadBacklog(): void {
+    this.backlogLoading.set(true);
+    this.backlogError.set(false);
+    this.svc.getBacklogForecast().subscribe({
+      next: rows => {
+        this.backlogRows.set(rows);
+        this.svc.getMilestoneRisk().subscribe({
+          next: milestoneRows => {
+            this.milestoneRows.set(milestoneRows);
+            this.backlogLoading.set(false);
+          },
+          error: () => {
+            this.backlogError.set(true);
+            this.backlogLoading.set(false);
+          },
+        });
+      },
+      error: () => { this.backlogError.set(true); this.backlogLoading.set(false); },
     });
   }
 
@@ -1573,6 +1700,14 @@ export class ReportsComponent implements OnInit {
       unclassified: 'Unclassified',
     };
     return labels[value ?? 'unclassified'] ?? this.labelize(value);
+  }
+
+  milestoneDueLabel(daysUntilDue: number): string {
+    if (daysUntilDue < 0) {
+      return `${Math.abs(daysUntilDue)} days overdue`;
+    }
+    if (daysUntilDue === 0) return 'Due today';
+    return `Due in ${daysUntilDue} days`;
   }
 
   firstText(values: string[] | null | undefined): string {

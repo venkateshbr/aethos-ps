@@ -28,6 +28,7 @@ Done:
 - Deterministic recorded replay is available through `POST /api/v1/agents/runs/{run_id}/replay` and the Settings agent-run panel; it reconstructs stored tool-call snapshots without executing tools.
 - Services-business intelligence endpoints and Angular typings now cover project health, capacity planning, client profitability, client-group profitability, segment profitability, practice dashboards, pricing/staffing recommendations, and scope-change advisor.
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
+- Backlog forecast and milestone-risk reports are available through `/api/v1/reports/backlog-forecast` and `/api/v1/reports/milestone-risk`, surfaced in the Reports Backlog tab, and feed partner/project-manager action queues.
 - Client groups have API, UI, member roles, and profitability rollups.
 - Bill payment lifecycle now includes approve, export, mark-sent, and settlement, with integrity metadata and financial-event coverage.
 - R2R financial statements now include `/api/v1/reports/balance-sheet`, `/api/v1/reports/income-statement`, and `/api/v1/reports/cash-flow`, plus Reports UI tabs backed by posted journal lines in base currency.
@@ -311,11 +312,11 @@ Acceptance:
 Goal: move beyond transaction automation into operating leverage.
 
 Work items:
-- Done/partial 2026-06-23: project health score covers budget burn, margin erosion, WIP, cap/retainer drawdown, and scope signals. Overdue milestone depth remains open.
+- Done 2026-06-23: project health score covers budget burn, margin erosion, WIP, cap/retainer drawdown, and scope signals; milestone-risk report now surfaces overdue and near-due delivery risk.
 - Done 2026-06-23: scope-change advisor using historical comparables.
 - Done 2026-06-23: pricing and staffing recommendation engine.
 - Done 2026-06-23: client profitability and segment profitability dashboards.
-- Partial 2026-06-23: capacity planning exists; backlog forecast remains open.
+- Done 2026-06-23: capacity planning and backlog forecast exist, including contract value, billed-to-date, unbilled WIP, delivery backlog, due-date risk, and recommended actions.
 - Done 2026-06-23: partner/practice dashboards for accounting, tax, COSEC, payroll, advisory.
 - Done 2026-06-23: multi-entity client group rollups.
 
@@ -403,7 +404,7 @@ Priority 2:
 Priority 3:
 - P2P workflow depth: vendor onboarding, PO/service orders, bank-native validation, sanctions/tax controls, and payment optimization.
 - R2R close management: close calendar/tasks, bank/suspense reconciliations, recurring journals, prepaid amortization, retained-earnings roll-forward, and statutory reporting packs.
-- Advanced services intelligence: backlog forecast, overdue milestone risk, personalized assignment queues, and demo-ready recommendation workflows.
+- Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
 
 ## Approval Recommendation
 

@@ -94,6 +94,24 @@ def capacity_planning(
     )
 
 
+@router.get("/backlog-forecast")
+def backlog_forecast(
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Engagement backlog forecast from contract, billing, WIP, and delivery evidence."""
+    return svc.backlog_forecast()
+
+
+@router.get("/milestone-risk")
+def milestone_risk(
+    svc: ReportsService = Depends(_service),  # noqa: B008
+    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+) -> list[dict]:
+    """Overdue and near-due project milestone risk."""
+    return svc.milestone_risk()
+
+
 @router.get("/utilization")
 def utilization(
     employee_id: str | None = Query(None, description="Filter to a single employee"),

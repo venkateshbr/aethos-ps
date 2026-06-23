@@ -227,3 +227,46 @@ def test_balance_sheet_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) ->
 
     assert response.status_code == 200, response.text
     assert response.json()["is_balanced"] is True
+
+
+def test_backlog_forecast_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = _FakeDb()
+
+    class _FakeReportsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            assert db is fake_db
+            assert tenant_id == TENANT_ID
+
+        def backlog_forecast(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "engagement_id": "eng-risk",
+                    "engagement_name": "Risky Transformation",
+                    "client_name": "Acme Corp",
+                    "contracted_value": "10000.00",
+                    "recognized_backlog": "4000.00",
+                    "risk_level": "critical",
+                }
+            ]
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.reports.ReportsService",
+        _FakeReportsService,
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/backlog-forecast")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["risk_level"] == "critical"

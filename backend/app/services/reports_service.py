@@ -23,8 +23,10 @@ Report methods:
   17. practice_dashboard
   18. project_health_scores
   19. capacity_planning
-  20. pricing_staffing_recommendations
-  21. scope_change_advisor
+  20. backlog_forecast
+  21. milestone_risk
+  22. pricing_staffing_recommendations
+  23. scope_change_advisor
 """
 
 from __future__ import annotations
@@ -55,6 +57,8 @@ _SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"
 _CASH_ACCOUNT_CODES = {"1100"}
 _CASH_ACCOUNT_KEYWORDS = {"bank", "cash"}
 _OPERATING_WORKING_CAPITAL_PREFIXES = ("12", "13", "15", "20", "21", "23")
+_ACTIVE_DELIVERY_STATUSES = ["planning", "active", "on_hold"]
+_CLOSED_DELIVERY_STATUSES = {"completed", "cancelled"}
 _ACTION_QUEUE_ROLES = {
     "all",
     "partner",
@@ -1938,6 +1942,65 @@ class ReportsService:
                 )
             )
 
+        for row in self.backlog_forecast():
+            risk_level = str(row.get("risk_level") or "healthy")
+            if risk_level == "healthy":
+                continue
+            items.append(
+                _action_queue_item(
+                    role="partner",
+                    source_type="backlog_forecast",
+                    priority="critical" if risk_level == "critical" else "high",
+                    entity_type="engagement",
+                    entity_id=str(row["engagement_id"]),
+                    entity_name=str(row.get("engagement_name") or row["engagement_id"]),
+                    summary=f"Backlog risk is {risk_level.replace('_', ' ')}.",
+                    recommended_action=str(row.get("recommended_action") or ""),
+                    evidence=[
+                        f"Recognized backlog: {row.get('recognized_backlog')}.",
+                        f"Unbilled WIP: {row.get('unbilled_wip')}.",
+                        f"Overdue milestones: {row.get('overdue_milestone_count')}.",
+                    ],
+                    metrics={
+                        "contracted_value": row.get("contracted_value"),
+                        "recognized_backlog": row.get("recognized_backlog"),
+                        "delivery_backlog": row.get("delivery_backlog"),
+                        "consumed_pct": row.get("consumed_pct"),
+                    },
+                    route_hint="/app/reports",
+                    service_line=str(row.get("service_line") or "unclassified"),
+                )
+            )
+
+        for row in self.milestone_risk():
+            items.append(
+                _action_queue_item(
+                    role="project_manager",
+                    source_type="milestone_risk",
+                    priority=(
+                        "critical"
+                        if row.get("risk_level") == "critical"
+                        else "high"
+                    ),
+                    entity_type="project",
+                    entity_id=str(row["project_id"]),
+                    entity_name=str(row.get("project_name") or row["project_id"]),
+                    summary=f"{row.get('milestone_name')} is due {row.get('due_date')}.",
+                    recommended_action=str(row.get("recommended_action") or ""),
+                    evidence=[
+                        f"Days until due: {row.get('days_until_due')}.",
+                        f"Project risk: {row.get('project_risk_level') or 'unknown'}.",
+                    ],
+                    metrics={
+                        "days_until_due": row.get("days_until_due"),
+                        "project_health_score": row.get("project_health_score"),
+                        "project_risk_level": row.get("project_risk_level"),
+                    },
+                    route_hint=f"/app/projects/{row['project_id']}",
+                    service_line=str(row.get("service_line") or "unclassified"),
+                )
+            )
+
         for row in self.pricing_staffing_recommendations(
             period_start=period_start,
             period_end=period_end,
@@ -2593,7 +2656,7 @@ class ReportsService:
         rows = (
             self.db.table("engagement_billing_terms")
             .select(
-                "engagement_id, cap_amount, retainer_floor, "
+                "engagement_id, fixed_fee_amount, cap_amount, retainer_floor, "
                 "retainer_monthly_amount, milestone_total"
             )
             .eq("tenant_id", self.tenant_id)
@@ -3066,6 +3129,245 @@ class ReportsService:
             )
         return grouped
 
+    # ------------------------------------------------------------------
+    # 13. Backlog Forecast
+    # ------------------------------------------------------------------
+
+    def backlog_forecast(self) -> list[dict]:
+        """Forecast remaining commercial backlog from current ERP evidence."""
+        engagements = (
+            self.db.table("engagements")
+            .select(
+                "id, name, client_id, billing_arrangement, total_value, currency, "
+                "service_line, status, start_date, end_date, "
+                "clients!client_id(id, name)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("status", _ACTIVE_DELIVERY_STATUSES)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        if not engagements:
+            return []
+
+        engagement_ids = {str(engagement["id"]) for engagement in engagements}
+        projects_by_engagement = self._projects_by_engagement(engagement_ids)
+        project_ids = [
+            str(project["id"])
+            for projects in projects_by_engagement.values()
+            for project in projects
+        ]
+        terms_by_engagement = self._billing_terms_by_engagement(engagement_ids)
+        invoices_by_engagement = self._invoices_by_engagement(engagement_ids)
+        wip_by_project = {str(row["project_id"]): row for row in self.wip()}
+        phases_by_project = self._project_phases_by_project(project_ids)
+        health_by_project = {
+            str(row["project_id"]): row for row in self.project_health_scores()
+        }
+
+        rows: list[dict] = []
+        for engagement in engagements:
+            engagement_id = str(engagement["id"])
+            projects = projects_by_engagement.get(engagement_id, [])
+            terms = terms_by_engagement.get(engagement_id, {})
+            contracted_value, contract_basis = _contracted_value(
+                engagement,
+                terms,
+                projects,
+            )
+            billed_to_date = _sum_money(
+                invoices_by_engagement.get(engagement_id, []),
+                "total",
+            )
+            unbilled_wip = sum(
+                (_decimal(wip_by_project.get(str(project["id"]), {}).get("wip_value")) or Decimal("0"))
+                for project in projects
+            )
+            recognized_backlog = max(Decimal("0"), contracted_value - billed_to_date)
+            delivery_backlog = max(
+                Decimal("0"),
+                contracted_value - billed_to_date - unbilled_wip,
+            )
+            consumed_pct = _pct(billed_to_date + unbilled_wip, contracted_value)
+            milestone_summary = _milestone_summary(projects, phases_by_project)
+            health_summary = _health_summary(projects, health_by_project)
+            risk_level = _backlog_risk_level(
+                consumed_pct=consumed_pct,
+                overdue_count=milestone_summary["overdue_count"],
+                health_summary=health_summary,
+                delivery_backlog=delivery_backlog,
+            )
+            client = _embedded_one(engagement.get("clients"))
+
+            rows.append(
+                {
+                    "engagement_id": engagement_id,
+                    "engagement_name": str(engagement.get("name") or engagement_id),
+                    "client_id": engagement.get("client_id"),
+                    "client_name": client.get("name"),
+                    "service_line": engagement.get("service_line") or "unclassified",
+                    "currency": engagement.get("currency") or "USD",
+                    "billing_arrangement": engagement.get("billing_arrangement"),
+                    "status": engagement.get("status"),
+                    "contracted_value": serialise_money(contracted_value),
+                    "contract_basis": contract_basis,
+                    "billed_to_date": serialise_money(billed_to_date),
+                    "unbilled_wip": serialise_money(unbilled_wip),
+                    "recognized_backlog": serialise_money(recognized_backlog),
+                    "delivery_backlog": serialise_money(delivery_backlog),
+                    "consumed_pct": consumed_pct,
+                    "project_count": len(projects),
+                    "overdue_milestone_count": milestone_summary["overdue_count"],
+                    "next_milestone_due_date": milestone_summary["next_due_date"],
+                    "latest_delivery_date": milestone_summary["latest_due_date"],
+                    "critical_project_count": health_summary["critical_count"],
+                    "at_risk_project_count": health_summary["at_risk_count"],
+                    "risk_level": risk_level,
+                    "recommended_action": _backlog_action(
+                        risk_level,
+                        milestone_summary["overdue_count"],
+                        delivery_backlog,
+                    ),
+                }
+            )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                _milestone_risk_sort_rank(str(row["risk_level"])),
+                str(row.get("next_milestone_due_date") or "9999-12-31"),
+                str(row["engagement_name"]),
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 14. Milestone Risk
+    # ------------------------------------------------------------------
+
+    def milestone_risk(self) -> list[dict]:
+        """Return overdue and near-due project phase/project delivery risks."""
+        projects = (
+            self.db.table("projects")
+            .select(
+                "id, name, engagement_id, status, start_date, end_date, "
+                "engagements!engagement_id(id, name, service_line)"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("status", _ACTIVE_DELIVERY_STATUSES)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        if not projects:
+            return []
+
+        project_ids = [str(project["id"]) for project in projects]
+        phases_by_project = self._project_phases_by_project(project_ids)
+        health_by_project = {
+            str(row["project_id"]): row for row in self.project_health_scores()
+        }
+        today = date.today()
+        rows: list[dict] = []
+        for project in projects:
+            project_id = str(project["id"])
+            engagement = _embedded_one(project.get("engagements"))
+            milestones = phases_by_project.get(project_id) or [
+                {
+                    "id": f"{project_id}:delivery",
+                    "project_id": project_id,
+                    "name": "Project delivery",
+                    "status": project.get("status"),
+                    "start_date": project.get("start_date"),
+                    "end_date": project.get("end_date"),
+                    "budget": project.get("budget"),
+                }
+            ]
+            health = health_by_project.get(project_id, {})
+            for milestone in milestones:
+                if str(milestone.get("status") or "") in _CLOSED_DELIVERY_STATUSES:
+                    continue
+                due_date = _parse_date(milestone.get("end_date"))
+                if not due_date:
+                    continue
+                days_until_due = (due_date - today).days
+                if days_until_due > 30:
+                    continue
+                risk_level = _milestone_due_risk(days_until_due, health)
+                rows.append(
+                    {
+                        "milestone_id": str(milestone.get("id")),
+                        "milestone_name": str(milestone.get("name") or "Milestone"),
+                        "milestone_status": milestone.get("status"),
+                        "project_id": project_id,
+                        "project_name": str(project.get("name") or project_id),
+                        "engagement_id": engagement.get("id"),
+                        "engagement_name": engagement.get("name"),
+                        "service_line": engagement.get("service_line") or "unclassified",
+                        "due_date": due_date.isoformat(),
+                        "days_until_due": days_until_due,
+                        "risk_level": risk_level,
+                        "project_health_score": health.get("health_score"),
+                        "project_risk_level": health.get("risk_level"),
+                        "recommended_action": _milestone_action(days_until_due, risk_level),
+                    }
+                )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                _milestone_risk_sort_rank(str(row["risk_level"])),
+                int(row["days_until_due"]),
+                str(row["project_name"]),
+            ),
+        )
+
+    def _projects_by_engagement(
+        self,
+        engagement_ids: set[str],
+    ) -> dict[str, list[dict]]:
+        if not engagement_ids:
+            return {}
+        rows = (
+            self.db.table("projects")
+            .select(
+                "id, name, engagement_id, budget, budget_hours, status, "
+                "start_date, end_date, currency"
+            )
+            .eq("tenant_id", self.tenant_id)
+            .in_("engagement_id", list(engagement_ids))
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            if str(row.get("status") or "") in _CLOSED_DELIVERY_STATUSES:
+                continue
+            grouped.setdefault(str(row.get("engagement_id")), []).append(row)
+        return grouped
+
+    def _project_phases_by_project(self, project_ids: list[str]) -> dict[str, list[dict]]:
+        if not project_ids:
+            return {}
+        rows = (
+            self.db.table("project_phases")
+            .select("id, project_id, name, status, start_date, end_date, budget, order_index")
+            .eq("tenant_id", self.tenant_id)
+            .in_("project_id", project_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in sorted(rows, key=lambda item: int(item.get("order_index") or 0)):
+            grouped.setdefault(str(row.get("project_id")), []).append(row)
+        return grouped
+
 
 def _decimal(value: object) -> Decimal | None:
     if value is None or value == "":
@@ -3074,6 +3376,147 @@ def _decimal(value: object) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _contracted_value(
+    engagement: dict,
+    terms: dict,
+    projects: list[dict],
+) -> tuple[Decimal, str]:
+    engagement_total = _decimal(engagement.get("total_value"))
+    if engagement_total and engagement_total > Decimal("0"):
+        return engagement_total, "engagement_total_value"
+
+    project_budget = sum(
+        (_decimal(project.get("budget")) or Decimal("0")) for project in projects
+    )
+    if project_budget > Decimal("0"):
+        return project_budget, "project_budget"
+
+    for key, basis in (
+        ("fixed_fee_amount", "fixed_fee_amount"),
+        ("milestone_total", "milestone_total"),
+        ("cap_amount", "cap_amount"),
+        ("retainer_monthly_amount", "retainer_monthly_amount"),
+        ("retainer_floor", "retainer_floor"),
+    ):
+        amount = _decimal(terms.get(key))
+        if amount and amount > Decimal("0"):
+            return amount, basis
+
+    return Decimal("0"), "not_configured"
+
+
+def _milestone_summary(
+    projects: list[dict],
+    phases_by_project: dict[str, list[dict]],
+) -> dict[str, object]:
+    today = date.today()
+    due_dates: list[date] = []
+    overdue_count = 0
+
+    for project in projects:
+        project_id = str(project.get("id"))
+        milestones = phases_by_project.get(project_id) or [project]
+        for milestone in milestones:
+            if str(milestone.get("status") or "") in _CLOSED_DELIVERY_STATUSES:
+                continue
+            due_date = _parse_date(milestone.get("end_date"))
+            if not due_date:
+                continue
+            due_dates.append(due_date)
+            if due_date < today:
+                overdue_count += 1
+
+    future_due_dates = [due_date for due_date in due_dates if due_date >= today]
+    return {
+        "overdue_count": overdue_count,
+        "next_due_date": (
+            min(future_due_dates).isoformat()
+            if future_due_dates
+            else min(due_dates).isoformat()
+            if due_dates
+            else None
+        ),
+        "latest_due_date": max(due_dates).isoformat() if due_dates else None,
+    }
+
+
+def _health_summary(
+    projects: list[dict],
+    health_by_project: dict[str, dict],
+) -> dict[str, int]:
+    critical_count = 0
+    at_risk_count = 0
+    for project in projects:
+        health = health_by_project.get(str(project.get("id")), {})
+        risk_level = str(health.get("risk_level") or "healthy")
+        if risk_level == "critical":
+            critical_count += 1
+        elif risk_level == "at_risk":
+            at_risk_count += 1
+    return {"critical_count": critical_count, "at_risk_count": at_risk_count}
+
+
+def _backlog_risk_level(
+    *,
+    consumed_pct: float,
+    overdue_count: int,
+    health_summary: dict[str, int],
+    delivery_backlog: Decimal,
+) -> str:
+    if health_summary["critical_count"] or (
+        overdue_count and delivery_backlog > Decimal("0")
+    ):
+        return "critical"
+    if overdue_count or health_summary["at_risk_count"] or consumed_pct >= 85:
+        return "at_risk"
+    if consumed_pct >= 70:
+        return "watch"
+    return "healthy"
+
+
+def _backlog_action(
+    risk_level: str,
+    overdue_count: int,
+    delivery_backlog: Decimal,
+) -> str:
+    if risk_level == "critical" and overdue_count:
+        return "Escalate overdue delivery items before accepting more work."
+    if risk_level in {"critical", "at_risk"} and delivery_backlog > Decimal("0"):
+        return "Review remaining backlog, staffing, and next billing plan."
+    if risk_level == "watch":
+        return "Confirm forecasted delivery dates and upcoming billing coverage."
+    return "Monitor backlog against delivery and billing cadence."
+
+
+def _milestone_due_risk(days_until_due: int, health: dict) -> str:
+    if days_until_due < 0:
+        return "critical"
+    if health.get("risk_level") == "critical" and days_until_due <= 14:
+        return "critical"
+    if days_until_due <= 7 or health.get("risk_level") == "at_risk":
+        return "at_risk"
+    return "watch"
+
+
+def _milestone_action(days_until_due: int, risk_level: str) -> str:
+    if days_until_due < 0:
+        return "Escalate the overdue milestone and reset delivery/billing expectations."
+    if risk_level == "critical":
+        return "Run a project recovery review before the milestone date."
+    if risk_level == "at_risk":
+        return "Confirm owner, blockers, and client communication this week."
+    return "Monitor the milestone and confirm readiness before due date."
+
+
+def _milestone_risk_sort_rank(risk_level: str) -> int:
+    return {
+        "critical": 0,
+        "at_risk": 1,
+        "watch": 2,
+        "healthy": 3,
+    }.get(risk_level, 4)
 
 
 def _profitability_stats() -> dict[str, object]:
