@@ -604,6 +604,7 @@ class InboxService:
 def _row_to_summary(row: dict) -> HitlTaskSummary:
     return HitlTaskSummary(
         id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
         kind=row.get("kind", ""),
         priority=row.get("priority", "normal"),
         title=row.get("title", ""),
@@ -618,6 +619,7 @@ def _row_to_summary(row: dict) -> HitlTaskSummary:
 def _row_to_detail(row: dict) -> HitlTaskDetail:
     return HitlTaskDetail(
         id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
         kind=row.get("kind", ""),
         priority=row.get("priority", "normal"),
         title=row.get("title", ""),

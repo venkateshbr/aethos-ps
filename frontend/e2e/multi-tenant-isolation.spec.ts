@@ -53,6 +53,7 @@ async function signupTenant(page: Page, ctxLabel: string): Promise<SignupArtifac
   await page.locator('#firm').fill(tenantName);
   await page.locator('#email').fill(email);
   await page.locator('#password').fill(password);
+  await page.locator('#confirm_password').fill(password);
   await page.locator('#country').selectOption('US');
   await page.getByRole('button', { name: /continue to plan/i }).click();
 

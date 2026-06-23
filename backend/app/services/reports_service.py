@@ -162,18 +162,20 @@ class ReportsService:
         if project_id:
             q = q.eq("id", project_id)
         projects = q.execute().data or []
+        project_ids = [str(project["id"]) for project in projects]
+        engagement_ids = {
+            str(project["engagement_id"])
+            for project in projects
+            if project.get("engagement_id")
+        }
 
-        result: list[dict] = []
-        for proj in projects:
-            pid = proj["id"]
-            eng_id = proj.get("engagement_id") or ""
-
-            # Revenue: invoiced amounts for this project's engagement
+        revenue_by_engagement: dict[str, Decimal] = {}
+        if engagement_ids:
             inv_q = (
                 self.db.table("invoices")
-                .select("total, currency")
+                .select("engagement_id, total, currency, issue_date")
                 .eq("tenant_id", self.tenant_id)
-                .eq("engagement_id", eng_id)
+                .in_("engagement_id", list(engagement_ids))
                 .in_("status", ["approved", "sent", "paid"])
                 .is_("deleted_at", "null")
             )
@@ -181,19 +183,42 @@ class ReportsService:
                 inv_q = inv_q.gte("issue_date", period_start)
             if period_end:
                 inv_q = inv_q.lte("issue_date", period_end)
-            revenue = sum(
-                Decimal(str(i["total"])) for i in (inv_q.execute().data or [])
-            )
+            for invoice in inv_q.execute().data or []:
+                engagement_id = str(invoice.get("engagement_id") or "")
+                revenue_by_engagement[engagement_id] = revenue_by_engagement.get(
+                    engagement_id, Decimal("0")
+                ) + (Decimal(str(invoice.get("total", "0"))))
 
-            # Direct costs: project expenses
+        costs_by_project: dict[str, Decimal] = {}
+        if project_ids:
             exp_q = (
                 self.db.table("project_expenses")
-                .select("amount")
+                .select("project_id, amount, base_amount")
                 .eq("tenant_id", self.tenant_id)
-                .eq("project_id", pid)
+                .in_("project_id", project_ids)
                 .is_("deleted_at", "null")
             )
-            costs = sum(Decimal(str(e["amount"])) for e in (exp_q.execute().data or []))
+            if period_start:
+                exp_q = exp_q.gte("expense_date", period_start)
+            if period_end:
+                exp_q = exp_q.lte("expense_date", period_end)
+            for expense in exp_q.execute().data or []:
+                project_id_value = str(expense.get("project_id") or "")
+                amount = (
+                    _decimal(expense.get("base_amount"))
+                    or _decimal(expense.get("amount"))
+                    or Decimal("0")
+                )
+                costs_by_project[project_id_value] = (
+                    costs_by_project.get(project_id_value, Decimal("0")) + amount
+                )
+
+        result: list[dict] = []
+        for proj in projects:
+            pid = proj["id"]
+            eng_id = proj.get("engagement_id") or ""
+            revenue = revenue_by_engagement.get(str(eng_id), Decimal("0"))
+            costs = costs_by_project.get(str(pid), Decimal("0"))
 
             margin = revenue - costs
             margin_pct = float(margin / revenue * 100) if revenue > Decimal("0") else 0.0
@@ -287,18 +312,15 @@ class ReportsService:
         if engagement_id:
             q = q.eq("engagement_id", engagement_id)
         projects = q.execute().data or []
+        project_ids = [str(project["id"]) for project in projects]
 
-        # Cache of rate_card_id → rate to avoid repeating the same lookup across
-        # multiple projects that share an engagement / rate card.
-        rate_cache: dict[str, Decimal] = {}
-
-        result: list[dict] = []
-        for proj in projects:
+        hours_by_project: dict[str, Decimal] = {}
+        if project_ids:
             entries = (
                 self.db.table("time_entries")
-                .select("hours")
+                .select("project_id, hours")
                 .eq("tenant_id", self.tenant_id)
-                .eq("project_id", proj["id"])
+                .in_("project_id", project_ids)
                 .eq("billing_status", "unbilled")
                 .eq("billable", True)
                 .is_("deleted_at", "null")
@@ -306,31 +328,42 @@ class ReportsService:
                 .data
                 or []
             )
-            hours = sum(Decimal(str(e["hours"])) for e in entries)
+            for entry in entries:
+                project_id_value = str(entry.get("project_id") or "")
+                hours_by_project[project_id_value] = hours_by_project.get(
+                    project_id_value, Decimal("0")
+                ) + Decimal(str(entry.get("hours", "0")))
 
+        rate_card_ids = {
+            str(_embedded_one(project.get("engagements")).get("rate_card_id"))
+            for project in projects
+            if _embedded_one(project.get("engagements")).get("rate_card_id")
+        }
+        rate_cache: dict[str, Decimal] = {}
+        if rate_card_ids:
+            rate_rows = (
+                self.db.table("rate_card_lines")
+                .select("rate_card_id, rate")
+                .eq("tenant_id", self.tenant_id)
+                .in_("rate_card_id", list(rate_card_ids))
+                .execute()
+                .data
+                or []
+            )
+            for row in rate_rows:
+                rate_card_id = str(row.get("rate_card_id") or "")
+                if rate_card_id not in rate_cache:
+                    rate_cache[rate_card_id] = Decimal(str(row.get("rate") or "0"))
+
+        result: list[dict] = []
+        for proj in projects:
             # engagements may come back as a dict or a list depending on the
             # PostgREST cardinality inference; normalise.
-            eng_embed = proj.get("engagements")
-            if isinstance(eng_embed, list):
-                eng_embed = eng_embed[0] if eng_embed else None
+            eng_embed = _embedded_one(proj.get("engagements"))
             rate_card_id = (eng_embed or {}).get("rate_card_id")
 
-            rate = Decimal("0")
-            if rate_card_id:
-                if rate_card_id in rate_cache:
-                    rate = rate_cache[rate_card_id]
-                else:
-                    rc = (
-                        self.db.table("rate_card_lines")
-                        .select("rate")
-                        .eq("rate_card_id", rate_card_id)
-                        .limit(1)
-                        .execute()
-                        .data
-                    )
-                    if rc:
-                        rate = Decimal(str(rc[0]["rate"]))
-                    rate_cache[rate_card_id] = rate
+            hours = hours_by_project.get(str(proj["id"]), Decimal("0"))
+            rate = rate_cache.get(str(rate_card_id), Decimal("0"))
 
             value = (hours * rate).quantize(Decimal("0.01"))
             result.append(
@@ -833,6 +866,9 @@ class ReportsService:
             client_id=client_id,
             client_ids_filter=client_ids_filter,
         )
+        return self._client_profitability_from_facts(facts)
+
+    def _client_profitability_from_facts(self, facts: dict[str, object]) -> list[dict]:
         rows: list[dict] = []
         for client in facts["clients"].values():
             cid = str(client["id"])
@@ -954,6 +990,14 @@ class ReportsService:
             period_start=period_start,
             period_end=period_end,
         )
+        return self._segment_profitability_from_facts(facts, group_by=group_by)
+
+    def _segment_profitability_from_facts(
+        self,
+        facts: dict[str, object],
+        *,
+        group_by: str = "service_line",
+    ) -> list[dict]:
         segment_type = (
             "client_kind" if group_by == "client_kind" else "service_line"
         )
@@ -1000,13 +1044,36 @@ class ReportsService:
         schema-backed practice dimension: ``engagements.service_line`` for
         financial/project views and ``employees.practice_area`` for capacity.
         """
-        practices: dict[str, dict] = {}
-
-        for profitability in self.segment_profitability(
+        return self._practice_dashboard_from_components(
+            profitability_rows=self.segment_profitability(
+                period_start=period_start,
+                period_end=period_end,
+                group_by="service_line",
+            ),
+            project_rows=self.project_health_scores(
+                period_start=period_start,
+                period_end=period_end,
+            ),
+            capacity_rows=self.capacity_planning(
+                period_start=period_start,
+                period_end=period_end,
+            ),
             period_start=period_start,
             period_end=period_end,
-            group_by="service_line",
-        ):
+        )
+
+    def _practice_dashboard_from_components(
+        self,
+        *,
+        profitability_rows: list[dict],
+        project_rows: list[dict],
+        capacity_rows: list[dict],
+        period_start: str | None,
+        period_end: str | None,
+    ) -> list[dict]:
+        practices: dict[str, dict] = {}
+
+        for profitability in profitability_rows:
             practice = _practice_stats(str(profitability["segment_key"]))
             practice.update(
                 {
@@ -1026,10 +1093,7 @@ class ReportsService:
             )
             practices[practice["practice_key"]] = practice
 
-        for project in self.project_health_scores(
-            period_start=period_start,
-            period_end=period_end,
-        ):
+        for project in project_rows:
             key = str(project.get("service_line") or "unclassified")
             practice = practices.setdefault(key, _practice_stats(key))
             practice["active_project_count"] += 1
@@ -1047,10 +1111,7 @@ class ReportsService:
             for action in project.get("recommended_actions") or []:
                 _append_unique(practice["recommended_actions"], str(action))
 
-        for capacity in self.capacity_planning(
-            period_start=period_start,
-            period_end=period_end,
-        ):
+        for capacity in capacity_rows:
             key = str(capacity.get("practice_area") or "unclassified")
             practice = practices.setdefault(key, _practice_stats(key))
             practice["employee_count"] += 1
@@ -1100,26 +1161,54 @@ class ReportsService:
         implied until allocation forecast tables exist.
         """
         recommendations: list[dict] = []
+        profitability_facts = self._profitability_facts(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        client_rows = self._client_profitability_from_facts(profitability_facts)
+        profitability_rows = self._segment_profitability_from_facts(
+            profitability_facts,
+            group_by="service_line",
+        )
+        project_rows = self.project_health_scores(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        capacity_rows = self.capacity_planning(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        practice_rows = self._practice_dashboard_from_components(
+            profitability_rows=profitability_rows,
+            project_rows=project_rows,
+            capacity_rows=capacity_rows,
+            period_start=period_start,
+            period_end=period_end,
+        )
         recommendations.extend(
             self._client_pricing_recommendations(
+                client_rows,
                 period_start=period_start,
                 period_end=period_end,
             )
         )
         recommendations.extend(
             self._project_pricing_recommendations(
+                project_rows,
                 period_start=period_start,
                 period_end=period_end,
             )
         )
         recommendations.extend(
             self._staffing_recommendations(
+                capacity_rows,
                 period_start=period_start,
                 period_end=period_end,
             )
         )
         recommendations.extend(
             self._practice_recommendations(
+                practice_rows,
                 period_start=period_start,
                 period_end=period_end,
             )
@@ -1136,15 +1225,13 @@ class ReportsService:
 
     def _client_pricing_recommendations(
         self,
+        client_rows: list[dict],
         *,
         period_start: str | None,
         period_end: str | None,
     ) -> list[dict]:
         rows: list[dict] = []
-        for client in self.client_profitability(
-            period_start=period_start,
-            period_end=period_end,
-        ):
+        for client in client_rows:
             margin_pct = Decimal(str(client.get("gross_margin_pct") or "0"))
             if margin_pct >= Decimal("30"):
                 continue
@@ -1201,16 +1288,14 @@ class ReportsService:
 
     def _project_pricing_recommendations(
         self,
+        project_rows: list[dict],
         *,
         period_start: str | None,
         period_end: str | None,
     ) -> list[dict]:
         rows: list[dict] = []
         pricing_driver_codes = {"low_margin", "cap_drawdown", "budget_hours_burn"}
-        for project in self.project_health_scores(
-            period_start=period_start,
-            period_end=period_end,
-        ):
+        for project in project_rows:
             drivers = [
                 driver
                 for driver in project.get("drivers") or []
@@ -1255,14 +1340,11 @@ class ReportsService:
 
     def _staffing_recommendations(
         self,
+        capacity_rows: list[dict],
         *,
         period_start: str | None,
         period_end: str | None,
     ) -> list[dict]:
-        capacity_rows = self.capacity_planning(
-            period_start=period_start,
-            period_end=period_end,
-        )
         underutilized = [
             row for row in capacity_rows if row.get("capacity_status") == "underutilized"
         ]
@@ -1369,15 +1451,13 @@ class ReportsService:
 
     def _practice_recommendations(
         self,
+        practice_rows: list[dict],
         *,
         period_start: str | None,
         period_end: str | None,
     ) -> list[dict]:
         rows: list[dict] = []
-        for practice in self.practice_dashboard(
-            period_start=period_start,
-            period_end=period_end,
-        ):
+        for practice in practice_rows:
             margin_pct = Decimal(str(practice.get("gross_margin_pct") or "0"))
             overallocated_count = int(
                 (practice.get("capacity_status_counts") or {}).get("overallocated", 0)

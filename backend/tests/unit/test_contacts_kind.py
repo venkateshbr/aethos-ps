@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from app.models.clients import ClientCreate, ClientUpdate
 from app.repositories.clients_repo import CUSTOMER_KINDS, VENDOR_KINDS, ClientRepository
@@ -69,7 +70,7 @@ def test_create_contact_kind_vendor() -> None:
 
 
 def test_create_contact_rejects_invalid_kind() -> None:
-    with pytest.raises(Exception):  # pydantic ValidationError
+    with pytest.raises(ValidationError):
         ClientCreate(name="Bad", kind="unknown")  # type: ignore[arg-type]
 
 

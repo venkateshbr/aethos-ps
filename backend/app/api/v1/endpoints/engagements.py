@@ -35,6 +35,8 @@ StatusQuery = Annotated[
     Query(alias="status", description="Filter by engagement status"),
 ]
 ClientIdQuery = Annotated[str | None, Query(description="Filter by client ID")]
+LimitQuery = Annotated[int, Query(ge=1, le=500, description="Max rows to return")]
+OffsetQuery = Annotated[int, Query(ge=0, description="Pagination offset")]
 
 
 def _read_service(
@@ -62,10 +64,17 @@ def _summary_service(
 async def list_engagements(
     status_filter: StatusQuery = None,
     client_id: ClientIdQuery = None,
+    limit: LimitQuery = 100,
+    offset: OffsetQuery = 0,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     svc: EngagementService = Depends(_read_service),  # noqa: B008
 ) -> list[EngagementResponse]:
-    return await svc.list_engagements(status=status_filter, client_id=client_id)
+    return await svc.list_engagements(
+        status=status_filter,
+        client_id=client_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("", response_model=EngagementResponse, status_code=status.HTTP_201_CREATED)

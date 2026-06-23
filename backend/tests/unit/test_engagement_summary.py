@@ -14,7 +14,7 @@ Issues: #247, #237
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -127,7 +127,7 @@ async def test_summary_wip() -> None:
             "invoice_count": 0,
             "last_invoice_date": None,
         },
-        # 4.0 + 3.5 + 2.5 = 10.0 hours × 175.00 = 1750.00
+        # 4.0 + 3.5 + 2.5 = 10.0 hours x 175.00 = 1750.00
         wip_summary={"wip_hours": 10.0, "wip_value": "1750.00"},
     )
 

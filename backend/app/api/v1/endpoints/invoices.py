@@ -145,7 +145,7 @@ async def get_invoice(
 @router.patch("/{invoice_id}/approve", response_model=InvoiceResponse)
 async def approve_invoice(
     invoice_id: str,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.approve_invoice(invoice_id, approved_by=current_user.user_id)
@@ -154,7 +154,7 @@ async def approve_invoice(
 @router.post("/{invoice_id}/send", response_model=InvoiceResponse)
 async def send_invoice(
     invoice_id: str,
-    current_user: CurrentUser = require_role(UserRole.owner),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.send_invoice(invoice_id, sent_by=current_user.user_id)

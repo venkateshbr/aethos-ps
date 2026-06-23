@@ -31,8 +31,15 @@ class EngagementService:
         self,
         status: str | None = None,
         client_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[EngagementResponse]:
-        rows = await self._repo.list(status=status, client_id=client_id)
+        rows = await self._repo.list(
+            status=status,
+            client_id=client_id,
+            limit=limit,
+            offset=offset,
+        )
         return [EngagementResponse.from_db(r) for r in rows]
 
     async def get_engagement(self, id: str) -> EngagementResponse | None:

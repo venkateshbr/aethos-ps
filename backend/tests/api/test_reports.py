@@ -36,11 +36,13 @@ REPORT_ENDPOINTS = [
     "/api/v1/reports/revenue-by-engagement",
 ]
 
+REPORT_REQUEST_TIMEOUT = 30.0
+
 
 @pytest.mark.parametrize("path", REPORT_ENDPOINTS)
 def test_report_endpoint_returns_200(client_a: httpx.Client, path: str) -> None:
     """Each report endpoint returns 200 for an authenticated tenant."""
-    r = client_a.get(path)
+    r = client_a.get(path, timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, f"{path} → {r.status_code} {r.text[:200]}"
     # All reports return JSON objects
     body = r.json()
@@ -49,7 +51,7 @@ def test_report_endpoint_returns_200(client_a: httpx.Client, path: str) -> None:
 
 def test_wip_report_returns_200(client_a: httpx.Client) -> None:
     """WIP report — currently bug #99 makes it 500."""
-    r = client_a.get("/api/v1/reports/wip")
+    r = client_a.get("/api/v1/reports/wip", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, f"/reports/wip → {r.status_code} {r.text[:200]}"
 
 
@@ -66,7 +68,7 @@ def test_report_endpoint_requires_auth(client: httpx.Client, path: str) -> None:
 
 def test_ar_aging_returns_buckets(client_a: httpx.Client) -> None:
     """AR aging shape: should expose bucket fields (current, 30, 60, 90, 120+)."""
-    r = client_a.get("/api/v1/reports/ar-aging")
+    r = client_a.get("/api/v1/reports/ar-aging", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     # Body is either a list of clients with aging, or an object with buckets
@@ -77,7 +79,7 @@ def test_ar_aging_returns_buckets(client_a: httpx.Client) -> None:
 
 def test_project_health_report_shape(client_a: httpx.Client) -> None:
     """Project health returns ranked rows with score, drivers, and metrics."""
-    r = client_a.get("/api/v1/reports/project-health")
+    r = client_a.get("/api/v1/reports/project-health", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -97,7 +99,7 @@ def test_project_health_report_shape(client_a: httpx.Client) -> None:
 
 def test_capacity_planning_report_shape(client_a: httpx.Client) -> None:
     """Capacity planning returns employee utilization rows for the work window."""
-    r = client_a.get("/api/v1/reports/capacity-planning")
+    r = client_a.get("/api/v1/reports/capacity-planning", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -123,7 +125,7 @@ def test_capacity_planning_report_shape(client_a: httpx.Client) -> None:
 
 def test_client_profitability_report_shape(client_a: httpx.Client) -> None:
     """Client profitability returns component totals and margin status."""
-    r = client_a.get("/api/v1/reports/client-profitability")
+    r = client_a.get("/api/v1/reports/client-profitability", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -151,7 +153,10 @@ def test_client_profitability_report_shape(client_a: httpx.Client) -> None:
 
 def test_segment_profitability_report_shape(client_a: httpx.Client) -> None:
     """Segment profitability supports service-line and client-kind grouping."""
-    r = client_a.get("/api/v1/reports/segment-profitability?group_by=client_kind")
+    r = client_a.get(
+        "/api/v1/reports/segment-profitability?group_by=client_kind",
+        timeout=REPORT_REQUEST_TIMEOUT,
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -172,7 +177,7 @@ def test_segment_profitability_report_shape(client_a: httpx.Client) -> None:
 
 def test_practice_dashboard_report_shape(client_a: httpx.Client) -> None:
     """Practice dashboard returns margin, project health, and capacity signals."""
-    r = client_a.get("/api/v1/reports/practice-dashboard")
+    r = client_a.get("/api/v1/reports/practice-dashboard", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -195,7 +200,10 @@ def test_practice_dashboard_report_shape(client_a: httpx.Client) -> None:
 
 def test_pricing_staffing_recommendations_report_shape(client_a: httpx.Client) -> None:
     """Pricing/staffing recommendations return auditable evidence and metrics."""
-    r = client_a.get("/api/v1/reports/pricing-staffing-recommendations")
+    r = client_a.get(
+        "/api/v1/reports/pricing-staffing-recommendations",
+        timeout=REPORT_REQUEST_TIMEOUT,
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)
@@ -219,7 +227,7 @@ def test_pricing_staffing_recommendations_report_shape(client_a: httpx.Client) -
 
 def test_scope_change_advisor_report_shape(client_a: httpx.Client) -> None:
     """Scope-change advisor returns current risk and comparable evidence."""
-    r = client_a.get("/api/v1/reports/scope-change-advisor")
+    r = client_a.get("/api/v1/reports/scope-change-advisor", timeout=REPORT_REQUEST_TIMEOUT)
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body, list)

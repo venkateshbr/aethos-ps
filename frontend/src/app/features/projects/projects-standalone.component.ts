@@ -242,6 +242,24 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
               </td>
             </ng-container>
 
+            <!-- Team column -->
+            <ng-container matColumnDef="team">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
+                Team
+              </th>
+              <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle text-right">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded px-1.5 py-1"
+                  [attr.aria-label]="'Manage team for ' + row.name"
+                  (click)="openTeam(row, $event)"
+                >
+                  <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">group</mat-icon>
+                  Manage
+                </button>
+              </td>
+            </ng-container>
+
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr
               mat-row
@@ -367,6 +385,106 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
         </div>
       </aside>
     }
+
+    <!-- Team / assignments slide-in panel -->
+    @if (showTeam()) {
+      <div class="fixed inset-0 bg-black/50 z-40" (click)="closeTeam()" aria-hidden="true"></div>
+      <aside
+        class="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border-default z-50 flex flex-col shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-title"
+      >
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
+          <div>
+            <h2 id="team-title" class="text-base font-semibold text-text-primary">Project team</h2>
+            <p class="text-xs text-text-muted mt-0.5">{{ teamProject()?.code }} · {{ teamProject()?.name }}</p>
+          </div>
+          <button
+            type="button"
+            class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+            (click)="closeTeam()"
+            aria-label="Close panel"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          @if (teamLoading()) {
+            <div class="flex items-center justify-center py-8">
+              <div class="w-5 h-5 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-label="Loading team"></div>
+            </div>
+          } @else {
+            @if (assignments().length === 0) {
+              <p class="text-sm text-text-muted">No one is assigned yet. Add a team member below.</p>
+            } @else {
+              <div class="space-y-2">
+                @for (a of assignments(); track a.id) {
+                  <div class="flex items-center gap-3 bg-surface-base border border-border-default rounded-lg px-3 py-2">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-text-primary truncate">{{ a.employee_name || a.employee_email || a.employee_id }}</p>
+                      <p class="text-xs text-text-muted mt-0.5">
+                        {{ a.role || 'Team member' }}@if (a.override_rate) { · rate {{ a.override_rate }}/h }
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="text-text-muted hover:text-confidence-low transition-colors rounded p-1"
+                      aria-label="Remove from project"
+                      (click)="removeAssignment(a)"
+                    >
+                      <mat-icon class="text-base leading-none">close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          }
+
+          <form [formGroup]="assignForm" class="border-t border-border-default pt-5 space-y-3" novalidate>
+            <p class="text-xs uppercase tracking-wide text-text-muted">Assign someone</p>
+            <select
+              formControlName="employee_id"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            >
+              <option value="">Select employee…</option>
+              @for (e of teamEmployees(); track e.id) {
+                <option [value]="e.id">{{ e.first_name }} {{ e.last_name }}</option>
+              }
+            </select>
+            <div class="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                formControlName="role"
+                placeholder="Role (e.g. Lead)"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                formControlName="override_rate"
+                placeholder="Override rate/h"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            @if (teamError()) {
+              <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">{{ teamError() }}</div>
+            }
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              [disabled]="assignForm.controls.employee_id.invalid || addingAssignment()"
+              (click)="addAssignment()"
+            >
+              <mat-icon class="text-base leading-none">person_add</mat-icon>
+              @if (addingAssignment()) { Adding… } @else { Add to project }
+            </button>
+          </form>
+        </div>
+      </aside>
+    }
   `,
   styles: [`
     :host { display: block; }
@@ -394,7 +512,7 @@ export class ProjectsStandaloneComponent implements OnInit {
   engagementFilter = '';
 
   readonly statusChips = STATUS_CHIPS;
-  readonly displayedColumns = ['code', 'name', 'engagement', 'status', 'budget_hours', 'hours_logged', 'pct_used'];
+  readonly displayedColumns = ['code', 'name', 'engagement', 'status', 'budget_hours', 'hours_logged', 'pct_used', 'team'];
 
   // Computed engagement name lookup map
   engagementNameMap = computed<Record<string, string>>(() => {
@@ -424,6 +542,20 @@ export class ProjectsStandaloneComponent implements OnInit {
     name:          ['', [Validators.required]],
     engagement_id: ['', [Validators.required]],
     status:        ['active'],
+  });
+
+  // Team / assignments panel state
+  showTeam = signal(false);
+  teamProject = signal<ProjectRow | null>(null);
+  teamLoading = signal(false);
+  assignments = signal<Assignment[]>([]);
+  teamEmployees = signal<EmployeeOption[]>([]);
+  addingAssignment = signal(false);
+  teamError = signal<string | null>(null);
+  assignForm = this.fb.nonNullable.group({
+    employee_id: ['', [Validators.required]],
+    role: [''],
+    override_rate: [null as number | null],
   });
 
   ngOnInit(): void {
@@ -539,4 +671,83 @@ export class ProjectsStandaloneComponent implements OnInit {
       },
     });
   }
+
+  openTeam(project: ProjectRow, event?: Event): void {
+    event?.stopPropagation();
+    this.teamProject.set(project);
+    this.teamError.set(null);
+    this.assignForm.reset({ employee_id: '', role: '', override_rate: null });
+    this.showTeam.set(true);
+    this.teamLoading.set(true);
+    this.http.get<{ items: Assignment[] }>(`/api/v1/projects/${project.id}/assignments`).subscribe({
+      next: (res) => {
+        this.assignments.set(res.items ?? []);
+        this.teamLoading.set(false);
+      },
+      error: () => {
+        this.teamError.set('Could not load the project team.');
+        this.teamLoading.set(false);
+      },
+    });
+    this.http.get<{ items: EmployeeOption[] }>('/api/v1/employees').subscribe({
+      next: (res) => this.teamEmployees.set(res.items ?? []),
+      error: () => this.teamEmployees.set([]),
+    });
+  }
+
+  closeTeam(): void {
+    this.showTeam.set(false);
+  }
+
+  addAssignment(): void {
+    const project = this.teamProject();
+    if (!project || this.assignForm.controls.employee_id.invalid) {
+      this.assignForm.markAllAsTouched();
+      return;
+    }
+    this.addingAssignment.set(true);
+    this.teamError.set(null);
+    const v = this.assignForm.getRawValue();
+    this.http.post<Assignment>(`/api/v1/projects/${project.id}/assignments`, {
+      employee_id: v.employee_id,
+      role: v.role || null,
+      override_rate: v.override_rate != null ? String(v.override_rate) : null,
+    }).subscribe({
+      next: (created) => {
+        this.assignments.update((list) => [...list, created]);
+        this.assignForm.reset({ employee_id: '', role: '', override_rate: null });
+        this.addingAssignment.set(false);
+      },
+      error: (err: { error?: { detail?: string } }) => {
+        this.addingAssignment.set(false);
+        const detail = err?.error?.detail;
+        this.teamError.set(typeof detail === 'string' ? detail : 'Could not add team member.');
+      },
+    });
+  }
+
+  removeAssignment(a: Assignment): void {
+    const project = this.teamProject();
+    if (!project) return;
+    this.http.delete<void>(`/api/v1/projects/${project.id}/assignments/${a.id}`).subscribe({
+      next: () => this.assignments.update((list) => list.filter((x) => x.id !== a.id)),
+      error: () => this.teamError.set('Could not remove team member.'),
+    });
+  }
+}
+
+interface Assignment {
+  id: string;
+  project_id: string;
+  employee_id: string;
+  role?: string | null;
+  override_rate?: string | null;
+  employee_name?: string | null;
+  employee_email?: string | null;
+}
+
+interface EmployeeOption {
+  id: string;
+  first_name: string;
+  last_name: string;
 }

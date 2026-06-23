@@ -30,6 +30,8 @@ class _Query:
         self._neq_filters: list[tuple[str, Any]] = []
         self._in_filters: list[tuple[str, list[Any]]] = []
         self._null_filters: list[str] = []
+        self._order: tuple[str, bool] | None = None
+        self._range: tuple[int, int] | None = None
         self._update_payload: dict[str, Any] | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> _Query:
@@ -50,6 +52,14 @@ class _Query:
     def is_(self, key: str, value: Any) -> _Query:
         if value == "null":
             self._null_filters.append(key)
+        return self
+
+    def order(self, key: str, *, desc: bool = False) -> _Query:
+        self._order = (key, desc)
+        return self
+
+    def range(self, start: int, end: int) -> _Query:
+        self._range = (start, end)
         return self
 
     def update(self, payload: dict[str, Any]) -> _Query:
@@ -74,6 +84,12 @@ class _Query:
             rows = [row for row in rows if row.get(key) in values]
         for key in self._null_filters:
             rows = [row for row in rows if row.get(key) is None]
+        if self._order is not None:
+            key, desc = self._order
+            rows = sorted(rows, key=lambda row: row.get(key) or "", reverse=desc)
+        if self._range is not None:
+            start, end = self._range
+            rows = rows[start : end + 1]
         return rows
 
 
@@ -238,12 +254,15 @@ def test_engagement_read_routes_use_rls_client(
     app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
 
     list_response = client.get("/api/v1/engagements?status=active&client_id=client-1")
+    paged_response = client.get("/api/v1/engagements?limit=1&offset=1")
     detail_response = client.get("/api/v1/engagements/eng-1")
     summary_response = client.get("/api/v1/engagements/eng-1/summary")
 
     assert list_response.status_code == 200, list_response.text
     assert len(list_response.json()) == 1
     assert list_response.json()[0]["id"] == "eng-1"
+    assert paged_response.status_code == 200, paged_response.text
+    assert [row["id"] for row in paged_response.json()] == ["eng-2"]
     assert detail_response.status_code == 200, detail_response.text
     assert detail_response.json()["billing_terms"]["retainer_monthly_amount"] == "10000.00"
     assert summary_response.status_code == 200, summary_response.text

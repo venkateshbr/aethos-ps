@@ -131,8 +131,11 @@ def test_ap_aging_empty_returns_zero_buckets(mock_db: MagicMock) -> None:
 def test_project_pnl_margin_computed(mock_db: MagicMock) -> None:
     """Gross margin = revenue - direct_cost; pct = margin / revenue * 100."""
     projects = [{"id": "proj-1", "name": "Alpha", "engagement_id": "eng-1", "currency": "USD", "budget": "50000.00"}]
-    invoices = [{"total": "10000.00", "currency": "USD"}]
-    expenses = [{"amount": "3000.00"}, {"amount": "2000.00"}]
+    invoices = [{"engagement_id": "eng-1", "total": "10000.00", "currency": "USD"}]
+    expenses = [
+        {"project_id": "proj-1", "amount": "3000.00"},
+        {"project_id": "proj-1", "amount": "2000.00"},
+    ]
 
     # We need three separate table() calls to return different data:
     # 1st → projects, 2nd → invoices, 3rd → expenses
@@ -189,8 +192,11 @@ def test_wip_value_is_hours_times_rate(mock_db: MagicMock) -> None:
     # Projects query now embeds the engagement to pick up rate_card_id
     projects = [{"id": "proj-2", "name": "Beta", "engagement_id": "eng-2",
                  "engagements": {"rate_card_id": "rc-1"}}]
-    time_entries = [{"hours": "5.0"}, {"hours": "3.0"}]
-    rate_lines = [{"rate": "150.00"}]
+    time_entries = [
+        {"project_id": "proj-2", "hours": "5.0"},
+        {"project_id": "proj-2", "hours": "3.0"},
+    ]
+    rate_lines = [{"rate_card_id": "rc-1", "rate": "150.00"}]
 
     # Call order: projects → time_entries → rate_card_lines
     call_returns = [
@@ -922,7 +928,8 @@ def test_pricing_staffing_recommendations_composes_margin_health_and_capacity(
 ) -> None:
     """Recommendations stay evidence-backed by composing existing reports."""
     svc = _make_svc(mock_db)
-    svc.client_profitability = MagicMock(
+    svc._profitability_facts = MagicMock(return_value={})
+    svc._client_profitability_from_facts = MagicMock(
         return_value=[
             {
                 "client_id": "client-acme",
@@ -942,6 +949,26 @@ def test_pricing_staffing_recommendations_composes_margin_health_and_capacity(
                 "gross_margin_pct": 55.0,
                 "labor_hours": "30.00",
             },
+        ]
+    )
+    svc._segment_profitability_from_facts = MagicMock(
+        return_value=[
+            {
+                "segment_key": "advisory",
+                "segment_label": "Advisory",
+                "revenue": "12000.00",
+                "labor_cost": "8500.00",
+                "expense_cost": "1340.00",
+                "total_cost": "9840.00",
+                "gross_margin": "2160.00",
+                "gross_margin_pct": 18.0,
+                "profitability_status": "critical",
+                "recommended_action": "Review practice margin.",
+                "client_count": 1,
+                "engagement_count": 1,
+                "project_count": 1,
+                "invoice_count": 1,
+            }
         ]
     )
     svc.project_health_scores = MagicMock(
@@ -995,19 +1022,6 @@ def test_pricing_staffing_recommendations_composes_margin_health_and_capacity(
                 "billable_utilization_pct": 20.0,
                 "capacity_status": "underutilized",
             },
-        ]
-    )
-    svc.practice_dashboard = MagicMock(
-        return_value=[
-            {
-                "practice_key": "advisory",
-                "practice_label": "Advisory",
-                "gross_margin_pct": 18.0,
-                "critical_project_count": 1,
-                "capacity_status_counts": {"overallocated": 1},
-                "avg_project_health_score": 45.0,
-                "billable_utilization_pct": 98.0,
-            }
         ]
     )
 

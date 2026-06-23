@@ -16,6 +16,7 @@ class HitlTaskSummary(BaseModel):
     """Lightweight list-item view of a HITL task."""
 
     id: str
+    tenant_id: str
     kind: str
     priority: str
     title: str

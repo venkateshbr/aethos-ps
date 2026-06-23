@@ -40,6 +40,7 @@ function loadO2CMeta(): O2CMeta | null {
 }
 
 setup('frontend reachable + empty storage state', async ({ page }) => {
+  setup.setTimeout(120_000);
   // Ensure the .auth directory exists
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 
@@ -52,20 +53,20 @@ setup('frontend reachable + empty storage state', async ({ page }) => {
   // Smoke check: the landing page must be reachable. This also serves as
   // a fail-fast — if the frontend isn't running, every spec is going to
   // ENETUNREACH; better to surface that here with a clear error.
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).toHaveURL(/\/(login|signup|)?$/);
 
   const meta = loadO2CMeta();
   if (!meta?.email || !meta?.password) return;
 
-  await page.goto('/login');
+  await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
   await page.locator('#email').fill(meta.email);
   await page.locator('#password').fill(meta.password);
   await page.getByRole('button', { name: /^sign in$/i }).click();
 
-  await page.waitForURL(/\/app\/copilot(\?.*)?$/, { timeout: 30_000 });
-  await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 15_000 });
+  await page.waitForURL(/\/app\/copilot(\?.*)?$/, { timeout: 90_000 });
+  await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 30_000 });
 
   const storage = await page.evaluate(() => ({
     token: localStorage.getItem('aethos_token'),

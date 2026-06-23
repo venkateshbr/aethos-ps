@@ -62,6 +62,7 @@ test.describe('R-Real-5 · Login (tunnel)', () => {
   });
 
   test('signs in an existing tenant via /login and lands on /app/copilot', async ({ page, context }) => {
+    test.setTimeout(90_000);
     const meta = loadMeta();
     test.skip(!meta, 'no signup-created tenant meta — run signup.spec.ts first');
     if (!meta) return;

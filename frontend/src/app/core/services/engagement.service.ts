@@ -94,10 +94,17 @@ export class EngagementService {
   private http = inject(HttpClient);
   private base = '/api/v1';
 
-  getEngagements(filters?: { status?: string; client_id?: string }): Observable<EngagementListResponse> {
+  getEngagements(filters?: {
+    status?: string;
+    client_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Observable<EngagementListResponse> {
     let params = new HttpParams();
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.client_id) params = params.set('client_id', filters.client_id);
+    if (filters?.limit) params = params.set('limit', filters.limit);
+    if (filters?.offset) params = params.set('offset', filters.offset);
     return this.http.get<EngagementListResponse>(`${this.base}/engagements`, { params });
   }
 

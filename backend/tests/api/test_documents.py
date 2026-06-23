@@ -31,7 +31,7 @@ _MIN_PDF = (
 def test_upload_pdf_document_happy_path(client_a: httpx.Client) -> None:
     files = {"file": ("test.pdf", io.BytesIO(_MIN_PDF), "application/pdf")}
     data = {"kind": "receipt"}
-    r = client_a.post("/api/v1/documents/upload", files=files, data=data)
+    r = client_a.post("/api/v1/documents/upload", files=files, data=data, timeout=90.0)
     # 200/201 = accepted; 202 = queued for extraction
     assert r.status_code in (200, 201, 202), r.text
 

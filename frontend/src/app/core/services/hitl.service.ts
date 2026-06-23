@@ -4,6 +4,7 @@ import { Observable, map } from 'rxjs';
 
 export interface HitlTask {
   id: string;
+  tenant_id: string;
   kind: string;
   priority: string;
   title: string;

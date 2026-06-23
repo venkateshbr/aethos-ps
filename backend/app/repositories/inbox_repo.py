@@ -39,7 +39,7 @@ class InboxRepository:
         query = (
             self.db.table(_TASKS_TABLE)
             .select(
-                "id,kind,priority,title,description,payload,status,created_at,updated_at,"
+                "id,tenant_id,kind,priority,title,description,payload,status,created_at,updated_at,"
                 "agent_suggestion_id,"
                 "agent_suggestions(agent_name,confidence,output_snapshot,action_type)"
             )
@@ -60,7 +60,7 @@ class InboxRepository:
         result = await asyncio.to_thread(
             lambda: self.db.table(_TASKS_TABLE)
             .select(
-                "id,kind,priority,title,description,payload,status,created_at,updated_at,"
+                "id,tenant_id,kind,priority,title,description,payload,status,created_at,updated_at,"
                 "agent_suggestion_id,"
                 "agent_suggestions(id,agent_name,confidence,output_snapshot,action_type,status)"
             )

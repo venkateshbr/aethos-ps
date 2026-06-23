@@ -31,7 +31,7 @@ C11 — WIP hours accumulate from unbilled billable time entries across projects
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
 import httpx
@@ -494,7 +494,7 @@ def test_summary_wip_hours_from_time_entries(
     employee_id = world.tenant_a.employee_ids[0]
 
     # 3 unbilled billable hours + 2 billed hours (should not count) + 1 non-billable
-    te_unbilled_1 = _seed_time_entry(
+    _seed_time_entry(
         db,
         tenant_id=world.tenant_a.tenant_id,
         project_id=project_id,
@@ -503,7 +503,7 @@ def test_summary_wip_hours_from_time_entries(
         billable=True,
         billing_status="unbilled",
     )
-    te_unbilled_2 = _seed_time_entry(
+    _seed_time_entry(
         db,
         tenant_id=world.tenant_a.tenant_id,
         project_id=project_id,

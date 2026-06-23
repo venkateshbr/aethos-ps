@@ -295,6 +295,7 @@ def test_hitl_task_summary_confidence_is_string() -> None:
 
     t = HitlTaskSummary(
         id="t1",
+        tenant_id="tenant-a",
         kind="create_bill",
         priority="normal",
         title="Review vendor invoice",

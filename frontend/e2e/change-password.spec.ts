@@ -33,7 +33,7 @@ test.describe('R-Real-5 · Change password (tunnel)', () => {
   test('settings page renders the change-password form with all required fields', async ({ page }) => {
     test.setTimeout(60_000);
 
-    await page.goto(`${BASE}/app/settings`);
+    await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
     // Settings page mounts under the app shell. Look for the sidebar nav and
     // the Settings hero — both prove the shell + route loaded.
@@ -64,7 +64,7 @@ test.describe('R-Real-5 · Change password (tunnel)', () => {
     const currentPassword = meta.password;
     const newPassword = `Aksha-real5-${Date.now().toString(36)}!`;
 
-    await page.goto(`${BASE}/app/settings`);
+    await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await expect(page.getByRole('heading', { name: /change password/i, level: 3 })).toBeVisible({ timeout: 15_000 });
 
     await page.locator('#current_password').fill(currentPassword);

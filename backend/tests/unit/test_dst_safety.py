@@ -68,7 +68,6 @@ def _returned_row(tz: str = "America/New_York", entry_date: str = "2024-03-10") 
 def test_dst_spring_forward_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     """Creating a time entry on the spring-forward DST date logs a DST warning."""
     from app.models.time_entries import TimeEntryCreate
-    from app.services.time_entries_service import TimeEntriesService
 
     svc, mock_repo = _make_service_with_mocks()
     mock_repo.create = AsyncMock(return_value=_returned_row("America/New_York", "2024-03-10"))

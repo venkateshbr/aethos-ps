@@ -186,6 +186,10 @@ export class SignupService {
     // those calls hit the membership-check dep and return 403 "Tenant context
     // missing". See the Pick-a-plan error the Founder hit during dogfood.
     this.auth.setTenantId(signupResp.tenant_id);
+    // The backend creates the initial tenant_users row with role=owner.
+    // Mirror that role locally so role-gated UI affordances are available
+    // immediately after signup, matching the normal login path.
+    this.auth.setRole('owner');
     return signupResp;
   }
 

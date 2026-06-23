@@ -8,11 +8,9 @@ TDD: these tests are written BEFORE the implementation so they must be red first
 
 from __future__ import annotations
 
-import json
-from decimal import Decimal
-from unittest.mock import MagicMock, patch, AsyncMock
-import pytest
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Test helpers — lightweight DB stub
@@ -138,7 +136,7 @@ class TestLogTimeEntry:
     @pytest.mark.asyncio
     async def test_log_time_entry_fuzzy_match(self):
         """'Nexus CFO' fuzzy-matches 'Nexus Capital — CFO Advisory'."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": self._projects(),
             "employees": self._employees(),
         })
@@ -164,7 +162,7 @@ class TestLogTimeEntry:
     @pytest.mark.asyncio
     async def test_log_time_entry_no_project(self):
         """Returns helpful error when project name doesn't match anything."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": self._projects(),
             "employees": self._employees(),
         })
@@ -186,7 +184,7 @@ class TestLogTimeEntry:
         """When date is omitted, entry is logged for today."""
         import datetime
 
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": self._projects(),
             "employees": self._employees(),
         })
@@ -207,7 +205,7 @@ class TestLogTimeEntry:
     @pytest.mark.asyncio
     async def test_log_time_entry_billable_value_calculation(self):
         """Billable value = hours * bill_rate, serialised as Decimal string."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": self._projects(),
             "employees": self._employees(),
         })
@@ -229,7 +227,7 @@ class TestLogTimeEntry:
     @pytest.mark.asyncio
     async def test_log_time_entry_non_billable_value_is_zero(self):
         """Non-billable entries should return billable_value = '0.00'."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": self._projects(),
             "employees": self._employees(),
         })
@@ -250,7 +248,7 @@ class TestLogTimeEntry:
     @pytest.mark.asyncio
     async def test_log_time_entry_no_active_projects(self):
         """Returns error when tenant has no active projects."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "projects": [],
             "employees": self._employees(),
         })
@@ -320,7 +318,7 @@ class TestUpdateRateCard:
     @pytest.mark.asyncio
     async def test_update_rate_card_default(self):
         """Updates employee default_bill_rate when no engagement_name given."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "employees": self._employees(),
             "engagements": self._engagements(),
         })
@@ -343,7 +341,7 @@ class TestUpdateRateCard:
     @pytest.mark.asyncio
     async def test_update_rate_card_engagement(self):
         """Upserts rate_card_lines entry when engagement_name is given."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "employees": self._employees(),
             "engagements": self._engagements(),
             "rate_card_lines": [],
@@ -368,7 +366,7 @@ class TestUpdateRateCard:
     @pytest.mark.asyncio
     async def test_update_rate_card_employee_not_found(self):
         """Returns helpful error when employee name doesn't match."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "employees": self._employees(),
         })
 
@@ -390,7 +388,7 @@ class TestUpdateRateCard:
     @pytest.mark.asyncio
     async def test_update_rate_card_engagement_not_found(self):
         """Returns error when engagement name doesn't match."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "employees": self._employees(),
             "engagements": self._engagements(),
         })
@@ -413,7 +411,7 @@ class TestUpdateRateCard:
     @pytest.mark.asyncio
     async def test_update_rate_card_fuzzy_employee_match(self):
         """'Marcus Winters' fuzzy-matches by full name."""
-        agent, db = _make_agent({
+        agent, _db = _make_agent({
             "employees": self._employees(),
         })
 
@@ -458,6 +456,7 @@ def test_system_prompt_mentions_rate_card():
 def test_execute_tool_dispatches_log_time_entry():
     """_execute_tool source must contain a branch for log_time_entry."""
     import inspect
+
     from app.agents.copilot.graph import CopilotAgent
 
     source = inspect.getsource(CopilotAgent._execute_tool)
@@ -467,6 +466,7 @@ def test_execute_tool_dispatches_log_time_entry():
 def test_execute_tool_dispatches_update_rate_card():
     """_execute_tool source must contain a branch for update_rate_card."""
     import inspect
+
     from app.agents.copilot.graph import CopilotAgent
 
     source = inspect.getsource(CopilotAgent._execute_tool)

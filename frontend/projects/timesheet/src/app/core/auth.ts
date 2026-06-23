@@ -17,6 +17,11 @@ const TENANT_KEY = 'aethos_ts_tenant_id';
 let _token: string | null = null;
 let _tenantId: string | null = null;
 
+function readStoredValue(key: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(key);
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private _t = signal<string | null>(localStorage.getItem(TOKEN_KEY));
@@ -45,9 +50,14 @@ export class AuthService {
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
+  const token = _token ?? readStoredValue(TOKEN_KEY);
+  const tenantId = _tenantId ?? readStoredValue(TENANT_KEY);
+  if (token && !_token) _token = token;
+  if (tenantId && !_tenantId) _tenantId = tenantId;
+
   let headers = req.headers;
-  if (_token) headers = headers.set('Authorization', `Bearer ${_token}`);
-  if (_tenantId && !req.headers.has('X-Tenant-ID')) headers = headers.set('X-Tenant-ID', _tenantId);
+  if (token) headers = headers.set('Authorization', `Bearer ${token}`);
+  if (tenantId && !req.headers.has('X-Tenant-ID')) headers = headers.set('X-Tenant-ID', tenantId);
   const forwarded = headers === req.headers ? req : req.clone({ headers });
   return next(forwarded).pipe(
     catchError((err: unknown) => {

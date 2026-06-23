@@ -30,6 +30,7 @@ interface SignupRunArtifacts {
   tenantId: string | null;
   token: string | null;
   landedUrl: string;
+  role: string | null;
 }
 
 async function readLocalStorage(page: Page): Promise<Record<string, string | null>> {
@@ -61,6 +62,7 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
     tenantId: null,
     token: null,
     landedUrl: '',
+    role: null,
   };
 
   test('completes the 3-page wizard and lands on /app/copilot with both storage keys', async ({ page, context }) => {
@@ -89,6 +91,7 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
     await page.locator('#firm').fill(tenantName);
     await page.locator('#email').fill(email);
     await page.locator('#password').fill(password);
+    await page.locator('#confirm_password').fill(password);
     await page.locator('#country').selectOption('US');
 
     await page.getByRole('button', { name: /continue to plan/i }).click();
@@ -181,6 +184,7 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
     const ls = await readLocalStorage(page);
     artifacts.token = ls['aethos_token'];
     artifacts.tenantId = ls['aethos_tenant_id'];
+    artifacts.role = ls['aethos_role'];
 
     test.info().annotations.push({
       type: 'signup-artifacts',
@@ -189,6 +193,7 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
 
     expect(artifacts.token, 'aethos_token must be in localStorage after signup').toBeTruthy();
     expect(artifacts.tenantId, 'aethos_tenant_id must be in localStorage after signup (regression guard for #128)').toBeTruthy();
+    expect(artifacts.role, 'aethos_role must be owner after tenant-admin signup').toBe('owner');
 
     // No failed /api/* requests during the wizard.
     test.info().annotations.push({

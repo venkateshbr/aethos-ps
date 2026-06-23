@@ -14,7 +14,6 @@ All tests require the real stack (Supabase + running API).
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 
 import httpx
 import pytest

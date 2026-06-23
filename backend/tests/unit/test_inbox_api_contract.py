@@ -162,8 +162,10 @@ def test_inbox_read_routes_use_rls_client(
 
     assert list_response.status_code == 200, list_response.text
     assert list_response.json()["total"] == 1
+    assert list_response.json()["items"][0]["tenant_id"] == TENANT_ID
     assert list_response.json()["items"][0]["agent_name"] == "vendor_invoice_agent"
     assert detail_response.status_code == 200, detail_response.text
+    assert detail_response.json()["tenant_id"] == TENANT_ID
     assert detail_response.json()["payload"] == {"source": "document-1"}
 
 

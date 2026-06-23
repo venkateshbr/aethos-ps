@@ -637,7 +637,7 @@ export class EngagementsListComponent implements OnInit {
       this.applyServiceDefaults(id);
     });
 
-    this.engagementService.getEngagements().subscribe({
+    this.engagementService.getEngagements({ limit: 100 }).subscribe({
       next: (res) => {
         this.engagements.set(res);
         this.loading.set(false);
