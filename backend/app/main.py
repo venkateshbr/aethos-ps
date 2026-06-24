@@ -19,7 +19,7 @@ from starlette.responses import Response
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.core.rate_limit import RateLimitMiddleware, RateLimitRule
+from app.core.rate_limit import RateLimitMiddleware, RateLimitRule, build_rate_limiter
 from app.core.tenant import TenantMiddleware
 from app.services.operational_telemetry import telemetry
 
@@ -108,6 +108,7 @@ app.add_middleware(TenantMiddleware)
 app.add_middleware(
     RateLimitMiddleware,
     enabled=settings.rate_limit_enabled,
+    limiter=build_rate_limiter(),
     rules=[
         RateLimitRule(
             name="signup",

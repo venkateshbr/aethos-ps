@@ -97,6 +97,7 @@ class TenantHealthService:
     def summary(self) -> dict[str, Any]:
         table_checks = self._table_checks()
         agent_counts = self._agent_failure_counts()
+        telemetry_snapshot = telemetry.snapshot()
         runtime = {
             "environment": settings.environment,
             "debug": settings.debug,
@@ -104,22 +105,39 @@ class TenantHealthService:
             "queue_required": bool(settings.queue_required),
             "extraction_mode": settings.extraction_mode,
         }
+        rate_limit = {
+            "enabled": settings.rate_limit_enabled,
+            "backend": _rate_limit_backend_label(settings.rate_limit_backend),
+            "distributed_configured": _rate_limit_backend_label(settings.rate_limit_backend)
+            == "supabase",
+            "fallback_to_memory": settings.rate_limit_distributed_fallback_to_memory,
+            "window_seconds": settings.rate_limit_window_seconds,
+        }
         degraded = (
             any(check["status"] != "ok" for check in table_checks)
             or agent_counts["failed_agent_runs_24h"] > 0
             or agent_counts["failed_tool_invocations_24h"] > 0
             or agent_counts["failed_workflow_runs_24h"] > 0
         )
+        status = "degraded" if degraded else "ok"
+        alerts = build_alert_summary(
+            status=status,
+            table_checks=table_checks,
+            telemetry_snapshot=telemetry_snapshot,
+            agent_counts=agent_counts,
+        )
         return {
-            "status": "degraded" if degraded else "ok",
+            "status": status,
             "tenant_id": self.tenant_id,
             "generated_at": datetime.now(UTC).isoformat(),
             "runtime": runtime,
+            "rate_limit": rate_limit,
             "checks": {"tables": table_checks},
             "telemetry": {
-                **telemetry.snapshot(),
+                **telemetry_snapshot,
                 **agent_counts,
             },
+            "alerts": alerts,
         }
 
     def _table_checks(self) -> list[dict[str, str]]:
@@ -219,3 +237,127 @@ def sanitise_name(value: str) -> str:
 
 def _looks_like_uuid(value: str) -> bool:
     return len(value) == 36 and value.count("-") == 4
+
+
+def build_alert_summary(
+    *,
+    status: str,
+    table_checks: list[dict[str, str]],
+    telemetry_snapshot: dict[str, Any],
+    agent_counts: dict[str, Any],
+) -> dict[str, Any]:
+    route = _alert_route()
+    items: list[dict[str, Any]] = []
+
+    if status != "ok":
+        failed_tables = [check["name"] for check in table_checks if check.get("status") != "ok"]
+        items.append(
+            _alert_item(
+                code="tenant_health_degraded",
+                severity="warning",
+                message="Tenant health is degraded.",
+                count=len(failed_tables)
+                + int(agent_counts.get("failed_agent_runs_24h", 0))
+                + int(agent_counts.get("failed_tool_invocations_24h", 0))
+                + int(agent_counts.get("failed_workflow_runs_24h", 0)),
+                route=route,
+                metadata={"failed_tables": failed_tables[:10]},
+            )
+        )
+
+    rate_limit_count = sum(
+        int(row.get("count", 0))
+        for row in telemetry_snapshot.get("request_failures", [])
+        if int(row.get("status_code", 0)) == 429
+    )
+    if rate_limit_count >= settings.ops_alert_rate_limit_threshold:
+        hot_paths = [
+            {"path": row.get("path", "unknown"), "count": int(row.get("count", 0))}
+            for row in telemetry_snapshot.get("request_failures", [])
+            if int(row.get("status_code", 0)) == 429
+        ][:10]
+        items.append(
+            _alert_item(
+                code="public_endpoint_abuse",
+                severity="warning",
+                message="Repeated rate-limit denials crossed the alert threshold.",
+                count=rate_limit_count,
+                route=route,
+                metadata={"paths": hot_paths},
+            )
+        )
+
+    background_count = sum(
+        int(row.get("count", 0)) for row in telemetry_snapshot.get("background_failures", [])
+    )
+    if background_count >= settings.ops_alert_background_failure_threshold:
+        items.append(
+            _alert_item(
+                code="background_failure_spike",
+                severity="warning",
+                message="Background failures crossed the alert threshold.",
+                count=background_count,
+                route=route,
+                metadata={"workers": telemetry_snapshot.get("background_failures", [])[:10]},
+            )
+        )
+
+    agent_failure_count = (
+        int(agent_counts.get("failed_agent_runs_24h", 0))
+        + int(agent_counts.get("failed_tool_invocations_24h", 0))
+        + int(agent_counts.get("failed_workflow_runs_24h", 0))
+    )
+    if agent_failure_count >= settings.ops_alert_agent_failure_threshold:
+        items.append(
+            _alert_item(
+                code="agent_failure_spike",
+                severity="warning",
+                message="Agent, tool, or workflow failures crossed the alert threshold.",
+                count=agent_failure_count,
+                route=route,
+                metadata={"failed_tools_by_name": agent_counts.get("failed_tools_by_name_24h", [])[:10]},
+            )
+        )
+
+    return {
+        "route": route,
+        "items": items[:25],
+    }
+
+
+def _alert_item(
+    *,
+    code: str,
+    severity: str,
+    message: str,
+    count: int,
+    route: dict[str, Any],
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "code": sanitise_name(code),
+        "severity": severity,
+        "message": message,
+        "count": count,
+        "route_type": route["route_type"],
+        "channel": route["channel"],
+        "runbook": "docs/test/e2e_ops_security.md#ops-alerts",
+        "metadata": metadata,
+    }
+
+
+def _alert_route() -> dict[str, Any]:
+    channel = sanitise_name(settings.ops_alert_channel or "runbook")
+    webhook_configured = bool(settings.ops_alert_webhook_url)
+    return {
+        "route_type": "webhook" if webhook_configured else "runbook_queue",
+        "channel": channel,
+        "configured": webhook_configured,
+    }
+
+
+def _rate_limit_backend_label(value: str) -> str:
+    backend = (value or "memory").strip().lower()
+    if backend in {"supabase", "postgres", "distributed"}:
+        return "supabase"
+    return "memory"

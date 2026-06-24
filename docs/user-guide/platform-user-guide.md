@@ -312,7 +312,7 @@ Settings are used for:
 - Approval policy thresholds for AI-created finance actions.
 - Finance role persona mapping for RBAC compatibility and user education.
 - Agent run ledger and workflow telemetry.
-- Tenant health checks for safe internal operator review.
+- Operational Health dashboard for safe internal operator review.
 - Platform controls as enterprise slices land.
 
 Current guidance:
@@ -328,19 +328,28 @@ Current guidance:
   product-facing finance personas map to the current tenant role and what each
   persona can or cannot do through existing approval gates.
 - Use run ledger details to inspect tool execution and risk class.
-- Use tenant health for support-safe runtime, migration/table, request-failure,
-  agent failure, tool failure, and workflow failure signals.
+- Use Settings -> Operational Health for support-safe runtime, table/migration,
+  rate-limit backend, request-failure, background-failure, agent failure, tool
+  failure, workflow failure, and routed-alert signals.
 - Keep production provider credentials and mail/payment setup validated outside demo-only environments.
 
-Ops/Security first slice under #286:
+Ops/Security slices under #286 and #301:
 
 - `POST /api/v1/auth/signup` and `GET /api/v1/public/invoices/{token}` are
   protected by app-level rate limits with safe `429` responses and retry
   headers.
+- Rate limiting can run in local in-process mode or Supabase/Postgres-backed
+  distributed mode through `RATE_LIMIT_BACKEND=supabase`. Distributed mode
+  stores hashed subjects only and falls back to in-memory limiting by default
+  if the RPC is unavailable.
 - Request failures are counted by sanitized method/path/status, without raw
   tokens or request payloads.
 - Tenant health exposes runtime config shape, table/migration checks, recent
   request/background failure counters, and agent/tool/workflow failure counts.
+- Tenant health now includes routed alert items for degraded health, repeated
+  public-endpoint abuse, background failure spikes, and agent/tool/workflow
+  failure spikes. If no webhook channel is configured, alerts route to the
+  runbook queue in the health output.
 - Health output is intended for internal operators and admins; it must not
   expose secrets, raw credentials, tokens, or customer document payloads.
 
@@ -364,7 +373,7 @@ The following work is tracked under parent issue #278:
 | #298 | RBAC | Finance-role taxonomy compatibility catalog, Settings visibility, and API/unit permission proof, first slice implemented |
 | #299 | P2P | Vendor invoice exception review UX and staged payment approval, first slice implemented |
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |
-| #301 | Ops/Security | Distributed rate limiting, health dashboard, and alert routing, planned |
+| #301 | Ops/Security | Distributed rate limiting, Operational Health dashboard, and safe alert routing, first slice implemented |
 
 ## 12. Documentation And Test Definition Of Done
 

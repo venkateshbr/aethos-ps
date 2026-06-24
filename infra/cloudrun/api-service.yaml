@@ -88,14 +88,29 @@ spec:
                 secretKeyRef:
                   name: aethos-ps-secrets
                   key: LANGFUSE_SECRET_KEY
-            # ── Upstash Redis ─────────────────────────────────────────────────
-            - name: UPSTASH_REDIS_URL
-              valueFrom:
-                secretKeyRef:
-                  name: aethos-ps-secrets
-                  key: UPSTASH_REDIS_URL
             # ── Application ───────────────────────────────────────────────────
             - name: FRONTEND_BASE_URL
               value: https://aethos.app
             - name: CORS_ORIGINS
               value: '["https://aethos.app","https://www.aethos.app"]'
+            # ── Ops / Security ────────────────────────────────────────────────
+            - name: RATE_LIMIT_ENABLED
+              value: "true"
+            - name: RATE_LIMIT_BACKEND
+              value: supabase
+            - name: RATE_LIMIT_DISTRIBUTED_FALLBACK_TO_MEMORY
+              value: "true"
+            - name: RATE_LIMIT_WINDOW_SECONDS
+              value: "60"
+            - name: RATE_LIMIT_SIGNUP_MAX_REQUESTS
+              value: "60"
+            - name: RATE_LIMIT_PUBLIC_INVOICE_MAX_REQUESTS
+              value: "300"
+            - name: OPS_ALERT_CHANNEL
+              value: runbook
+            - name: OPS_ALERT_RATE_LIMIT_THRESHOLD
+              value: "10"
+            - name: OPS_ALERT_BACKGROUND_FAILURE_THRESHOLD
+              value: "3"
+            - name: OPS_ALERT_AGENT_FAILURE_THRESHOLD
+              value: "1"

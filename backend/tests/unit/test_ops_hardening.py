@@ -9,8 +9,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import settings
 from app.core.db import get_service_role_client
-from app.core.rate_limit import InMemoryRateLimiter, RateLimitMiddleware, RateLimitRule
+from app.core.rate_limit import (
+    InMemoryRateLimiter,
+    RateLimitMiddleware,
+    RateLimitRule,
+    SupabaseRateLimiter,
+)
 from app.core.tenant import get_tenant_id
 from app.main import app as main_app
 from app.services.operational_telemetry import (
@@ -77,6 +83,88 @@ def test_rate_limit_middleware_returns_safe_429_shape() -> None:
     assert second.json()["detail"]["code"] == "rate_limit_exceeded"
     assert "Retry-After" in second.headers
     assert second.headers["X-RateLimit-Remaining"] == "0"
+    assert second.headers["X-RateLimit-Backend"] == "memory"
+    assert second.headers["X-RateLimit-Fallback"] == "0"
+
+
+class _RpcResult:
+    def __init__(self, data: list[dict[str, Any]]) -> None:
+        self.data = data
+
+
+class _RpcQuery:
+    def __init__(self, data: list[dict[str, Any]]) -> None:
+        self.data = data
+
+    def execute(self) -> _RpcResult:
+        return _RpcResult(self.data)
+
+
+class _RpcDb:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def rpc(self, name: str, params: dict[str, Any]) -> _RpcQuery:
+        self.calls.append((name, params))
+        return _RpcQuery([{"allowed": True, "request_count": 1, "retry_after_seconds": 0}])
+
+
+class _BrokenRpcDb:
+    def rpc(self, _name: str, _params: dict[str, Any]) -> _RpcQuery:
+        raise RuntimeError("distributed store unavailable")
+
+
+def test_supabase_rate_limiter_uses_rpc_with_hashed_subject() -> None:
+    db = _RpcDb()
+    limiter = SupabaseRateLimiter(db_factory=lambda: db, subject_salt="unit")
+    rule = RateLimitRule(
+        name="public_invoice",
+        method="GET",
+        path_prefix="/api/v1/public/invoices/",
+        max_requests=2,
+        window_seconds=60,
+    )
+
+    decision = limiter.check(rule=rule, subject="203.0.113.12")
+
+    assert decision.allowed is True
+    assert decision.backend == "supabase"
+    assert decision.remaining == 1
+    assert db.calls[0][0] == "check_rate_limit"
+    params = db.calls[0][1]
+    assert params["p_rule_name"] == "public_invoice"
+    assert params["p_subject_hash"] != "203.0.113.12"
+    assert len(params["p_subject_hash"]) == 64
+
+
+def test_supabase_rate_limiter_falls_back_to_memory_when_rpc_fails() -> None:
+    global_telemetry.reset()
+    limiter = SupabaseRateLimiter(
+        db_factory=lambda: _BrokenRpcDb(),
+        fallback_limiter=InMemoryRateLimiter(),
+    )
+    rule = RateLimitRule(
+        name="signup",
+        method="POST",
+        path_prefix="/api/v1/auth/signup",
+        max_requests=1,
+        window_seconds=60,
+    )
+
+    first = limiter.check(rule=rule, subject="127.0.0.1")
+    second = limiter.check(rule=rule, subject="127.0.0.1")
+    snapshot = global_telemetry.snapshot()
+    global_telemetry.reset()
+
+    assert first.allowed is True
+    assert first.backend == "memory"
+    assert first.fallback_used is True
+    assert second.allowed is False
+    assert second.retry_after_seconds > 0
+    assert snapshot["background_failures"][0] == {
+        "worker_name": "rate_limit_distributed_backend",
+        "count": 2,
+    }
 
 
 def test_operational_telemetry_sanitises_paths_and_counts_failures() -> None:
@@ -170,12 +258,60 @@ def test_tenant_health_summary_exposes_safe_operational_signals() -> None:
     assert summary["status"] == "degraded"
     assert summary["tenant_id"] == "tenant-1"
     assert summary["runtime"]["queue_configured"] in {True, False}
+    assert summary["rate_limit"]["backend"] in {"memory", "supabase"}
     assert all(check["status"] == "ok" for check in summary["checks"]["tables"])
     assert summary["telemetry"]["failed_agent_runs_24h"] == 1
     assert summary["telemetry"]["failed_tool_invocations_24h"] == 1
     assert summary["telemetry"]["failed_tools_by_name_24h"] == [
         {"tool_name": "send_email", "count": 1}
     ]
+    assert {item["code"] for item in summary["alerts"]["items"]} >= {
+        "tenant_health_degraded",
+        "agent_failure_spike",
+    }
+
+
+def test_tenant_health_alerts_route_without_raw_sensitive_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ops_alert_rate_limit_threshold", 1)
+    monkeypatch.setattr(settings, "ops_alert_background_failure_threshold", 1)
+    monkeypatch.setattr(settings, "ops_alert_webhook_url", "")
+    raw_token = "token_1234567890abcdef"
+    global_telemetry.reset()
+    global_telemetry.record_request_failure(
+        method="GET",
+        path=f"/api/v1/public/invoices/{raw_token}",
+        status_code=429,
+    )
+    global_telemetry.record_background_failure("close_scheduler_worker")
+
+    try:
+        summary = TenantHealthService(_Db(), "tenant-1").summary()  # type: ignore[arg-type]
+    finally:
+        global_telemetry.reset()
+
+    codes = {item["code"] for item in summary["alerts"]["items"]}
+    assert summary["alerts"]["route"]["route_type"] == "runbook_queue"
+    assert {"public_endpoint_abuse", "background_failure_spike"} <= codes
+    assert raw_token not in str(summary)
+    assert "jwt" not in str(summary).lower()
+
+
+def test_tenant_health_alert_route_hides_configured_webhook_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_url = "https://hooks.example.test/secret-token"
+    monkeypatch.setattr(settings, "ops_alert_channel", "secops")
+    monkeypatch.setattr(settings, "ops_alert_webhook_url", webhook_url)
+
+    summary = TenantHealthService(_Db(), "tenant-1").summary()  # type: ignore[arg-type]
+
+    assert summary["alerts"]["route"] == {
+        "route_type": "webhook",
+        "channel": "secops",
+        "configured": True,
+    }
+    assert webhook_url not in str(summary)
+    assert "secret-token" not in str(summary)
 
 
 def test_tenant_health_endpoint_returns_admin_scoped_safe_summary() -> None:
@@ -206,6 +342,7 @@ def test_tenant_health_endpoint_returns_admin_scoped_safe_summary() -> None:
     assert body["tenant_id"] == "tenant-1"
     assert body["checks"]["tables"][0] == {"name": "tenants", "status": "ok"}
     assert body["telemetry"]["request_failures"][0]["path"].endswith("/{token}")
+    assert body["alerts"]["route"]["channel"] == "runbook"
     assert "token_1234567890abcdef" not in response.text
 
 
