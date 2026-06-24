@@ -19,6 +19,22 @@ export interface HitlTask {
   /** Entity that triggered this task — used for navigation on intelligence_alert cards. */
   related_entity_type?: string;
   related_entity_id?: string;
+  decision_history?: HitlDecisionEvent[];
+}
+
+export interface HitlDecisionEvent {
+  id: string;
+  event_type: string;
+  action: string;
+  actor_user_id?: string | null;
+  actor_role?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  before_state: Record<string, unknown>;
+  after_state: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  event_hash: string;
+  created_at: string;
 }
 
 @Injectable({ providedIn: 'root' })

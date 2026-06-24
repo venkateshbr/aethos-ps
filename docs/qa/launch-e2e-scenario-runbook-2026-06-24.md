@@ -95,7 +95,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Signup wizard | `/signup` | Supplemental only | Do not use for scenario tenant setup in this pass; verify page renders and no regression is introduced |
 | Copilot | `/app/copilot` | 8, 10 | New chat, prompt send, upload entry point, draft cards, approve/reject actions, low-confidence/HITL path, prompt-injection refusal |
 | Documents | `/app/documents` | 1, 5, 6, 10 | Uploaded/extracted documents appear, source records can be found, empty and error states render |
-| Inbox/HITL | `/app/inbox` | 3, 5, 6, 8, 10 | Approve, reject, edit payload, approve-all where safe, L3 promotion task handling, assigned owner/SLA chips |
+| Inbox/HITL | `/app/inbox` | 3, 5, 6, 8, 10 | Approve, reject, edit payload, approve-all where safe, required-role chips, Open/Done/All status filters, decision-history cards, L3 promotion task handling, assigned owner/SLA chips |
 | Contacts/customers/vendors | `/app/clients`, `/app/clients/:id` | Master, 1-7 | Customer/vendor/both creation, filters, details, vendor onboarding controls, AR/AP history visibility |
 | People | `/app/people` | Master, 1-4, 10 | Employee creation, employment type/rates/targets, list filtering, invalid data validation |
 | Engagements | `/app/engagements`, `/app/engagements/:id` | 1-4, 10 | Fixed fee, T&M, capped T&M, retainer, retainer draw, milestone, mixed billing where available |
@@ -543,6 +543,8 @@ Current implementation assessment:
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | Full PO matching/project coding from document remains broader P2P coverage | #264 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
+| Enterprise approval policy | Implemented first slice: Inbox exposes required Owner/Admin/Manager approval role and the API enforces the same policy, including approve-with-edits re-evaluation | Tenant-configurable policy UI and deeper role taxonomy remain future enterprise controls | #280 |
+| Enterprise decision audit | Implemented first slice: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history | Browser E2E automation and broader business-record timeline surfacing remain future depth | #281 |
 
 ## Scenario 11 - AI Finance Department Command Center
 

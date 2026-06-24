@@ -14,6 +14,7 @@ _TASKS_TABLE = "hitl_tasks"
 _SUGGESTIONS_TABLE = "agent_suggestions"
 _CORRECTIONS_TABLE = "agent_corrections"
 _EVAL_CANDIDATES_TABLE = "agent_eval_candidates"
+_FINANCIAL_EVENTS_TABLE = "financial_events"
 
 
 class InboxRepository:
@@ -84,6 +85,49 @@ class InboxRepository:
         )
         return result.data[0] if result.data else None
 
+    async def list_decision_events_for_tasks(
+        self,
+        task_ids: list[str],
+        *,
+        limit_per_task: int = 5,
+    ) -> dict[str, list[dict]]:
+        if not task_ids:
+            return {}
+
+        result = await asyncio.to_thread(
+            lambda: self.db.table(_FINANCIAL_EVENTS_TABLE)
+            .select("*")
+            .eq("tenant_id", self.tenant_id)
+            .eq("entity_type", "hitl_task")
+            .in_("entity_id", task_ids)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        grouped: dict[str, list[dict]] = {task_id: [] for task_id in task_ids}
+        for row in result.data or []:
+            task_id = str(row.get("entity_id") or "")
+            if task_id in grouped and len(grouped[task_id]) < limit_per_task:
+                grouped[task_id].append(row)
+        return grouped
+
+    async def list_decision_events_for_task(
+        self,
+        task_id: str,
+        *,
+        limit: int = 10,
+    ) -> list[dict]:
+        result = await asyncio.to_thread(
+            lambda: self.db.table(_FINANCIAL_EVENTS_TABLE)
+            .select("*")
+            .eq("tenant_id", self.tenant_id)
+            .eq("entity_type", "hitl_task")
+            .eq("entity_id", task_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+
     # ------------------------------------------------------------------
     # Write — tasks
     # ------------------------------------------------------------------
@@ -130,6 +174,43 @@ class InboxRepository:
             .eq("id", suggestion_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
+        )
+
+    async def append_financial_event(
+        self,
+        *,
+        event_type: str,
+        entity_type: str,
+        entity_id: str,
+        source_type: str | None,
+        source_id: str | None,
+        actor_user_id: str | None,
+        actor_role: str | None,
+        action: str,
+        before_state: dict,
+        after_state: dict,
+        metadata: dict,
+        idempotency_key: str | None,
+    ) -> None:
+        await asyncio.to_thread(
+            lambda: self.db.rpc(
+                "append_financial_event",
+                {
+                    "p_tenant_id": self.tenant_id,
+                    "p_event_type": event_type,
+                    "p_entity_type": entity_type,
+                    "p_entity_id": entity_id,
+                    "p_source_type": source_type,
+                    "p_source_id": source_id,
+                    "p_actor_user_id": actor_user_id,
+                    "p_actor_role": actor_role,
+                    "p_action": action,
+                    "p_before_state": before_state,
+                    "p_after_state": after_state,
+                    "p_metadata": metadata,
+                    "p_idempotency_key": idempotency_key,
+                },
+            ).execute()
         )
 
     # ------------------------------------------------------------------

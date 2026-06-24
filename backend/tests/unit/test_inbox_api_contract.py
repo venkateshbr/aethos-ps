@@ -32,12 +32,19 @@ class _Query:
         self._order_desc = False
         self._limit: int | None = None
         self._update_payload: dict[str, Any] | None = None
+        self._insert_payload: dict[str, Any] | None = None
+        self._upsert_payload: dict[str, Any] | None = None
+        self._in_filters: list[tuple[str, set[Any]]] = []
 
     def select(self, *_args: Any, **_kwargs: Any) -> _Query:
         return self
 
     def eq(self, key: str, value: Any) -> _Query:
         self._eq_filters.append((key, value))
+        return self
+
+    def in_(self, key: str, values: list[Any]) -> _Query:
+        self._in_filters.append((key, set(values)))
         return self
 
     def is_(self, key: str, value: Any) -> _Query:
@@ -57,9 +64,33 @@ class _Query:
         self._update_payload = dict(payload)
         return self
 
+    def insert(self, payload: dict[str, Any]) -> _Query:
+        self._insert_payload = dict(payload)
+        return self
+
+    def upsert(self, payload: dict[str, Any], **_kwargs: Any) -> _Query:
+        self._upsert_payload = dict(payload)
+        return self
+
     def execute(self) -> _Result:
+        if self._insert_payload is not None:
+            payload = dict(self._insert_payload)
+            payload.setdefault("id", f"{self.table}-{len(self.db.tables[self.table]) + 1}")
+            self.db.tables[self.table].append(payload)
+            if self.table == "agent_suggestions":
+                self.db.suggestion_by_id[str(payload["id"])] = payload
+            return _Result([deepcopy(payload)])
+
+        if self._upsert_payload is not None:
+            payload = dict(self._upsert_payload)
+            payload.setdefault("id", f"{self.table}-{len(self.db.tables[self.table]) + 1}")
+            self.db.tables[self.table].append(payload)
+            return _Result([deepcopy(payload)])
+
         rows = self._filtered_rows()
         if self._update_payload is not None:
+            if self.table == "financial_events":
+                raise AssertionError("financial_events must not be updated")
             for row in rows:
                 row.update(self._update_payload)
             return _Result(deepcopy(rows))
@@ -78,6 +109,8 @@ class _Query:
         rows = list(self.db.tables[self.table])
         for key, value in self._eq_filters:
             rows = [row for row in rows if row.get(key) == value]
+        for key, values in self._in_filters:
+            rows = [row for row in rows if row.get(key) in values]
         return rows
 
     def _with_embeds(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -126,6 +159,9 @@ class _FakeDb:
                     "deleted_at": None,
                 },
             ],
+            "financial_events": [],
+            "agent_corrections": [],
+            "agent_eval_candidates": [],
         }
         self.suggestion_by_id = {
             str(row["id"]): row for row in self.tables["agent_suggestions"]
@@ -133,6 +169,39 @@ class _FakeDb:
 
     def table(self, name: str) -> _Query:
         return _Query(self, name)
+
+    def rpc(self, name: str, params: dict[str, Any]) -> _Query:
+        if name != "append_financial_event":
+            raise AssertionError(f"unexpected rpc {name}")
+        event = {
+            "id": f"event-{len(self.tables['financial_events']) + 1}",
+            "tenant_id": params["p_tenant_id"],
+            "event_type": params["p_event_type"],
+            "entity_type": params["p_entity_type"],
+            "entity_id": params["p_entity_id"],
+            "source_type": params["p_source_type"],
+            "source_id": params["p_source_id"],
+            "actor_user_id": params["p_actor_user_id"],
+            "actor_role": params["p_actor_role"],
+            "action": params["p_action"],
+            "before_state": params["p_before_state"],
+            "after_state": params["p_after_state"],
+            "metadata": params["p_metadata"],
+            "idempotency_key": params["p_idempotency_key"],
+            "previous_event_hash": None,
+            "event_hash": f"hash-event-{len(self.tables['financial_events']) + 1}",
+            "created_at": "2026-06-24T00:00:00+00:00",
+        }
+        self.tables["financial_events"].append(event)
+        return _RpcResult(event)
+
+
+class _RpcResult:
+    def __init__(self, row: dict[str, Any]) -> None:
+        self.row = row
+
+    def execute(self) -> _Result:
+        return _Result([deepcopy(self.row)])
 
 
 class _ForbiddenDb:
@@ -228,6 +297,13 @@ def test_inbox_approval_denies_user_below_required_policy_role(
     assert "requires owner or higher" in response.json()["detail"]
     assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
     assert fake_db.tables["agent_suggestions"][0]["status"] == "pending"
+    event = fake_db.tables["financial_events"][0]
+    assert event["event_type"] == "hitl_task.approval_denied"
+    assert event["action"] == "approve_denied"
+    assert event["entity_type"] == "hitl_task"
+    assert event["entity_id"] == "task-1"
+    assert event["metadata"]["decision_result"] == "denied"
+    assert event["metadata"]["policy"]["required_role"] == "owner"
 
 
 def test_inbox_approve_with_edits_evaluates_corrected_payload_policy(
@@ -263,6 +339,112 @@ def test_inbox_approve_with_edits_evaluates_corrected_payload_policy(
     assert response.status_code == 403, response.text
     assert "requires owner or higher" in response.json()["detail"]
     assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
+    event = fake_db.tables["financial_events"][0]
+    assert event["event_type"] == "hitl_task.approval_denied"
+    assert event["action"] == "approve_with_edits_denied"
+
+
+def test_inbox_approval_writes_decision_audit_event(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["hitl_tasks"][0]["kind"] = "review_note"
+
+    response = client.post("/api/v1/inbox/tasks/task-1/approve")
+
+    assert response.status_code == 200, response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "done"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "approved"
+    event = fake_db.tables["financial_events"][0]
+    assert event["event_type"] == "hitl_task.approved"
+    assert event["action"] == "approved"
+    assert event["actor_user_id"] == "user-1"
+    assert event["actor_role"] == "manager"
+    assert event["source_type"] == "agent_suggestion"
+    assert event["source_id"] == "suggestion-1"
+    assert event["before_state"]["payload"]["vendor_name"] == "Acme Supplies"
+    assert event["after_state"]["task"]["status"] == "done"
+    assert event["after_state"]["materialisation"]["entity_type"] == "review_note"
+    assert event["metadata"]["policy"]["required_role"] == "manager"
+    assert event["idempotency_key"] == "hitl_task.approved:task-1"
+
+
+def test_inbox_approve_with_edits_writes_before_after_audit_event(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["hitl_tasks"][0]["kind"] = "review_note"
+
+    response = client.post(
+        "/api/v1/inbox/tasks/task-1/approve-with-edits",
+        json={"corrected_payload": {"vendor_name": "Acme Corrected"}},
+    )
+
+    assert response.status_code == 200, response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "done"
+    assert fake_db.tables["agent_corrections"][0]["correction_type"] == "edit"
+    event = fake_db.tables["financial_events"][0]
+    assert event["event_type"] == "hitl_task.approved_with_edits"
+    assert event["action"] == "approved_with_edits"
+    assert event["before_state"]["payload"]["vendor_name"] == "Acme Supplies"
+    assert event["after_state"]["payload"]["vendor_name"] == "Acme Corrected"
+    assert event["idempotency_key"] == "hitl_task.approved_with_edits:task-1"
+
+
+def test_inbox_reject_writes_decision_audit_event(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    response = client.post(
+        "/api/v1/inbox/tasks/task-1/reject",
+        json={"reason": "Duplicate vendor invoice"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "done"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "rejected"
+    assert fake_db.tables["agent_corrections"][0]["correction_type"] == "reject"
+    event = fake_db.tables["financial_events"][0]
+    assert event["event_type"] == "hitl_task.rejected"
+    assert event["action"] == "rejected"
+    assert event["after_state"]["payload"]["reason"] == "Duplicate vendor invoice"
+    assert event["metadata"]["decision_result"] == "rejected"
+
+
+def test_inbox_done_task_detail_exposes_decision_history(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["hitl_tasks"][0]["status"] = "done"
+    fake_db.tables["financial_events"].append(
+        {
+            "id": "event-1",
+            "tenant_id": TENANT_ID,
+            "event_type": "hitl_task.approved",
+            "entity_type": "hitl_task",
+            "entity_id": "task-1",
+            "source_type": "agent_suggestion",
+            "source_id": "suggestion-1",
+            "actor_user_id": "user-1",
+            "actor_role": "manager",
+            "action": "approved",
+            "before_state": {},
+            "after_state": {"materialisation": {"entity_type": "review_note"}},
+            "metadata": {"decision_result": "approved"},
+            "idempotency_key": "hitl_task.approved:task-1",
+            "previous_event_hash": None,
+            "event_hash": "hash-event-1",
+            "created_at": "2026-06-24T00:00:00+00:00",
+        }
+    )
+
+    response = client.get("/api/v1/inbox/tasks/task-1")
+
+    assert response.status_code == 200, response.text
+    history = response.json()["decision_history"]
+    assert len(history) == 1
+    assert history[0]["event_type"] == "hitl_task.approved"
+    assert history[0]["event_hash"] == "hash-event-1"
 
 
 def test_inbox_escalation_uses_service_role_client(

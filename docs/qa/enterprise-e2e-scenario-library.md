@@ -37,8 +37,8 @@ agent ledger.
 | ENT-DOC-001 | Platform guide links current product workflow to QA scenarios | Implemented as documentation baseline | #279 |
 | ENT-CTRL-001 | Approval policy routes high-risk task to required role | Implemented first slice; browser automation pending | #280 |
 | ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Implemented first slice; browser automation pending | #280 |
-| ENT-AUD-001 | Inbox approval writes immutable decision event | Planned | #281 |
-| ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Planned | #281 |
+| ENT-AUD-001 | Inbox approval writes immutable decision event | Implemented first slice; browser automation pending | #281 |
+| ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Implemented first slice; browser automation pending | #281 |
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Planned | #282 |
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Planned | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Planned | #283 |
@@ -134,25 +134,42 @@ Expected result:
 
 Persona: Controller approving an AI-created draft.
 
+Status: First slice implemented. Inbox approve/reject/approval-denial paths
+append `financial_events` records, and Inbox Done/All status views display the
+recent decision timeline. Browser automation is still pending.
+
 Steps:
 
 1. Use Copilot to create an Inbox-reviewed finance action.
 2. Approve the task.
-3. Open the task detail or related business record.
+3. Open Inbox with Done or All status selected.
 4. Inspect decision history.
 
 Expected result:
 
-- Decision history includes actor, timestamp, action, source suggestion, source task, and safe payload summary.
+- Decision history includes actor role, timestamp, action, source suggestion, source task, policy metadata, event hash, and safe payload summary.
+- The event includes payload hashes and materialized entity references where available.
 - Normal update paths cannot mutate the original audit event.
 
 Negative path:
 
 - Attempt to edit audit event through normal API or repository code fails.
+- Under-privileged approval attempts append a denied decision event and leave the task open.
+
+Automation target:
+
+- Browser: create or seed a task, approve it, switch Inbox to Done, and assert
+  the decision-history panel appears on the resolved card.
+- API: assert `GET /api/v1/financial-events?entity_type=hitl_task&entity_id=<task_id>`
+  returns the corresponding `hitl_task.approved` event.
 
 ## ENT-AUD-002 - Approve-With-Edits Audit
 
 Persona: AP Lead correcting an extracted vendor invoice.
+
+Status: First slice implemented. Approve-with-edits writes before/after safe
+summaries and hashes to the immutable financial event ledger. Browser
+automation is still pending.
 
 Steps:
 
@@ -165,6 +182,13 @@ Expected result:
 - Decision history distinguishes original AI proposal from reviewed payload.
 - Sensitive raw document data is not overexposed.
 - Materialized record reflects the reviewed payload, not the unedited proposal.
+
+Evidence:
+
+- `hitl_task.approved_with_edits` event has original and corrected safe payload
+  summaries, different payload hashes when the payload changed, source
+  suggestion id, actor role, and policy metadata.
+- `agent_corrections` still stores the training signal for the edited output.
 
 ## ENT-RBAC-001 - Auditor Read-Only Persona
 

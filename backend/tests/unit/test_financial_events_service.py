@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -152,3 +153,16 @@ def test_export_events_csv_includes_hash_chain_columns() -> None:
     assert row["previous_event_hash"] == "hash-older"
     assert row["event_hash"] == "hash-event-newer"
     assert row["after_state_json"] == '{"id":"lock-1"}'
+
+
+def test_financial_events_migration_defends_immutability() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "0039_financial_event_log.sql"
+    ).read_text()
+
+    assert "BEFORE UPDATE ON financial_events" in migration
+    assert "BEFORE DELETE ON financial_events" in migration
+    assert "financial_events is immutable" in migration

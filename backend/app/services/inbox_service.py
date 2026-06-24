@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException, status
 
@@ -24,16 +26,25 @@ from app.core.rbac import ROLE_HIERARCHY, UserRole
 from app.models.inbox import (
     ApproveResponse,
     EscalateResponse,
+    HitlDecisionEvent,
     HitlTaskDetail,
     HitlTaskListResponse,
     HitlTaskSummary,
     RejectResponse,
 )
 from app.repositories.inbox_repo import InboxRepository
-from app.services.approval_policy import ApprovalPolicyMatrix
+from app.services.agent_run_ledger import stable_payload_hash
+from app.services.approval_policy import ApprovalPolicyDecision, ApprovalPolicyMatrix
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ApprovalCheck:
+    decision: ApprovalPolicyDecision
+    user_role: UserRole
+    payload: dict
 
 
 class InboxService:
@@ -55,14 +66,22 @@ class InboxService:
         limit: int = 50,
     ) -> HitlTaskListResponse:
         rows = await self._repo.list_tasks(status=status_filter, kind=kind, limit=limit)
-        items = [_row_to_summary(r) for r in rows]
+        histories = await self._repo.list_decision_events_for_tasks(
+            [str(row["id"]) for row in rows],
+            limit_per_task=3,
+        )
+        items = [
+            _row_to_summary(r, decision_history=histories.get(str(r["id"]), []))
+            for r in rows
+        ]
         return HitlTaskListResponse(items=items, total=len(items))
 
     async def get_task(self, task_id: str) -> HitlTaskDetail | None:
         row = await self._repo.get_task(task_id)
         if row is None:
             return None
-        return _row_to_detail(row)
+        history = await self._repo.list_decision_events_for_task(task_id)
+        return _row_to_detail(row, decision_history=history)
 
     # ------------------------------------------------------------------
     # Actions
@@ -70,9 +89,9 @@ class InboxService:
 
     async def approve(self, task_id: str, user_id: str) -> ApproveResponse:
         task = await self._get_open_task_or_raise(task_id)
-        await self._enforce_approval_policy(task, user_id)
+        check = await self._enforce_approval_policy(task, user_id, action="approve")
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
-        payload = self._task_materialisation_payload(task)
+        payload = check.payload
         kind = task.get("kind", "")
         # `agent_name` was previously read here for the record_correction call
         # that lived under the plain-approve path — removed in #126 because the
@@ -92,6 +111,18 @@ class InboxService:
             # agent_suggestions.status, not from this table.
 
         await self._repo.mark_done(task_id, decided_by=user_id)
+        await self._record_decision_event(
+            task,
+            event_type="hitl_task.approved",
+            action="approved",
+            actor_user_id=user_id,
+            actor_role=check.user_role,
+            decision=check.decision,
+            before_payload=payload,
+            after_payload=payload,
+            materialisation=entity,
+            idempotency_key=f"hitl_task.approved:{task_id}",
+        )
 
         return ApproveResponse(
             materialised=True,
@@ -111,10 +142,11 @@ class InboxService:
         kind = task.get("kind", "")
         agent_name = task.get("agent_name", "unknown")
 
-        await self._enforce_approval_policy(
+        check = await self._enforce_approval_policy(
             task,
             user_id,
             payload_override=corrected_payload,
+            action="approve_with_edits",
         )
 
         entity = await self._materialise(kind, corrected_payload, user_id=user_id)
@@ -132,6 +164,18 @@ class InboxService:
             )
 
         await self._repo.mark_done(task_id, decided_by=user_id)
+        await self._record_decision_event(
+            task,
+            event_type="hitl_task.approved_with_edits",
+            action="approved_with_edits",
+            actor_user_id=user_id,
+            actor_role=check.user_role,
+            decision=check.decision,
+            before_payload=original,
+            after_payload=corrected_payload,
+            materialisation=entity,
+            idempotency_key=f"hitl_task.approved_with_edits:{task_id}",
+        )
 
         return ApproveResponse(
             materialised=True,
@@ -146,6 +190,9 @@ class InboxService:
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
         agent_name = task.get("agent_name", "unknown")
         kind = task.get("kind", "")
+        user_role = await self._fetch_user_role(user_id)
+        payload = self._task_materialisation_payload(task)
+        decision = ApprovalPolicyMatrix.decision_for_task(kind, payload)
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "rejected", user_id)
@@ -160,6 +207,18 @@ class InboxService:
             )
 
         await self._repo.mark_done(task_id, decided_by=user_id)
+        await self._record_decision_event(
+            task,
+            event_type="hitl_task.rejected",
+            action="rejected",
+            actor_user_id=user_id,
+            actor_role=user_role,
+            decision=decision,
+            before_payload=payload,
+            after_payload={"reason": _truncate(reason, 500)},
+            materialisation=None,
+            idempotency_key=f"hitl_task.rejected:{task_id}",
+        )
 
         return RejectResponse(rejected=True, task_id=task_id)
 
@@ -219,13 +278,31 @@ class InboxService:
         user_id: str,
         *,
         payload_override: dict | None = None,
-    ) -> None:
+        action: str,
+    ) -> ApprovalCheck:
         kind = str(task.get("kind") or "")
         payload = payload_override or self._task_materialisation_payload(task)
         decision = ApprovalPolicyMatrix.decision_for_task(kind, payload)
         user_role = await self._fetch_user_role(user_id)
         if ROLE_HIERARCHY[user_role] >= ROLE_HIERARCHY[decision.required_role]:
-            return
+            return ApprovalCheck(decision=decision, user_role=user_role, payload=payload)
+
+        await self._record_decision_event(
+            task,
+            event_type="hitl_task.approval_denied",
+            action=f"{action}_denied",
+            actor_user_id=user_id,
+            actor_role=user_role,
+            decision=decision,
+            before_payload=payload,
+            after_payload={
+                "decision_result": "denied",
+                "current_role": user_role.value,
+                "required_role": decision.required_role.value,
+            },
+            materialisation=None,
+            idempotency_key=None,
+        )
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -233,6 +310,62 @@ class InboxService:
                 f"Approval requires {decision.required_role.value} or higher "
                 f"for {decision.reason}; current role is {user_role.value}"
             ),
+        )
+
+    async def _record_decision_event(
+        self,
+        task: dict,
+        *,
+        event_type: str,
+        action: str,
+        actor_user_id: str,
+        actor_role: UserRole,
+        decision: ApprovalPolicyDecision,
+        before_payload: dict,
+        after_payload: dict,
+        materialisation: dict | None,
+        idempotency_key: str | None,
+    ) -> None:
+        task_id = str(task.get("id") or "")
+        suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
+        await self._repo.append_financial_event(
+            event_type=event_type,
+            entity_type="hitl_task",
+            entity_id=task_id,
+            source_type="agent_suggestion" if suggestion_id else "hitl_task",
+            source_id=str(suggestion_id or task_id),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role.value,
+            action=action,
+            before_state={
+                "task": _task_audit_summary(task),
+                "payload": _safe_payload_summary(before_payload),
+                "payload_hash": stable_payload_hash(before_payload),
+            },
+            after_state={
+                "task": {
+                    **_task_audit_summary(task),
+                    "status": (
+                        "open"
+                        if action.endswith("_denied")
+                        else "done"
+                    ),
+                },
+                "payload": _safe_payload_summary(after_payload),
+                "payload_hash": stable_payload_hash(after_payload),
+                "materialisation": _materialisation_audit_summary(materialisation),
+            },
+            metadata={
+                "kind": str(task.get("kind") or ""),
+                "agent_name": str(task.get("agent_name") or "unknown"),
+                "confidence": str(task.get("confidence") or ""),
+                "policy": decision.to_metadata(),
+                "decision_result": _decision_result(action),
+                "required_role": decision.required_role.value,
+                "actor_role": actor_role.value,
+                "agent_suggestion_id": str(suggestion_id) if suggestion_id else None,
+            },
+            idempotency_key=idempotency_key,
         )
 
     async def _fetch_user_role(self, user_id: str) -> UserRole:
@@ -1127,7 +1260,11 @@ def _non_empty(value: object) -> str | None:
     return text or None
 
 
-def _row_to_summary(row: dict) -> HitlTaskSummary:
+def _row_to_summary(
+    row: dict,
+    *,
+    decision_history: list[dict] | None = None,
+) -> HitlTaskSummary:
     approval = _approval_policy_metadata(row)
     return HitlTaskSummary(
         id=str(row["id"]),
@@ -1143,10 +1280,18 @@ def _row_to_summary(row: dict) -> HitlTaskSummary:
         required_approval_role=approval.get("required_role"),
         approval_policy_reason=approval.get("reason"),
         approval_policy=approval,
+        decision_history=[
+            HitlDecisionEvent.from_db(event)
+            for event in (decision_history or [])
+        ],
     )
 
 
-def _row_to_detail(row: dict) -> HitlTaskDetail:
+def _row_to_detail(
+    row: dict,
+    *,
+    decision_history: list[dict] | None = None,
+) -> HitlTaskDetail:
     approval = _approval_policy_metadata(row)
     return HitlTaskDetail(
         id=str(row["id"]),
@@ -1162,6 +1307,10 @@ def _row_to_detail(row: dict) -> HitlTaskDetail:
         required_approval_role=approval.get("required_role"),
         approval_policy_reason=approval.get("reason"),
         approval_policy=approval,
+        decision_history=[
+            HitlDecisionEvent.from_db(event)
+            for event in (decision_history or [])
+        ],
         description=row.get("description"),
         payload=row.get("payload", {}),
     )
@@ -1179,3 +1328,168 @@ def _approval_policy_metadata(row: dict) -> dict[str, str]:
         str(row.get("kind") or ""),
         payload,
     ).to_metadata()
+
+
+def _task_audit_summary(task: dict) -> dict[str, Any]:
+    return {
+        "id": str(task.get("id") or ""),
+        "kind": str(task.get("kind") or ""),
+        "status": str(task.get("status") or ""),
+        "priority": str(task.get("priority") or ""),
+        "title": _truncate(str(task.get("title") or ""), 200),
+    }
+
+
+def _materialisation_audit_summary(materialisation: dict | None) -> dict[str, Any]:
+    if not materialisation:
+        return {}
+    result: dict[str, Any] = {}
+    for key in (
+        "entity_type",
+        "entity_id",
+        "client_id",
+        "project_id",
+        "parent_plan_id",
+        "dispatched_tool",
+        "child_review_tasks_created",
+        "child_tasks_created",
+        "action_count",
+        "send_status",
+    ):
+        value = materialisation.get(key)
+        if value is not None:
+            result[key] = value
+    if not result:
+        result["keys"] = sorted(str(key) for key in materialisation.keys())[:20]
+    return result
+
+
+def _safe_payload_summary(payload: dict | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    summary, redacted = _summarise_mapping(payload)
+    if redacted:
+        summary["redacted_fields"] = sorted(redacted)
+    return summary
+
+
+def _summarise_mapping(
+    payload: dict[str, Any],
+    *,
+    depth: int = 0,
+) -> tuple[dict[str, Any], set[str]]:
+    result: dict[str, Any] = {}
+    redacted: set[str] = set()
+    for key, value in payload.items():
+        key_text = str(key)
+        normalised_key = key_text.lower()
+        if _is_sensitive_key(normalised_key):
+            redacted.add(key_text)
+            continue
+
+        if isinstance(value, dict):
+            if depth >= 1 or key_text not in _NESTED_SUMMARY_KEYS:
+                result[f"{key_text}_keys"] = sorted(str(k) for k in value.keys())[:20]
+                continue
+            child, child_redacted = _summarise_mapping(value, depth=depth + 1)
+            result[key_text] = child
+            redacted.update(f"{key_text}.{name}" for name in child_redacted)
+            continue
+
+        if isinstance(value, list):
+            result[f"{key_text}_count"] = len(value)
+            continue
+
+        if key_text in _SUMMARY_KEYS and value is not None:
+            result[key_text] = _truncate(str(value), 200)
+
+    return result, redacted
+
+
+def _is_sensitive_key(key: str) -> bool:
+    return any(marker in key for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _decision_result(action: str) -> str:
+    if action.endswith("_denied"):
+        return "denied"
+    if action == "rejected":
+        return "rejected"
+    return "approved"
+
+
+def _truncate(value: str, max_length: int) -> str:
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 3]}..."
+
+
+_SENSITIVE_KEY_MARKERS = (
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "body_html",
+    "email_body",
+    "raw",
+    "content",
+    "ocr",
+    "document_text",
+    "base64",
+)
+
+_NESTED_SUMMARY_KEYS = {
+    "preview",
+    "invoice_draft",
+    "journal",
+    "journal_entry",
+    "source_plan_action",
+    "tool_input",
+    "dispatch_input",
+}
+
+_SUMMARY_KEYS = {
+    "action_count",
+    "action_item_id",
+    "amount",
+    "bank_account_label",
+    "bill_count",
+    "billing_arrangement",
+    "category",
+    "client_name",
+    "currency",
+    "dispatch_tool",
+    "domain",
+    "due_date",
+    "engagement_id",
+    "engagement_name",
+    "expense_date",
+    "flagged_for_review_count",
+    "invoice_number",
+    "issue_date",
+    "line_count",
+    "net_income",
+    "parent_plan_id",
+    "period",
+    "priority",
+    "project_id",
+    "proposed_pay_date",
+    "recommendation",
+    "reason",
+    "review_path",
+    "risk_class",
+    "status",
+    "subtotal",
+    "suggested_agent",
+    "suggested_tool",
+    "tax_total",
+    "title",
+    "tone",
+    "tool_name",
+    "total",
+    "total_amount",
+    "vendor",
+    "vendor_invoice_number",
+    "vendor_name",
+    "workflow",
+}
