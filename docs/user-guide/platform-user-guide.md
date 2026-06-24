@@ -9,6 +9,10 @@ Related docs:
 - Copilot prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
 - Launch QA runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](../qa/launch-e2e-scenario-runbook-2026-06-24.md)
 - Enterprise E2E scenarios: [`docs/qa/enterprise-e2e-scenario-library.md`](../qa/enterprise-e2e-scenario-library.md)
+- Engagement to Cash test guide: [`docs/test/e2e_engagement_to_cash.md`](../test/e2e_engagement_to_cash.md)
+- Procure to Pay test guide: [`docs/test/e2e_procure_to_pay.md`](../test/e2e_procure_to_pay.md)
+- Record to Report test guide: [`docs/test/e2e_record_to_report.md`](../test/e2e_record_to_report.md)
+- Ops/Security test guide: [`docs/test/e2e_ops_security.md`](../test/e2e_ops_security.md)
 - P2P PRD: [`docs/prd/advanced-p2p-v1.1.md`](../prd/advanced-p2p-v1.1.md)
 - R2R PRD: [`docs/prd/r2r-financial-close-v1.1.md`](../prd/r2r-financial-close-v1.1.md)
 
@@ -27,6 +31,42 @@ The intended user experience is one AI Finance Ops Manager coordinating work
 across specialist workflows. Users should not need internal tool names. They
 state the business outcome, review the proposed action when required, and rely
 on the audit trail to explain what happened.
+
+### Agent-first workflow loop
+
+Aethos PS should feel like an AI-run finance department with human control
+points. Most workflows follow the same loop:
+
+1. Ask Copilot for a business outcome, such as draft invoices, review vendor
+   invoices, prepare bill pay, prepare close, or explain operational blockers.
+2. Copilot performs read-only analysis directly where safe.
+3. Any sensitive write, money movement, accounting, external-send, or settings
+   change becomes an Inbox review task.
+4. The reviewer approves, edits, or rejects the task according to the approval
+   policy and role mapping.
+5. Approved work materializes into the ERP module of record.
+6. Reports, operational health, run ledgers, and financial-event timelines give
+   audit evidence for what happened.
+
+This means users can ask for outcomes without naming tools. Tool names are an
+engineering and QA fixture only; business users should describe the finance
+result and the approval boundary.
+
+### Module quick map
+
+| Module | Route | Primary users | How AI should help | Scenario anchors |
+| --- | --- | --- | --- | --- |
+| Copilot | `/app/copilot` | All finance users | Analyze, draft, upload, prepare, and explain work in business language | ENT-AIOPS-001, ENT-P2P-001, ENT-R2R-001 |
+| Inbox | `/app/inbox` | Managers, AP/AR leads, Controller, Owner/Admin | Review AI proposals, approve with edits, reject, dispatch plan items, inspect decision history | ENT-CTRL-001, ENT-AUD-001, ENT-AUD-002 |
+| Clients and vendors | `/app/clients` | Engagement managers, AP/AR leads | Create and inspect customers/vendors, link AR/AP history, support document intake | Launch scenarios 1-7 |
+| People | `/app/people` | Admins, managers | Maintain staff, rates, targets, and delivery context for billing/reporting | Launch scenarios 1-4, 10 |
+| Engagements and projects | `/app/engagements`, `/app/projects` | Engagement managers, project managers | Set billing terms, organize delivery, connect WIP to invoices and project health | Launch scenarios 1-4 |
+| Invoices and public invoice | `/app/invoices`, `/p/:token` | AR lead, Controller, client recipient | Draft/review invoices, send/collect, inspect public invoice status | Engagement to Cash guide |
+| Bills and pay bills | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003 |
+| Accounting and close | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
+| Reports | `/app/reports` | Executives, managers, auditors | Explain AR/AP/WIP/revenue/project/accounting results and tie AI recommendations to source reports | Launch scenario 10 |
+| Documents | `/app/documents` | AP, AR, engagement teams, auditors | Track uploaded source documents, extraction status, and resulting decisions | ENT-P2P-001, ENT-AUD-003 |
+| Settings | `/app/settings` | Admins, Owner, operators, auditors where read-only | Configure services, tax, autonomy, approval policy, personas, schedules, and inspect health/run ledgers | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 |
 
 ## 2. Roles And Responsibilities
 
@@ -88,6 +128,20 @@ Use Copilot for chat-first finance operations:
 Good prompts include the business period, customer/vendor/engagement name,
 desired outcome, and approval boundary. See the prompt library for examples.
 
+Recommended prompt pattern:
+
+1. State the finance outcome: "prepare June bill pay" or "draft invoices for
+   approved June WIP."
+2. Name the scope: period, customer, vendor, engagement, project, or report.
+3. State the safety boundary: "route to Inbox before paying, sending, posting,
+   locking, or changing settings."
+4. Ask for evidence: "show source records, blockers, and why each action is
+   safe or needs review."
+
+Users do not need to specify tool names in chat. Copilot should infer the
+correct internal capability from the business request. QA specs may still pin a
+tool name when they need deterministic run-ledger assertions.
+
 ### Current AI approval boundary
 
 | AI activity | Current behavior |
@@ -122,6 +176,16 @@ For each due tenant it:
 Approval boundary: approving the scheduled action plan only fans out reviewed
 Plan Items. Approving an escalation notice acknowledges the escalation; the
 source Inbox task still requires its own approval, rejection, or correction.
+
+### Recommended daily operating rhythm
+
+| Time | User | Action | Evidence to inspect |
+| --- | --- | --- | --- |
+| Morning | Owner/Admin or Controller | Ask Copilot for the daily finance ops check or inspect the scheduled Finance Ops Manager output | Inbox action plan, Settings workflow runs, agent run ledger |
+| Midday | AP/AR leads | Review vendor invoice exceptions, collections reminders, bill-pay proposals, and draft invoices | Inbox required-role chips, AP/AR records, decision history |
+| Afternoon | Engagement managers | Review WIP, project health, utilization, and billing recommendations | Reports, engagement/project detail, draft invoice tasks |
+| Close cycle | Controller | Prepare close, review blockers, record permitted overrides, and generate statement commentary | Close package, journals, financial statements, audit timeline |
+| Weekly | Owner/Admin | Review approval policy, finance personas, operational health, rate limits, and alert routing | Settings approval controls, Operational Health, run ledger |
 
 ## 4. Inbox
 
@@ -187,6 +251,9 @@ Current safeguards:
 - Journal posting is guarded by accounting validation.
 - Reports should tie back to posted business records.
 
+Scenario anchors: launch scenarios 1-4, `docs/test/e2e_engagement_to_cash.md`,
+ENT-CTRL-001, ENT-AUD-003, and #309 for automated control/audit/RBAC proof.
+
 ## 6. Procure To Pay
 
 Procure to Pay covers vendors, bills, approvals, and payment batches.
@@ -230,6 +297,10 @@ P2P depth is planned under later advanced P2P work: deeper PO/service-order
 matching, recurring bills, native bank formats, and full browser automation for
 the exception-review path.
 
+Scenario anchors: launch scenarios 5-7 and 9,
+`docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, and
+#310 for automated AI finance workflow proof.
+
 ## 7. Record To Report
 
 Record to Report covers accounting journals, close, and reporting.
@@ -266,6 +337,10 @@ Remaining enterprise R2R depth after the #285/#300 first slices:
 - Year-end close and retained earnings depth.
 - Manual journal audit enhancements.
 
+Scenario anchors: launch scenarios 8-10,
+`docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, and
+#310 for automated AI finance workflow proof.
+
 ## 8. Documents
 
 Documents are part of the audit trail for AI-assisted work.
@@ -282,6 +357,11 @@ Recommended practice:
 - Treat extracted values as proposals, not facts, until reviewed.
 - Use approve-with-edits when document data is structurally correct but needs correction.
 - Keep source documents attached for audit evidence.
+- Ask Copilot to summarize document evidence, but approve the reviewed business
+  record from Inbox before relying on it in AP, AR, engagement, or close flows.
+
+Scenario anchors: ENT-P2P-001, ENT-P2P-003, ENT-AUD-002, ENT-AUD-003, and the
+document rows in the launch runbook coverage matrix.
 
 ## 9. Reports And Management Cockpit
 
@@ -300,6 +380,19 @@ Core report families:
 Users should cross-check AI summaries against report tabs when reviewing close,
 payment, or statement packages. AI should explain numbers sourced from tools and
 reports, not invent finance totals.
+
+Recommended report review prompts:
+
+- "Explain why AR Aging changed since last week and link the invoices driving
+  the change."
+- "Compare AP Aging to the proposed bill-pay batch and flag bills excluded from
+  payment."
+- "Tie Project P&L margin movement to time, expense, vendor cost, and invoice
+  records."
+- "Explain Balance Sheet and Cash Flow movement after the June close package."
+
+Scenario anchors: launch scenario 10, ENT-R2R-003, ENT-OPS-002, ENT-OPS-003,
+and #311 for live ops/health-dashboard proof.
 
 ## 10. Settings, Agents, And Controls
 
@@ -353,6 +446,9 @@ Ops/Security slices under #286 and #301:
 - Health output is intended for internal operators and admins; it must not
   expose secrets, raw credentials, tokens, or customer document payloads.
 
+Scenario anchors: `docs/test/e2e_ops_security.md`, ENT-OPS-001, ENT-OPS-002,
+ENT-OPS-003, and #311 for distributed/live-alert proof.
+
 ## 11. Enterprise Readiness Roadmap
 
 The following work is tracked under parent issue #278:
@@ -374,8 +470,25 @@ The following work is tracked under parent issue #278:
 | #299 | P2P | Vendor invoice exception review UX and staged payment approval, first slice implemented |
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |
 | #301 | Ops/Security | Distributed rate limiting, Operational Health dashboard, and safe alert routing, first slice implemented |
+| #309 | QA proof | Browser E2E for controls, audit, and RBAC proof |
+| #310 | QA proof | Browser E2E for AI finance workflows across P2P and R2R |
+| #311 | Ops proof | Live distributed limiter, alert, and health-dashboard proof |
+| #312 | Docs and prompts | Full platform guide and prompt-library proof |
 
-## 12. Documentation And Test Definition Of Done
+## 12. Scenario Crosswalk
+
+| Guide area | User-facing proof | Automation/proof backlog |
+| --- | --- | --- |
+| Operating model, Copilot, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310, #312 |
+| Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 |
+| Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 |
+| Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | #309, #310 |
+| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 |
+| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 |
+| Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310, #311 |
+| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309, #311 |
+
+## 13. Documentation And Test Definition Of Done
 
 Every enterprise implementation slice should update:
 
@@ -389,3 +502,13 @@ Every enterprise implementation slice should update:
 Do not document internal tool names as required user behavior unless the target
 reader is an engineer or QA author. Business users should describe the finance
 outcome and approval boundary.
+
+Static verification for this documentation set:
+
+- Confirm local markdown links resolve for `docs/user-guide/platform-user-guide.md`,
+  `docs/copilot/prompt-library.md`, and
+  `docs/qa/enterprise-e2e-scenario-library.md`.
+- Confirm issue IDs #309, #310, #311, and #312 are referenced where the
+  residual automation/proof backlog is described.
+- Confirm prompt examples remain business-language prompts and do not require
+  users to name internal tools.

@@ -8,6 +8,7 @@ Related docs:
 
 - Platform user guide: [`docs/user-guide/platform-user-guide.md`](../user-guide/platform-user-guide.md)
 - Launch runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](launch-e2e-scenario-runbook-2026-06-24.md)
+- Copilot prompt library: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
 - Engagement to Cash: [`docs/test/e2e_engagement_to_cash.md`](../test/e2e_engagement_to_cash.md)
 - Procure to Pay: [`docs/test/e2e_procure_to_pay.md`](../test/e2e_procure_to_pay.md)
 - Record to Report: [`docs/test/e2e_record_to_report.md`](../test/e2e_record_to_report.md)
@@ -35,6 +36,7 @@ agent ledger.
 | ID | Scenario | Status | Tracking |
 | --- | --- | --- | --- |
 | ENT-DOC-001 | Platform guide links current product workflow to QA scenarios | Implemented as documentation baseline | #279 |
+| ENT-DOC-002 | Full platform guide and prompt-library proof maps AI finance workflows to E2E evidence | Implemented documentation proof; static link check required | #312 |
 | ENT-CTRL-001 | Approval policy routes high-risk task to required role | Implemented first slice; browser automation pending | #280 |
 | ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Implemented first slice; browser automation pending | #280 |
 | ENT-AUD-001 | Inbox approval writes immutable decision event | Implemented first slice; browser automation pending | #281 |
@@ -84,6 +86,50 @@ Automation target:
 - Markdown link check.
 - Static assertion that every #278 child issue ID appears in either this file or
   the platform guide.
+
+## ENT-DOC-002 - Full Platform Guide And Prompt Library Proof
+
+Persona: Product owner, finance operator, QA lead, implementation agent.
+
+Status: Documentation proof implemented under #312. Browser automation remains
+tracked by #309, #310, and #311.
+
+Preconditions:
+
+- First-slice enterprise issues #279-#301 are complete.
+- Third-wave proof issues #309, #310, #311, and #312 exist under parent #278.
+
+Steps:
+
+1. Open the platform user guide.
+2. Verify every major platform surface is covered: Copilot, Inbox, clients and
+   vendors, people, engagements and projects, invoices, bills/payments,
+   accounting/close, reports, documents, settings, roles, audit, and
+   operational health.
+3. Open the Copilot prompt library.
+4. Verify prompts are written in business language and do not require users to
+   name internal tools.
+5. For each major workflow, confirm the guide links to at least one scenario ID
+   or launch/test guide.
+6. Confirm the residual automation/proof backlog is explicit: #309 for
+   controls/audit/RBAC, #310 for AI finance workflows, and #311 for live ops.
+
+Expected result:
+
+- Users can learn how to operate the full product as an AI Finance Ops Manager
+  workflow.
+- QA can map every major guide area to a scenario or proof backlog item.
+- Implemented behavior is separated from future depth and live automation
+  follow-up work.
+
+Automation target:
+
+- Static markdown link check for the platform guide, prompt library, and this
+  scenario library.
+- Static assertion that #309, #310, #311, and #312 are referenced in the
+  platform guide, prompt library, and scenario library.
+- Static assertion that user-facing prompt examples do not include required
+  internal tool names.
 
 ## ENT-CTRL-001 - Role-Aware Approval Routing
 
