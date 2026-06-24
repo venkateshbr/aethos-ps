@@ -17,6 +17,9 @@ VendorRemittanceStatus = Literal["not_configured", "configured", "verified", "bl
 class ClientCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     kind: ContactKind = "customer"
+    email: str | None = Field(default=None, max_length=254)
+    phone: str | None = Field(default=None, max_length=80)
+    website: str | None = Field(default=None, max_length=500)
     billing_address: dict | None = None
     tax_id: str | None = Field(default=None, max_length=100)
     payment_terms_days: int = Field(default=30, ge=0, le=365)
@@ -32,6 +35,9 @@ class ClientCreate(BaseModel):
 class ClientUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     kind: ContactKind | None = None
+    email: str | None = Field(default=None, max_length=254)
+    phone: str | None = Field(default=None, max_length=80)
+    website: str | None = Field(default=None, max_length=500)
     billing_address: dict | None = None
     tax_id: str | None = Field(default=None, max_length=100)
     payment_terms_days: int | None = Field(default=None, ge=0, le=365)
@@ -49,6 +55,9 @@ class ClientResponse(BaseModel):
     tenant_id: str
     name: str
     kind: str
+    email: str | None = None
+    phone: str | None = None
+    website: str | None = None
     payment_terms_days: int
     created_at: str
     vendor_onboarding_status: VendorOnboardingStatus = "not_required"

@@ -282,6 +282,22 @@ export interface ChatThread {
             </div>
           }
 
+          <div class="mb-2 flex flex-wrap gap-2" role="group" aria-label="Copilot quick actions">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-default text-xs text-text-muted
+                     hover:border-border-strong hover:text-text-primary transition-colors
+                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
+                     disabled:opacity-50 disabled:cursor-not-allowed"
+              [disabled]="streaming()"
+              (click)="prefillLogTime()"
+              aria-label="Log time"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">timer</mat-icon>
+              Log time
+            </button>
+          </div>
+
           <div
             class="flex items-end gap-2 bg-surface border rounded-lg px-3 py-2 transition-colors"
             [class.border-border-strong]="!composerFocused()"
@@ -473,6 +489,10 @@ export class CopilotComponent implements OnInit {
     this.composerText.set(text);
     void this.sendMessage(text);
     this.composerText.set('');
+  }
+
+  prefillLogTime(): void {
+    this.composerText.set('Log time for today: 2 hours on ');
   }
 
   sendFromComposer(): void {

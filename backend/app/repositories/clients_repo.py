@@ -30,6 +30,8 @@ _OPTIONAL_VENDOR_CONTROL_FIELDS = frozenset(
         "vendor_onboarding_approved_by",
     }
 )
+_OPTIONAL_CONTACT_PROFILE_FIELDS = frozenset({"phone", "website"})
+_OPTIONAL_CLIENT_FIELDS = _OPTIONAL_VENDOR_CONTROL_FIELDS | _OPTIONAL_CONTACT_PROFILE_FIELDS
 
 
 class ClientRepository:
@@ -92,13 +94,13 @@ class ClientRepository:
                 lambda: self.db.table(_TABLE).insert(payload).execute()
             )
         except Exception as exc:
-            if not is_missing_column_error(exc, _OPTIONAL_VENDOR_CONTROL_FIELDS):
+            if not is_missing_column_error(exc, _OPTIONAL_CLIENT_FIELDS):
                 raise
-            fallback_payload = _without_optional_vendor_control_fields(payload)
+            fallback_payload = _without_optional_client_fields(payload)
             if fallback_payload == payload:
                 raise
             logger.warning(
-                "clients table is missing optional vendor-control columns; "
+                "clients table is missing optional client columns; "
                 "retrying insert without those fields"
             )
             result = await asyncio.to_thread(
@@ -120,19 +122,19 @@ class ClientRepository:
                 .execute()
             )
         except Exception as exc:
-            if not is_missing_column_error(exc, _OPTIONAL_VENDOR_CONTROL_FIELDS):
+            if not is_missing_column_error(exc, _OPTIONAL_CLIENT_FIELDS):
                 raise
-            fallback_data = _without_optional_vendor_control_fields(data)
+            fallback_data = _without_optional_client_fields(data)
             if fallback_data == data:
                 raise
             if not fallback_data:
                 logger.warning(
-                    "clients table is missing optional vendor-control columns; "
+                    "clients table is missing optional client columns; "
                     "skipping update because no supported fields remain"
                 )
                 return existing
             logger.warning(
-                "clients table is missing optional vendor-control columns; "
+                "clients table is missing optional client columns; "
                 "retrying update without those fields"
             )
             result = await asyncio.to_thread(
@@ -145,9 +147,9 @@ class ClientRepository:
         return result.data[0] if result.data else None
 
 
-def _without_optional_vendor_control_fields(payload: dict) -> dict:
+def _without_optional_client_fields(payload: dict) -> dict:
     return {
         key: value
         for key, value in payload.items()
-        if key not in _OPTIONAL_VENDOR_CONTROL_FIELDS
+        if key not in _OPTIONAL_CLIENT_FIELDS
     }

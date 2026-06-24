@@ -14,6 +14,8 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from app.domain.money import serialise_money
 
+ProjectStatus = Literal["planning", "active", "on_hold", "completed", "cancelled"]
+
 
 class ProjectCreate(BaseModel):
     engagement_id: str
@@ -29,6 +31,7 @@ class ProjectCreate(BaseModel):
         default=None,
         validation_alias=AliasChoices("budget_hours", "estimated_hours"),
     )
+    status: ProjectStatus = "planning"
     start_date: date | None = None
     end_date: date | None = None
 
