@@ -19,7 +19,9 @@ from starlette.responses import Response
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.core.rate_limit import RateLimitMiddleware, RateLimitRule
 from app.core.tenant import TenantMiddleware
+from app.services.operational_telemetry import telemetry
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -30,6 +32,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not settings.debug:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
+
+
+class RequestTelemetryMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        try:
+            response: Response = await call_next(request)
+        except Exception:
+            telemetry.record_request_failure(
+                method=request.method,
+                path=request.url.path,
+                status_code=500,
+            )
+            raise
+        telemetry.record_request_failure(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+        )
         return response
 
 
@@ -84,7 +105,28 @@ app.add_middleware(
 )
 
 app.add_middleware(TenantMiddleware)
+app.add_middleware(
+    RateLimitMiddleware,
+    enabled=settings.rate_limit_enabled,
+    rules=[
+        RateLimitRule(
+            name="signup",
+            method="POST",
+            path_prefix="/api/v1/auth/signup",
+            max_requests=settings.rate_limit_signup_max_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+        ),
+        RateLimitRule(
+            name="public_invoice",
+            method="GET",
+            path_prefix="/api/v1/public/invoices/",
+            max_requests=settings.rate_limit_public_invoice_max_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+        ),
+    ],
+)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestTelemetryMiddleware)
 
 # ---------------------------------------------------------------------------
 # Routers

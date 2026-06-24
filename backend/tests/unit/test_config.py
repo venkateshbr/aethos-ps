@@ -73,6 +73,24 @@ def test_optional_fields_default_to_empty_string() -> None:
         assert s.upstash_redis_url == "" or isinstance(s.upstash_redis_url, str)
 
 
+def test_rate_limit_settings_parse_from_env() -> None:
+    env = {
+        **_REQUIRED_ENV,
+        "RATE_LIMIT_ENABLED": "true",
+        "RATE_LIMIT_WINDOW_SECONDS": "30",
+        "RATE_LIMIT_SIGNUP_MAX_REQUESTS": "3",
+        "RATE_LIMIT_PUBLIC_INVOICE_MAX_REQUESTS": "7",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        s = cfg.Settings()
+        assert s.rate_limit_enabled is True
+        assert s.rate_limit_window_seconds == 30
+        assert s.rate_limit_signup_max_requests == 3
+        assert s.rate_limit_public_invoice_max_requests == 7
+
+
 # ---------------------------------------------------------------------------
 # AGENT_MODELS parser — regression guard for #96
 # AGENT_MODELS must load from BOTH JSON-list and comma-separated forms so that

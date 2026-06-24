@@ -46,8 +46,8 @@ agent ledger.
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
-| ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Planned | #286 |
-| ENT-OPS-002 | Tenant health summary exposes safe operational signals | Planned | #286 |
+| ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
+| ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 
@@ -426,6 +426,12 @@ Automation target:
 
 Persona: Security reviewer.
 
+Status: First slice implemented. App-level in-process rate limiting protects
+signup and public invoice token reads. Excess traffic returns a safe `429`
+body with `Retry-After`, `X-RateLimit-Limit`, and
+`X-RateLimit-Remaining` headers. The limiter is path-scoped so normal
+authenticated workflows are not made flaky.
+
 Steps:
 
 1. Exercise a rate-limited public/auth endpoint repeatedly from the same client context.
@@ -438,9 +444,22 @@ Expected result:
 - Tests can reset or isolate rate-limit state.
 - Legitimate E2E setup is not made flaky.
 
+Automation target:
+
+- API: configure a low threshold in test, call `POST /api/v1/auth/signup`
+  twice from the same client, and assert the second response is 429 with safe
+  detail and retry headers.
+- API: repeat for `GET /api/v1/public/invoices/{token}` with a fake token and
+  assert the response path does not expose the raw token in telemetry.
+
 ## ENT-OPS-002 - Tenant Health Summary
 
 Persona: Internal operator.
+
+Status: First slice implemented. Tenant health summarizes runtime settings,
+table/migration reachability, sanitized request/background failure counters,
+and recent agent run, agent tool, and workflow failure counts. Output is scoped
+to the current tenant and safe for internal operators.
 
 Steps:
 
@@ -453,3 +472,11 @@ Expected result:
 - Operators get useful health signals.
 - Tenant users do not see unauthorized operational data.
 - Health output is stable enough for support runbooks.
+
+Automation target:
+
+- API: seed failed `agent_runs`, `agent_tool_invocations`, and
+  `agent_workflow_runs`; call `/api/v1/tenants/health`; assert counts and
+  table checks are present.
+- API: assert health output includes no API keys, JWTs, raw invoice public
+  tokens, request payloads, or document text.

@@ -548,6 +548,7 @@ Current implementation assessment:
 | Enterprise approval policy | Implemented first slice: Inbox exposes required Owner/Admin/Manager approval role and the API enforces the same policy, including approve-with-edits re-evaluation | Tenant-configurable policy UI and deeper role taxonomy remain future enterprise controls | #280 |
 | Enterprise decision audit | Implemented first slice: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history | Browser E2E automation and broader business-record timeline surfacing remain future depth | #281 |
 | Enterprise RBAC permission proof | Implemented first slice: current enterprise personas are mapped to owner/admin/manager/member/viewer/employee, API tests prove viewer read-only boundaries, and Bills/AP disables restricted viewer actions | Dedicated finance-role enum expansion and browser E2E proof remain future depth | #282 |
+| Enterprise ops hardening | Implemented first slice in #286: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, and tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets | Distributed rate-limit storage, dashboards, and alert routing remain future production depth | #286 |
 
 ## Scenario 11 - AI Finance Department Command Center
 
