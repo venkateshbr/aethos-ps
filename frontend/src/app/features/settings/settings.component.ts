@@ -8,6 +8,7 @@ import { AgentRunsComponent } from './agent-runs.component';
 import { AgentWorkflowRunsComponent } from './agent-workflow-runs.component';
 import { IntegrationsComponent } from './integrations.component';
 import { CollectionsPolicyComponent } from './collections-policy.component';
+import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
 
 @Component({
   selector: 'app-settings',
@@ -22,6 +23,7 @@ import { CollectionsPolicyComponent } from './collections-policy.component';
     AgentWorkflowRunsComponent,
     IntegrationsComponent,
     CollectionsPolicyComponent,
+    FinanceOpsScheduleComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -81,7 +83,10 @@ import { CollectionsPolicyComponent } from './collections-policy.component';
           <h2 id="autonomy-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Agent Autonomy
           </h2>
-          <app-autonomy />
+          <div class="space-y-4">
+            <app-finance-ops-schedule />
+            <app-autonomy />
+          </div>
         </section>
 
         <section aria-labelledby="agent-runs-heading">

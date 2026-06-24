@@ -57,6 +57,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
+| 15a | Admin | `/settings` -> Agent Autonomy -> Finance Ops Manager Schedule; saves cadence, period mode, work-item limit, and stale escalation windows | `PUT /agents/finance-ops/schedule` persists tenant cadence; scheduled execution still creates reviewed Inbox action plans instead of directly changing finance records |
 | 15 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
 | 16 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
 | 17 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
