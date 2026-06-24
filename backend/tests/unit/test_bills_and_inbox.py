@@ -558,14 +558,14 @@ async def test_materialise_unknown_kind_is_noop() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Engagement materialisation also creates a default "General" project so the
-# Founder can log time immediately without a manual project-create step.
+# Engagement materialisation also creates the reviewed first project so the
+# user can log time immediately without a manual project-create step.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_materialise_engagement_creates_default_project() -> None:
-    """Approving an extracted engagement also inserts a 'General' project."""
+async def test_materialise_engagement_creates_reviewed_first_project() -> None:
+    """Approving an extracted engagement also inserts the reviewed first project."""
     from unittest.mock import MagicMock
 
     from app.services.inbox_service import InboxService
@@ -599,19 +599,38 @@ async def test_materialise_engagement_creates_default_project() -> None:
 
     payload = {
         "client_name": "Lumera Technologies",
+        "engagement_name": "Lumera SOC 2 Readiness",
         "currency": "SGD",
         "billing_arrangement": "fixed_fee",
         "total_value": "44500",
+        "start_date": "2026-07-01",
+        "end_date": "2026-09-30",
+        "scope_summary": "SOC 2 readiness assessment and evidence support.",
+        "first_project_name": "SOC 2 Readiness",
+        "first_project_description": "Readiness assessment, gap closure, and evidence support.",
     }
     result = await svc._materialise_engagement(payload)
 
     assert result["entity_type"] == "engagement"
+    assert result["client_id"] == "clients-id"
+    assert result["project_id"] == "projects-id"
+    assert result["project_name"] == "SOC 2 Readiness"
     inserted_tables = [t for t, _ in inserts]
     assert "clients" in inserted_tables
     assert "engagements" in inserted_tables
     assert "projects" in inserted_tables, "default project must be auto-created"
 
+    engagement_row = next(row for t, row in inserts if t == "engagements")
+    assert engagement_row["name"] == "Lumera SOC 2 Readiness"
+    assert engagement_row["description"] == "SOC 2 readiness assessment and evidence support."
+    assert engagement_row["start_date"] == "2026-07-01"
+    assert engagement_row["end_date"] == "2026-09-30"
+
     project_row = next(row for t, row in inserts if t == "projects")
-    assert project_row["name"] == "General"
+    assert project_row["name"] == "SOC 2 Readiness"
+    assert project_row["description"] == "Readiness assessment, gap closure, and evidence support."
     assert project_row["currency"] == "SGD"  # inherited from engagement
+    assert project_row["budget"] == "44500"
+    assert project_row["start_date"] == "2026-07-01"
+    assert project_row["end_date"] == "2026-09-30"
     assert project_row["status"] == "planning"

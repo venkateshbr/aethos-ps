@@ -185,6 +185,8 @@ def test_document_detail_uses_rls_client_and_returns_status() -> None:
     assert response.json() == {
         "id": DOCUMENT_ID,
         "tenant_id": TENANT_ID,
+        "original_filename": "acme-invoice.pdf",
+        "document_type": "vendor_invoice",
         "storage_path": f"{TENANT_ID}/2026/06/{DOCUMENT_ID}.pdf",
         "mime_type": "application/pdf",
         "file_size_bytes": 1234,

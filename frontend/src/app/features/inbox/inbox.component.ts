@@ -45,11 +45,14 @@ const EXPENSE_CATEGORIES = ['meals_and_entertainment', 'transport', 'accommodati
 const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
   create_engagement_draft: [
     { key: 'client_name', label: 'Client name', type: 'text' },
+    { key: 'engagement_name', label: 'Engagement', type: 'text' },
     { key: 'billing_arrangement', label: 'Billing arrangement', type: 'select', options: BILLING_ARRANGEMENTS },
     { key: 'currency', label: 'Currency', type: 'select', options: CURRENCIES },
     { key: 'total_value', label: 'Total value', type: 'number' },
     { key: 'start_date', label: 'Start date', type: 'date' },
     { key: 'end_date', label: 'End date', type: 'date' },
+    { key: 'first_project_name', label: 'First project', type: 'text' },
+    { key: 'first_project_description', label: 'Project description', type: 'textarea' },
     { key: 'scope_summary', label: 'Scope summary', type: 'textarea' },
   ],
   create_expense_draft: [
@@ -664,6 +667,25 @@ export class InboxComponent implements OnInit {
         }
       }
       return entries.slice(0, 6);
+    }
+    if (task.kind === 'create_engagement_draft') {
+      const fields = [
+        'client_name',
+        'engagement_name',
+        'first_project_name',
+        'billing_arrangement',
+        'currency',
+        'total_value',
+        'start_date',
+        'end_date',
+        'rate_card_summary',
+      ];
+      for (const f of fields) {
+        if (p[f] != null) {
+          entries.push({ key: f.replace(/_/g, ' '), value: String(p[f]) });
+        }
+      }
+      return entries.slice(0, 8);
     }
     const DISPLAY_FIELDS = [
       'client_name', 'vendor_name', 'vendor',

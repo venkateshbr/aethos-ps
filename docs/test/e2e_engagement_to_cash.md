@@ -48,9 +48,9 @@ Pre-conditions:
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 1 | Alice | `/copilot` — drops `acme_tm_eng_letter.pdf` into chat | POST `/documents` → Supabase Storage → enqueue `extract_document_worker` | Document row `status=uploaded`; in-flight extraction toast |
-| 2 | system | `engagement_letter_agent` runs (PydanticAI structured output) | Writes `agent_suggestion(status=pending, confidence)`; if confidence < 0.9 also writes `hitl_task` | Inline chat card with parsed engagement, confidence chip, [Approve / Edit / Reject] |
-| 3 | Alice | Clicks Approve | POST `/inbox/tasks/{id}/approve` → service materialises `client`, `engagement`, `rate_card` | Engagement row exists with `billing_arrangement=time_and_materials`, currency `USD`; chat confirms with link |
+| 1 | Alice | `/copilot` — drops `acme_tm_eng_letter.pdf` into chat | POST `/documents/upload` → Supabase Storage → sync/queued `extract_document_worker` | Document row classified as `engagement_letter` and reaches `status=extracted` |
+| 2 | system | `engagement_letter_agent` runs against the uploaded SOW/letter | Writes `agent_suggestion(status=pending, confidence)` and `hitl_task(kind=create_engagement_draft)` | Inbox task contains client, engagement title, billing arrangement, currency, dates, rates/fees, and first project proposal |
+| 3 | Alice | Approves or approves-with-edits in Inbox | POST `/inbox/tasks/{id}/approve[-with-edits]` → service materialises `client`, `engagement`, and first `project` | Customer, draft engagement, and first project exist; engagement stores `source_document_id` for traceability |
 
 ### §1.2 Log time and a billable expense
 

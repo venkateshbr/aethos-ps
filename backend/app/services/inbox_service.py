@@ -527,7 +527,7 @@ class InboxService:
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
 
-        client_name = payload.get("client_name", "Unknown Client")
+        client_name = _non_empty(payload.get("client_name")) or "Unknown Client"
 
         # Find or create client
         existing = await asyncio.to_thread(
@@ -554,21 +554,29 @@ class InboxService:
             )
             client_id = client_row.data[0]["id"]
 
-        engagement_currency = payload.get("currency", "USD")
+        engagement_currency = (_non_empty(payload.get("currency")) or "USD").upper()
+        engagement_name = (
+            _non_empty(payload.get("engagement_name"))
+            or f"{client_name} Engagement"
+        )
+        total_value = (
+            str(Decimal(str(payload["total_value"])))
+            if payload.get("total_value")
+            else None
+        )
         eng_row = await asyncio.to_thread(
             lambda: self._db.table("engagements")
             .insert(
                 {
                     "tenant_id": self._tenant_id,
                     "client_id": client_id,
-                    "name": payload.get("engagement_name") or f"{client_name} Engagement",
+                    "name": engagement_name,
                     "billing_arrangement": payload.get("billing_arrangement", "time_and_materials"),
                     "currency": engagement_currency,
-                    "total_value": (
-                        str(Decimal(str(payload["total_value"])))
-                        if payload.get("total_value")
-                        else None
-                    ),
+                    "total_value": total_value,
+                    "description": _non_empty(payload.get("scope_summary")),
+                    "start_date": _non_empty(payload.get("start_date")),
+                    "end_date": _non_empty(payload.get("end_date")),
                     "status": "draft",
                     "source_document_id": self._source_document_id(payload),  # #127
                 }
@@ -577,34 +585,49 @@ class InboxService:
         )
         engagement_id = str(eng_row.data[0]["id"])
 
-        # Auto-create a default "General" project so the user can log time
+        # Auto-create the reviewed first project so the user can log time
         # against the engagement immediately, without a manual project-create
-        # step. Without this the time-entries quick-add was blocked behind an
-        # extra trip to /app/projects every time. Failures here are non-fatal:
-        # the engagement is already materialised; the user can still create
-        # projects manually from the engagement detail page.
+        # step. When older payloads lack first-project fields we keep the
+        # historical "General" fallback.
+        project_id: str | None = None
+        project_name = _non_empty(payload.get("first_project_name")) or "General"
         try:
-            await asyncio.to_thread(
+            project_row = await asyncio.to_thread(
                 lambda: self._db.table("projects")
                 .insert(
                     {
                         "tenant_id": self._tenant_id,
                         "engagement_id": engagement_id,
-                        "name": "General",
+                        "name": project_name,
+                        "description": (
+                            _non_empty(payload.get("first_project_description"))
+                            or _non_empty(payload.get("scope_summary"))
+                        ),
                         "currency": engagement_currency,
+                        "budget": total_value,
+                        "start_date": _non_empty(payload.get("start_date")),
+                        "end_date": _non_empty(payload.get("end_date")),
                         "status": "planning",
                     }
                 )
                 .execute()
             )
+            if project_row.data:
+                project_id = str(project_row.data[0]["id"])
         except Exception as exc:
             logger.warning(
-                "Auto-create default project failed for engagement %s: %s",
+                "Auto-create first project failed for engagement %s: %s",
                 engagement_id,
                 exc,
             )
 
-        return {"entity_type": "engagement", "entity_id": engagement_id}
+        return {
+            "entity_type": "engagement",
+            "entity_id": engagement_id,
+            "client_id": str(client_id),
+            "project_id": project_id,
+            "project_name": project_name,
+        }
 
     async def _materialise_expense(self, payload: dict) -> dict:
         import asyncio
@@ -698,6 +721,13 @@ class InboxService:
 # ------------------------------------------------------------------
 # Mapping helpers
 # ------------------------------------------------------------------
+
+
+def _non_empty(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _row_to_summary(row: dict) -> HitlTaskSummary:

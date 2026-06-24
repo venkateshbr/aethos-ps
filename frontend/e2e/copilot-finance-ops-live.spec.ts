@@ -1,5 +1,5 @@
 /**
- * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, and #266.
+ * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, #266, and #267.
  *
  * Browser flows:
  * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
@@ -8,6 +8,7 @@
  * - Copilot chat -> month-end close review -> Inbox approval -> close tasks UI.
  * - Copilot chat -> financial statement package tool -> Reports UI.
  * - Copilot document upload -> extraction Inbox task -> approval -> Bills UI.
+ * - Copilot engagement-letter upload -> Inbox approval -> client/engagement/project records.
  */
 
 import { test, expect, APIRequestContext, APIResponse, Locator, Page } from '@playwright/test';
@@ -27,7 +28,24 @@ type AuthContext = { token: string; tenantId: string; userId: string };
 type LoginCredentials = { email: string; password: string };
 type SupabaseAdminConfig = { url: string; serviceRoleKey: string };
 type ClientRow = { id: string; name: string };
-type EngagementRow = { id: string; name: string };
+type EngagementRow = {
+  id: string;
+  name: string;
+  client_id?: string;
+  billing_arrangement?: string;
+  currency?: string;
+  total_value?: string;
+  status?: string;
+  source_document_id?: string;
+};
+type ProjectRow = {
+  id: string;
+  name: string;
+  engagement_id?: string;
+  currency?: string;
+  budget?: string;
+  status?: string;
+};
 type InvoiceRow = {
   id: string;
   invoice_number?: string;
@@ -46,7 +64,12 @@ type HitlTaskRow = {
 type SuggestionRow = { id: string; status: string };
 type BatchItemRow = { batch_id: string; bill_id: string };
 type BatchRow = { id: string; status: string; total: string | number; currency: string };
-type DocumentRow = { id: string; status: string; original_filename: string };
+type DocumentRow = {
+  id: string;
+  status: string;
+  original_filename: string;
+  document_type?: string;
+};
 type ToolInvocationRow = {
   id: string;
   tool_name: string;
@@ -436,10 +459,58 @@ async function findDocumentByFilename(
   filename: string,
 ): Promise<DocumentRow | null> {
   const rows = await restSelect<DocumentRow>(request, config, 'documents', {
-    select: 'id,status,original_filename,created_at',
+    select: 'id,status,original_filename,document_type,created_at',
     tenant_id: `eq.${tenantId}`,
     original_filename: `eq.${filename}`,
     order: 'created_at.desc',
+    limit: '1',
+  });
+  return rows[0] ?? null;
+}
+
+async function findClientById(
+  request: APIRequestContext,
+  config: SupabaseAdminConfig,
+  tenantId: string,
+  clientId: string,
+): Promise<ClientRow | null> {
+  const rows = await restSelect<ClientRow>(request, config, 'clients', {
+    select: 'id,name,kind',
+    tenant_id: `eq.${tenantId}`,
+    id: `eq.${clientId}`,
+    deleted_at: 'is.null',
+    limit: '1',
+  });
+  return rows[0] ?? null;
+}
+
+async function findEngagementById(
+  request: APIRequestContext,
+  config: SupabaseAdminConfig,
+  tenantId: string,
+  engagementId: string,
+): Promise<EngagementRow | null> {
+  const rows = await restSelect<EngagementRow>(request, config, 'engagements', {
+    select: 'id,name,client_id,billing_arrangement,currency,total_value,status,source_document_id',
+    tenant_id: `eq.${tenantId}`,
+    id: `eq.${engagementId}`,
+    deleted_at: 'is.null',
+    limit: '1',
+  });
+  return rows[0] ?? null;
+}
+
+async function findProjectById(
+  request: APIRequestContext,
+  config: SupabaseAdminConfig,
+  tenantId: string,
+  projectId: string,
+): Promise<ProjectRow | null> {
+  const rows = await restSelect<ProjectRow>(request, config, 'projects', {
+    select: 'id,name,engagement_id,currency,budget,status',
+    tenant_id: `eq.${tenantId}`,
+    id: `eq.${projectId}`,
+    deleted_at: 'is.null',
     limit: '1',
   });
   return rows[0] ?? null;
@@ -462,7 +533,7 @@ async function findBillBySourceDocument(
   return rows[0] ?? null;
 }
 
-test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266)', () => {
+test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #267)', () => {
   test.use({ storageState: STORAGE_PATH });
 
   test.beforeEach(() => {
@@ -880,5 +951,135 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266)', 
     await page.goto(`${BASE}/app/bills`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /^bills$/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(bill!.bill_number ?? bill!.id).first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('uploads engagement letter in Copilot, approves Inbox task, and creates onboarding records (#267)', async ({ page, request }) => {
+    test.setTimeout(360_000);
+    const auth = getAuthFromStorage();
+    const config = supabaseAdminConfig();
+    test.skip(!auth || !config, 'auth or Supabase admin config missing');
+
+    const suffix = randomUUID().slice(0, 8);
+    const filename = `copilot-engagement-letter-${suffix}.txt`;
+    const clientName = `Copilot Onboarding Client ${suffix}`;
+    const engagementName = `AI Finance Ops Implementation ${suffix}`;
+    const projectName = `Phase 1 Finance Ops Setup ${suffix}`;
+    const scopeSummary = 'Configure finance operations workflows, reporting cadence, and implementation controls.';
+    const letterText = [
+      'ENGAGEMENT LETTER',
+      `Client: ${clientName}`,
+      `Engagement: ${engagementName}`,
+      `First project: ${projectName}`,
+      'Billing arrangement: Fixed fee',
+      'Currency: USD',
+      'Total fee: USD 12345.67',
+      'Start date: 2026-07-01',
+      'End date: 2026-09-30',
+      'Senior Consultant: USD 350 / hour',
+      'Analyst: USD 175 / hour',
+      `Scope: ${scopeSummary}`,
+    ].join('\n');
+
+    await ensureAppRoute(page, '/app/copilot');
+    await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 30_000 });
+    await page.locator('input[type="file"][aria-label="Attach document"]').setInputFiles({
+      name: filename,
+      mimeType: 'text/plain',
+      buffer: Buffer.from(letterText, 'utf-8'),
+    });
+    await expect(page.getByText(filename)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('link', { name: /^documents$/i })).toBeVisible({ timeout: 90_000 });
+
+    let documentId = '';
+    await expect
+      .poll(async () => {
+        const doc = await findDocumentByFilename(request, config!, auth!.tenantId, filename);
+        documentId = doc?.id ?? '';
+        return `${doc?.document_type ?? ''}:${doc?.status ?? ''}`;
+      }, {
+        timeout: 150_000,
+        message: 'uploaded engagement letter should be classified and extracted',
+      })
+      .toBe('engagement_letter:extracted');
+
+    let task: HitlTaskRow | null = null;
+    await expect
+      .poll(async () => {
+        const tasks = await listOpenTasks(request, config!, auth!.tenantId, 'create_engagement_draft');
+        task = tasks.find((candidate) => {
+          const payload = payloadObject(candidate);
+          return payload['original_document_id'] === documentId
+            || payload['client_name'] === clientName
+            || payload['engagement_name'] === engagementName;
+        }) ?? null;
+        return task?.id ?? '';
+      }, {
+        timeout: 90_000,
+        message: 'engagement letter extraction should create an engagement draft HITL task',
+      })
+      .not.toBe('');
+
+    const extractedPayload = payloadObject(task!);
+    expect(String(extractedPayload['first_project_name'] ?? '')).not.toBe('');
+    expect(String(extractedPayload['engagement_name'] ?? '')).not.toBe('');
+
+    await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+    const card = page.locator(`#task-${task!.id}`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expectSummaryEntry(card, 'first project name', String(extractedPayload['first_project_name']));
+
+    const correctedPayload = {
+      ...extractedPayload,
+      original_document_id: documentId,
+      client_name: clientName,
+      engagement_name: engagementName,
+      billing_arrangement: 'fixed_fee',
+      currency: 'USD',
+      total_value: '12345.67',
+      start_date: '2026-07-01',
+      end_date: '2026-09-30',
+      first_project_name: projectName,
+      first_project_description: scopeSummary,
+      scope_summary: scopeSummary,
+    };
+    const approveResp = await request.post(`${API}/api/v1/inbox/tasks/${task!.id}/approve-with-edits`, {
+      headers: apiHeaders(auth!),
+      data: { corrected_payload: correctedPayload },
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(approveResp, 'approve engagement onboarding with edits');
+    const approved = await approveResp.json() as { materialisation?: Record<string, unknown> };
+    const materialisation = approved.materialisation ?? {};
+    expect(materialisation['entity_type']).toBe('engagement');
+    expect(String(materialisation['entity_id'] ?? '')).not.toBe('');
+    expect(String(materialisation['client_id'] ?? '')).not.toBe('');
+    expect(String(materialisation['project_id'] ?? '')).not.toBe('');
+
+    let client: ClientRow | null = null;
+    let engagement: EngagementRow | null = null;
+    let project: ProjectRow | null = null;
+    await expect
+      .poll(async () => {
+        client = await findClientById(request, config!, auth!.tenantId, String(materialisation['client_id']));
+        engagement = await findEngagementById(request, config!, auth!.tenantId, String(materialisation['entity_id']));
+        project = await findProjectById(request, config!, auth!.tenantId, String(materialisation['project_id']));
+        return client?.name === clientName
+          && engagement?.name === engagementName
+          && engagement?.source_document_id === documentId
+          && project?.name === projectName
+          && project?.engagement_id === engagement?.id;
+      }, {
+        timeout: 45_000,
+        message: 'approved engagement draft should materialise client, engagement, and project records',
+      })
+      .toBe(true);
+
+    await page.goto(`${BASE}/app/clients`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(clientName).first()).toBeVisible({ timeout: 30_000 });
+    await page.goto(`${BASE}/app/engagements`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(engagementName).first()).toBeVisible({ timeout: 30_000 });
+    await page.goto(`${BASE}/app/projects`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(projectName).first()).toBeVisible({ timeout: 30_000 });
   });
 });

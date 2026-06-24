@@ -48,11 +48,14 @@ class EngagementDraft(_DropNoneForDefaults):
     """Output of the engagement_letter_agent."""
 
     client_name: str = ""
+    engagement_name: str | None = None
     billing_arrangement: str = "time_and_materials"  # time_and_materials / fixed_fee / retainer / retainer_draw / milestone / capped_tm
     currency: str = "USD"
     total_value: Decimal | None = None
     start_date: str | None = None  # ISO date string
     end_date: str | None = None
+    first_project_name: str | None = None
+    first_project_description: str | None = None
     rate_card_hints: list[RateCardHint] = []
     scope_summary: str = ""
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)

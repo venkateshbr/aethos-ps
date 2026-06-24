@@ -531,6 +531,7 @@ Current implementation assessment:
 | AI month-end close controller | Implemented and browser-verified: Copilot routes close preparation to Inbox, then approval runs the close workflow and bootstraps close tasks | Final lock remains separately guarded by readiness | #260 |
 | AI financial statement package | Implemented and browser-verified: Copilot generates a read-only statement package summary from posted journal/report services | Management commentary/variance explanations remain future command-center depth | #261 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | Full PO matching/project coding from document remains broader P2P coverage | #264 |
+| AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -574,8 +575,7 @@ Expected result:
 - The source document remains traceable.
 
 Implementation status:
-- Partially implemented. Copilot upload, document extraction worker, engagement draft suggestions, Inbox materialisation, and actionable upload status links exist.
-- Vendor-invoice document intake is browser-verified under #264. Full engagement-letter-to-client/engagement/project orchestration remains future command-center depth under parent #259.
+- Implemented and browser-verified under #267. Copilot upload classifies SOW/engagement-letter documents separately from vendor invoices, the extraction worker creates a `create_engagement_draft` Inbox task with the proposed client, engagement, billing arrangement, dates, rates/fees, and first project, and Inbox approval or approve-with-edits materialises customer, draft engagement, and first project records. The engagement stores source-document linkage where supported.
 
 Evidence: upload state, Inbox detail, created engagement/project, document source linkage.
 
@@ -758,7 +758,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/multi-tenant-isolation.spec.ts` | Isolation supplement | Use to confirm isolation in addition to manual tenant switch checks |
 | `frontend/e2e/login.spec.ts`, `frontend/e2e/auth-guard.spec.ts`, `frontend/e2e/change-password.spec.ts` | Access supplement | Use for baseline auth/profile checks |
 | `frontend/e2e/copilot-draft-invoice-live.spec.ts` | AI invoice drafting live proof | Uses Copilot chat, Inbox approval, and Invoices UI against the live QA tenant; supplemental to Scenario 13 browser evidence |
-| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, and Bills UI against the live QA tenant for Scenarios 14-18 |
+| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, Bills, Clients, Engagements, and Projects UI against the live QA tenant for Scenarios 12 and 14-18 |
 
 ## Verification Matrix
 
@@ -772,7 +772,7 @@ Final verification on 2026-06-24:
 - Timesheet production build: `npx ng build timesheet` passed with existing Sass deprecation warnings.
 - Original launch-gap issue scan before the AI finance-ops expansion returned no open issues. The AI expansion added #258-#264 to track the new agentic finance-department scenarios, implementation slices, and browser QA.
 - AI invoice live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-draft-invoice-live.spec.ts --project=chromium --reporter=list` passed after the Copilot draft-invoice implementation.
-- AI finance-ops live proof: `AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `7 passed (1.9m)`.
+- AI finance-ops live proof: `AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `8 passed (2.6m)`, including #267 engagement-letter onboarding.
 - QA database schema was brought current through Supabase migrations `0065`-`0083`; migrations `0068`, `0075`, and `0076` were aligned to the existing `public.is_tenant_member(auth.uid(), tenant_id)` RLS helper before push.
 
 Implemented during this validation pass:
