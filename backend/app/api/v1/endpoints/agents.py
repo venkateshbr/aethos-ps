@@ -30,10 +30,12 @@ from app.models.agents import (
     AgentRunSummary,
     AgentWorkflowRunListResponse,
     AgentWorkflowRunSummary,
+    FinanceOpsScheduleResponse,
     SetAgentControlRequest,
     SetAgentL3PolicyRequest,
     SetAgentLevelRequest,
     SetAgentLevelResponse,
+    SetFinanceOpsScheduleRequest,
 )
 from app.services.agents_service import AgentAutonomyError, AgentsService
 from supabase import Client
@@ -60,6 +62,61 @@ def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> AgentsService:
     return AgentsService(db, tenant_id)
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/finance-ops/schedule
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/finance-ops/schedule",
+    response_model=FinanceOpsScheduleResponse,
+    summary="Scheduled AI Finance Ops Manager cadence",
+)
+def get_finance_ops_schedule(
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> FinanceOpsScheduleResponse:
+    """Return the configured cadence or seeded default for this tenant."""
+    return FinanceOpsScheduleResponse(**svc.get_finance_ops_schedule())
+
+
+# ---------------------------------------------------------------------------
+# PUT /agents/finance-ops/schedule
+# ---------------------------------------------------------------------------
+
+
+@router.put(
+    "/finance-ops/schedule",
+    response_model=FinanceOpsScheduleResponse,
+    summary="Configure scheduled AI Finance Ops Manager cadence",
+)
+def set_finance_ops_schedule(
+    body: SetFinanceOpsScheduleRequest,
+    svc: AgentsService = Depends(_write_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+) -> FinanceOpsScheduleResponse:
+    """Upsert admin-controlled scheduled Finance Ops Manager cadence."""
+    try:
+        result = svc.set_finance_ops_schedule(
+            is_enabled=body.is_enabled,
+            cadence=body.cadence,
+            run_hour_utc=body.run_hour_utc,
+            run_weekday_utc=body.run_weekday_utc,
+            timezone=body.timezone,
+            period_mode=body.period_mode,
+            lookback_limit=body.lookback_limit,
+            stale_after_hours=body.stale_after_hours,
+            high_risk_stale_after_hours=body.high_risk_stale_after_hours,
+            escalation_enabled=body.escalation_enabled,
+        )
+    except AgentAutonomyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return FinanceOpsScheduleResponse(**result)
 
 
 # ---------------------------------------------------------------------------

@@ -70,6 +70,11 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
         "Drafts payment reminder emails for overdue invoices",
     ),
     (
+        "finance_ops_manager",
+        "AI Finance Ops Manager",
+        "Runs scheduled finance command-center checks and routes work plans to Inbox",
+    ),
+    (
         "time_entry_agent",
         "Time Entry Agent",
         "Drafts weekly reminders for under-logged assigned staff",
@@ -109,6 +114,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "billing_run_agent",
         "collections_agent",
         "copilot_agent",
+        "finance_ops_manager",
         "invoice_drafter_agent",
         "prepaid_amortization_agent",
         "recurring_journal_agent",
@@ -171,6 +177,23 @@ _AGENT_EVAL_CANDIDATE_COLUMNS = (
     "id,agent_correction_id,agent_suggestion_id,agent_name,action_type,eval_case_key,"
     "status,input_hash,original_output_hash,corrected_output_hash,reason,created_at,updated_at"
 )
+_FINANCE_OPS_SCHEDULE_COLUMNS = (
+    "tenant_id,is_enabled,cadence,run_hour_utc,run_weekday_utc,timezone,period_mode,"
+    "lookback_limit,stale_after_hours,high_risk_stale_after_hours,escalation_enabled,"
+    "created_at,updated_at"
+)
+_FINANCE_OPS_SCHEDULE_DEFAULTS: dict[str, Any] = {
+    "is_enabled": True,
+    "cadence": "daily",
+    "run_hour_utc": 7,
+    "run_weekday_utc": 0,
+    "timezone": "UTC",
+    "period_mode": "current_month",
+    "lookback_limit": 10,
+    "stale_after_hours": 24,
+    "high_risk_stale_after_hours": 4,
+    "escalation_enabled": True,
+}
 
 
 class AgentAutonomyError(ValueError):
@@ -438,6 +461,76 @@ class AgentsService:
         if row is None:
             row = patch
         return self._l3_policy_response(row, agent_name, action_type)
+
+    def get_finance_ops_schedule(self) -> dict:
+        """Return a tenant's configured or seeded Finance Ops Manager cadence."""
+        row = self._fetch_finance_ops_schedule()
+        return self._finance_ops_schedule_response(
+            row or {"tenant_id": self.tenant_id, **_FINANCE_OPS_SCHEDULE_DEFAULTS},
+            is_seeded_default=row is None,
+        )
+
+    def set_finance_ops_schedule(
+        self,
+        *,
+        is_enabled: bool,
+        cadence: str,
+        run_hour_utc: int,
+        run_weekday_utc: int,
+        timezone: str,
+        period_mode: str,
+        lookback_limit: int,
+        stale_after_hours: int,
+        high_risk_stale_after_hours: int,
+        escalation_enabled: bool,
+    ) -> dict:
+        """Upsert tenant-level cadence controls for scheduled Finance Ops."""
+        self._validate_finance_ops_schedule(
+            cadence=cadence,
+            run_hour_utc=run_hour_utc,
+            run_weekday_utc=run_weekday_utc,
+            timezone=timezone,
+            period_mode=period_mode,
+            lookback_limit=lookback_limit,
+            stale_after_hours=stale_after_hours,
+            high_risk_stale_after_hours=high_risk_stale_after_hours,
+        )
+        payload = {
+            "tenant_id": self.tenant_id,
+            "is_enabled": is_enabled,
+            "cadence": cadence,
+            "run_hour_utc": run_hour_utc,
+            "run_weekday_utc": run_weekday_utc,
+            "timezone": timezone,
+            "period_mode": period_mode,
+            "lookback_limit": lookback_limit,
+            "stale_after_hours": stale_after_hours,
+            "high_risk_stale_after_hours": high_risk_stale_after_hours,
+            "escalation_enabled": escalation_enabled,
+        }
+
+        self.db.rpc(
+            "set_config",
+            {"setting": "app.current_tenant_id", "value": self.tenant_id},
+        ).execute()
+
+        result = (
+            self.db.table("finance_ops_schedules")
+            .upsert(payload, on_conflict="tenant_id")
+            .execute()
+        )
+        rows = result.data or []
+        row = rows[0] if rows else self._fetch_finance_ops_schedule() or payload
+        logger.info(
+            "finance_ops_schedule_set",
+            extra={
+                "tenant_id": self.tenant_id,
+                "cadence": cadence,
+                "run_hour_utc": run_hour_utc,
+                "escalation_enabled": escalation_enabled,
+            },
+        )
+        return self._finance_ops_schedule_response(row, is_seeded_default=False)
 
     def list_agent_runs(
         self,
@@ -812,6 +905,17 @@ class AgentsService:
         rows = result.data or []
         return rows[0] if rows else None
 
+    def _fetch_finance_ops_schedule(self) -> dict | None:
+        result = (
+            self.db.table("finance_ops_schedules")
+            .select(_FINANCE_OPS_SCHEDULE_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
     def _assert_l3_promotion_allowed(self, agent_name: str, action_type: str) -> None:
         row = self._fetch_control_row(agent_name, action_type) or {}
         if not row.get("l3_opt_in"):
@@ -859,6 +963,66 @@ class AgentsService:
             raise AgentAutonomyError(
                 f"{agent_name!r} is required for accounting controls and cannot be disabled"
             )
+
+    @staticmethod
+    def _validate_finance_ops_schedule(
+        *,
+        cadence: str,
+        run_hour_utc: int,
+        run_weekday_utc: int,
+        timezone: str,
+        period_mode: str,
+        lookback_limit: int,
+        stale_after_hours: int,
+        high_risk_stale_after_hours: int,
+    ) -> None:
+        if cadence not in {"daily", "weekly"}:
+            raise AgentAutonomyError("cadence must be daily or weekly")
+        if not (0 <= run_hour_utc <= 23):
+            raise AgentAutonomyError("run_hour_utc must be between 0 and 23")
+        if not (0 <= run_weekday_utc <= 6):
+            raise AgentAutonomyError("run_weekday_utc must be between 0 and 6")
+        if not timezone.strip() or len(timezone) > 64:
+            raise AgentAutonomyError("timezone must be 1-64 characters")
+        if period_mode not in {"current_month", "previous_month"}:
+            raise AgentAutonomyError("period_mode must be current_month or previous_month")
+        if not (1 <= lookback_limit <= 25):
+            raise AgentAutonomyError("lookback_limit must be between 1 and 25")
+        if not (1 <= high_risk_stale_after_hours <= 720):
+            raise AgentAutonomyError(
+                "high_risk_stale_after_hours must be between 1 and 720"
+            )
+        if not (high_risk_stale_after_hours <= stale_after_hours <= 720):
+            raise AgentAutonomyError(
+                "stale_after_hours must be between high_risk_stale_after_hours and 720"
+            )
+
+    def _finance_ops_schedule_response(
+        self,
+        row: dict,
+        *,
+        is_seeded_default: bool,
+    ) -> dict:
+        data = {**_FINANCE_OPS_SCHEDULE_DEFAULTS, **row}
+        return {
+            "tenant_id": str(data.get("tenant_id") or self.tenant_id),
+            "is_enabled": bool(data.get("is_enabled", True)),
+            "cadence": str(data.get("cadence") or "daily"),
+            "run_hour_utc": _int_or_default(data.get("run_hour_utc"), 7),
+            "run_weekday_utc": _int_or_default(data.get("run_weekday_utc"), 0),
+            "timezone": str(data.get("timezone") or "UTC"),
+            "period_mode": str(data.get("period_mode") or "current_month"),
+            "lookback_limit": _int_or_default(data.get("lookback_limit"), 10),
+            "stale_after_hours": _int_or_default(data.get("stale_after_hours"), 24),
+            "high_risk_stale_after_hours": _int_or_default(
+                data.get("high_risk_stale_after_hours"),
+                4,
+            ),
+            "escalation_enabled": bool(data.get("escalation_enabled", True)),
+            "is_seeded_default": is_seeded_default,
+            "created_at": str(data["created_at"]) if data.get("created_at") else None,
+            "updated_at": str(data["updated_at"]) if data.get("updated_at") else None,
+        }
 
     def _fetch_tool_counts(self, run_ids: list[str]) -> dict[str, dict[str, int]]:
         if not run_ids:
