@@ -1399,6 +1399,8 @@ class InboxService:
             "coding_status": payload.get("coding_status"),
             "vendor_match": payload.get("vendor_match") or {},
             "gl_suggestions": payload.get("gl_suggestions") or [],
+            "project_hints": payload.get("project_hints") or payload.get("project_matches") or [],
+            "customer_hints": payload.get("customer_hints") or payload.get("client_hints") or [],
             "review_exceptions": payload.get("review_exceptions") or [],
             "duplicate_review": payload.get("duplicate_review") or {},
         }

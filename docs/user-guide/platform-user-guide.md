@@ -186,8 +186,9 @@ Typical workflow:
 7. Export or process the payment batch through the supported downstream path.
 8. Review AP Aging and Cash Flow impact.
 
-Current implementation supports vendor invoice upload, bill creation after Inbox
-approval, bill-pay proposals, and payment-batch UI visibility.
+Current implementation supports vendor invoice upload, AI-assisted exception
+evidence, bill creation after Inbox approval, bill-pay proposals, and
+payment-batch UI visibility.
 
 Vendor invoice review now carries AI evidence into Inbox:
 
@@ -195,17 +196,23 @@ Vendor invoice review now carries AI evidence into Inbox:
 - GL/account coding suggestions per invoice line;
 - duplicate, anomaly, tax-id, prompt-injection, vendor-match, and coding review exceptions;
 - source document linkage; and
-- reviewed evidence persisted on the created bill.
+- project/customer hints for project-cost attribution; and
+- reviewed evidence persisted on the created bill and visible from Bill detail.
 
 Duplicate invoice drafts cannot be approved as-is. A reviewer must use
-approve-with-edits and add `duplicate_review.approved_duplicate=true` plus a
-reason before the bill can be materialized. Approved vendor invoice drafts now
-create bill lines through the same Bills service path used by manual bill
-creation, so account coding and PO match validation are preserved.
+approve-with-edits and add a duplicate review reason before the bill can be
+materialized. Inbox exposes that reason field for vendor invoice duplicates and
+blocks one-click approval until a reviewer explains why the duplicate should be
+accepted. Approved vendor invoice drafts now create bill lines through the same
+Bills service path used by manual bill creation, so account coding and PO match
+validation are preserved.
 
-Remaining enterprise P2P depth is planned under #284 follow-up and later
-advanced P2P work: richer browser UI for exception cards, multi-step bill
-approvals, recurring bills, and native bank formats.
+Invoice intake/coding approval and payment approval are separate guarded steps:
+approving the vendor invoice creates the reviewed bill, while payment still
+requires a bill-pay proposal and payment-batch approval. Remaining enterprise
+P2P depth is planned under later advanced P2P work: deeper PO/service-order
+matching, recurring bills, native bank formats, and full browser automation for
+the exception-review path.
 
 ## 7. Record To Report
 
@@ -335,7 +342,7 @@ The following work is tracked under parent issue #278:
 | #296 | Controls | Tenant-configurable approval policy UI, first slice implemented |
 | #297 | Audit | Business-record decision timeline and browser proof, planned |
 | #298 | RBAC | Finance-role taxonomy and browser permission proof, planned |
-| #299 | P2P | Vendor invoice exception review UX and multi-step approval, planned |
+| #299 | P2P | Vendor invoice exception review UX and staged payment approval, first slice implemented |
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |
 | #301 | Ops/Security | Distributed rate limiting, health dashboard, and alert routing, planned |
 

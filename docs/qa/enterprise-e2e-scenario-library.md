@@ -45,7 +45,7 @@ agent ledger.
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Implemented first slice; Playwright automation pending | #295 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Implemented first slice; browser automation pending | #284 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
-| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Planned | #299 |
+| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Implemented first slice; Playwright automation pending | #299 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Implemented first slice; browser automation pending | #300 |
@@ -477,7 +477,12 @@ Automation target:
 
 Persona: AP Lead and Controller.
 
-Status: Planned under #299.
+Status: First slice implemented. Inbox vendor invoice cards now expose AP review
+evidence including vendor match, duplicate guard, source document, GL coding
+suggestions, project/customer hints, and required correction exceptions. Possible
+duplicates open the edit drawer for a reviewer-entered reason before approval.
+Bill detail shows the preserved `vendor_invoice_review` evidence after
+materialization. Playwright automation is still pending.
 
 Steps:
 
@@ -494,6 +499,16 @@ Expected result:
 - Duplicate approval requires a reviewer reason.
 - Intake/coding approval and payment approval are separate guarded decisions.
 - Bill evidence preserves source document and reviewer decisions.
+
+Automation target:
+
+- API/unit: duplicate invoice approve-with-edits persists
+  `duplicate_review.reason`, source document linkage, GL suggestions, and
+  project/customer hints into `bills.vendor_invoice_review`.
+- Browser: seed or upload a duplicate/ambiguous invoice, verify Inbox AP review
+  evidence and duplicate reason validation, approve with reason, then open Bill
+  detail and verify the same evidence appears before selecting the bill for a
+  separate payment batch.
 
 ## ENT-R2R-001 - Close Evidence Package
 
