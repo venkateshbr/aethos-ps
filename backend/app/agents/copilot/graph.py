@@ -1240,6 +1240,7 @@ class CopilotAgent:
             if period_end < period_start:
                 raise ValueError("period_end must be the same as or after period_start")
 
+            from app.services.close_package_service import ClosePackageService
             from app.services.reports_service import ReportsService
 
             package = await asyncio.to_thread(
@@ -1257,6 +1258,15 @@ class CopilotAgent:
             cash_flow = data["cash_flow"]
             retained_earnings = data["retained_earnings_roll_forward"]
             tax_summary = data["tax_summary"]
+            close_package = await asyncio.to_thread(
+                lambda: ClosePackageService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).build_package(period_end)
+            )
+            close_status = close_package.get("close_status") or {}
+            readiness_evidence = close_package.get("readiness_evidence") or {}
+            commentary = close_package.get("variance_commentary") or []
 
             return {
                 "generated_statement_package": True,
@@ -1264,6 +1274,20 @@ class CopilotAgent:
                 "period_end": period_end,
                 "as_of_period": data["as_of_period"],
                 "review_path": "/app/reports",
+                "close_review_path": "/app/accounting/journals",
+                "close_prerequisites": {
+                    "period": period_end,
+                    "status": close_status.get("status") or "unknown",
+                    "ready_to_lock": bool(close_status.get("ready_to_lock")),
+                    "locked": bool(close_status.get("locked")),
+                    "lock_blockers": close_status.get("lock_blockers") or [],
+                    "pending_review_count": len(close_status.get("pending_reviews") or []),
+                    "incomplete_task_count": len(close_status.get("incomplete_tasks") or []),
+                    "override_count": len(close_status.get("overrides") or []),
+                    "warnings": _statement_package_warnings(close_status),
+                },
+                "readiness_evidence": readiness_evidence,
+                "management_commentary": commentary[:10],
                 "summary": {
                     "trial_balance_balanced": data["trial_balance"]["is_balanced"],
                     "balance_sheet": {
@@ -2774,3 +2798,21 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc)}
+
+
+def _statement_package_warnings(close_status: dict) -> list[str]:
+    warnings: list[str] = []
+    blockers = close_status.get("lock_blockers") or []
+    if blockers:
+        warnings.append(
+            "Close prerequisites are incomplete: " + ", ".join(str(item) for item in blockers)
+        )
+    if close_status.get("pending_reviews"):
+        warnings.append("Pending AI/HITL close reviews must be resolved or overridden.")
+    if close_status.get("incomplete_tasks"):
+        warnings.append("Close checklist tasks remain incomplete or unwaived.")
+    if close_status.get("overrides"):
+        warnings.append("Recorded close overrides require controller review before lock.")
+    if close_status.get("locked") is False and not close_status.get("ready_to_lock"):
+        warnings.append("The period is not ready to lock.")
+    return warnings

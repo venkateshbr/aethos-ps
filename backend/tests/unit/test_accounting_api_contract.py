@@ -519,9 +519,11 @@ def test_close_override_create_uses_service_role_and_records_actor(
     body = response.json()
     assert body["blocker_code"] == "unposted_journals"
     assert body["created_by"] == "manager-1"
+    assert body["created_by_role"] == "admin"
     assert fake_db.tables["accounting_close_overrides"][0]["reason"].startswith(
         "Controller confirmed"
     )
+    assert fake_db.tables["accounting_close_overrides"][0]["created_by_role"] == "admin"
 
 
 def test_lock_period_requires_matching_override_for_reconciliation_blocker(

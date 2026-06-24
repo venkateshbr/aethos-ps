@@ -217,24 +217,29 @@ Current workflows:
 - Manual journals can be created from the Accounting area.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
 - Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.
-- Copilot can generate a financial statement package summary from report data.
+- Copilot can generate a financial statement package summary from report data,
+  close readiness, and management commentary.
 
 Close evidence now includes:
 
 - AR, AP, WIP, GL, and approval readiness evidence from real records.
 - Subledger, trial-balance, unposted-journal, close-review, and close-task lock blockers.
 - Supporting record references where the system can identify the source row.
-- Recorded close overrides with blocker code, reason, actor, timestamp, and blocker evidence.
+- Recorded close overrides with blocker code, reason, actor, role, timestamp,
+  and blocker evidence.
 
 Period lock remains blocked while required gates fail unless the matching close
 override has been recorded. Overrides require a reason of at least 10 characters
 and are included in the close package for controller/CPA review. Copilot close
 preparation surfaces blocker counts, override counts, and readiness evidence
 before creating close tasks through Inbox.
+The Accounting close package panel also lets Admin/Owner users record named
+override reasons for supported blockers and immediately shows those overrides
+in the period evidence.
 
-Remaining enterprise R2R depth is planned after the #285 first slice:
+Remaining enterprise R2R depth after the #285/#300 first slices:
 
-- Richer browser close wizard for reviewing and recording overrides.
+- Full browser automation for the close override flow and statement commentary.
 - Year-end close and retained earnings depth.
 - Manual journal audit enhancements.
 
@@ -331,7 +336,7 @@ The following work is tracked under parent issue #278:
 | #297 | Audit | Business-record decision timeline and browser proof, planned |
 | #298 | RBAC | Finance-role taxonomy and browser permission proof, planned |
 | #299 | P2P | Vendor invoice exception review UX and multi-step approval, planned |
-| #300 | R2R | Close override wizard and statement commentary, planned |
+| #300 | R2R | Close override wizard and statement commentary, first slice implemented |
 | #301 | Ops/Security | Distributed rate limiting, health dashboard, and alert routing, planned |
 
 ## 12. Documentation And Test Definition Of Done

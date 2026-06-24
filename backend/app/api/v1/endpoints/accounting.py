@@ -114,6 +114,7 @@ class PeriodCloseOverrideResponse(BaseModel):
     blocker_code: str
     reason: str
     created_by: str
+    created_by_role: str
     created_at: str
     blocker_ref: dict[str, Any]
 
@@ -232,6 +233,10 @@ def _validate_period(period: str) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid period format {period!r} — expected YYYY-MM (e.g. '2026-05')",
         )
+
+
+def _current_user_role(current_user: CurrentUser) -> str:
+    return str(current_user.role or "unknown")
 
 
 def _generate_periods(months_back: int = 12, months_forward: int = 3) -> list[str]:
@@ -456,6 +461,7 @@ async def create_close_override(
         reason=payload.reason,
         blocker_ref=payload.blocker_ref,
         created_by=current_user.user_id,
+        created_by_role=_current_user_role(current_user),
     )
     return _override_response(override)
 
@@ -847,6 +853,7 @@ async def lock_period(
                 reason=override.reason,
                 blocker_ref=override.blocker_ref,
                 created_by=current_user.user_id,
+                created_by_role=_current_user_role(current_user),
             )
         )
     override_codes = override_service.override_codes(period)

@@ -226,6 +226,10 @@ def build_variance_commentary(
                 "severity": "blocker",
                 "summary": f"Close cannot lock until these blockers clear: {blockers}.",
                 "metric": blockers,
+                "evidence": {
+                    "source": "close_status.lock_blockers",
+                    "codes": close_status["lock_blockers"],
+                },
             },
         )
     overrides = close_status.get("overrides") if isinstance(close_status.get("overrides"), list) else []
@@ -240,6 +244,10 @@ def build_variance_commentary(
                     "review reasons before lock."
                 ),
                 "metric": str(len(overrides)),
+                "evidence": {
+                    "source": "close_status.overrides",
+                    "overrides": overrides[:10],
+                },
             },
         )
 
@@ -403,6 +411,15 @@ def _variance_comment(
         "previous": serialise_money(previous),
         "delta": serialise_money(delta),
         "delta_pct": delta_pct,
+        "evidence": {
+            "source": "period_gl_summary",
+            "current_period": period,
+            "previous_period": previous_period,
+            "current": serialise_money(current),
+            "previous": serialise_money(previous),
+            "delta": serialise_money(delta),
+            "delta_pct": delta_pct,
+        },
     }
 
 
@@ -425,6 +442,14 @@ def _margin_comment(
         "current_margin_pct": current_pct,
         "previous_margin_pct": previous_pct,
         "delta_points": delta,
+        "evidence": {
+            "source": "period_gl_summary",
+            "previous_period": previous_period,
+            "current_net_income": serialise_money(current.net_income),
+            "current_revenue": serialise_money(current.revenue),
+            "previous_net_income": serialise_money(previous.net_income),
+            "previous_revenue": serialise_money(previous.revenue),
+        },
     }
 
 
@@ -445,6 +470,12 @@ def _working_capital_comment(
         "ap_open_total": serialise_money(ap_total),
         "wip_total": serialise_money(wip_total),
         "net_exposure": serialise_money(exposure),
+        "evidence": {
+            "source": "close_package.working_capital",
+            "ar_open_total": serialise_money(ar_total),
+            "ap_open_total": serialise_money(ap_total),
+            "wip_total": serialise_money(wip_total),
+        },
     }
 
 
@@ -463,6 +494,13 @@ def _service_line_comment(rows: list[dict]) -> dict[str, object] | None:
         "service_line": top.get("service_line"),
         "revenue": top.get("revenue"),
         "margin_pct": top.get("margin_pct"),
+        "evidence": {
+            "source": "reports.margin_by_service_line",
+            "service_line": top.get("service_line"),
+            "revenue": top.get("revenue"),
+            "gross_margin": top.get("gross_margin"),
+            "margin_pct": top.get("margin_pct"),
+        },
     }
 
 

@@ -186,8 +186,10 @@ def test_close_package_composes_reports_and_variance_commentary() -> None:
 
     commentary = {row["code"]: row for row in package["variance_commentary"]}
     assert commentary["revenue_variance"]["delta_pct"] == 25.0
+    assert commentary["revenue_variance"]["evidence"]["source"] == "period_gl_summary"
     assert commentary["net_income_variance"]["delta"] == "100.00"
     assert commentary["working_capital"]["net_exposure"] == "500.00"
+    assert commentary["working_capital"]["evidence"]["ar_open_total"] == "250.00"
     assert commentary["service_line_mix"]["service_line"] == "advisory"
     assert "close_blockers" not in commentary
 
@@ -232,3 +234,4 @@ def test_close_package_surfaces_recorded_overrides() -> None:
     first = package["variance_commentary"][0]
     assert first["code"] == "close_overrides"
     assert first["severity"] == "watch"
+    assert first["evidence"]["overrides"][0]["created_by"] == "controller-1"

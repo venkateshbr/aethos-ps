@@ -32,6 +32,7 @@ class CloseOverride:
     blocker_code: str
     reason: str
     created_by: str
+    created_by_role: str
     created_at: str
     blocker_ref: dict[str, Any]
 
@@ -42,6 +43,7 @@ class CloseOverride:
             "blocker_code": self.blocker_code,
             "reason": self.reason,
             "created_by": self.created_by,
+            "created_by_role": self.created_by_role,
             "created_at": self.created_at,
             "blocker_ref": self.blocker_ref,
         }
@@ -83,6 +85,7 @@ class CloseOverrideService:
         blocker_code: str,
         reason: str,
         created_by: str,
+        created_by_role: str,
         blocker_ref: dict[str, Any] | None = None,
     ) -> CloseOverride:
         blocker_code = blocker_code.strip()
@@ -113,6 +116,7 @@ class CloseOverrideService:
                     "blocker_ref": blocker_ref or {},
                     "reason": reason,
                     "created_by": created_by,
+                    "created_by_role": created_by_role,
                     "created_at": datetime.now(UTC).isoformat(),
                 }
             )
@@ -132,6 +136,7 @@ def _override_from_row(row: dict[str, Any]) -> CloseOverride:
         blocker_code=str(row["blocker_code"]),
         reason=str(row["reason"]),
         created_by=str(row["created_by"]),
+        created_by_role=str(row.get("created_by_role") or "unknown"),
         created_at=str(row["created_at"]),
         blocker_ref=blocker_ref,
     )

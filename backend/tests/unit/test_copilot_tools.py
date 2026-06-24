@@ -1091,3 +1091,90 @@ async def test_financial_statement_package_execute_generates_summary():
     agent._generate_financial_statement_package.assert_awaited_once_with(
         {"period_start": "2026-06"}
     )
+
+
+@pytest.mark.asyncio
+async def test_financial_statement_package_includes_close_commentary(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Statement packages include close readiness and evidence-backed commentary."""
+    agent, _db = _make_agent({})
+
+    class _StatementPack:
+        def model_dump(self, *, mode: str = "python") -> dict:
+            assert mode == "json"
+            return {
+                "as_of_period": "2026-06",
+                "trial_balance": {"is_balanced": True},
+                "balance_sheet": {
+                    "total_assets": "1000.00",
+                    "total_liabilities": "300.00",
+                    "total_equity": "700.00",
+                    "is_balanced": True,
+                },
+                "income_statement": {
+                    "total_revenue": "1200.00",
+                    "total_expenses": "800.00",
+                    "net_income": "400.00",
+                    "revenue_lines": [{"account": "4000"}],
+                    "expense_lines": [{"account": "5000"}],
+                },
+                "cash_flow": {
+                    "net_change_in_cash": "50.00",
+                    "ending_cash": "250.00",
+                },
+                "retained_earnings_roll_forward": {
+                    "ending_retained_earnings": "700.00",
+                },
+                "tax_summary": {
+                    "tax_label": "GST",
+                    "ledger_net_tax_payable": "30.00",
+                },
+            }
+
+    def _statutory_pack(self, *, period_start: str, period_end: str) -> _StatementPack:
+        assert period_start == "2026-06"
+        assert period_end == "2026-06"
+        return _StatementPack()
+
+    def _close_package(self, period: str) -> dict:
+        assert period == "2026-06"
+        return {
+            "close_status": {
+                "status": "blocked",
+                "ready_to_lock": False,
+                "locked": False,
+                "lock_blockers": ["close_reviews"],
+                "pending_reviews": [{"id": "review-1"}],
+                "incomplete_tasks": [],
+                "overrides": [],
+            },
+            "readiness_evidence": {
+                "approvals": {"status": "blocked", "pending_review_count": 1}
+            },
+            "variance_commentary": [
+                {
+                    "code": "net_income_variance",
+                    "severity": "watch",
+                    "summary": "Net income increased by 100.00.",
+                    "evidence": {"source": "period_gl_summary"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.services.reports_service.ReportsService.statutory_reporting_pack",
+        _statutory_pack,
+    )
+    monkeypatch.setattr(
+        "app.services.close_package_service.ClosePackageService.build_package",
+        _close_package,
+    )
+
+    result = await agent._generate_financial_statement_package({"period_start": "2026-06"})
+
+    assert result["generated_statement_package"] is True
+    assert result["close_prerequisites"]["status"] == "blocked"
+    assert result["close_prerequisites"]["lock_blockers"] == ["close_reviews"]
+    assert result["close_prerequisites"]["warnings"]
+    assert result["management_commentary"][0]["evidence"]["source"] == "period_gl_summary"
