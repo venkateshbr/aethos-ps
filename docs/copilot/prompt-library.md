@@ -15,6 +15,7 @@ written in user language and intentionally avoid internal tool names.
 | Dispatch reviewed plan items | `After I approve the action plan, create the specialist follow-up tasks for the approved Plan Items. Keep final invoices, payments, journals, statements, and emails behind their own approvals.` |
 | Explain blockers | `Explain the current finance ops blockers for June 2026. Group them by AR, AP, WIP, close, reporting, and approvals. Tell me what can run now and what needs human review.` |
 | Review agent activity | `Summarize recent finance agent runs and workflow runs. Highlight failures, skipped actions, pending Inbox approvals, and anything that needs escalation.` |
+| Review approval policy | `Show me which finance actions currently require Manager, Admin, or Owner approval. Explain the policy in business terms and flag any high-risk actions waiting in Inbox.` |
 
 ## Order To Cash
 
@@ -76,3 +77,5 @@ nondeterminism, but users should not need to.
 For persistent scheduled Finance Ops Manager changes, admins can also use
 Settings -> Agent Autonomy -> Finance Ops Manager Schedule. Prompts remain
 useful for reviewing schedule status and run output in context.
+For persistent approval-threshold changes, admins should use Settings ->
+Approval Controls -> Approval Policy Matrix.

@@ -16,7 +16,12 @@ from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.db import get_service_role_client
 from app.core.rbac import ROLE_HIERARCHY, UserRole
-from app.services.approval_policy import ApprovalPolicyMatrix
+from app.services.approval_policy import (
+    ApprovalPolicyMatrix,
+    ApprovalPolicySettings,
+    approval_policy_settings_from_mapping,
+    default_approval_policy_settings,
+)
 from app.workers.procrastinate_app import app
 from app.workers.workflow_runs import finish_workflow_run, start_workflow_run
 
@@ -236,6 +241,7 @@ def _create_escalation_tasks(
 ) -> int:
     existing_source_ids = _open_escalation_source_ids(db, tenant_id=tenant_id)
     open_tasks = _open_hitl_tasks(db, tenant_id=tenant_id)
+    policy = _approval_policy_settings(db, tenant_id=tenant_id)
     created = 0
     for task in open_tasks:
         source_task_id = str(task.get("id") or "")
@@ -244,7 +250,12 @@ def _create_escalation_tasks(
         if str(task.get("kind") or "") in {ESCALATION_KIND, ACTION_PLAN_KIND}:
             continue
 
-        escalation = _escalation_payload_for_task(task, schedule=schedule, as_of=as_of)
+        escalation = _escalation_payload_for_task(
+            task,
+            schedule=schedule,
+            as_of=as_of,
+            policy=policy,
+        )
         if escalation is None:
             continue
         suggestion_result = (
@@ -403,9 +414,14 @@ def _escalation_payload_for_task(
     *,
     schedule: dict[str, Any],
     as_of: datetime,
+    policy: ApprovalPolicySettings | None = None,
 ) -> dict[str, Any] | None:
     payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
-    decision = ApprovalPolicyMatrix.decision_for_task(str(task.get("kind") or ""), payload)
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        str(task.get("kind") or ""),
+        payload,
+        settings=policy,
+    )
     high_risk = (
         str(task.get("priority") or "") in {"high", "critical"}
         or decision.risk_class in {"write_money_in", "write_money_out", "accounting"}
@@ -444,6 +460,24 @@ def _escalation_payload_for_task(
             "must still be reviewed through its own approval path."
         ),
     }
+
+
+def _approval_policy_settings(db: Any, *, tenant_id: str) -> ApprovalPolicySettings:
+    try:
+        rows = (
+            db.table("tenant_approval_policies")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return default_approval_policy_settings()
+    if not rows:
+        return default_approval_policy_settings()
+    return approval_policy_settings_from_mapping(rows[0], policy_source="tenant_default")
 
 
 def _task_payload_summary(payload: dict[str, Any]) -> dict[str, str]:

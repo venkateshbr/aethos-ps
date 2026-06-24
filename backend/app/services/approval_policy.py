@@ -10,9 +10,85 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.core.rbac import UserRole
+from app.core.rbac import ROLE_HIERARCHY, UserRole
 
 _OWNER_REVIEW_MONEY_OUT_THRESHOLD = Decimal("50000")
+_ROLE_NAMES = {"manager", "admin", "owner"}
+
+
+@dataclass(frozen=True)
+class ApprovalPolicySettings:
+    """Tenant-configurable approval requirements with safe launch defaults."""
+
+    money_out_default_role: UserRole = UserRole.admin
+    money_out_owner_threshold: Decimal = _OWNER_REVIEW_MONEY_OUT_THRESHOLD
+    money_out_owner_role: UserRole = UserRole.owner
+    accounting_role: UserRole = UserRole.admin
+    money_in_role: UserRole = UserRole.manager
+    draft_role: UserRole = UserRole.manager
+    external_send_role: UserRole = UserRole.manager
+    high_risk_role: UserRole = UserRole.admin
+    policy_source: str = "system_default"
+
+    def __post_init__(self) -> None:
+        _assert_role_at_least(
+            self.money_out_default_role,
+            UserRole.admin,
+            "money_out_default_role",
+        )
+        _assert_role_at_least(
+            self.money_out_owner_role,
+            UserRole.owner,
+            "money_out_owner_role",
+        )
+        _assert_role_at_least(self.accounting_role, UserRole.admin, "accounting_role")
+        _assert_role_at_least(self.money_in_role, UserRole.manager, "money_in_role")
+        _assert_role_at_least(self.draft_role, UserRole.manager, "draft_role")
+        _assert_role_at_least(
+            self.external_send_role,
+            UserRole.manager,
+            "external_send_role",
+        )
+        _assert_role_at_least(self.high_risk_role, UserRole.admin, "high_risk_role")
+        if self.money_out_owner_threshold < 0:
+            raise ValueError("money_out_owner_threshold must be >= 0")
+
+
+def default_approval_policy_settings() -> ApprovalPolicySettings:
+    return ApprovalPolicySettings()
+
+
+def approval_policy_settings_from_mapping(
+    row: dict[str, Any] | None,
+    *,
+    policy_source: str = "tenant_default",
+) -> ApprovalPolicySettings:
+    """Build validated settings from a DB/API row, falling back per field."""
+    data = row or {}
+    defaults = default_approval_policy_settings()
+    return ApprovalPolicySettings(
+        money_out_default_role=_role_or_default(
+            data.get("money_out_default_role"),
+            defaults.money_out_default_role,
+        ),
+        money_out_owner_threshold=_decimal_or_default(
+            data.get("money_out_owner_threshold"),
+            defaults.money_out_owner_threshold,
+        ),
+        money_out_owner_role=_role_or_default(
+            data.get("money_out_owner_role"),
+            defaults.money_out_owner_role,
+        ),
+        accounting_role=_role_or_default(data.get("accounting_role"), defaults.accounting_role),
+        money_in_role=_role_or_default(data.get("money_in_role"), defaults.money_in_role),
+        draft_role=_role_or_default(data.get("draft_role"), defaults.draft_role),
+        external_send_role=_role_or_default(
+            data.get("external_send_role"),
+            defaults.external_send_role,
+        ),
+        high_risk_role=_role_or_default(data.get("high_risk_role"), defaults.high_risk_role),
+        policy_source=policy_source,
+    )
 
 
 @dataclass(frozen=True)
@@ -40,46 +116,68 @@ class ApprovalPolicyMatrix:
     """Resolve approval requirements for HITL tasks."""
 
     @staticmethod
-    def decision_for_task(kind: str, payload: dict[str, Any]) -> ApprovalPolicyDecision:
+    def decision_for_task(
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        settings: ApprovalPolicySettings | None = None,
+    ) -> ApprovalPolicyDecision:
+        policy = settings or default_approval_policy_settings()
         risk_class = ApprovalPolicyMatrix._risk_class(kind, payload)
         amount = ApprovalPolicyMatrix._amount(payload)
 
         if risk_class == "write_money_out":
-            if amount is not None and amount >= _OWNER_REVIEW_MONEY_OUT_THRESHOLD:
+            if amount is not None and amount >= policy.money_out_owner_threshold:
                 return ApprovalPolicyDecision(
-                    required_role=UserRole.owner,
+                    required_role=policy.money_out_owner_role,
                     reason="money_out_above_owner_review_threshold",
                     risk_class=risk_class,
                     amount=amount,
-                    threshold=_OWNER_REVIEW_MONEY_OUT_THRESHOLD,
+                    threshold=policy.money_out_owner_threshold,
                 )
             return ApprovalPolicyDecision(
-                required_role=UserRole.admin,
-                reason="money_out_requires_admin_review",
+                required_role=policy.money_out_default_role,
+                reason=_role_review_reason("money_out", policy.money_out_default_role),
                 risk_class=risk_class,
                 amount=amount,
             )
 
         if risk_class == "accounting":
             return ApprovalPolicyDecision(
-                required_role=UserRole.admin,
-                reason="accounting_requires_admin_review",
+                required_role=policy.accounting_role,
+                reason=_role_review_reason("accounting", policy.accounting_role),
                 risk_class=risk_class,
                 amount=amount,
             )
 
         if risk_class == "write_money_in":
             return ApprovalPolicyDecision(
-                required_role=UserRole.manager,
-                reason="money_in_requires_manager_review",
+                required_role=policy.money_in_role,
+                reason=_role_review_reason("money_in", policy.money_in_role),
+                risk_class=risk_class,
+                amount=amount,
+            )
+
+        if risk_class == "external_send":
+            return ApprovalPolicyDecision(
+                required_role=policy.external_send_role,
+                reason="external_send_requires_review",
+                risk_class=risk_class,
+                amount=amount,
+            )
+
+        if risk_class == "high_risk":
+            return ApprovalPolicyDecision(
+                required_role=policy.high_risk_role,
+                reason=_role_review_reason("high_risk_ai_action", policy.high_risk_role),
                 risk_class=risk_class,
                 amount=amount,
             )
 
         if risk_class in {"draft", "write_low_risk"}:
             return ApprovalPolicyDecision(
-                required_role=UserRole.manager,
-                reason=f"{risk_class}_requires_manager_review",
+                required_role=policy.draft_role,
+                reason=_role_review_reason(risk_class, policy.draft_role),
                 risk_class=risk_class,
                 amount=amount,
             )
@@ -113,7 +211,7 @@ class ApprovalPolicyMatrix:
         if kind == "copilot_draft_invoice" or tool_name == "draft_invoice":
             return "write_money_in"
         if kind == "send_email":
-            return "write_low_risk"
+            return "external_send"
         return "draft"
 
     @staticmethod
@@ -145,3 +243,31 @@ class ApprovalPolicyMatrix:
         if isinstance(source_plan_action, dict):
             sources.append(source_plan_action)
         return sources
+
+
+def _assert_role_at_least(actual: UserRole, minimum: UserRole, field: str) -> None:
+    if ROLE_HIERARCHY[actual] < ROLE_HIERARCHY[minimum]:
+        raise ValueError(f"{field} cannot be lower than {minimum.value}")
+
+
+def _role_or_default(value: object, default: UserRole) -> UserRole:
+    try:
+        role = UserRole(str(value))
+    except ValueError:
+        return default
+    if role.value not in _ROLE_NAMES:
+        return default
+    return role
+
+
+def _decimal_or_default(value: object, default: Decimal) -> Decimal:
+    if value is None:
+        return default
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return default
+
+
+def _role_review_reason(prefix: str, role: UserRole) -> str:
+    return f"{prefix}_requires_{role.value}_review"

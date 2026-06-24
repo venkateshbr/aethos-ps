@@ -162,6 +162,7 @@ class _FakeDb:
             "financial_events": [],
             "agent_corrections": [],
             "agent_eval_candidates": [],
+            "tenant_approval_policies": [],
         }
         self.suggestion_by_id = {
             str(row["id"]): row for row in self.tables["agent_suggestions"]
@@ -306,6 +307,38 @@ def test_inbox_tasks_expose_enterprise_approval_policy(
     assert body["required_approval_role"] == "owner"
     assert body["approval_policy_reason"] == "money_out_above_owner_review_threshold"
     assert body["approval_policy"]["threshold"] == "50000"
+
+
+def test_inbox_tasks_use_tenant_approval_policy_override(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["tenant_approval_policies"].append(
+        {
+            "tenant_id": TENANT_ID,
+            "money_out_default_role": "owner",
+            "money_out_owner_threshold": "25000.00",
+            "money_out_owner_role": "owner",
+            "accounting_role": "admin",
+            "money_in_role": "manager",
+            "draft_role": "manager",
+            "external_send_role": "admin",
+            "high_risk_role": "admin",
+        }
+    )
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "send_email",
+            "payload": {"subject": "Collection reminder"},
+        }
+    )
+
+    response = client.get("/api/v1/inbox/tasks/task-1")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["required_approval_role"] == "admin"
+    assert body["approval_policy_reason"] == "external_send_requires_review"
 
 
 def test_inbox_approval_denies_user_below_required_policy_role(
