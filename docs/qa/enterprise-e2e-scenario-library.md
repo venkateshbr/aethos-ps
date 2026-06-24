@@ -40,8 +40,8 @@ agent ledger.
 | ENT-AUD-001 | Inbox approval writes immutable decision event | Implemented first slice; browser automation pending | #281 |
 | ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Implemented first slice; browser automation pending | #281 |
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Implemented first slice; browser automation pending | #282 |
-| ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Planned | #283 |
-| ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Planned | #283 |
+| ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
+| ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Planned | #284 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Planned | #284 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Planned | #285 |
@@ -226,6 +226,12 @@ Automation target:
 
 Persona: Owner/Admin configuring AI operations.
 
+Status: First slice implemented. Admins can configure the tenant cadence through
+`GET/PUT /api/v1/agents/finance-ops/schedule`. The hourly Procrastinate worker
+creates a `scheduled_finance_ops_manager` workflow run and a reviewed
+`copilot_create_finance_ops_action_plan` Inbox task when the cadence is due.
+Browser automation is still pending.
+
 Steps:
 
 1. Configure or seed a daily Finance Ops Manager run.
@@ -238,10 +244,28 @@ Expected result:
 - Read-only findings are generated from live data.
 - Recommended write actions remain behind Inbox.
 - Run is idempotent for the same tenant/period/cadence window.
+- Settings workflow-run telemetry shows `scheduled_finance_ops_manager`.
+- Approving the scheduled plan fans out Plan Items only; specialist actions
+  keep their own Inbox gates.
+
+Automation target:
+
+- API: `PUT /api/v1/agents/finance-ops/schedule`, call the worker helper or
+  trigger the Procrastinate task, then assert one open scheduled action-plan
+  task and one workflow run.
+- Browser: open Settings workflow runs, filter for scheduled Finance Ops
+  Manager, open Inbox, approve the plan, and verify Plan Items were created.
+- Idempotency: rerun the worker for the same tenant/cadence bucket and assert a
+  duplicate open plan is not created.
 
 ## ENT-AIOPS-002 - Inbox Escalation
 
 Persona: Controller with stale high-risk work.
+
+Status: First slice implemented. The scheduled Finance Ops Manager creates
+separate `finance_ops_escalation` Inbox notices for stale or high-risk source
+tasks. The notice payload summarizes safe metadata and points back to the
+source task; it does not copy the full source payload.
 
 Steps:
 
@@ -254,6 +278,21 @@ Expected result:
 - Stale task is surfaced to the correct role.
 - Unrelated roles do not gain access.
 - Escalation is visible in task metadata and run ledger.
+- The original task remains open and must still be reviewed through its own
+  approval path.
+- High-value money-out tasks route escalation to Owner/Admin depth according to
+  the approval policy matrix.
+
+Automation target:
+
+- API: seed a high-risk open task older than `high_risk_stale_after_hours`,
+  trigger the worker, and assert a `finance_ops_escalation` task assigned to an
+  eligible reviewer.
+- Payload safety: assert the escalation payload includes source task id, title,
+  risk class, required approval role, age, and a safe payload summary, but does
+  not duplicate arbitrary source payload fields.
+- Browser: open Inbox as the assigned role, verify the escalation notice, then
+  open the source task and approve/reject it separately.
 
 ## ENT-P2P-001 - Vendor Invoice Coding Exception
 

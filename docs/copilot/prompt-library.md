@@ -9,6 +9,8 @@ written in user language and intentionally avoid internal tool names.
 | --- | --- |
 | Daily finance check | `Run today's finance ops check for June 2026. Tell me what needs billing, payment, collections, close, and review. Separate read-only findings from actions that need Inbox approval.` |
 | Create reviewed work plan | `Create the next recommended finance ops work items for June 2026. Create at most five manager-reviewed work items. Route the action plan to Inbox for review. Do not approve invoices, payments, journals, or emails directly.` |
+| Configure scheduled manager | `Set the Finance Ops Manager to run every business morning at 07:00 UTC for the current month, create a reviewed action plan in Inbox, and escalate stale high-risk approvals without changing the original tasks.` |
+| Review scheduled output | `Show me the latest scheduled Finance Ops Manager run. Summarize the action plan, open Plan Items, stale approval escalations, and anything waiting on Owner or Admin review.` |
 | Dispatch reviewed plan items | `After I approve the action plan, create the specialist follow-up tasks for the approved Plan Items. Keep final invoices, payments, journals, statements, and emails behind their own approvals.` |
 | Explain blockers | `Explain the current finance ops blockers for June 2026. Group them by AR, AP, WIP, close, reporting, and approvals. Tell me what can run now and what needs human review.` |
 | Review agent activity | `Summarize recent finance agent runs and workflow runs. Highlight failures, skipped actions, pending Inbox approvals, and anything that needs escalation.` |

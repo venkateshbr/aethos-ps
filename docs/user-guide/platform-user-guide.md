@@ -90,9 +90,30 @@ desired outcome, and approval boundary. See the prompt library for examples.
 | Bill-pay proposal | Routes to Inbox, then creates a draft payment batch after approval |
 | Month-end close preparation | Routes to Inbox, then creates close tasks after approval |
 | Finance ops action plan | Routes manager plan to Inbox; approval creates Plan Items; Plan Item approval dispatches specialist workflows |
+| Scheduled Finance Ops Manager | Runs on configured tenant cadence, creates a reviewed action-plan Inbox task, and creates separate escalation notices for stale/high-risk Inbox work |
 | Financial statement package | Generates read-only summary from report/journal data |
 | Vendor invoice upload | Extracts to Inbox review, then creates bill after approval |
 | Engagement-letter upload | Extracts to Inbox review, then creates client, engagement, and first project after approval |
+
+### Scheduled Finance Ops Manager
+
+Admins can configure the scheduled AI Finance Ops Manager through the Agents
+API at `/api/v1/agents/finance-ops/schedule`. Tenants without an explicit row
+use a seeded default: daily at 07:00 UTC, current-month review, 10-row lookback,
+24-hour stale threshold, 4-hour high-risk threshold, and escalation enabled.
+
+The scheduled worker runs hourly and only acts when the tenant cadence is due.
+For each due tenant it:
+
+1. runs the same read-only command-center analysis used by Copilot;
+2. creates one `copilot_create_finance_ops_action_plan` Inbox task for manager review;
+3. suppresses duplicate open scheduled plans for the same tenant/cadence window;
+4. creates non-destructive `finance_ops_escalation` Inbox notices for stale or high-risk tasks; and
+5. records a `scheduled_finance_ops_manager` workflow run visible in Settings telemetry.
+
+Approval boundary: approving the scheduled action plan only fans out reviewed
+Plan Items. Approving an escalation notice acknowledges the escalation; the
+source Inbox task still requires its own approval, rejection, or correction.
 
 ## 4. Inbox
 
@@ -232,6 +253,7 @@ Settings are used for:
 - Firm and tenant configuration.
 - Tax rates and market setup.
 - Agent autonomy configuration.
+- Scheduled Finance Ops Manager cadence through the Agents API.
 - Agent run ledger and workflow telemetry.
 - Platform controls as enterprise slices land.
 
@@ -252,7 +274,7 @@ The following work is tracked under parent issue #278:
 | #280 | Controls | Approval policy matrix and role-aware Inbox routing, first slice implemented |
 | #281 | Controls | Immutable Inbox decision audit trail, first slice implemented |
 | #282 | RBAC | Finance role mapping and read-only permission proof, first slice implemented |
-| #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations |
+| #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations, first slice implemented |
 | #284 | P2P | Vendor invoice matching and coding exceptions |
 | #285 | R2R | Close evidence package and reconciliation gates |
 | #286 | Ops/Security | Rate limiting, telemetry, and tenant health |

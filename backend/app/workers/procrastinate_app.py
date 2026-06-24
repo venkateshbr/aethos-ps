@@ -40,6 +40,7 @@ app = App(
         "app.workers.stripe_reconcile_worker",
         "app.workers.billing_run_worker",
         "app.workers.close_scheduler_worker",
+        "app.workers.finance_ops_manager_worker",
         "app.workers.project_health_worker",
         "app.workers.intelligence_worker",
         "app.workers.time_entry_reminder_worker",

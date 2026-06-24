@@ -141,6 +141,35 @@ class AgentL3PolicyResponse(BaseModel):
     eval_score: str | None = None
 
 
+class SetFinanceOpsScheduleRequest(BaseModel):
+    """Admin-controlled scheduled Finance Ops Manager cadence."""
+
+    is_enabled: bool = Field(default=True)
+    cadence: str = Field(default="daily", description="daily or weekly")
+    run_hour_utc: int = Field(default=7, ge=0, le=23)
+    run_weekday_utc: int = Field(
+        default=0,
+        ge=0,
+        le=6,
+        description="Monday=0 through Sunday=6; used for weekly cadence.",
+    )
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    period_mode: str = Field(default="current_month", description="current_month or previous_month")
+    lookback_limit: int = Field(default=10, ge=1, le=25)
+    stale_after_hours: int = Field(default=24, ge=1, le=720)
+    high_risk_stale_after_hours: int = Field(default=4, ge=1, le=720)
+    escalation_enabled: bool = Field(default=True)
+
+
+class FinanceOpsScheduleResponse(SetFinanceOpsScheduleRequest):
+    """Current scheduled Finance Ops Manager cadence."""
+
+    tenant_id: str
+    is_seeded_default: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class AgentEvalCandidateResponse(BaseModel):
     """Human correction selected as a candidate eval case."""
 

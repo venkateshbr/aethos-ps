@@ -87,6 +87,17 @@ class _Query:
 
     def _upsert_row(self) -> dict[str, Any]:
         assert self._upsert_payload is not None
+        if self.table == "finance_ops_schedules":
+            rows = self.db.tables[self.table]
+            tenant_id = self._upsert_payload["tenant_id"]
+            for row in rows:
+                if row["tenant_id"] == tenant_id:
+                    row.update(self._upsert_payload)
+                    return row
+            row = dict(self._upsert_payload)
+            rows.append(row)
+            return row
+
         key = (
             self._upsert_payload["tenant_id"],
             self._upsert_payload["agent_name"],
@@ -268,6 +279,7 @@ class _ReadDb(_DbBase):
                         "max_auto_risk": "draft",
                     }
                 ],
+                "finance_ops_schedules": [],
                 "agent_runs": [_run_row()],
                 "agent_workflow_runs": [_workflow_row()],
                 "agent_tool_invocations": [
@@ -310,7 +322,7 @@ class _ReadDb(_DbBase):
 
 class _WriteDb(_DbBase):
     def __init__(self) -> None:
-        super().__init__({"agent_autonomy_settings": []})
+        super().__init__({"agent_autonomy_settings": [], "finance_ops_schedules": []})
 
 
 class _ForbiddenDb:
@@ -355,6 +367,7 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
             candidates_response = client.get(
                 "/api/v1/agents/eval-candidates?agent_name=copilot_agent&status=candidate"
             )
+            finance_ops_schedule_response = client.get("/api/v1/agents/finance-ops/schedule")
     finally:
         app.dependency_overrides.clear()
 
@@ -411,6 +424,14 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
     assert candidates_response.status_code == 200, candidates_response.text
     assert candidates_response.json()["candidates"][0]["id"] == "candidate-1"
 
+    assert finance_ops_schedule_response.status_code == 200, (
+        finance_ops_schedule_response.text
+    )
+    finance_ops_schedule = finance_ops_schedule_response.json()
+    assert finance_ops_schedule["tenant_id"] == TENANT_ID
+    assert finance_ops_schedule["cadence"] == "daily"
+    assert finance_ops_schedule["is_seeded_default"] is True
+
 
 def test_agent_control_write_uses_service_role_client() -> None:
     write_db = _WriteDb()
@@ -430,3 +451,43 @@ def test_agent_control_write_uses_service_role_client() -> None:
     assert response.status_code == 200, response.text
     assert response.json()["is_enabled"] is False
     assert write_db.tables["agent_autonomy_settings"][0]["agent_name"] == "copilot_agent"
+
+
+def test_finance_ops_schedule_write_uses_service_role_client() -> None:
+    write_db = _WriteDb()
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="admin-1",
+        email="admin@example.com",
+        role="admin",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.put(
+                "/api/v1/agents/finance-ops/schedule",
+                json={
+                    "is_enabled": True,
+                    "cadence": "weekly",
+                    "run_hour_utc": 8,
+                    "run_weekday_utc": 2,
+                    "timezone": "UTC",
+                    "period_mode": "previous_month",
+                    "lookback_limit": 12,
+                    "stale_after_hours": 48,
+                    "high_risk_stale_after_hours": 6,
+                    "escalation_enabled": True,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cadence"] == "weekly"
+    assert body["run_weekday_utc"] == 2
+    assert body["period_mode"] == "previous_month"
+    assert body["is_seeded_default"] is False
+    assert write_db.tables["finance_ops_schedules"][0]["tenant_id"] == TENANT_ID
