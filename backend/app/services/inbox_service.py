@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 
+from app.core.rbac import ROLE_HIERARCHY, UserRole
 from app.models.inbox import (
     ApproveResponse,
     EscalateResponse,
@@ -29,6 +30,7 @@ from app.models.inbox import (
     RejectResponse,
 )
 from app.repositories.inbox_repo import InboxRepository
+from app.services.approval_policy import ApprovalPolicyMatrix
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,7 @@ class InboxService:
 
     async def approve(self, task_id: str, user_id: str) -> ApproveResponse:
         task = await self._get_open_task_or_raise(task_id)
+        await self._enforce_approval_policy(task, user_id)
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
         payload = self._task_materialisation_payload(task)
         kind = task.get("kind", "")
@@ -107,6 +110,12 @@ class InboxService:
         corrected_payload = self._payload_with_task_metadata(corrected_payload, task)
         kind = task.get("kind", "")
         agent_name = task.get("agent_name", "unknown")
+
+        await self._enforce_approval_policy(
+            task,
+            user_id,
+            payload_override=corrected_payload,
+        )
 
         entity = await self._materialise(kind, corrected_payload, user_id=user_id)
 
@@ -203,6 +212,46 @@ class InboxService:
                 detail=f"Task {task_id!r} has already been resolved",
             )
         return task
+
+    async def _enforce_approval_policy(
+        self,
+        task: dict,
+        user_id: str,
+        *,
+        payload_override: dict | None = None,
+    ) -> None:
+        kind = str(task.get("kind") or "")
+        payload = payload_override or self._task_materialisation_payload(task)
+        decision = ApprovalPolicyMatrix.decision_for_task(kind, payload)
+        user_role = await self._fetch_user_role(user_id)
+        if ROLE_HIERARCHY[user_role] >= ROLE_HIERARCHY[decision.required_role]:
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Approval requires {decision.required_role.value} or higher "
+                f"for {decision.reason}; current role is {user_role.value}"
+            ),
+        )
+
+    async def _fetch_user_role(self, user_id: str) -> UserRole:
+        try:
+            result = await asyncio.to_thread(
+                lambda: self._db.table("tenant_users")
+                .select("role")
+                .eq("tenant_id", self._tenant_id)
+                .eq("user_id", user_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            rows = getattr(result, "data", None) or []
+            if rows:
+                return UserRole(rows[0].get("role", UserRole.viewer.value))
+        except Exception:
+            return UserRole.viewer
+        return UserRole.viewer
 
     @staticmethod
     def _task_materialisation_payload(task: dict) -> dict:
@@ -1079,6 +1128,7 @@ def _non_empty(value: object) -> str | None:
 
 
 def _row_to_summary(row: dict) -> HitlTaskSummary:
+    approval = _approval_policy_metadata(row)
     return HitlTaskSummary(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -1090,10 +1140,14 @@ def _row_to_summary(row: dict) -> HitlTaskSummary:
         status=row.get("status", "open"),
         created_at=str(row.get("created_at", "")),
         suggestion_payload=row.get("suggestion_payload", {}),
+        required_approval_role=approval.get("required_role"),
+        approval_policy_reason=approval.get("reason"),
+        approval_policy=approval,
     )
 
 
 def _row_to_detail(row: dict) -> HitlTaskDetail:
+    approval = _approval_policy_metadata(row)
     return HitlTaskDetail(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -1105,6 +1159,23 @@ def _row_to_detail(row: dict) -> HitlTaskDetail:
         status=row.get("status", "open"),
         created_at=str(row.get("created_at", "")),
         suggestion_payload=row.get("suggestion_payload", {}),
+        required_approval_role=approval.get("required_role"),
+        approval_policy_reason=approval.get("reason"),
+        approval_policy=approval,
         description=row.get("description"),
         payload=row.get("payload", {}),
     )
+
+
+def _approval_policy_metadata(row: dict) -> dict[str, str]:
+    suggestion_payload = row.get("suggestion_payload") or {}
+    task_payload = row.get("payload") or {}
+    if not isinstance(suggestion_payload, dict):
+        suggestion_payload = {}
+    if not isinstance(task_payload, dict):
+        task_payload = {}
+    payload = {**suggestion_payload, **task_payload}
+    return ApprovalPolicyMatrix.decision_for_task(
+        str(row.get("kind") or ""),
+        payload,
+    ).to_metadata()

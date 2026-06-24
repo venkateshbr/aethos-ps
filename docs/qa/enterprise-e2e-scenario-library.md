@@ -35,8 +35,8 @@ agent ledger.
 | ID | Scenario | Status | Tracking |
 | --- | --- | --- | --- |
 | ENT-DOC-001 | Platform guide links current product workflow to QA scenarios | Implemented as documentation baseline | #279 |
-| ENT-CTRL-001 | Approval policy routes high-risk task to required role | Planned | #280 |
-| ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Planned | #280 |
+| ENT-CTRL-001 | Approval policy routes high-risk task to required role | Implemented first slice; browser automation pending | #280 |
+| ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Implemented first slice; browser automation pending | #280 |
 | ENT-AUD-001 | Inbox approval writes immutable decision event | Planned | #281 |
 | ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Planned | #281 |
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Planned | #282 |
@@ -101,10 +101,12 @@ Expected result:
 - Required approver role is visible.
 - Controller cannot bypass owner approval when policy requires Owner.
 - Owner approval proceeds through the existing materialization path.
+- Inbox can filter by required approval role.
 
 Negative path:
 
 - Direct API approval by under-privileged user returns 403 or equivalent clean denial.
+- Approve-with-edits reevaluates the corrected payload and cannot lower the approval threshold.
 
 Evidence:
 
