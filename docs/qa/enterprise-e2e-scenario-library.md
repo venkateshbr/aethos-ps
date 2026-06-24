@@ -54,7 +54,7 @@ agent ledger.
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
 | ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Implemented first slice; Playwright automation pending | #296 |
 | ENT-AUD-003 | Business record exposes immutable decision timeline | Implemented first slice; Playwright automation pending | #297 |
-| ENT-RBAC-002 | Finance-role personas are browser-proven | Planned | #298 |
+| ENT-RBAC-002 | Finance-role personas are browser-proven | Implemented first slice; Playwright role matrix pending | #298 |
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 
@@ -301,14 +301,22 @@ Automation target:
 
 Persona: AP Lead, AR Lead, Controller, Auditor, Executive, and Owner/Admin.
 
-Status: Planned under #298.
+Status: First slice implemented. The backend exposes a viewer-readable
+finance-persona catalog at `GET /api/v1/tenants/finance-personas`, maps
+product-facing finance labels onto existing enforced roles, and unit/API tests
+prove the mapping does not add new permissions. Settings now shows Finance role
+personas under Approval Controls and highlights the personas compatible with the
+current tenant role. Full browser automation across every persona remains
+pending.
 
 Steps:
 
 1. Sign in as each finance persona.
-2. Open Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings.
-3. Attempt persona-appropriate and persona-restricted actions.
-4. Repeat direct API attempts for restricted money, posting, send, and settings actions.
+2. Open Settings -> Approval Controls -> Finance role personas and verify the
+   current enforced role plus compatible persona chips.
+3. Open Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings.
+4. Attempt persona-appropriate and persona-restricted actions.
+5. Repeat direct API attempts for restricted money, posting, send, lock, and settings actions.
 
 Expected result:
 
@@ -317,6 +325,19 @@ Expected result:
 - Browser controls are hidden or disabled consistently with API enforcement.
 - Auditor and Executive personas remain read-only for finance mutation paths.
 - Owner/Admin can still perform settings and final approval workflows.
+- Settings gives users a self-serve explanation of the finance persona mapping
+  without exposing admin-only permission controls to viewer users.
+
+Automation target:
+
+- Browser: sign in as Owner/Admin, Manager, and Viewer; open Settings and verify
+  Owner/Admin maps to Owner/Admin/Controller/AP/AR, Manager maps to AP/AR, and
+  Viewer maps to Auditor/Executive.
+- Browser: for Viewer, open Bills/AP, Invoices/AR, Accounting, and Inbox; assert
+  approve, edit, create, convert, post, pay, send, lock, and settings mutation
+  controls are disabled or absent.
+- API: call `/api/v1/tenants/finance-personas` as Viewer and assert the catalog
+  is readable; repeat restricted money/post/send/settings calls and assert 403.
 
 ## ENT-AIOPS-001 - Scheduled Finance Ops Manager Run
 

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.core.db import get_service_role_client
+from app.core.finance_personas import finance_persona_catalog
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.services.operational_telemetry import TenantHealthService
@@ -32,6 +33,14 @@ async def tenant_health(
 ) -> dict:
     """Return safe operational health signals for this tenant."""
     return TenantHealthService(db, tenant_id).summary()
+
+
+@router.get("/finance-personas")
+async def finance_personas(
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> dict:
+    """Return the product-facing finance persona mapping for this tenant role model."""
+    return {"items": finance_persona_catalog()}
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

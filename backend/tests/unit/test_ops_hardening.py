@@ -207,3 +207,25 @@ def test_tenant_health_endpoint_returns_admin_scoped_safe_summary() -> None:
     assert body["checks"]["tables"][0] == {"name": "tenants", "status": "ok"}
     assert body["telemetry"]["request_failures"][0]["path"].endswith("/{token}")
     assert "token_1234567890abcdef" not in response.text
+
+
+def test_finance_persona_catalog_is_viewer_readable() -> None:
+    main_app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="viewer-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    main_app.dependency_overrides[get_service_role_client] = lambda: _Db()
+
+    try:
+        with TestClient(main_app) as client:
+            response = client.get("/api/v1/tenants/finance-personas")
+    finally:
+        main_app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert {item["id"] for item in items} >= {"ap_lead", "ar_lead", "controller"}
+    auditor = next(item for item in items if item["id"] == "auditor")
+    assert auditor["mapped_roles"] == ["viewer"]
+    assert auditor["read_only"] is True

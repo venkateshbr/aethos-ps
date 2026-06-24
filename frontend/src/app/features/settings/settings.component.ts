@@ -10,6 +10,7 @@ import { IntegrationsComponent } from './integrations.component';
 import { CollectionsPolicyComponent } from './collections-policy.component';
 import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
 import { ApprovalPolicyComponent } from './approval-policy.component';
+import { FinancePersonasComponent } from './finance-personas.component';
 
 @Component({
   selector: 'app-settings',
@@ -26,6 +27,7 @@ import { ApprovalPolicyComponent } from './approval-policy.component';
     CollectionsPolicyComponent,
     FinanceOpsScheduleComponent,
     ApprovalPolicyComponent,
+    FinancePersonasComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -84,7 +86,10 @@ import { ApprovalPolicyComponent } from './approval-policy.component';
           <h2 id="approval-controls-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Approval Controls
           </h2>
-          <app-approval-policy />
+          <div class="space-y-4">
+            <app-finance-personas />
+            <app-approval-policy />
+          </div>
         </section>
 
         <!-- Autonomy section (#209) -->
