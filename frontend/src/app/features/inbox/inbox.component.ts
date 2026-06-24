@@ -70,6 +70,14 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
     { key: 'issue_date', label: 'Issue date', type: 'date' },
     { key: 'due_date', label: 'Due date', type: 'date' },
   ],
+  send_email: [
+    { key: 'invoice_number', label: 'Invoice number', type: 'text' },
+    { key: 'client_name', label: 'Customer', type: 'text' },
+    { key: 'client_email', label: 'Recipient', type: 'text' },
+    { key: 'tone', label: 'Tone', type: 'select', options: ['gentle', 'firm', 'final'] },
+    { key: 'subject', label: 'Subject', type: 'text' },
+    { key: 'body_html', label: 'Body', type: 'textarea' },
+  ],
 };
 
 @Component({
@@ -640,6 +648,22 @@ export class InboxComponent implements OnInit {
         }
         return entries.slice(0, 6);
       }
+    }
+    if (task.kind === 'send_email') {
+      const fields = [
+        'invoice_number',
+        'client_name',
+        'client_email',
+        'tone',
+        'subject',
+        'body_preview',
+      ];
+      for (const f of fields) {
+        if (p[f] != null) {
+          entries.push({ key: f.replace(/_/g, ' '), value: String(p[f]) });
+        }
+      }
+      return entries.slice(0, 6);
     }
     const DISPLAY_FIELDS = [
       'client_name', 'vendor_name', 'vendor',

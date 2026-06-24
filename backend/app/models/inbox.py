@@ -77,6 +77,7 @@ class ApproveResponse(BaseModel):
     entity_id: str | None
     entity_type: str | None
     message: str
+    materialisation: dict = Field(default_factory=dict)
 
 
 class RejectResponse(BaseModel):

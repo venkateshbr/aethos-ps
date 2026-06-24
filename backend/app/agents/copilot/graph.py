@@ -69,6 +69,9 @@ class CopilotAgent:
         "When users ask for today's finance ops check, a daily finance ops check, "
         "or the AI Finance Ops Manager command center, use run_finance_ops_check. "
         "It is read-only and separates findings from actions that need Inbox approval.\n"
+        "When users ask to draft, send, or prepare collections reminders for "
+        "overdue customer invoices, use draft_collection_reminders. It creates "
+        "Inbox review tasks and never sends customer email without approval.\n"
         "When users ask to pay vendors or run bill pay, use the "
         "propose_bill_payment_batch tool. It creates an Inbox review task before "
         "any payment batch is created.\n"
@@ -199,6 +202,50 @@ class CopilotAgent:
                         "minimum": 1,
                         "maximum": 25,
                         "description": "Maximum queue/run/project examples to include.",
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "draft_collection_reminders",
+            "description": (
+                "Draft collections reminder emails for eligible overdue customer "
+                "invoices and route each send action to Inbox for human approval. "
+                "Use when the user asks to send, draft, or prepare reminders for "
+                "overdue receivables. This tool never sends email directly."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "minimum_days_overdue": {
+                        "type": "integer",
+                        "default": 1,
+                        "minimum": 1,
+                        "maximum": 365,
+                        "description": (
+                            "Only consider invoices at least this many days overdue."
+                        ),
+                    },
+                    "tone": {
+                        "type": "string",
+                        "enum": ["auto", "gentle", "firm", "final"],
+                        "default": "auto",
+                        "description": (
+                            "Reminder tone. Use auto to let the collections policy "
+                            "choose gentle, firm, or final from days overdue."
+                        ),
+                    },
+                    "client_name": {
+                        "type": "string",
+                        "description": "Optional client-name filter.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 25,
+                        "description": "Maximum reminder drafts to queue for review.",
                     },
                 },
                 "required": [],
@@ -481,7 +528,7 @@ class CopilotAgent:
             trigger_type="chat",
             user_id=str(self.deps.user_id),
             input_payload={"message": safe_message},
-            prompt_version="cop-v2",
+            prompt_version="cop-v3",
             trace_id=trace_id_var.get("") or None,
             replay_pointer=f"chat_threads/{thread_id}" if thread_id else None,
         )
@@ -717,6 +764,8 @@ class CopilotAgent:
             return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
         if tool_name == "run_finance_ops_check":
             return await self._run_finance_ops_check(tool_input)
+        if tool_name == "draft_collection_reminders":
+            return await self._draft_collection_reminders(tool_input)
         if tool_name == "log_time_entry":
             return await self._log_time_entry(tool_input)
         if tool_name == "update_rate_card":
@@ -829,6 +878,8 @@ class CopilotAgent:
                         "risk_class": risk_class,
                     }
                 output.update(close_payload)
+            elif tool_name == "draft_collection_reminders":
+                return await self._draft_collection_reminders(tool_input)
 
             suggestion = await write_agent_suggestion(
                 deps=AgentDeps(
@@ -1207,6 +1258,447 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc)}
+
+    async def _draft_collection_reminders(self, args: dict) -> dict:
+        """Draft overdue-invoice reminders and route sends to Inbox approval."""
+        import asyncio
+
+        collections_run_id: str | None = None
+        collections_ledger = AgentRunLedger(self.deps.db_client, self.deps.tenant_id)
+        try:
+            minimum_days_overdue = int(args.get("minimum_days_overdue") or 1)
+            limit = int(args.get("limit") or 10)
+            tone_arg = str(args.get("tone") or "auto").strip().lower()
+            client_filter = str(args.get("client_name") or "").strip()
+            if minimum_days_overdue < 1 or minimum_days_overdue > 365:
+                raise ValueError("minimum_days_overdue must be between 1 and 365")
+            if limit < 1 or limit > 25:
+                raise ValueError("limit must be between 1 and 25")
+            if tone_arg not in {"auto", "gentle", "firm", "final"}:
+                raise ValueError("tone must be one of auto, gentle, firm, or final")
+            requested_tone = None if tone_arg == "auto" else tone_arg
+
+            ledger_input = {
+                "minimum_days_overdue": minimum_days_overdue,
+                "tone": tone_arg,
+                "client_name": client_filter or None,
+                "limit": limit,
+            }
+            collections_run_id = await collections_ledger.start_run(
+                agent_name="collections_agent",
+                trigger_type="chat",
+                user_id=str(self.deps.user_id),
+                input_payload=ledger_input,
+                prompt_version="collections-copilot-v1",
+                trace_id=trace_id_var.get("") or None,
+            )
+
+            from app.agents.collections_agent import (
+                collection_tone_for_days,
+                days_overdue_for_invoice,
+                draft_collection_email,
+            )
+            from app.workers.collections import (
+                _collections_action_count,
+                _recent_collections_action_exists,
+                _resolve_collections_policy,
+            )
+
+            today = datetime.date.today()
+            read_started = time.perf_counter()
+            candidates = await asyncio.to_thread(
+                lambda: self._collection_invoice_candidates(
+                    today=today,
+                    limit=limit,
+                )
+            )
+            await self._record_collections_tool_step(
+                collections_ledger,
+                collections_run_id,
+                tool_name="find_overdue_invoices",
+                risk_class="read_only",
+                input_payload={
+                    "as_of": today.isoformat(),
+                    "statuses": ["sent", "overdue"],
+                    "minimum_days_overdue": minimum_days_overdue,
+                    "client_name": client_filter or None,
+                    "limit": limit,
+                },
+                output_payload={
+                    "candidate_count": len(candidates),
+                    "candidate_invoice_ids": [
+                        str(row.get("id") or "") for row in candidates[:limit]
+                    ],
+                },
+                status="succeeded",
+                started_at=read_started,
+            )
+
+            deps = AgentDeps(
+                tenant_id=self.deps.tenant_id,
+                user_id=str(self.deps.user_id),
+                db=self.deps.db_client,  # type: ignore[arg-type]
+            )
+            queued: list[dict] = []
+            skipped: list[dict] = []
+            draft_started = time.perf_counter()
+            db = self.deps.db_client  # type: ignore[assignment]
+
+            for invoice in candidates:
+                if len(queued) >= limit:
+                    break
+                invoice_id = str(invoice.get("id") or "")
+                try:
+                    days_overdue = days_overdue_for_invoice(invoice)
+                    invoice_client_id = invoice.get("client_id")
+                    client = await asyncio.to_thread(
+                        lambda client_id=invoice_client_id: self._collection_client(
+                            client_id
+                        )
+                    )
+                    client_name = str(client.get("name") or "Valued Client")
+                    if client_filter and client_filter.lower() not in client_name.lower():
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="client_filter_mismatch",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+                    if days_overdue < minimum_days_overdue:
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="below_minimum_days_overdue",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+
+                    policy = await asyncio.to_thread(
+                        lambda client_id=invoice_client_id: _resolve_collections_policy(
+                            db,
+                            self.deps.tenant_id,
+                            client_id,
+                        )
+                    )
+                    policy_tone = collection_tone_for_days(days_overdue, policy)
+                    if policy_tone is None:
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="outside_collections_policy",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+
+                    reminder_count = await asyncio.to_thread(
+                        lambda current_invoice_id=invoice_id: _collections_action_count(
+                            db,
+                            self.deps.tenant_id,
+                            current_invoice_id,
+                        )
+                    )
+                    if reminder_count >= policy.max_reminders_per_invoice:
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="max_reminders_reached",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+
+                    resolved_tone = requested_tone or policy_tone
+                    duplicate = await asyncio.to_thread(
+                        lambda current_invoice_id=invoice_id,
+                        current_tone=str(resolved_tone),
+                        cooldown_days=policy.cooldown_days: _recent_collections_action_exists(
+                            db,
+                            self.deps.tenant_id,
+                            current_invoice_id,
+                            current_tone,
+                            cooldown_days=cooldown_days,
+                        )
+                    )
+                    if duplicate:
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="cooldown_duplicate_suppressed",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+
+                    client_email = self._collection_client_email(client)
+                    if not client_email:
+                        skipped.append(
+                            self._collection_skip(
+                                invoice,
+                                reason="missing_client_email",
+                                days_overdue=days_overdue,
+                                client_name=client_name,
+                            )
+                        )
+                        continue
+
+                    draft = await asyncio.to_thread(
+                        lambda current_invoice=invoice,
+                        current_policy=policy,
+                        current_tone=resolved_tone: draft_collection_email(
+                            current_invoice,
+                            deps,
+                            policy=current_policy,
+                            tone=current_tone,  # type: ignore[arg-type]
+                        )
+                    )
+                    draft.client_email = client_email
+                    draft_payload = draft.model_dump(mode="json")
+                    draft_payload.update(
+                        {
+                            "amount": draft_payload.get("amount_due"),
+                            "body_preview": self._body_preview(draft.body_html),
+                            "eligibility_reason": (
+                                f"Invoice {draft.invoice_number} is "
+                                f"{days_overdue} days overdue with status "
+                                f"{invoice.get('status', 'unknown')}."
+                            ),
+                            "requested_by_user_id": str(self.deps.user_id),
+                            "source_agent": "copilot_agent",
+                        }
+                    )
+                    suggestion = await write_agent_suggestion(
+                        deps=deps,
+                        agent_name="collections_agent",
+                        action_type="send_email",
+                        document_id=None,
+                        output=draft_payload,
+                        confidence=draft.confidence,
+                        autonomy_level=2,
+                        related_entity_type="invoice",
+                        related_entity_id=invoice_id,
+                    )
+                    queued.append(
+                        self._collection_review_summary(
+                            draft_payload,
+                            suggestion_id=str(suggestion.get("id") or ""),
+                        )
+                    )
+                except Exception as exc:
+                    skipped.append(
+                        self._collection_skip(
+                            invoice,
+                            reason=f"draft_failed:{str(exc)[:80]}",
+                            days_overdue=None,
+                            client_name=None,
+                        )
+                    )
+
+            await self._record_collections_tool_step(
+                collections_ledger,
+                collections_run_id,
+                tool_name="draft_collection_email",
+                risk_class="draft",
+                input_payload={
+                    "candidate_count": len(candidates),
+                    "minimum_days_overdue": minimum_days_overdue,
+                    "tone": tone_arg,
+                },
+                output_payload={
+                    "draft_count": len(queued),
+                    "skipped_count": len(skipped),
+                    "drafts": queued,
+                    "skipped": skipped[:limit],
+                },
+                status="succeeded",
+                started_at=draft_started,
+            )
+            send_started = time.perf_counter()
+            await self._record_collections_tool_step(
+                collections_ledger,
+                collections_run_id,
+                tool_name="send_email",
+                risk_class="write_money_in",
+                input_payload={
+                    "draft_count": len(queued),
+                    "approval_surface": "/app/inbox",
+                },
+                output_payload={
+                    "status": "routed_to_inbox",
+                    "suggestion_ids": [row["suggestion_id"] for row in queued],
+                    "review_tasks_created": len(queued),
+                },
+                status="skipped",
+                started_at=send_started,
+            )
+
+            result = {
+                "collections_reminders_drafted": True,
+                "requires_review": bool(queued),
+                "target_agent": "collections_agent",
+                "action_type": "send_email",
+                "tool_name": "draft_collection_reminders",
+                "risk_class": "write_money_in",
+                "eligible_invoice_count": len(queued),
+                "created_review_tasks": len(queued),
+                "review_path": "/app/inbox",
+                "drafts": queued,
+                "skipped": skipped[:limit],
+                "message": (
+                    f"Created {len(queued)} Inbox review task(s) for collections "
+                    "reminders. No email was sent."
+                ),
+            }
+            await collections_ledger.complete_run(
+                collections_run_id,
+                status="succeeded",
+                output_payload=result,
+            )
+            return result
+        except ValueError as exc:
+            await collections_ledger.complete_run(
+                collections_run_id,
+                status="failed",
+                error_message=str(exc),
+            )
+            return {"error": str(exc), "tool_name": "draft_collection_reminders"}
+        except Exception as exc:
+            await collections_ledger.complete_run(
+                collections_run_id,
+                status="failed",
+                error_message=str(exc),
+            )
+            logger.error(
+                "collections reminder drafting failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc), "tool_name": "draft_collection_reminders"}
+
+    def _collection_invoice_candidates(
+        self,
+        *,
+        today: datetime.date,
+        limit: int,
+    ) -> list[dict]:
+        rows = (
+            self.deps.db_client.table("invoices")  # type: ignore[attr-defined]
+            .select(
+                "id,invoice_number,total,currency,due_date,client_id,"
+                "stripe_payment_link_url,status"
+            )
+            .eq("tenant_id", self.deps.tenant_id)
+            .in_("status", ["sent", "overdue"])
+            .lt("due_date", today.isoformat())
+            .is_("deleted_at", "null")
+            .order("due_date")
+            .limit(limit * 5)
+            .execute()
+            .data
+            or []
+        )
+        return list(rows)
+
+    def _collection_client(self, client_id: object) -> dict:
+        if not client_id:
+            return {}
+        rows = (
+            self.deps.db_client.table("clients")  # type: ignore[attr-defined]
+            .select("id,name,billing_email,billing_address")
+            .eq("tenant_id", self.deps.tenant_id)
+            .eq("id", str(client_id))
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        return dict(rows[0]) if rows else {}
+
+    @staticmethod
+    def _collection_client_email(client: dict) -> str:
+        billing_address = client.get("billing_address") or {}
+        if not isinstance(billing_address, dict):
+            billing_address = {}
+        return str(
+            billing_address.get("email")
+            or client.get("billing_email")
+            or client.get("email")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _body_preview(body_html: str, *, limit: int = 240) -> str:
+        import re
+
+        text = re.sub(r"<[^>]+>", " ", body_html)
+        text = " ".join(text.split())
+        if len(text) <= limit:
+            return text
+        return f"{text[: limit - 1].rstrip()}..."
+
+    @staticmethod
+    def _collection_skip(
+        invoice: dict,
+        *,
+        reason: str,
+        days_overdue: int | None,
+        client_name: str | None,
+    ) -> dict:
+        return {
+            "invoice_id": str(invoice.get("id") or ""),
+            "invoice_number": str(invoice.get("invoice_number") or ""),
+            "client_name": client_name or "",
+            "days_overdue": days_overdue,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _collection_review_summary(payload: dict, *, suggestion_id: str) -> dict:
+        return {
+            "suggestion_id": suggestion_id,
+            "invoice_id": str(payload.get("invoice_id") or ""),
+            "invoice_number": str(payload.get("invoice_number") or ""),
+            "client_name": str(payload.get("client_name") or ""),
+            "recipient": mask_pii(str(payload.get("client_email") or "")),
+            "tone": str(payload.get("tone") or ""),
+            "subject": str(payload.get("subject") or ""),
+            "days_overdue": int(payload.get("days_overdue") or 0),
+            "amount_due": str(payload.get("amount_due") or "0"),
+            "currency": str(payload.get("currency") or ""),
+            "body_preview": str(payload.get("body_preview") or ""),
+            "requires_inbox_approval": True,
+            "review_path": "/app/inbox",
+        }
+
+    async def _record_collections_tool_step(
+        self,
+        ledger: AgentRunLedger,
+        run_id: str | None,
+        *,
+        tool_name: str,
+        risk_class: str,
+        input_payload: dict,
+        output_payload: dict,
+        status: str,
+        started_at: float,
+    ) -> None:
+        await ledger.record_tool_invocation(
+            run_id,
+            tool_name=tool_name,
+            risk_class=risk_class,  # type: ignore[arg-type]
+            input_payload=input_payload,
+            output_payload=output_payload,
+            status=status,  # type: ignore[arg-type]
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+        )
 
     async def _run_finance_ops_check(self, args: dict) -> dict:
         """Build a read-only finance-ops command-center synthesis."""

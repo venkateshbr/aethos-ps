@@ -91,6 +91,9 @@ def test_safe_snapshot_masks_basic_pii_and_serializes_decimal() -> None:
 def test_tool_registry_classifies_copilot_tools() -> None:
     assert risk_class_for_tool("copilot_agent", "query_engagements") == "read_only"
     assert risk_class_for_tool("copilot_agent", "run_finance_ops_check") == "read_only"
+    assert risk_class_for_tool("copilot_agent", "draft_collection_reminders") == (
+        "write_money_in"
+    )
     assert risk_class_for_tool("copilot_agent", "log_time_entry") == "write_low_risk"
     assert risk_class_for_tool("copilot_agent", "update_rate_card") == "write_money_in"
     assert risk_class_for_tool("copilot_agent", "prepare_month_end_close") == "accounting"
@@ -101,6 +104,10 @@ def test_tool_registry_classifies_copilot_tools() -> None:
 def test_tool_registry_classifies_persisted_agent_actions() -> None:
     assert action_type_for_tool("collections_agent", "send_email") == "send_email"
     assert risk_class_for_action("collections_agent", "send_email") == "write_money_in"
+    assert risk_class_for_action("collections_agent", "find_overdue_invoices") == (
+        "read_only"
+    )
+    assert risk_class_for_action("collections_agent", "draft_collection_email") == "draft"
     assert action_type_for_tool("time_entry_agent", "send_time_entry_reminder") == (
         "send_time_entry_reminder"
     )

@@ -8,6 +8,7 @@ TDD: these tests are written BEFORE the implementation so they must be red first
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,7 +32,18 @@ def _make_db(tables: dict[str, list[dict]]) -> MagicMock:
 
         q = MagicMock()
         # All chain methods return the same mock
-        for method in ("select", "eq", "is_", "limit", "order", "gte", "lte", "neq"):
+        for method in (
+            "select",
+            "eq",
+            "in_",
+            "is_",
+            "lt",
+            "limit",
+            "order",
+            "gte",
+            "lte",
+            "neq",
+        ):
             setattr(q, method, MagicMock(return_value=q))
         q.execute = MagicMock(return_value=result)
         return q
@@ -491,6 +503,7 @@ def test_finance_ops_tools_registered():
 
     tool_names = {t["name"] for t in CopilotAgent.TOOLS}
     assert "run_finance_ops_check" in tool_names
+    assert "draft_collection_reminders" in tool_names
     assert "propose_bill_payment_batch" in tool_names
     assert "prepare_month_end_close" in tool_names
     assert "generate_financial_statement_package" in tool_names
@@ -502,6 +515,7 @@ def test_finance_ops_tool_schemas():
 
     tools = {t["name"]: t for t in CopilotAgent.TOOLS}
     command_center_schema = tools["run_finance_ops_check"]["input_schema"]
+    collections_schema = tools["draft_collection_reminders"]["input_schema"]
     bill_pay_schema = tools["propose_bill_payment_batch"]["input_schema"]
     close_schema = tools["prepare_month_end_close"]["input_schema"]
     statements_schema = tools["generate_financial_statement_package"]["input_schema"]
@@ -509,6 +523,15 @@ def test_finance_ops_tool_schemas():
     assert "period" in command_center_schema["properties"]
     assert "limit" in command_center_schema["properties"]
     assert command_center_schema["required"] == []
+    assert "minimum_days_overdue" in collections_schema["properties"]
+    assert "tone" in collections_schema["properties"]
+    assert collections_schema["properties"]["tone"]["enum"] == [
+        "auto",
+        "gentle",
+        "firm",
+        "final",
+    ]
+    assert collections_schema["required"] == []
     assert "due_within_days" in bill_pay_schema["properties"]
     assert "bank_account_label" in bill_pay_schema["properties"]
     assert close_schema["required"] == ["period"]
@@ -523,6 +546,7 @@ def test_system_prompt_mentions_finance_ops_tools():
 
     prompt = CopilotAgent.SYSTEM_PROMPT.lower()
     assert "finance ops check" in prompt or "command center" in prompt
+    assert "collections reminders" in prompt
     assert "bill pay" in prompt or "payment batch" in prompt
     assert "month-end close" in prompt
     assert "financial statement" in prompt
@@ -566,6 +590,7 @@ def test_execute_tool_dispatches_finance_ops_tools():
 
     source = inspect.getsource(CopilotAgent._execute_tool)
     assert "run_finance_ops_check" in source
+    assert "draft_collection_reminders" in source
     assert "propose_bill_payment_batch" in source
     assert "prepare_month_end_close" in source
     assert "generate_financial_statement_package" in source
@@ -800,6 +825,80 @@ async def test_finance_ops_check_reports_explicit_empty_states(monkeypatch):
         "agent_workflows",
     }
     assert result["recommended_actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_collection_reminders_execute_routes_send_email_to_inbox():
+    """Copilot collections sweep drafts reminders and creates Inbox send tasks."""
+    due_date = (date.today() - timedelta(days=45)).isoformat()
+    agent, db = _make_agent(
+        {
+            "invoices": [
+                {
+                    "id": "inv-1",
+                    "tenant_id": "tenant-abc",
+                    "invoice_number": "INV-OVERDUE-1",
+                    "total": "1250.00",
+                    "currency": "USD",
+                    "due_date": due_date,
+                    "client_id": "client-1",
+                    "stripe_payment_link_url": "",
+                    "status": "sent",
+                }
+            ],
+            "clients": [
+                {
+                    "id": "client-1",
+                    "tenant_id": "tenant-abc",
+                    "name": "Acme Finance",
+                    "billing_email": "collections@example.com",
+                    "billing_address": {},
+                }
+            ],
+            "tenants": [{"id": "tenant-abc", "name": "Aethos Test Firm"}],
+            "collections_policies": [],
+            "agent_suggestions": [],
+        }
+    )
+
+    result = await agent._execute_tool(
+        "draft_collection_reminders",
+        {"minimum_days_overdue": 30, "limit": 5},
+    )
+
+    assert result["collections_reminders_drafted"] is True
+    assert result["requires_review"] is True
+    assert result["target_agent"] == "collections_agent"
+    assert result["action_type"] == "send_email"
+    assert result["created_review_tasks"] == 1
+    assert result["drafts"][0]["invoice_number"] == "INV-OVERDUE-1"
+    assert "collections@example.com" not in str(result["drafts"][0])
+
+    suggestion = db._inserts["agent_suggestions"][0]
+    assert suggestion["agent_name"] == "collections_agent"
+    assert suggestion["action_type"] == "send_email"
+    assert suggestion["related_entity_type"] == "invoice"
+    assert suggestion["related_entity_id"] == "inv-1"
+    assert suggestion["output_snapshot"]["client_email"] == "collections@example.com"
+    assert suggestion["output_snapshot"]["tone"] == "final"
+    assert suggestion["hitl_required"] is True
+
+    task = db._inserts["hitl_tasks"][0]
+    assert task["kind"] == "send_email"
+    assert task["status"] == "open"
+    assert task["payload"]["invoice_number"] == "INV-OVERDUE-1"
+    assert task["payload"]["client_email"] == "collections@example.com"
+    assert task["payload"]["body_preview"]
+
+    tool_names = [
+        row["tool_name"] for row in db._inserts["agent_tool_invocations"]
+    ]
+    assert tool_names == [
+        "find_overdue_invoices",
+        "draft_collection_email",
+        "send_email",
+    ]
+    assert db._inserts["agent_tool_invocations"][-1]["status"] == "skipped"
 
 
 @pytest.mark.asyncio
