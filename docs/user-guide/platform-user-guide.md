@@ -30,18 +30,25 @@ on the audit trail to explain what happened.
 
 ## 2. Roles And Responsibilities
 
-Current role vocabulary is based on owner/admin/manager/staff/finance patterns.
-Enterprise role expansion is planned under #282.
+Current implementation uses the tenant role hierarchy
+`owner > admin > manager > member > viewer > employee`. Enterprise finance
+personas map onto that hierarchy for now; finer-grained named roles can be added
+later without weakening the existing approval gates.
 
-| Persona | Current responsibility | Planned enterprise depth |
-| --- | --- | --- |
-| Owner / Admin | Configure tenant, approve high-risk actions, access settings and reports | Final approver, policy owner, audit signoff |
-| Controller / Finance Manager | Review close, reports, invoices, bills, payment batches, and journals | Role-specific approval lanes and close evidence ownership |
-| AP Lead / Bookkeeper | Upload vendor invoices, review bills, prepare bill-pay runs | Coding exceptions, recurring bills, multi-step approvals |
-| Engagement Manager | Create clients, engagements, projects, and billing terms | Commercial-term review and engagement-level reporting |
-| Staff / Consultant | Log time and expenses | Restricted workflow participation |
-| Auditor / External CPA | Inspect records and evidence | Read-only audit workbench and export package |
-| Executive / Viewer | Read dashboards and reports | Read-only management cockpit |
+| Enterprise persona | Current role mapping | What they can do today | Current restrictions |
+| --- | --- | --- | --- |
+| Owner | `owner` | Configure tenant, unlock high-risk accounting states, approve owner-threshold Inbox work | None inside tenant; still tenant-scoped |
+| Admin / Controller | `admin` | Approve money-out, accounting, bills, invoice sends/payments, financial events, settings, and agent controls | Cannot cross tenants |
+| Finance Manager / AP Lead | `manager` | Create bills, procurement documents, contacts, engagements, projects, employees, and review manager-threshold Inbox work | Cannot approve admin/owner-threshold money-out/accounting actions |
+| Engagement Manager | `manager` | Maintain customers, engagements, projects, services, WIP, draft invoices, and team workflow | Cannot bypass admin approval for posting/sending/payment |
+| Staff / Consultant | `member` or Timesheet `employee` | Participate in delivery workflows such as time/expense where exposed | Cannot approve finance, accounting, payment, settings, or agent-control actions |
+| Auditor / External CPA | `viewer` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and read-only evidence | Cannot create, approve, edit, reject, convert, pay, send, or export admin-only audit events |
+| Executive / Viewer | `viewer` | Read dashboards, management reports, and operational status | Same read-only mutation restrictions as auditor |
+
+The Bills/AP UI now disables read-only users from creating bills or procurement
+documents, approving procurement, converting purchase requests, or opening Pay
+Bills from the Bills page. Backend RBAC remains authoritative and returns 403
+for direct read-only mutation attempts.
 
 ### Current approval policy matrix
 
@@ -244,7 +251,7 @@ The following work is tracked under parent issue #278:
 | #279 | Docs and QA | Platform user guide and enterprise E2E scenario library |
 | #280 | Controls | Approval policy matrix and role-aware Inbox routing, first slice implemented |
 | #281 | Controls | Immutable Inbox decision audit trail, first slice implemented |
-| #282 | RBAC | Finance roles and permission proof |
+| #282 | RBAC | Finance role mapping and read-only permission proof, first slice implemented |
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations |
 | #284 | P2P | Vendor invoice matching and coding exceptions |
 | #285 | R2R | Close evidence package and reconciliation gates |

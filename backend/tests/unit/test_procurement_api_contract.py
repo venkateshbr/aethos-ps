@@ -309,6 +309,57 @@ def test_procurement_read_routes_use_rls_client(
     assert detail_response.json()["lines"][0]["description"] == "Implementation tooling"
 
 
+def test_viewer_can_read_procurement_but_cannot_mutate(
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="auditor-1",
+        email="auditor@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as viewer_client:
+            list_response = viewer_client.get("/api/v1/procurement/documents")
+            create_response = viewer_client.post(
+                "/api/v1/procurement/documents",
+                json={
+                    "document_type": "purchase_order",
+                    "client_id": CLIENT_ID,
+                    "currency": "USD",
+                    "lines": [
+                        {
+                            "description": "Audit blocked order",
+                            "quantity": "1",
+                            "unit_price": "10.00",
+                            "amount": "10.00",
+                        }
+                    ],
+                },
+            )
+            approve_response = viewer_client.post(
+                f"/api/v1/procurement/documents/{DOCUMENT_ID}/approve"
+            )
+            convert_response = viewer_client.post(
+                f"/api/v1/procurement/documents/{REQUEST_ID}/convert-to-order",
+                json={},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert list_response.status_code == 200, list_response.text
+    assert list_response.json()["total"] == 2
+    assert create_response.status_code == 403, create_response.text
+    assert approve_response.status_code == 403, approve_response.text
+    assert convert_response.status_code == 403, convert_response.text
+    assert not any(
+        row.get("id") == CREATED_DOCUMENT_ID
+        for row in fake_db.tables["procurement_documents"]
+    )
+
+
 def test_procurement_writes_use_service_role_client(
     client: TestClient,
     fake_db: _FakeDb,

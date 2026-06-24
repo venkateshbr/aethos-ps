@@ -249,6 +249,41 @@ def test_inbox_read_routes_use_rls_client(
     assert detail_response.json()["required_approval_role"] == "manager"
 
 
+def test_viewer_can_read_inbox_but_cannot_decide(
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="auditor-1",
+        email="auditor@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as viewer_client:
+            list_response = viewer_client.get("/api/v1/inbox/tasks")
+            approve_response = viewer_client.post("/api/v1/inbox/tasks/task-1/approve")
+            edit_response = viewer_client.post(
+                "/api/v1/inbox/tasks/task-1/approve-with-edits",
+                json={"corrected_payload": {"vendor_name": "Blocked Edit"}},
+            )
+            reject_response = viewer_client.post(
+                "/api/v1/inbox/tasks/task-1/reject",
+                json={"reason": "viewer cannot reject"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert list_response.status_code == 200, list_response.text
+    assert list_response.json()["total"] == 1
+    assert approve_response.status_code == 403, approve_response.text
+    assert edit_response.status_code == 403, edit_response.text
+    assert reject_response.status_code == 403, reject_response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "pending"
+
+
 def test_inbox_tasks_expose_enterprise_approval_policy(
     client: TestClient,
     fake_db: _FakeDb,

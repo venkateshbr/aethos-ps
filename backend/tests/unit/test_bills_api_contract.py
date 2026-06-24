@@ -376,3 +376,46 @@ def test_bill_create_records_purchase_order_match(
     assert body["po_match_summary"]["purchase_order_number"] == "PO-0001"
     assert body["po_match_summary"]["order_total"] == "220.00"
     assert body["po_match_summary"]["bill_total"] == "110.00"
+
+
+def test_viewer_can_read_bills_but_cannot_mutate_ap(
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="auditor-1",
+        email="auditor@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as viewer_client:
+            list_response = viewer_client.get("/api/v1/bills")
+            create_response = viewer_client.post(
+                "/api/v1/bills",
+                json={
+                    "client_id": CLIENT_ID,
+                    "currency": "USD",
+                    "lines": [
+                        {
+                            "description": "Audit blocked bill",
+                            "quantity": "1",
+                            "unit_price": "10.00",
+                            "amount": "10.00",
+                        }
+                    ],
+                },
+            )
+            approve_response = viewer_client.patch(f"/api/v1/bills/{BILL_ID}/approve")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert list_response.status_code == 200, list_response.text
+    assert all(
+        row["tenant_id"] == TENANT_ID
+        for row in list_response.json()["items"]
+    )
+    assert create_response.status_code == 403, create_response.text
+    assert approve_response.status_code == 403, approve_response.text
+    assert not any(row.get("id") == CREATED_BILL_ID for row in fake_db.tables["bills"])
