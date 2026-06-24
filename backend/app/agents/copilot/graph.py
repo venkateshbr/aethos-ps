@@ -24,6 +24,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
+from uuid import uuid4
 
 import openai
 
@@ -69,6 +70,10 @@ class CopilotAgent:
         "When users ask for today's finance ops check, a daily finance ops check, "
         "or the AI Finance Ops Manager command center, use run_finance_ops_check. "
         "It is read-only and separates findings from actions that need Inbox approval.\n"
+        "When users ask to create the next recommended work items or action plan "
+        "from the finance ops check, use create_finance_ops_action_plan. It creates "
+        "one Inbox review task for the manager-level action plan and does not "
+        "approve invoices, payments, journals, or emails.\n"
         "When users ask to draft, send, or prepare collections reminders for "
         "overdue customer invoices, use draft_collection_reminders. It creates "
         "Inbox review tasks and never sends customer email without approval.\n"
@@ -193,6 +198,37 @@ class CopilotAgent:
                         "pattern": "^\\d{4}-\\d{2}$",
                         "description": (
                             "Accounting period for close readiness, formatted YYYY-MM. "
+                            "Defaults to the current month."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 25,
+                        "description": "Maximum queue/run/project examples to include.",
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "create_finance_ops_action_plan",
+            "description": (
+                "Create a manager-level AI Finance Ops action plan from the live "
+                "daily finance ops check. Use after run_finance_ops_check when the "
+                "user asks to create the next recommended work items, work queue, "
+                "or action plan. The plan is routed to Inbox for review and does "
+                "not directly approve invoices, payments, journals, or emails."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": (
+                            "Accounting period for the plan, formatted YYYY-MM. "
                             "Defaults to the current month."
                         ),
                     },
@@ -764,6 +800,8 @@ class CopilotAgent:
             return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
         if tool_name == "run_finance_ops_check":
             return await self._run_finance_ops_check(tool_input)
+        if tool_name == "create_finance_ops_action_plan":
+            return await self._build_finance_ops_action_plan_payload(tool_input)
         if tool_name == "draft_collection_reminders":
             return await self._draft_collection_reminders(tool_input)
         if tool_name == "log_time_entry":
@@ -878,6 +916,15 @@ class CopilotAgent:
                         "risk_class": risk_class,
                     }
                 output.update(close_payload)
+            elif tool_name == "create_finance_ops_action_plan":
+                plan_payload = await self._build_finance_ops_action_plan_payload(tool_input)
+                if plan_payload.get("error"):
+                    return {
+                        "error": plan_payload["error"],
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                    }
+                output.update(plan_payload)
             elif tool_name == "draft_collection_reminders":
                 return await self._draft_collection_reminders(tool_input)
 
@@ -1769,6 +1816,82 @@ class CopilotAgent:
             )
             return {"error": str(exc)}
 
+    async def _build_finance_ops_action_plan_payload(self, args: dict) -> dict:
+        """Create a reviewable manager-level action plan from the daily check.
+
+        The plan is intentionally not an auto-dispatcher. It records which
+        specialist workflows should run next, while the specialist workflows
+        themselves continue to create their own Inbox-gated tasks.
+        """
+        check = await self._run_finance_ops_check(args)
+        if check.get("error"):
+            return check
+
+        findings = check.get("read_only_findings")
+        if not isinstance(findings, dict):
+            findings = {}
+        recommended_actions = check.get("recommended_actions")
+        if not isinstance(recommended_actions, list):
+            recommended_actions = []
+
+        action_items = [
+            self._finance_ops_action_plan_item(
+                idx=idx,
+                action=action,
+                findings=findings,
+            )
+            for idx, action in enumerate(recommended_actions, start=1)
+            if isinstance(action, dict)
+        ]
+        domains = [item["domain"] for item in action_items]
+        approval_count = sum(
+            1 for item in action_items if item.get("requires_inbox_approval")
+        )
+        period = str(check.get("period") or args.get("period") or "")
+        plan_id = f"finance-ops-plan-{uuid4()}"
+        summary = (
+            f"{len(action_items)} finance ops work item"
+            f"{'' if len(action_items) == 1 else 's'} proposed for {period}."
+            if action_items
+            else f"No finance ops work items are currently required for {period}."
+        )
+
+        preview = {
+            "period": period,
+            "status": "ready_for_review" if action_items else "no_actions",
+            "action_count": len(action_items),
+            "requires_inbox_approval_count": approval_count,
+            "domains": ", ".join(domains) if domains else "none",
+        }
+        return {
+            "finance_ops_action_plan": True,
+            "plan_id": plan_id,
+            "period": period,
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "source_tool": "run_finance_ops_check",
+            "source_check_generated_at": check.get("generated_at"),
+            "summary": summary,
+            "status": preview["status"],
+            "action_count": len(action_items),
+            "requires_inbox_approval_count": approval_count,
+            "domains": domains,
+            "action_items": action_items,
+            "empty_states": check.get("empty_states") or [],
+            "source_findings": findings,
+            "review_paths": check.get("review_paths") or [
+                "/app/copilot",
+                "/app/reports",
+                "/app/inbox",
+                "/app/settings",
+            ],
+            "approval_effect": (
+                "Approval records manager review of this action plan only. "
+                "Specialist invoice, payment, journal, and email actions remain "
+                "separately gated by Inbox."
+            ),
+            "preview": preview,
+        }
+
     def _format_finance_ops_check(
         self,
         *,
@@ -1894,6 +2017,58 @@ class CopilotAgent:
                 "/app/settings",
             ],
         }
+
+    @classmethod
+    def _finance_ops_action_plan_item(
+        cls,
+        *,
+        idx: int,
+        action: dict,
+        findings: dict,
+    ) -> dict:
+        domain = str(action.get("domain") or "ops")
+        return {
+            "action_id": f"finance-ops-{idx:02d}-{domain}",
+            "domain": domain,
+            "recommendation": str(action.get("action") or "Review finance ops item."),
+            "suggested_agent": str(action.get("suggested_agent") or "copilot_agent"),
+            "suggested_tool": str(action.get("suggested_tool") or ""),
+            "risk_class": str(action.get("risk_class") or "draft"),
+            "requires_inbox_approval": bool(action.get("requires_inbox_approval")),
+            "rationale": cls._finance_ops_action_rationale(domain, findings),
+            "review_path": str(action.get("review_path") or "/app/inbox"),
+            "status": "proposed",
+        }
+
+    @staticmethod
+    def _finance_ops_action_rationale(domain: str, findings: dict) -> str:
+        finding_key = "close_readiness" if domain == "close" else domain
+        finding = findings.get(finding_key)
+        if not isinstance(finding, dict):
+            return "Recommended by the live finance ops command-center check."
+        if domain == "ar":
+            return (
+                f"AR aging total is {finding.get('total', '0')} with "
+                f"{finding.get('over_90', '0')} over 90 days."
+            )
+        if domain == "ap":
+            return (
+                f"AP aging total is {finding.get('total', '0')} with "
+                f"{finding.get('over_90', '0')} over 90 days."
+            )
+        if domain == "wip":
+            return (
+                f"WIP totals {finding.get('total', '0')} across "
+                f"{finding.get('project_count', 0)} projects."
+            )
+        if domain == "close":
+            return (
+                f"Close readiness for {finding.get('period', 'the period')} is "
+                f"{finding.get('status', 'unknown')} with "
+                f"{finding.get('lock_blocker_count', 0)} lock blockers and "
+                f"{finding.get('pending_review_count', 0)} pending reviews."
+            )
+        return "Recommended by the live finance ops command-center check."
 
     @staticmethod
     def _money_decimal(value: object) -> Decimal:

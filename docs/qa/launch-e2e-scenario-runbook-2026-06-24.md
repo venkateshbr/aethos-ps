@@ -525,7 +525,8 @@ Current implementation assessment:
 
 | Capability | Current implementation | Product gap | Tracking |
 | --- | --- | --- | --- |
-| Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and #265 command-center synthesis/live E2E coverage | Broader finance-department orchestration remains parent-level depth | #265 / Parent #259 |
+| Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and #265 command-center synthesis/live E2E coverage | Manager-level action planning is covered separately by #272; specialist execution remains approval-gated | #265 |
+| AI command-center action plan | Implemented in #272: Copilot turns the daily finance-ops check into a reviewable Inbox action plan with domain, recommendation, specialist tool, risk class, rationale, and review path | Approval records manager review only; invoices, payments, journals, and emails still require their own specialist Inbox approvals | #272 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch | Export/send/settlement remain explicit downstream guarded steps | #262 |
 | AI month-end close controller | Implemented and browser-verified: Copilot routes close preparation to Inbox, then approval runs the close workflow and bootstraps close tasks | Final lock remains separately guarded by readiness | #260 |
@@ -553,7 +554,7 @@ Expected result:
 - The run ledger proves which tools ran and why review was required.
 
 Implementation status:
-- Implemented under #265 for the daily command-center synthesis. Read tools, HITL policy, Inbox, ledger, invoice drafting, bill-pay proposal, month-end close preparation, statement package generation, and the read-only command-center check exist. Broader autonomous orchestration remains under parent #259.
+- Implemented under #265 and #272. The read-only daily command-center synthesis covers AR, AP, WIP, close readiness, action queue, and agent/workflow status. The follow-up action-plan workflow turns those findings into a `copilot_create_finance_ops_action_plan` Inbox task, and approval records manager review without directly approving invoices, payments, journals, or emails.
 
 Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API errors.
 
@@ -758,7 +759,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/multi-tenant-isolation.spec.ts` | Isolation supplement | Use to confirm isolation in addition to manual tenant switch checks |
 | `frontend/e2e/login.spec.ts`, `frontend/e2e/auth-guard.spec.ts`, `frontend/e2e/change-password.spec.ts` | Access supplement | Use for baseline auth/profile checks |
 | `frontend/e2e/copilot-draft-invoice-live.spec.ts` | AI invoice drafting live proof | Uses Copilot chat, Inbox approval, and Invoices UI against the live QA tenant; supplemental to Scenario 13 browser evidence |
-| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, Bills, Clients, Engagements, and Projects UI against the live QA tenant for Scenarios 12 and 14-18 |
+| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, Bills, Clients, Engagements, and Projects UI against the live QA tenant for Scenarios 11-18 |
 
 ## Verification Matrix
 
@@ -772,7 +773,7 @@ Final verification on 2026-06-24:
 - Timesheet production build: `npx ng build timesheet` passed with existing Sass deprecation warnings.
 - Original launch-gap issue scan before the AI finance-ops expansion returned no open issues. The AI expansion added #258-#264 to track the new agentic finance-department scenarios, implementation slices, and browser QA.
 - AI invoice live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-draft-invoice-live.spec.ts --project=chromium --reporter=list` passed after the Copilot draft-invoice implementation.
-- AI finance-ops live proof: `AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `8 passed (2.6m)`, including #267 engagement-letter onboarding.
+- AI finance-ops live proof: `AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `9 passed (4.9m)`, including #272 command-center action-plan orchestration and #267 engagement-letter onboarding.
 - QA database schema was brought current through Supabase migrations `0065`-`0083`; migrations `0068`, `0075`, and `0076` were aligned to the existing `public.is_tenant_member(auth.uid(), tenant_id)` RLS helper before push.
 
 Implemented during this validation pass:
@@ -784,6 +785,7 @@ Implemented during this validation pass:
 - Reports Trial Balance reloads when its eager initial request fails before the tab is active, and the launch walkthrough verifies the visible active tab instead of hidden stale tab content.
 - The launch walkthrough creates richer data through the UI: contact profile, employee classification, service line, engagement total value/dates, project budgets, time entries, invoice, bills surfaces, reports, and manual journal.
 - Copilot finance-ops tools now cover bill-pay proposals, month-end close preparation, and financial statement package generation with tool policy/HITL routing.
+- Copilot finance-ops command-center orchestration now covers manager action-plan creation through Inbox; approval records the plan review while leaving downstream invoices, payments, journals, and emails behind their existing specialist approvals.
 - Copilot document upload status now has a document detail API path, actionable Documents/Inbox links, and source-document metadata preserved through HITL approval into created bills.
 - Bill-pay Inbox approval now attributes draft payment batch creation to the approving user UUID instead of a non-UUID agent label.
 - Month-end close preparation now fails loudly if close-task bootstrap returns no tasks, preventing a false successful close in a database missing migration `0068_accounting_close_tasks.sql`.

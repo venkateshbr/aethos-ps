@@ -259,6 +259,7 @@ class InboxService:
             "copilot_update_rate_card",
             "copilot_draft_invoice",
             "copilot_prepare_month_end_close",
+            "copilot_create_finance_ops_action_plan",
         ):
             return await self._materialise_copilot_tool(payload)
         elif kind == "approve_billing_run":
@@ -292,6 +293,7 @@ class InboxService:
             "update_rate_card",
             "draft_invoice",
             "prepare_month_end_close",
+            "create_finance_ops_action_plan",
         ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -316,6 +318,13 @@ class InboxService:
         )
         if tool_name == "draft_invoice" and isinstance(payload.get("invoice_draft"), dict):
             result = await agent._persist_invoice_draft_payload(payload["invoice_draft"])
+        elif tool_name == "create_finance_ops_action_plan":
+            return {
+                "entity_type": "finance_ops_action_plan",
+                "entity_id": str(payload.get("plan_id") or ""),
+                "action_count": payload.get("action_count", 0),
+                "approval_effect": payload.get("approval_effect"),
+            }
         else:
             result = await agent._execute_tool(tool_name, tool_input)
         if result.get("error"):

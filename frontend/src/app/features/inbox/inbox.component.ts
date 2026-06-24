@@ -340,14 +340,16 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                     @if (actioning() === task.id) { Processing... } @else { Approve }
                   </button>
 
-                  <button
-                    (click)="startEdit(task, $event)"
-                    [disabled]="actioning() === task.id"
-                    class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-secondary hover:border-border-default hover:text-text-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                    [attr.aria-label]="'Edit ' + (task.title)"
-                  >
-                    Edit
-                  </button>
+                  @if (canEditTask(task)) {
+                    <button
+                      (click)="startEdit(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-secondary hover:border-border-default hover:text-text-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      [attr.aria-label]="'Edit ' + (task.title)"
+                    >
+                      Edit
+                    </button>
+                  }
 
                   <button
                     (click)="reject(task, $event)"
@@ -505,6 +507,9 @@ export class InboxComponent implements OnInit {
     { value: 'create_engagement_draft', label: 'Engagements' },
     { value: 'create_expense_draft',    label: 'Expenses' },
     { value: 'create_bill_draft',       label: 'Bills' },
+    { value: 'create_bill_payment_batch', label: 'Payments' },
+    { value: 'copilot_prepare_month_end_close', label: 'Close' },
+    { value: 'copilot_create_finance_ops_action_plan', label: 'Plans' },
     { value: 'intelligence_alert',      label: 'Alerts' },
   ] as const;
 
@@ -687,6 +692,29 @@ export class InboxComponent implements OnInit {
       }
       return entries.slice(0, 8);
     }
+    if (task.kind === 'copilot_create_finance_ops_action_plan') {
+      const preview = p['preview'];
+      const source = (
+        typeof preview === 'object' && preview !== null
+          ? preview
+          : p
+      ) as Record<string, unknown> | undefined;
+      if (source) {
+        const fields = [
+          'period',
+          'status',
+          'action_count',
+          'requires_inbox_approval_count',
+          'domains',
+        ];
+        for (const f of fields) {
+          if (source[f] != null) {
+            entries.push({ key: f.replace(/_/g, ' '), value: String(source[f]) });
+          }
+        }
+        return entries.slice(0, 6);
+      }
+    }
     const DISPLAY_FIELDS = [
       'client_name', 'vendor_name', 'vendor',
       'amount', 'total', 'currency',
@@ -733,7 +761,7 @@ export class InboxComponent implements OnInit {
       case 'e':
       case 'E': {
         const task = tasks[this.focusedIdx()];
-        if (task) this.startEdit(task);
+        if (task && this.canEditTask(task)) this.startEdit(task);
         break;
       }
     }
@@ -787,12 +815,17 @@ export class InboxComponent implements OnInit {
 
   startEdit(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
+    if (!this.canEditTask(task)) return;
     // Open the edit drawer seeded with a copy of the extracted payload. The
     // user corrects fields then Save → approve-with-edits. (Previously this
     // stub just called approve(), which silently approved the raw extraction
     // and made the card "disappear" — #146.)
     this.editForm.set({ ...(task.suggestion_payload ?? {}) });
     this.editingTask.set(task);
+  }
+
+  canEditTask(task: HitlTask): boolean {
+    return (EDIT_FIELD_SCHEMA[task.kind] ?? []).length > 0;
   }
 
   cancelEdit(): void {
