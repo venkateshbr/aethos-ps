@@ -48,7 +48,7 @@ agent ledger.
 | ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Planned | #299 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
-| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Planned | #300 |
+| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Implemented first slice; browser automation pending | #300 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
@@ -562,7 +562,11 @@ Automation target:
 
 Persona: Controller and Owner/Admin.
 
-Status: Planned under #300.
+Status: First slice implemented. The Accounting close package panel now lets
+Admin/Owner users record a blocker-specific override reason, override evidence
+includes actor role, close package commentary carries structured evidence, and
+Copilot financial statement packages include close-readiness warnings plus
+management commentary sourced from the close package.
 
 Steps:
 
@@ -577,6 +581,14 @@ Expected result:
 - Override evidence appears in the close package.
 - Statement commentary is grounded in reports and close readiness evidence.
 - Missing close prerequisites remain visible in the statement package.
+
+Automation target:
+
+- Browser: load close package, choose a blocked checklist item, record a reason,
+  refresh, and assert the override appears with role and timestamp.
+- API: create a close override and assert `created_by_role` is persisted.
+- Copilot/API: generate financial statements and assert close warnings plus
+  evidence-backed commentary are present.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 

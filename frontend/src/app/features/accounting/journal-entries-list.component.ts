@@ -89,16 +89,43 @@ interface CloseVarianceComment {
   service_line?: string;
 }
 
+interface CloseChecklistItem {
+  code: string;
+  label: string;
+  status: string;
+  blocking: boolean;
+  summary: string;
+  count: number;
+  overridden?: boolean;
+}
+
+interface CloseOverride {
+  id: string;
+  period: string;
+  blocker_code: string;
+  reason: string;
+  created_by: string;
+  created_by_role?: string;
+  created_at: string;
+  blocker_ref?: Record<string, unknown>;
+}
+
 interface ClosePackage {
   period: string;
   generated_at: string;
   previous_period: string;
-  close_status: Record<string, unknown>;
+  close_status: {
+    status?: string;
+    ready_to_lock?: boolean;
+    locked?: boolean;
+    checklist?: CloseChecklistItem[];
+    lock_blockers?: string[];
+  };
   gl_summary: Record<string, string | number | null>;
   previous_gl_summary: Record<string, string | number | null>;
   working_capital: Record<string, string | number | null>;
   readiness_evidence?: Record<string, Record<string, unknown>>;
-  close_overrides?: Record<string, unknown>[];
+  close_overrides?: CloseOverride[];
   variance_commentary: CloseVarianceComment[];
 }
 
@@ -107,6 +134,13 @@ interface CloseReadinessArea {
   label: string;
   status: string;
   metric: string;
+}
+
+interface CloseOverrideOption {
+  code: string;
+  label: string;
+  summary: string;
+  status: string;
 }
 
 interface RecurringJournalTemplateLine {
@@ -134,6 +168,14 @@ interface RecurringJournalTemplate {
 }
 
 type JournalFormMode = 'journal' | 'recurring';
+
+const CLOSE_OVERRIDE_LABELS: Record<string, string> = {
+  subledger_reconciliation: 'Sub-ledger reconciliation',
+  trial_balance: 'Trial balance',
+  close_reviews: 'Pending close reviews',
+  close_tasks: 'Close tasks',
+  unposted_journals: 'Unposted journals',
+};
 
 // ─── Type guard for API error shape ───────────────────────────────────────────
 type ApiErrorDetail = string | { code?: string; period?: string; message?: string };
@@ -264,6 +306,61 @@ type FilterChip = 'all' | 'manual' | 'auto';
                       </span>
                     </div>
                     <p class="text-xs text-text-primary mt-1 truncate">{{ area.metric }}</p>
+                  </div>
+                }
+              </div>
+            }
+            @if (canClose()) {
+              <div class="mb-3 rounded border border-border-subtle bg-surface px-3 py-3">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div class="min-w-0">
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-text-primary">Close override</h3>
+                    <p class="mt-1 text-xs text-text-muted">
+                      Record a named blocker override with a controller reason before attempting period lock.
+                    </p>
+                  </div>
+                  <form [formGroup]="closeOverrideForm" (ngSubmit)="createCloseOverride()" class="grid flex-1 gap-2 lg:max-w-2xl lg:grid-cols-[minmax(12rem,16rem)_1fr_auto]" novalidate>
+                    <select
+                      formControlName="blocker_code"
+                      class="rounded border border-border-default bg-surface-base px-3 py-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      aria-label="Close blocker to override"
+                    >
+                      @for (option of closeOverrideOptions(); track option.code) {
+                        <option [value]="option.code">{{ option.label }}</option>
+                      }
+                    </select>
+                    <input
+                      type="text"
+                      formControlName="reason"
+                      maxlength="2000"
+                      placeholder="Reason and evidence reviewed"
+                      class="rounded border border-border-default bg-surface-base px-3 py-2 text-xs text-text-primary placeholder:text-text-disabled focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <button
+                      type="submit"
+                      class="inline-flex items-center justify-center gap-1.5 rounded bg-accent px-3 py-2 text-xs font-medium text-accent-on transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      [disabled]="closeOverrideForm.invalid || closeOverrideAction()"
+                    >
+                      <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">verified_user</mat-icon>
+                      Record
+                    </button>
+                  </form>
+                </div>
+                @if (closeOverrideError()) {
+                  <p class="mt-2 text-xs text-confidence-low" role="alert">{{ closeOverrideError() }}</p>
+                }
+                @if (closePackage()!.close_overrides?.length) {
+                  <div class="mt-3 divide-y divide-border-subtle border-t border-border-subtle pt-2">
+                    @for (override of closePackage()!.close_overrides; track override.id) {
+                      <div class="py-2 text-xs">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="font-medium text-text-primary">{{ blockerLabel(override.blocker_code) }}</span>
+                          <span class="rounded bg-blue-500/15 px-1.5 py-0.5 text-blue-300">{{ override.created_by_role || 'unknown' }}</span>
+                          <span class="text-text-disabled">{{ formatOverrideTimestamp(override.created_at) }}</span>
+                        </div>
+                        <p class="mt-1 text-text-muted">{{ override.reason }}</p>
+                      </div>
+                    }
                   </div>
                 }
               </div>
@@ -1025,6 +1122,8 @@ export class JournalEntriesListComponent implements OnInit {
   closePackage = signal<ClosePackage | null>(null);
   closePackageLoading = signal(false);
   closePackageError = signal<string | null>(null);
+  closeOverrideAction = signal(false);
+  closeOverrideError = signal<string | null>(null);
   recurringTemplates = signal<RecurringJournalTemplate[]>([]);
   recurringTemplatesLoading = signal(false);
   recurringTemplatesError = signal<string | null>(null);
@@ -1111,6 +1210,11 @@ export class JournalEntriesListComponent implements OnInit {
     ]),
   });
 
+  closeOverrideForm = this.fb.nonNullable.group({
+    blocker_code: ['close_tasks', [Validators.required]],
+    reason: ['', [Validators.required, Validators.minLength(10), Validators.maxLength(2000)]],
+  });
+
   get linesArray(): FormArray {
     return this.journalForm.get('lines') as FormArray;
   }
@@ -1169,6 +1273,7 @@ export class JournalEntriesListComponent implements OnInit {
     ).subscribe({
       next: (res) => {
         this.closePackage.set(res);
+        this.syncCloseOverrideDefault(res);
         this.closePackageLoading.set(false);
       },
       error: (err: unknown) => {
@@ -1227,6 +1332,42 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
         this.closeTaskAction.set(null);
+      },
+    });
+  }
+
+  createCloseOverride(): void {
+    if (this.closeOverrideForm.invalid) {
+      this.closeOverrideForm.markAllAsTouched();
+      return;
+    }
+    const value = this.closeOverrideForm.getRawValue();
+    const option = this.closeOverrideOptions().find(row => row.code === value.blocker_code);
+    this.closeOverrideAction.set(true);
+    this.closeOverrideError.set(null);
+    this.http.post<CloseOverride>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-overrides`,
+      {
+        blocker_code: value.blocker_code,
+        reason: value.reason.trim(),
+        blocker_ref: {
+          source: 'accounting_close_panel',
+          blocker_status: option?.status,
+          blocker_summary: option?.summary,
+        },
+      },
+    ).subscribe({
+      next: (override) => {
+        this.closeOverrideAction.set(false);
+        this.closeOverrideForm.patchValue({ reason: '' });
+        this.successToast.set(`Close override recorded for ${this.blockerLabel(override.blocker_code)}.`);
+        setTimeout(() => this.successToast.set(null), 5000);
+        this.loadClosePackage();
+        this.loadCloseTasks();
+      },
+      error: (err: unknown) => {
+        this.closeOverrideError.set(userMessageForError(err, 'Close Override'));
+        this.closeOverrideAction.set(false);
       },
     });
   }
@@ -1500,6 +1641,52 @@ export class JournalEntriesListComponent implements OnInit {
       .filter(line => line.direction === 'DR')
       .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
     return total.toFixed(2);
+  }
+
+  closeOverrideOptions(): CloseOverrideOption[] {
+    const checklist = this.closePackage()?.close_status?.checklist ?? [];
+    const options = checklist
+      .filter(item => CLOSE_OVERRIDE_LABELS[item.code])
+      .filter(item => item.blocking || item.status === 'blocked' || item.status === 'overridden')
+      .map(item => ({
+        code: item.code,
+        label: item.label || this.blockerLabel(item.code),
+        summary: item.summary,
+        status: item.status,
+      }));
+    if (options.length > 0) return options;
+    return Object.entries(CLOSE_OVERRIDE_LABELS).map(([code, label]) => ({
+      code,
+      label,
+      summary: 'Manual controller override.',
+      status: 'manual',
+    }));
+  }
+
+  syncCloseOverrideDefault(pkg: ClosePackage): void {
+    const selected = this.closeOverrideForm.controls.blocker_code.value;
+    const options = this.closeOverrideOptions();
+    if (!options.some(option => option.code === selected)) {
+      this.closeOverrideForm.patchValue({ blocker_code: options[0]?.code ?? 'close_tasks' });
+    }
+    if (pkg.close_status?.status === 'ready') {
+      this.closeOverrideError.set(null);
+    }
+  }
+
+  blockerLabel(code: string): string {
+    return CLOSE_OVERRIDE_LABELS[code] ?? code.replace(/_/g, ' ');
+  }
+
+  formatOverrideTimestamp(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   closeReadinessAreas(): CloseReadinessArea[] {
