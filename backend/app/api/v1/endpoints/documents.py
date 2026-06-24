@@ -294,6 +294,62 @@ async def list_documents(
 
 
 # ---------------------------------------------------------------------------
+# Get endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{document_id}", response_model=DocumentResponse)
+async def get_document(
+    document_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> DocumentResponse:
+    """Return one document row for upload/extraction status polling."""
+    try:
+        result = (
+            db.table("documents")
+            .select(
+                "id, tenant_id, storage_path, mime_type, file_size_bytes, sha256, status, created_at"
+            )
+            .eq("id", document_id)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error(
+            "Document status query failed for tenant %s document %s: %s",
+            tenant_id,
+            document_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while loading the document.",
+        ) from exc
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    row = result.data[0]
+    return DocumentResponse(
+        id=row["id"],
+        tenant_id=row.get("tenant_id") or tenant_id,
+        storage_path=row["storage_path"],
+        mime_type=row["mime_type"],
+        file_size_bytes=int(row.get("file_size_bytes") or 0),
+        sha256=row.get("sha256") or "",
+        status=row["status"],
+        created_at=row["created_at"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Delete endpoint
 # ---------------------------------------------------------------------------
 

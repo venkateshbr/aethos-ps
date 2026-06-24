@@ -55,7 +55,7 @@ DROP POLICY IF EXISTS "authenticated_member_read" ON recurring_journal_templates
 CREATE POLICY "authenticated_member_read" ON recurring_journal_templates
     FOR SELECT
     TO authenticated
-    USING (app.is_tenant_member(tenant_id));
+    USING (public.is_tenant_member(auth.uid(), tenant_id));
 
 DROP POLICY IF EXISTS "tenant_isolation" ON recurring_journal_template_lines;
 CREATE POLICY "tenant_isolation" ON recurring_journal_template_lines
@@ -65,7 +65,7 @@ DROP POLICY IF EXISTS "authenticated_member_read" ON recurring_journal_template_
 CREATE POLICY "authenticated_member_read" ON recurring_journal_template_lines
     FOR SELECT
     TO authenticated
-    USING (app.is_tenant_member(tenant_id));
+    USING (public.is_tenant_member(auth.uid(), tenant_id));
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON recurring_journal_templates
     FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();

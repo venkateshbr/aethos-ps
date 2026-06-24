@@ -19,6 +19,36 @@ def _service() -> InboxService:
     return svc
 
 
+def test_task_materialisation_payload_includes_hitl_metadata() -> None:
+    task = {
+        "suggestion_payload": {
+            "vendor_name": "Acme Supplies",
+            "total": "100.00",
+        },
+        "payload": {
+            "vendor_name": "Acme Supplies",
+            "total": "100.00",
+            "original_document_id": "doc-001",
+        },
+    }
+
+    payload = InboxService._task_materialisation_payload(task)
+
+    assert payload["vendor_name"] == "Acme Supplies"
+    assert payload["original_document_id"] == "doc-001"
+
+
+def test_approve_with_edits_preserves_hitl_metadata() -> None:
+    corrected = {"vendor_name": "Edited Vendor", "total": "125.00"}
+    task = {"payload": {"original_document_id": "doc-001", "total": "100.00"}}
+
+    payload = InboxService._payload_with_task_metadata(corrected, task)
+
+    assert payload["vendor_name"] == "Edited Vendor"
+    assert payload["total"] == "125.00"
+    assert payload["original_document_id"] == "doc-001"
+
+
 @pytest.mark.asyncio
 async def test_materialise_draft_journal_posts_manual_journal(
     monkeypatch: pytest.MonkeyPatch,

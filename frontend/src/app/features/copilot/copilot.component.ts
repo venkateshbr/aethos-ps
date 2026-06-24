@@ -278,7 +278,25 @@ export interface ChatThread {
               @if (uploadStatus() === 'error') {
                 <mat-icon class="text-xs leading-none">error_outline</mat-icon>
               }
-              {{ uploadStatusMessage() }}
+              <span class="min-w-0 flex-1">{{ uploadStatusMessage() }}</span>
+              @if (uploadDocumentId()) {
+                <span class="ml-auto flex flex-none items-center gap-2">
+                  <a
+                    class="font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                    href="/app/documents"
+                  >
+                    Documents
+                  </a>
+                  @if (uploadStatus() === 'done') {
+                    <a
+                      class="font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                      href="/app/inbox"
+                    >
+                      Inbox
+                    </a>
+                  }
+                </span>
+              }
             </div>
           }
 
@@ -392,13 +410,17 @@ export class CopilotComponent implements OnInit {
   // --- Document upload ---
   uploading     = signal(false);
   uploadStatus  = signal<'uploading' | 'extracting' | 'done' | 'error' | null>(null);
+  uploadDocumentId = signal<string | null>(null);
+  uploadDocumentName = signal<string | null>(null);
 
   uploadStatusMessage = computed(() => {
+    const name = this.uploadDocumentName();
+    const suffix = name ? `: ${name}` : '';
     switch (this.uploadStatus()) {
-      case 'uploading':   return 'Uploading…';
-      case 'extracting':  return 'Extracting — this may take up to 30 seconds…';
-      case 'done':        return 'Done — check your Inbox for the extracted record.';
-      case 'error':       return 'Upload failed. Please check the file type/size and try again.';
+      case 'uploading':   return `Uploading${suffix}…`;
+      case 'extracting':  return `Extracting${suffix} — this may take up to 30 seconds…`;
+      case 'done':        return `Extracted${suffix} — review the resulting task in Inbox.`;
+      case 'error':       return `Upload failed${suffix}. Please check the file type/size and try again.`;
       default:            return '';
     }
   });
@@ -666,12 +688,15 @@ export class CopilotComponent implements OnInit {
 
     this.uploading.set(true);
     this.uploadStatus.set('uploading');
+    this.uploadDocumentId.set(null);
+    this.uploadDocumentName.set(file.name);
 
     const fd = new FormData();
     fd.append('file', file, file.name);
 
     this.http.post<{ id: string; status: string }>('/api/v1/documents/upload', fd).subscribe({
       next: (doc) => {
+        this.uploadDocumentId.set(doc.id);
         // Backend returns 201 with status 'extracting' (sync extraction) or
         // 'extracted' (if it completed synchronously).
         if (doc.status === 'extracted') {
@@ -682,10 +707,6 @@ export class CopilotComponent implements OnInit {
           this.pollDocumentStatus(doc.id);
         }
         this.uploading.set(false);
-        // Auto-clear the success banner after 8 s
-        setTimeout(() => {
-          if (this.uploadStatus() === 'done') this.uploadStatus.set(null);
-        }, 8000);
       },
       error: (err: { status?: number }) => {
         this.uploading.set(false);
@@ -708,9 +729,6 @@ export class CopilotComponent implements OnInit {
         next: (doc) => {
           if (doc.status === 'extracted') {
             this.uploadStatus.set('done');
-            setTimeout(() => {
-              if (this.uploadStatus() === 'done') this.uploadStatus.set(null);
-            }, 8000);
           } else if (doc.status === 'failed') {
             this.uploadStatus.set('error');
             setTimeout(() => {
@@ -721,7 +739,6 @@ export class CopilotComponent implements OnInit {
           } else {
             // Give up polling — show done (user can check Documents page)
             this.uploadStatus.set('done');
-            setTimeout(() => { this.uploadStatus.set(null); }, 8000);
           }
         },
         error: () => {

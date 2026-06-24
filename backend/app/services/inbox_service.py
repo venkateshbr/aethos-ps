@@ -68,7 +68,7 @@ class InboxService:
     async def approve(self, task_id: str, user_id: str) -> ApproveResponse:
         task = await self._get_open_task_or_raise(task_id)
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
-        payload = task.get("suggestion_payload", {})
+        payload = self._task_materialisation_payload(task)
         kind = task.get("kind", "")
         # `agent_name` was previously read here for the record_correction call
         # that lived under the plain-approve path — removed in #126 because the
@@ -101,7 +101,8 @@ class InboxService:
     ) -> ApproveResponse:
         task = await self._get_open_task_or_raise(task_id)
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
-        original = task.get("suggestion_payload", {})
+        original = self._task_materialisation_payload(task)
+        corrected_payload = self._payload_with_task_metadata(corrected_payload, task)
         kind = task.get("kind", "")
         agent_name = task.get("agent_name", "unknown")
 
@@ -202,6 +203,35 @@ class InboxService:
             )
         return task
 
+    @staticmethod
+    def _task_materialisation_payload(task: dict) -> dict:
+        """Use task payload metadata plus immutable suggestion output for approval.
+
+        The repository exposes ``suggestion_payload`` from
+        ``agent_suggestions.output_snapshot`` and ``payload`` from the HITL task.
+        Source-document metadata lives on the task payload so approval can
+        materialise rows with the correct FK even when the immutable suggestion
+        snapshot predates that metadata.
+        """
+        suggestion_payload = task.get("suggestion_payload") or {}
+        task_payload = task.get("payload") or {}
+        if not isinstance(suggestion_payload, dict):
+            suggestion_payload = {}
+        if not isinstance(task_payload, dict):
+            task_payload = {}
+        return {**suggestion_payload, **task_payload}
+
+    @staticmethod
+    def _payload_with_task_metadata(payload: dict, task: dict) -> dict:
+        """Preserve non-editable task metadata when approving with edits."""
+        result = dict(payload)
+        task_payload = task.get("payload") or {}
+        if isinstance(task_payload, dict) and "original_document_id" not in result:
+            original_document_id = task_payload.get("original_document_id")
+            if original_document_id:
+                result["original_document_id"] = original_document_id
+        return result
+
     async def _materialise(
         self,
         kind: str,
@@ -222,7 +252,12 @@ class InboxService:
             return await self._materialise_expense(payload)
         elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
             return await self._materialise_bill(payload)
-        elif kind in ("copilot_log_time_entry", "copilot_update_rate_card"):
+        elif kind in (
+            "copilot_log_time_entry",
+            "copilot_update_rate_card",
+            "copilot_draft_invoice",
+            "copilot_prepare_month_end_close",
+        ):
             return await self._materialise_copilot_tool(payload)
         elif kind == "approve_billing_run":
             return await self._materialise_billing_run(payload)
@@ -231,7 +266,7 @@ class InboxService:
         elif kind == "send_time_entry_reminder":
             return await self._materialise_time_entry_reminder(payload)
         elif kind == "create_bill_payment_batch":
-            return await self._materialise_bill_payment_batch(payload)
+            return await self._materialise_bill_payment_batch(payload, user_id=user_id)
         elif kind in ("draft_journal", "create_journal", "create_manual_journal"):
             return await self._materialise_journal(payload, user_id=user_id)
         else:
@@ -250,7 +285,12 @@ class InboxService:
 
     async def _materialise_copilot_tool(self, payload: dict) -> dict:
         tool_name = payload.get("tool_name")
-        if tool_name not in ("log_time_entry", "update_rate_card"):
+        if tool_name not in (
+            "log_time_entry",
+            "update_rate_card",
+            "draft_invoice",
+            "prepare_month_end_close",
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Unsupported Copilot tool approval: {tool_name!r}",
@@ -272,7 +312,10 @@ class InboxService:
                 db_client=self._db,
             )
         )
-        result = await agent._execute_tool(tool_name, tool_input)
+        if tool_name == "draft_invoice" and isinstance(payload.get("invoice_draft"), dict):
+            result = await agent._persist_invoice_draft_payload(payload["invoice_draft"])
+        else:
+            result = await agent._execute_tool(tool_name, tool_input)
         if result.get("error"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -281,6 +324,10 @@ class InboxService:
 
         if tool_name == "log_time_entry":
             return {"entity_type": "time_entry", "entity_id": result.get("entry_id")}
+        if tool_name == "draft_invoice":
+            return {"entity_type": "invoice", "entity_id": result.get("invoice_id")}
+        if tool_name == "prepare_month_end_close":
+            return {"entity_type": "month_end_close", "entity_id": result.get("period")}
         return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
 
     async def _materialise_billing_run(self, payload: dict) -> dict:
@@ -395,7 +442,12 @@ class InboxService:
             "send_status": result.get("status", "sent"),
         }
 
-    async def _materialise_bill_payment_batch(self, payload: dict) -> dict:
+    async def _materialise_bill_payment_batch(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
         bill_ids = payload.get("proposed_bill_ids") or payload.get("bill_ids") or []
         if not isinstance(bill_ids, list) or not all(isinstance(v, str) for v in bill_ids):
             raise HTTPException(
@@ -415,11 +467,18 @@ class InboxService:
 
         from app.services.bill_payments_service import BillPaymentsService
 
+        created_by = str(user_id or payload.get("requested_by_user_id") or "").strip()
+        if not created_by:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Bill payment approval requires a deciding user id",
+            )
+
         batch = BillPaymentsService(self._db, self._tenant_id).create_batch(
             bill_ids,
             pay_date,
             str(payload.get("bank_account_label") or ""),
-            created_by="bill_pay_agent",
+            created_by=created_by,
         )
         return {"entity_type": "bill_payment_batch", "entity_id": str(batch["id"])}
 

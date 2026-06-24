@@ -157,3 +157,42 @@ async def test_run_close_for_tenant_skips_locked_period(
     assert result["result"] == "skipped_locked"
     assert finished[-1]["status"] == "succeeded"
     assert finished[-1]["current_step"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_run_close_for_tenant_fails_when_task_bootstrap_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.workers import close_scheduler_worker
+
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        close_scheduler_worker,
+        "_start_workflow_run",
+        lambda *_args, **_kwargs: "workflow-1",
+    )
+    monkeypatch.setattr(
+        close_scheduler_worker,
+        "_finish_workflow_run",
+        lambda _db, _workflow_id, **kwargs: finished.append(kwargs),
+    )
+    monkeypatch.setattr(
+        close_scheduler_worker,
+        "_period_locked",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        close_scheduler_worker.CloseTasksService,
+        "bootstrap_tasks",
+        AsyncMock(return_value=[]),
+    )
+
+    with pytest.raises(RuntimeError, match="migration 0068_accounting_close_tasks"):
+        await close_scheduler_worker._run_close_for_tenant(
+            object(),
+            tenant_id="tenant-1",
+            period="2026-06",
+        )
+
+    assert finished[-1]["status"] == "failed"
+    assert finished[-1]["current_step"] == "failed"

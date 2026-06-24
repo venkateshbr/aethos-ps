@@ -107,6 +107,10 @@ async def write_agent_suggestion(
         if suspected_injection:
             title = f"[INJECTION DETECTED] {title}"
 
+        task_payload = dict(output)
+        if document_id is not None:
+            task_payload["original_document_id"] = document_id
+
         db.table("hitl_tasks").insert(
             {
                 "tenant_id": deps.tenant_id,
@@ -118,7 +122,7 @@ async def write_agent_suggestion(
                     f"Agent confidence: {confidence:.0%}. Please review before applying."
                     + (" SUSPECTED PROMPT INJECTION — do not auto-apply." if suspected_injection else "")
                 ),
-                "payload": output,
+                "payload": task_payload,
                 "status": "open",
             }
         ).execute()

@@ -89,7 +89,7 @@ DROP POLICY IF EXISTS "authenticated_member_read" ON bank_transactions;
 CREATE POLICY "authenticated_member_read" ON bank_transactions
     FOR SELECT
     TO authenticated
-    USING (app.is_tenant_member(tenant_id));
+    USING (public.is_tenant_member(auth.uid(), tenant_id));
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON bank_transactions
     FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
@@ -132,7 +132,7 @@ DROP POLICY IF EXISTS "authenticated_member_read" ON bank_reconciliation_matches
 CREATE POLICY "authenticated_member_read" ON bank_reconciliation_matches
     FOR SELECT
     TO authenticated
-    USING (app.is_tenant_member(tenant_id));
+    USING (public.is_tenant_member(auth.uid(), tenant_id));
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON bank_reconciliation_matches
     FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();

@@ -47,7 +47,7 @@ def find_duplicate_payment_proposal(
         deps.db.table("agent_suggestions")
         .select("id, output_snapshot")
         .eq("tenant_id", deps.tenant_id)
-        .eq("agent_name", "bill_pay_agent")
+        .in_("agent_name", ["bill_pay_agent", "copilot_agent"])
         .eq("action_type", "create_bill_payment_batch")
         .in_("status", list(_ACTIVE_PROPOSAL_STATUSES))
         .execute()

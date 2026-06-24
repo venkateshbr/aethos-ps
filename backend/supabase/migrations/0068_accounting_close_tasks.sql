@@ -42,7 +42,7 @@ DROP POLICY IF EXISTS "authenticated_member_read" ON accounting_close_tasks;
 CREATE POLICY "authenticated_member_read" ON accounting_close_tasks
     FOR SELECT
     TO authenticated
-    USING (app.is_tenant_member(tenant_id));
+    USING (public.is_tenant_member(auth.uid(), tenant_id));
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON accounting_close_tasks
     FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();

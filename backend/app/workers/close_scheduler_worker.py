@@ -108,7 +108,13 @@ async def _run_monthly_financial_close(db, period: str) -> dict[str, Any]:
     return totals
 
 
-async def _run_close_for_tenant(db, *, tenant_id: str, period: str) -> dict[str, Any]:
+async def _run_close_for_tenant(
+    db,
+    *,
+    tenant_id: str,
+    period: str,
+    created_by: str = "close_scheduler_worker",
+) -> dict[str, Any]:
     """Prepare one tenant's month-end close workflow."""
     workflow_id = _start_workflow_run(db, tenant_id=tenant_id, period=period)
     try:
@@ -129,8 +135,13 @@ async def _run_close_for_tenant(db, *, tenant_id: str, period: str) -> dict[str,
 
         tasks = await CloseTasksService(db, tenant_id).bootstrap_tasks(
             period,
-            "close_scheduler_worker",
+            created_by,
         )
+        if not tasks:
+            raise RuntimeError(
+                "Month-end close task bootstrap returned no tasks. "
+                "Run migration 0068_accounting_close_tasks.sql before preparing close."
+            )
         proposal_results, proposal_errors = await _run_close_proposal_steps(
             db,
             tenant_id=tenant_id,
@@ -143,6 +154,8 @@ async def _run_close_for_tenant(db, *, tenant_id: str, period: str) -> dict[str,
             int(result.get("created_count") or 0) for result in proposal_results.values()
         )
         pending_review_count = len(close_status.pending_reviews)
+        gl_summary = close_package.get("gl_summary") or {}
+        working_capital = close_package.get("working_capital") or {}
         result = {
             "result": "close_prepared",
             "period": period,
@@ -154,9 +167,9 @@ async def _run_close_for_tenant(db, *, tenant_id: str, period: str) -> dict[str,
             "close_status": close_status.as_dict(),
             "close_package_summary": {
                 "period": close_package.get("period"),
-                "net_income": close_package.get("net_income"),
-                "total_ar": close_package.get("total_ar"),
-                "total_ap": close_package.get("total_ap"),
+                "net_income": gl_summary.get("net_income") or close_package.get("net_income"),
+                "total_ar": working_capital.get("ar_open_total") or close_package.get("total_ar"),
+                "total_ap": working_capital.get("ap_open_total") or close_package.get("total_ap"),
                 "pending_review_count": pending_review_count,
                 "variance_comment_count": len(close_package.get("variance_commentary") or []),
             },
