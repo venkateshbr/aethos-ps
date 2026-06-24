@@ -28,6 +28,8 @@ from app.models.agents import (
     AgentRunReplayResponse,
     AgentRunReplayValidationResponse,
     AgentRunSummary,
+    AgentWorkflowRunListResponse,
+    AgentWorkflowRunSummary,
     SetAgentControlRequest,
     SetAgentL3PolicyRequest,
     SetAgentLevelRequest,
@@ -113,6 +115,63 @@ def list_agent_runs(
     )
     runs = [AgentRunSummary(**item) for item in raw["runs"]]
     return AgentRunListResponse(runs=runs, total=raw["total"])
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/workflow-runs
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/workflow-runs",
+    response_model=AgentWorkflowRunListResponse,
+    summary="Recent durable agent workflow runs",
+)
+def list_agent_workflow_runs(
+    workflow_name: str | None = None,
+    run_status: str | None = Query(default=None, alias="status"),
+    limit: int = 50,
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentWorkflowRunListResponse:
+    """Return recent long-running workflow containers for the current tenant."""
+    raw = svc.list_agent_workflow_runs(
+        workflow_name=workflow_name,
+        status=run_status,
+        limit=limit,
+    )
+    workflow_runs = [
+        AgentWorkflowRunSummary(**item) for item in raw["workflow_runs"]
+    ]
+    return AgentWorkflowRunListResponse(
+        workflow_runs=workflow_runs,
+        total=raw["total"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/workflow-runs/{workflow_run_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/workflow-runs/{workflow_run_id}",
+    response_model=AgentWorkflowRunSummary,
+    summary="Agent workflow run detail",
+)
+def get_agent_workflow_run(
+    workflow_run_id: str,
+    svc: AgentsService = Depends(_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> AgentWorkflowRunSummary:
+    """Return one long-running workflow container."""
+    row = svc.get_agent_workflow_run(workflow_run_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent workflow run not found",
+        )
+    return AgentWorkflowRunSummary(**row)
 
 
 # ---------------------------------------------------------------------------

@@ -213,6 +213,29 @@ def _tool_row(**overrides: Any) -> dict[str, Any]:
     return row
 
 
+def _workflow_row(**overrides: Any) -> dict[str, Any]:
+    row = {
+        "id": "workflow-1",
+        "tenant_id": TENANT_ID,
+        "workflow_name": "monthly_retainer_billing_run",
+        "status": "waiting_on_human",
+        "owner_agent_name": "billing_run_agent",
+        "user_id": None,
+        "current_step": "awaiting_billing_run_review",
+        "goal_snapshot": {"period_start": "2026-06-01"},
+        "state_snapshot": {"billing_run_id": "billing-run-1"},
+        "trace_id": "trace-workflow-1",
+        "replay_pointer": "billing_runs/billing-run-1",
+        "error_message": None,
+        "started_at": "2026-06-22T06:00:00Z",
+        "completed_at": None,
+        "created_at": "2026-06-22T06:00:00Z",
+        "updated_at": "2026-06-22T06:00:01Z",
+    }
+    row.update(overrides)
+    return row
+
+
 class _ReadDb(_DbBase):
     def __init__(self) -> None:
         super().__init__(
@@ -246,6 +269,7 @@ class _ReadDb(_DbBase):
                     }
                 ],
                 "agent_runs": [_run_row()],
+                "agent_workflow_runs": [_workflow_row()],
                 "agent_tool_invocations": [
                     _tool_row(id="tool-2", status="failed", created_at="2026-06-22T06:00:01Z"),
                     _tool_row(id="tool-1", status="succeeded", created_at="2026-06-22T06:00:00Z"),
@@ -318,6 +342,12 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
                 "/api/v1/agents/runs?agent_name=copilot_agent&status=succeeded&limit=10"
             )
             detail_response = client.get("/api/v1/agents/runs/run-1")
+            workflow_runs_response = client.get(
+                "/api/v1/agents/workflow-runs?status=waiting_on_human&limit=10"
+            )
+            workflow_detail_response = client.get(
+                "/api/v1/agents/workflow-runs/workflow-1"
+            )
             replay_response = client.post("/api/v1/agents/runs/run-1/replay")
             validation_response = client.post(
                 "/api/v1/agents/runs/run-1/replay/validate"
@@ -346,6 +376,17 @@ def test_agent_dashboard_read_routes_use_rls_client() -> None:
         "tool-1",
         "tool-2",
     ]
+
+    assert workflow_runs_response.status_code == 200, workflow_runs_response.text
+    workflow_body = workflow_runs_response.json()
+    assert workflow_body["total"] == 1
+    assert workflow_body["workflow_runs"][0]["id"] == "workflow-1"
+    assert workflow_body["workflow_runs"][0]["status"] == "waiting_on_human"
+
+    assert workflow_detail_response.status_code == 200, workflow_detail_response.text
+    workflow_detail = workflow_detail_response.json()
+    assert workflow_detail["workflow_name"] == "monthly_retainer_billing_run"
+    assert workflow_detail["state_snapshot"]["billing_run_id"] == "billing-run-1"
 
     assert replay_response.status_code == 200, replay_response.text
     replay_body = replay_response.json()

@@ -5,6 +5,7 @@ import { TaxRatesComponent } from './tax-rates.component';
 import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
 import { AgentRunsComponent } from './agent-runs.component';
+import { AgentWorkflowRunsComponent } from './agent-workflow-runs.component';
 import { IntegrationsComponent } from './integrations.component';
 import { CollectionsPolicyComponent } from './collections-policy.component';
 
@@ -18,6 +19,7 @@ import { CollectionsPolicyComponent } from './collections-policy.component';
     AutonomyComponent,
     ServicesComponent,
     AgentRunsComponent,
+    AgentWorkflowRunsComponent,
     IntegrationsComponent,
     CollectionsPolicyComponent,
   ],
@@ -86,7 +88,10 @@ import { CollectionsPolicyComponent } from './collections-policy.component';
           <h2 id="agent-runs-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Agent Run Ledger
           </h2>
-          <app-agent-runs />
+          <div class="space-y-4">
+            <app-agent-runs />
+            <app-agent-workflow-runs />
+          </div>
         </section>
 
       </div>

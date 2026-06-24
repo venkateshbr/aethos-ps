@@ -199,6 +199,34 @@ class AgentRunListResponse(BaseModel):
     total: int
 
 
+class AgentWorkflowRunSummary(BaseModel):
+    """Durable long-running agent workflow container."""
+
+    id: str
+    tenant_id: str
+    workflow_name: str
+    status: str
+    owner_agent_name: str | None = None
+    user_id: str | None = None
+    current_step: str | None = None
+    goal_snapshot: dict
+    state_snapshot: dict
+    trace_id: str | None = None
+    replay_pointer: str | None = None
+    error_message: str | None = None
+    started_at: str
+    completed_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AgentWorkflowRunListResponse(BaseModel):
+    """Response wrapper for GET /agents/workflow-runs."""
+
+    workflow_runs: list[AgentWorkflowRunSummary]
+    total: int
+
+
 class AgentToolInvocationResponse(BaseModel):
     """Tool invocation row attached to an agent run detail."""
 

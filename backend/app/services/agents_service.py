@@ -161,6 +161,12 @@ _AGENT_TOOL_COLUMNS = (
     "output_hash,input_snapshot,output_snapshot,duration_ms,error_message,created_at"
 )
 
+_AGENT_WORKFLOW_RUN_COLUMNS = (
+    "id,tenant_id,workflow_name,status,owner_agent_name,user_id,current_step,"
+    "goal_snapshot,state_snapshot,trace_id,replay_pointer,error_message,started_at,"
+    "completed_at,created_at,updated_at"
+)
+
 _AGENT_EVAL_CANDIDATE_COLUMNS = (
     "id,agent_correction_id,agent_suggestion_id,agent_name,action_type,eval_case_key,"
     "status,input_hash,original_output_hash,corrected_output_hash,reason,created_at,updated_at"
@@ -496,6 +502,45 @@ class AgentsService:
             "failed_tool_count": failed_count,
             "tool_invocations": [self._tool_invocation(tool) for tool in tools],
         }
+
+    def list_agent_workflow_runs(
+        self,
+        *,
+        workflow_name: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Return recent durable agent workflow containers."""
+        capped_limit = max(1, min(limit, 100))
+        query = (
+            self.db.table("agent_workflow_runs")
+            .select(_AGENT_WORKFLOW_RUN_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .order("created_at", desc=True)
+            .limit(capped_limit)
+        )
+        if workflow_name:
+            query = query.eq("workflow_name", workflow_name)
+        if status:
+            query = query.eq("status", status)
+        rows = query.execute().data or []
+        return {
+            "workflow_runs": [self._workflow_run(row) for row in rows],
+            "total": len(rows),
+        }
+
+    def get_agent_workflow_run(self, workflow_run_id: str) -> dict | None:
+        """Return a single durable agent workflow container."""
+        result = (
+            self.db.table("agent_workflow_runs")
+            .select(_AGENT_WORKFLOW_RUN_COLUMNS)
+            .eq("tenant_id", self.tenant_id)
+            .eq("id", workflow_run_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return self._workflow_run(rows[0]) if rows else None
 
     def build_agent_run_replay(self, run_id: str) -> dict | None:
         """Return a deterministic, non-mutating replay package for a recorded run.
@@ -875,6 +920,27 @@ class AgentsService:
             "duration_ms": row.get("duration_ms"),
             "error_message": row.get("error_message"),
             "created_at": str(row["created_at"]),
+        }
+
+    @staticmethod
+    def _workflow_run(row: dict) -> dict:
+        return {
+            "id": str(row["id"]),
+            "tenant_id": str(row["tenant_id"]),
+            "workflow_name": row["workflow_name"],
+            "status": row["status"],
+            "owner_agent_name": row.get("owner_agent_name"),
+            "user_id": str(row["user_id"]) if row.get("user_id") else None,
+            "current_step": row.get("current_step"),
+            "goal_snapshot": row.get("goal_snapshot") or {},
+            "state_snapshot": row.get("state_snapshot") or {},
+            "trace_id": row.get("trace_id"),
+            "replay_pointer": row.get("replay_pointer"),
+            "error_message": row.get("error_message"),
+            "started_at": str(row["started_at"]),
+            "completed_at": str(row["completed_at"]) if row.get("completed_at") else None,
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
         }
 
     @staticmethod

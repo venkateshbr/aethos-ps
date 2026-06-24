@@ -134,6 +134,29 @@ def _tool_row(**overrides: object) -> dict:
     return row
 
 
+def _workflow_row(**overrides: object) -> dict:
+    row = {
+        "id": "workflow-1",
+        "tenant_id": "tenant-1",
+        "workflow_name": "monthly_retainer_billing_run",
+        "status": "waiting_on_human",
+        "owner_agent_name": "billing_run_agent",
+        "user_id": None,
+        "current_step": "awaiting_billing_run_review",
+        "goal_snapshot": {"period_start": "2026-06-01"},
+        "state_snapshot": {"billing_run_id": "billing-run-1"},
+        "trace_id": "trace-workflow-1",
+        "replay_pointer": "billing_runs/billing-run-1",
+        "error_message": None,
+        "started_at": "2026-06-22T06:00:00Z",
+        "completed_at": None,
+        "created_at": "2026-06-22T06:00:00Z",
+        "updated_at": "2026-06-22T06:00:01Z",
+    }
+    row.update(overrides)
+    return row
+
+
 def _candidate_row(**overrides: object) -> dict:
     row = {
         "id": "candidate-1",
@@ -229,6 +252,54 @@ def test_get_agent_run_returns_none_for_missing_run() -> None:
     db = _Db({"agent_runs": [], "agent_tool_invocations": []})
 
     assert AgentsService(db, "tenant-1").get_agent_run("missing") is None  # type: ignore[arg-type]
+
+
+def test_list_agent_workflow_runs_filters_by_status_and_workflow() -> None:
+    db = _Db(
+        {
+            "agent_workflow_runs": [
+                _workflow_row(id="workflow-1", created_at="2026-06-22T06:00:00Z"),
+                _workflow_row(
+                    id="workflow-2",
+                    workflow_name="nightly_collections",
+                    status="succeeded",
+                    created_at="2026-06-22T07:00:00Z",
+                    completed_at="2026-06-22T07:05:00Z",
+                ),
+                _workflow_row(id="other-tenant-workflow", tenant_id="tenant-2"),
+            ],
+        }
+    )
+
+    result = AgentsService(db, "tenant-1").list_agent_workflow_runs(  # type: ignore[arg-type]
+        workflow_name="monthly_retainer_billing_run",
+        status="waiting_on_human",
+        limit=10,
+    )
+
+    assert result["total"] == 1
+    assert result["workflow_runs"][0]["id"] == "workflow-1"
+    assert result["workflow_runs"][0]["state_snapshot"]["billing_run_id"] == "billing-run-1"
+
+
+def test_get_agent_workflow_run_returns_detail() -> None:
+    db = _Db({"agent_workflow_runs": [_workflow_row(id="workflow-1")]})
+
+    result = AgentsService(db, "tenant-1").get_agent_workflow_run("workflow-1")  # type: ignore[arg-type]
+
+    assert result is not None
+    assert result["workflow_name"] == "monthly_retainer_billing_run"
+    assert result["current_step"] == "awaiting_billing_run_review"
+    assert result["replay_pointer"] == "billing_runs/billing-run-1"
+
+
+def test_get_agent_workflow_run_returns_none_for_missing_run() -> None:
+    db = _Db({"agent_workflow_runs": []})
+
+    assert (
+        AgentsService(db, "tenant-1").get_agent_workflow_run("missing")  # type: ignore[arg-type]
+        is None
+    )
 
 
 def test_build_agent_run_replay_returns_recorded_tool_manifest() -> None:
