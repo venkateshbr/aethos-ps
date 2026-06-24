@@ -53,6 +53,7 @@ interface ContactDetail {
   name: string;
   email?: string | null;
   phone?: string | null;
+  website?: string | null;
   kind: ContactKind;
   created_at: string;
   vendor_onboarding_status?: VendorOnboardingStatus;
@@ -221,7 +222,7 @@ function daysSince(dateStr: string | null): number | null {
         }
 
         <!-- Info cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
             <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Email</dt>
             <dd class="text-text-primary text-sm truncate">{{ contact()!.email || 'Not provided' }}</dd>
@@ -229,6 +230,16 @@ function daysSince(dateStr: string | null): number | null {
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
             <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Phone</dt>
             <dd class="text-text-primary text-sm">{{ contact()!.phone || 'Not provided' }}</dd>
+          </div>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Website</dt>
+            <dd class="text-text-primary text-sm truncate">
+              @if (contact()!.website) {
+                <a [href]="contact()!.website!" target="_blank" rel="noopener noreferrer" class="text-accent-light hover:underline">{{ contact()!.website }}</a>
+              } @else {
+                Not provided
+              }
+            </dd>
           </div>
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
             <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Type</dt>
@@ -752,6 +763,18 @@ function daysSince(dateStr: string | null): number | null {
             />
           </div>
 
+          <!-- Website -->
+          <div>
+            <label for="edit-website" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Website</label>
+            <input
+              id="edit-website"
+              type="url"
+              formControlName="website"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              placeholder="https://example.com"
+            />
+          </div>
+
           <!-- Kind -->
           <div>
             <label for="edit-kind" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
@@ -987,6 +1010,7 @@ export class ClientDetailComponent implements OnInit {
     name:  ['', [Validators.required]],
     email: [''],
     phone: [''],
+    website: [''],
     kind:  ['customer' as ContactKind, [Validators.required]],
     vendor_onboarding_status: ['pending' as VendorOnboardingStatus],
     vendor_bank_account_status: ['not_provided' as VendorBankAccountStatus],
@@ -1126,6 +1150,7 @@ export class ClientDetailComponent implements OnInit {
       name:  c.name,
       email: c.email ?? '',
       phone: c.phone ?? '',
+      website: c.website ?? '',
       kind:  c.kind,
       vendor_onboarding_status: c.vendor_onboarding_status ?? 'pending',
       vendor_bank_account_status: c.vendor_bank_account_status ?? 'not_provided',
@@ -1245,6 +1270,7 @@ export class ClientDetailComponent implements OnInit {
       name:  v.name,
       email: v.email || null,
       phone: v.phone || null,
+      website: v.website || null,
       kind:  nextKind,
     };
 

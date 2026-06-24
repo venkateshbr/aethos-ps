@@ -311,6 +311,7 @@ def test_project_create_uses_service_role_client(
             "currency": "USD",
             "budget": "12000.00",
             "budget_hours": "80",
+            "status": "active",
         },
     )
 
@@ -319,6 +320,7 @@ def test_project_create_uses_service_role_client(
     assert response.json()["tenant_id"] == TENANT_ID
     assert response.json()["engagement_id"] == "eng-1"
     assert response.json()["budget_hours"] == "80"
+    assert response.json()["status"] == "active"
 
 
 def test_project_phase_create_and_update_use_service_role_client(

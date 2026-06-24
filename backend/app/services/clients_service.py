@@ -34,6 +34,9 @@ def _to_response(row: dict) -> ClientResponse:
         tenant_id=str(row["tenant_id"]),
         name=row["name"],
         kind=row["kind"],
+        email=row.get("billing_email"),
+        phone=row.get("phone"),
+        website=row.get("website"),
         payment_terms_days=int(row["payment_terms_days"]),
         created_at=str(row["created_at"]),
         vendor_onboarding_status=row.get("vendor_onboarding_status")
@@ -80,6 +83,12 @@ class ClientService:
             "kind": data.kind,
             "payment_terms_days": data.payment_terms_days,
         }
+        if data.email is not None:
+            payload["billing_email"] = data.email
+        if data.phone is not None:
+            payload["phone"] = data.phone
+        if data.website is not None:
+            payload["website"] = data.website
         include_vendor_controls = data.kind in _VENDOR_KINDS
         provided_fields = data.model_fields_set
         if include_vendor_controls or "vendor_onboarding_status" in provided_fields:
@@ -115,6 +124,12 @@ class ClientService:
             patch["name"] = data.name
         if data.kind is not None:
             patch["kind"] = data.kind
+        if data.email is not None:
+            patch["billing_email"] = data.email
+        if data.phone is not None:
+            patch["phone"] = data.phone
+        if data.website is not None:
+            patch["website"] = data.website
         if data.billing_address is not None:
             patch["billing_address"] = data.billing_address
         if data.tax_id is not None:

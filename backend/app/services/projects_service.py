@@ -74,7 +74,7 @@ class ProjectService:
             "engagement_id": data.engagement_id,
             "name": data.name,
             "currency": currency,
-            "status": "planning",
+            "status": data.status,
         }
         if data.description:
             payload["description"] = data.description

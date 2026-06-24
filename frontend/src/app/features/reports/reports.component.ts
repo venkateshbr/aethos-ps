@@ -1559,6 +1559,11 @@ export class ReportsComponent implements OnInit {
       case 10:
         this.loadScopeAdvisor();
         break;
+      case 18:
+        if (this.tbError() || !this.tbData()) {
+          this.loadTrialBalance();
+        }
+        break;
     }
   }
 

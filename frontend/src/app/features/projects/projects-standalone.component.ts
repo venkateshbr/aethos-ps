@@ -196,6 +196,15 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
             </ng-container>
 
             <!-- Budget Hours column -->
+            <ng-container matColumnDef="budget">
+              <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
+                Budget
+              </th>
+              <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
+                {{ row.budget != null ? row.currency + ' ' + row.budget : '—' }}
+              </td>
+            </ng-container>
+
             <ng-container matColumnDef="budget_hours">
               <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
                 Budget Hrs
@@ -358,6 +367,33 @@ const STATUS_CHIPS: { value: ProjectStatus; label: string }[] = [
             </select>
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="ps-budget" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Budget amount</label>
+              <input
+                id="ps-budget"
+                type="number"
+                min="0"
+                step="0.01"
+                formControlName="budget"
+                placeholder="0.00"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              />
+            </div>
+            <div>
+              <label for="ps-budget-hours" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Budget hours</label>
+              <input
+                id="ps-budget-hours"
+                type="number"
+                min="0"
+                step="0.01"
+                formControlName="budget_hours"
+                placeholder="0"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              />
+            </div>
+          </div>
+
           @if (createError()) {
             <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
               {{ createError() }}
@@ -511,7 +547,7 @@ export class ProjectsStandaloneComponent implements OnInit {
   engagementFilter = '';
 
   readonly statusChips = STATUS_CHIPS;
-  readonly displayedColumns = ['code', 'name', 'engagement', 'status', 'budget_hours', 'hours_logged', 'pct_used', 'team'];
+  readonly displayedColumns = ['code', 'name', 'engagement', 'status', 'budget', 'budget_hours', 'hours_logged', 'pct_used', 'team'];
 
   // Computed engagement name lookup map
   engagementNameMap = computed<Record<string, string>>(() => {
@@ -541,6 +577,8 @@ export class ProjectsStandaloneComponent implements OnInit {
     name:          ['', [Validators.required]],
     engagement_id: ['', [Validators.required]],
     status:        ['active'],
+    budget:        [null as number | null],
+    budget_hours:  [null as number | null],
   });
 
   // Team / assignments panel state
@@ -640,7 +678,7 @@ export class ProjectsStandaloneComponent implements OnInit {
   }
 
   openCreateForm(): void {
-    this.createForm.reset({ name: '', engagement_id: '', status: 'active' });
+    this.createForm.reset({ name: '', engagement_id: '', status: 'active', budget: null, budget_hours: null });
     this.createError.set(null);
     this.showCreateForm.set(true);
   }
@@ -661,6 +699,8 @@ export class ProjectsStandaloneComponent implements OnInit {
       name:          v.name,
       engagement_id: v.engagement_id,
       status:        v.status,
+      budget:        v.budget != null ? String(v.budget) : null,
+      budget_hours:  v.budget_hours != null ? String(v.budget_hours) : null,
     }).subscribe({
       next: (newProj) => {
         this.projects.update(list => [newProj, ...list]);

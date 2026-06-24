@@ -70,6 +70,20 @@ def test_create_contact_kind_vendor() -> None:
     assert c.kind == "vendor"
 
 
+def test_create_contact_accepts_profile_fields() -> None:
+    c = ClientCreate(
+        name="Acme Consulting",
+        kind="both",
+        email="hello@acme.example",
+        phone="+1 555 0100",
+        website="https://acme.example",
+    )
+
+    assert c.email == "hello@acme.example"
+    assert c.phone == "+1 555 0100"
+    assert c.website == "https://acme.example"
+
+
 def test_create_contact_rejects_invalid_kind() -> None:
     with pytest.raises(ValidationError):
         ClientCreate(name="Bad", kind="unknown")  # type: ignore[arg-type]
@@ -78,6 +92,14 @@ def test_create_contact_rejects_invalid_kind() -> None:
 def test_update_contact_kind_both() -> None:
     u = ClientUpdate(kind="both")
     assert u.kind == "both"
+
+
+def test_update_contact_accepts_profile_fields() -> None:
+    u = ClientUpdate(email="ops@acme.example", phone="+1 555 0101", website="https://new.example")
+
+    assert u.email == "ops@acme.example"
+    assert u.phone == "+1 555 0101"
+    assert u.website == "https://new.example"
 
 
 # ---------------------------------------------------------------------------
@@ -231,12 +253,47 @@ def test_update_retries_without_optional_vendor_control_columns_when_schema_lags
     assert retry_payload == {"name": "Supplier Limited"}
 
 
+def test_create_retries_without_optional_profile_columns_when_schema_lags() -> None:
+    repo, first_insert, retry_insert = _make_repo_for_stale_profile_create()
+
+    row = asyncio.run(
+        repo.create(
+            {
+                "name": "Acme Consulting",
+                "kind": "customer",
+                "payment_terms_days": 30,
+                "billing_email": "hello@acme.example",
+                "phone": "+1 555 0100",
+                "website": "https://acme.example",
+            }
+        )
+    )
+
+    assert row["id"] == "customer-1"
+    first_insert.insert.assert_called_once()
+    retry_insert.insert.assert_called_once()
+    retry_payload = retry_insert.insert.call_args.args[0]
+    assert retry_payload["tenant_id"] == "tenant-123"
+    assert retry_payload["billing_email"] == "hello@acme.example"
+    assert "phone" not in retry_payload
+    assert "website" not in retry_payload
+
+
 def _missing_vendor_column_error() -> APIError:
     return APIError(
         {
             "code": "PGRST204",
             "message": "Could not find the 'vendor_bank_account_status' column "
             "of 'clients' in the schema cache",
+        }
+    )
+
+
+def _missing_phone_column_error() -> APIError:
+    return APIError(
+        {
+            "code": "PGRST204",
+            "message": "Could not find the 'phone' column of 'clients' in the schema cache",
         }
     )
 
@@ -298,3 +355,23 @@ def _make_repo_for_stale_vendor_control_update() -> tuple[ClientRepository, Magi
     mock_db = MagicMock()
     mock_db.table.side_effect = [get_chain, first_update, retry_update]
     return ClientRepository(db=mock_db, tenant_id="tenant-123"), first_update, retry_update
+
+
+def _make_repo_for_stale_profile_create() -> tuple[ClientRepository, MagicMock, MagicMock]:
+    result = MagicMock()
+    result.data = [
+        {
+            "id": "customer-1",
+            "tenant_id": "tenant-123",
+            "name": "Acme Consulting",
+            "kind": "customer",
+            "payment_terms_days": 30,
+            "billing_email": "hello@acme.example",
+            "created_at": "2026-01-01T00:00:00",
+        }
+    ]
+    first_insert = _chain(error=_missing_phone_column_error())
+    retry_insert = _chain(result=result)
+    mock_db = MagicMock()
+    mock_db.table.side_effect = [first_insert, retry_insert]
+    return ClientRepository(db=mock_db, tenant_id="tenant-123"), first_insert, retry_insert

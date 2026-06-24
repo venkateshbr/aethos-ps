@@ -18,6 +18,8 @@ interface Employee {
   title?: string | null;
   department?: string | null;
   employment_type: string;
+  practice_area?: string | null;
+  seniority?: string | null;
   default_bill_rate?: string | null;
   default_bill_rate_currency?: string | null;
   cost_rate?: string | null;
@@ -45,6 +47,24 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
   part_time: 'Part-time',
   contractor: 'Contractor',
   consultant: 'Consultant',
+};
+
+const PRACTICE_AREA_LABELS: Record<string, string> = {
+  accounting: 'Accounting',
+  tax: 'Tax',
+  cosec: 'Company Secretarial',
+  payroll: 'Payroll',
+  advisory: 'Advisory',
+  other: 'Other',
+};
+
+const SENIORITY_LABELS: Record<string, string> = {
+  partner: 'Partner',
+  director: 'Director',
+  manager: 'Manager',
+  senior: 'Senior',
+  associate: 'Associate',
+  analyst: 'Analyst',
 };
 
 @Component({
@@ -111,6 +131,13 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
                   <p class="text-xs text-text-muted mt-0.5 truncate">
                     {{ e.title || employmentLabel(e.employment_type) }} · {{ e.email }}
                   </p>
+                  @if (e.practice_area || e.seniority) {
+                    <p class="text-xs text-text-disabled mt-0.5 truncate">
+                      @if (e.practice_area) { {{ practiceAreaLabel(e.practice_area) }} }
+                      @if (e.practice_area && e.seniority) { · }
+                      @if (e.seniority) { {{ seniorityLabel(e.seniority) }} }
+                    </p>
+                  }
                 </div>
                 <div class="text-right flex-none hidden sm:block">
                   <p class="text-xs text-text-muted">{{ employmentLabel(e.employment_type) }}</p>
@@ -188,6 +215,32 @@ const EMPLOYMENT_LABELS: Record<string, string> = {
               <option value="contractor">Contractor</option>
               <option value="consultant">Consultant</option>
             </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs uppercase tracking-wide text-text-muted mb-2">Practice area</label>
+              <select id="practice-area" formControlName="practice_area" class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent">
+                <option value="">Select…</option>
+                <option value="accounting">Accounting</option>
+                <option value="tax">Tax</option>
+                <option value="cosec">Company Secretarial</option>
+                <option value="payroll">Payroll</option>
+                <option value="advisory">Advisory</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs uppercase tracking-wide text-text-muted mb-2">Seniority</label>
+              <select id="seniority" formControlName="seniority" class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent">
+                <option value="">Select…</option>
+                <option value="partner">Partner</option>
+                <option value="director">Director</option>
+                <option value="manager">Manager</option>
+                <option value="senior">Senior</option>
+                <option value="associate">Associate</option>
+                <option value="analyst">Analyst</option>
+              </select>
+            </div>
           </div>
           <div class="grid grid-cols-3 gap-3">
             <div class="col-span-2">
@@ -293,6 +346,8 @@ export class PeopleListComponent implements OnInit {
     title: [''],
     department: [''],
     employment_type: ['full_time' as string, [Validators.required]],
+    practice_area: ['' as string],
+    seniority: ['' as string],
     default_bill_rate: [null as number | null],
     default_bill_rate_currency: ['' as string],
     cost_rate: [null as number | null],
@@ -327,12 +382,20 @@ export class PeopleListComponent implements OnInit {
     return EMPLOYMENT_LABELS[t] ?? t;
   }
 
+  practiceAreaLabel(value: string): string {
+    return PRACTICE_AREA_LABELS[value] ?? value;
+  }
+
+  seniorityLabel(value: string): string {
+    return SENIORITY_LABELS[value] ?? value;
+  }
+
   openCreate(): void {
     this.editingId.set(null);
     this.panelError.set(null);
     this.form.reset({
       first_name: '', last_name: '', email: '', title: '', department: '',
-      employment_type: 'full_time', default_bill_rate: null,
+      employment_type: 'full_time', practice_area: '', seniority: '', default_bill_rate: null,
       default_bill_rate_currency: '', cost_rate: null,
       target_billable_utilization_pct: null, status: 'active',
     });
@@ -349,6 +412,8 @@ export class PeopleListComponent implements OnInit {
       title: e.title ?? '',
       department: e.department ?? '',
       employment_type: e.employment_type,
+      practice_area: e.practice_area ?? '',
+      seniority: e.seniority ?? '',
       default_bill_rate: e.default_bill_rate != null ? Number(e.default_bill_rate) : null,
       default_bill_rate_currency: e.default_bill_rate_currency ?? '',
       cost_rate: e.cost_rate != null ? Number(e.cost_rate) : null,
@@ -379,6 +444,8 @@ export class PeopleListComponent implements OnInit {
       title: v.title || null,
       department: v.department || null,
       employment_type: v.employment_type,
+      practice_area: v.practice_area || null,
+      seniority: v.seniority || null,
       default_bill_rate: v.default_bill_rate != null ? String(v.default_bill_rate) : null,
       default_bill_rate_currency: v.default_bill_rate_currency
         ? v.default_bill_rate_currency.toUpperCase()

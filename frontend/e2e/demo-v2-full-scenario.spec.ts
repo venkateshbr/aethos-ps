@@ -218,6 +218,12 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
       if (await kindSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await kindSelect.selectOption('customer');
       }
+      if (hasPhone) {
+        await page.locator('#contact-phone, [formcontrolname="phone"]').fill('+1 555 0188');
+      }
+      if (hasWebsite) {
+        await page.locator('#contact-website, [formcontrolname="website"]').fill('https://nexus-consulting.example');
+      }
 
       await shot(page, '04-contact-form-filled');
 
@@ -263,6 +269,12 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
       await page.locator('[formcontrolname="email"]').fill(EMP_EMAIL);
       await page.locator('[formcontrolname="title"]').fill('Senior Consultant');
       await page.locator('[formcontrolname="employment_type"]').selectOption('full_time');
+      if (hasPracticeArea) {
+        await page.locator('[formcontrolname="practice_area"]').selectOption('advisory');
+      }
+      if (hasSeniority) {
+        await page.locator('[formcontrolname="seniority"]').selectOption('senior');
+      }
       await page.locator('[formcontrolname="default_bill_rate"]').fill('200');
       await page.locator('[formcontrolname="default_bill_rate_currency"]').fill('USD');
 
@@ -327,15 +339,13 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
 
       await shot(page, '11-engagement-form-empty');
 
-      // Check for missing fields: service line, practice area, start/end date, default rate card
+      // Check for missing fields: service line, start/end date, default rate card
       const hasServiceLine  = await page.locator('#eng-service-line, [formcontrolname="service_line"]').isVisible({ timeout: 2_000 }).catch(() => false);
-      const hasPractice     = await page.locator('#eng-practice, [formcontrolname="practice_area"]').isVisible({ timeout: 2_000 }).catch(() => false);
       const hasStartDate    = await page.locator('#eng-start-date, [formcontrolname="start_date"]').isVisible({ timeout: 2_000 }).catch(() => false);
       const hasEndDate      = await page.locator('#eng-end-date, [formcontrolname="end_date"]').isVisible({ timeout: 2_000 }).catch(() => false);
       const hasRateCard     = await page.locator('#eng-rate-card, [formcontrolname="rate_card_id"]').isVisible({ timeout: 2_000 }).catch(() => false);
 
       if (!hasServiceLine) noteGap('Engagements/create', 'No "Service line" field — demo guide v2 needs Advisory / Consulting / Tax service lines', page);
-      if (!hasPractice)    noteGap('Engagements/create', 'No "Practice area" field — needed for analytics and WIP grouping', page);
       if (!hasStartDate)   noteGap('Engagements/create', 'No "Start date" field — engagement duration not captured at create time', page);
       if (!hasEndDate)     noteGap('Engagements/create', 'No "End date" field — engagement duration not captured at create time', page);
       if (!hasRateCard)    noteGap('Engagements/create', 'No "Rate card" field — no way to attach rate card at engagement creation', page);
@@ -375,6 +385,21 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
 
       await page.locator('#eng-billing').selectOption('time_and_materials');
       await page.locator('#eng-currency').selectOption('USD');
+      if (hasServiceLine) {
+        await page.locator('#eng-service-line, [formcontrolname="service_line"]').selectOption('advisory');
+      }
+      const totalValueInput = page.locator('#eng-total-value, [formcontrolname="total_value"]');
+      if (await totalValueInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
+        await totalValueInput.fill('48000');
+      }
+      if (hasStartDate) {
+        await page.locator('#eng-start-date, [formcontrolname="start_date"]').fill(new Date().toISOString().split('T')[0]);
+      }
+      if (hasEndDate) {
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 6);
+        await page.locator('#eng-end-date, [formcontrolname="end_date"]').fill(endDate.toISOString().split('T')[0]);
+      }
 
       await shot(page, '12-engagement-form-filled');
 
@@ -408,7 +433,7 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
 
       // Check for missing fields
       const hasBudgetHours  = await page.locator('#ps-budget-hours, [formcontrolname="budget_hours"]').isVisible({ timeout: 2_000 }).catch(() => false);
-      const hasBudgetAmount = await page.locator('#ps-budget, [formcontrolname="budget_amount"]').isVisible({ timeout: 2_000 }).catch(() => false);
+      const hasBudgetAmount = await page.locator('#ps-budget, [formcontrolname="budget"], [formcontrolname="budget_amount"]').isVisible({ timeout: 2_000 }).catch(() => false);
       if (!hasBudgetHours)  noteGap('Projects/create', 'No "Budget hours" field — utilization reporting will lack baseline', page);
       if (!hasBudgetAmount) noteGap('Projects/create', 'No "Budget amount" field — Project P&L has no budget line', page);
 
@@ -449,6 +474,13 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
           if (firstVal) await engSelect.selectOption({ value: firstVal });
           noteGap('Projects/create', `Could not find engagement "${ENG_NAME}" in dropdown — auto-created General project may already exist`, page);
         }
+      }
+
+      if (hasBudgetAmount) {
+        await page.locator('#ps-budget, [formcontrolname="budget"], [formcontrolname="budget_amount"]').first().fill('24000');
+      }
+      if (hasBudgetHours) {
+        await page.locator('#ps-budget-hours, [formcontrolname="budget_hours"]').first().fill('120');
       }
 
       await shot(page, '16-project-form-filled');
@@ -630,10 +662,10 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
       await shot(page, '24-engagement-detail');
 
       // Check for missing engagement detail fields
-      const hasBudgetSummary = await page.getByText(/budget|total value/i).isVisible({ timeout: 3_000 }).catch(() => false);
-      const hasServiceLine   = await page.getByText(/service line|practice/i).isVisible({ timeout: 3_000 }).catch(() => false);
+      const hasBudgetSummary = await page.getByText(/budget|total value/i).first().isVisible({ timeout: 3_000 }).catch(() => false);
+      const hasServiceLine   = await page.getByText(/service line/i).first().isVisible({ timeout: 3_000 }).catch(() => false);
       if (!hasBudgetSummary) noteGap('Engagement detail', 'No budget/total value summary visible on detail page', page);
-      if (!hasServiceLine)   noteGap('Engagement detail', 'No service line / practice area displayed', page);
+      if (!hasServiceLine)   noteGap('Engagement detail', 'No service line displayed', page);
 
       // Draft invoice button
       const draftInvBtn = page.getByRole('button', { name: /draft.*invoice|create.*invoice/i });
@@ -890,8 +922,23 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
           await settled(page, 10_000);
           await shot(page, `37-reports-${tabLabel.toLowerCase().replace(/[^a-z0-9]/g, '-')}`);
 
-          // Verify no hard error state
-          const errorMsg = page.getByText(/failed to load|error loading|500/i);
+          const tabHasSuccessSurface = tabLabel === 'Trial Balance'
+            && await page.locator('table[aria-label="Trial Balance"]').isVisible({ timeout: 1_000 }).catch(() => false)
+            && await page.getByText(/balanced/i).first().isVisible({ timeout: 1_000 }).catch(() => false);
+          if (tabHasSuccessSurface) {
+            continue;
+          }
+
+          // Verify no hard error state in the active tab. Angular Material keeps
+          // inactive tab bodies in the DOM, so a page-wide text locator can
+          // match stale hidden error text from a previous eager load.
+          const activeTabPanel = page
+            .locator('mat-tab-body.mat-mdc-tab-body-active, [role="tabpanel"]:not([aria-hidden="true"])')
+            .last();
+          const errorScope = await activeTabPanel.isVisible({ timeout: 1_000 }).catch(() => false)
+            ? activeTabPanel
+            : page.locator('body');
+          const errorMsg = errorScope.getByText(/failed to load|error loading|500/i).first();
           if (await errorMsg.isVisible({ timeout: 3_000 }).catch(() => false)) {
             noteGap(`Reports/${tabLabel}`, `Error loading ${tabLabel} tab content`, page);
           }
@@ -936,45 +983,25 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
           await dateInput.fill(today);
         }
 
-        // Add a balanced debit + credit pair (2 lines)
-        // Line 1 — Debit: General Expense (6000), $500
-        // Line 2 — Credit: Cash (1010), $500
+        // Add a balanced debit + credit pair using the account picker.
+        // Line 1 — Debit: Expenses (5000), $500
+        // Line 2 — Credit: Bank (1100), $500
+        const selectAccountLine = async (line: number, code: string) => {
+          const input = formPanel.getByLabel(`Account for line ${line}`);
+          await input.fill(code);
+          const listbox = page.getByRole('listbox', { name: `Account suggestions for line ${line}` });
+          await expect(listbox).toBeVisible({ timeout: 10_000 });
+          await listbox.getByRole('option', { name: new RegExp(`^${code}`) }).click();
+          await expect(input).toHaveValue(new RegExp(`^${code}\\s+—`));
+        };
 
-        const linesArray = page.locator('[formArrayName="lines"]');
-        const line1 = linesArray.locator('> div, > fieldset').nth(0);
-        const line2 = linesArray.locator('> div, > fieldset').nth(1);
+        await selectAccountLine(1, '5000');
+        await formPanel.getByLabel('Direction for line 1').selectOption('DR');
+        await formPanel.getByLabel('Amount for line 1').fill('500');
 
-        // Line 1 account
-        const l1Account = line1.locator('[formcontrolname="account_code"]');
-        if (await l1Account.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l1Account.fill('6000');
-        }
-
-        const l1Direction = line1.locator('[formcontrolname="direction"]');
-        if (await l1Direction.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l1Direction.selectOption('DR');
-        }
-
-        const l1Amount = line1.locator('[formcontrolname="amount"]');
-        if (await l1Amount.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l1Amount.fill('500');
-        }
-
-        // Line 2 account
-        const l2Account = line2.locator('[formcontrolname="account_code"]');
-        if (await l2Account.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l2Account.fill('1010');
-        }
-
-        const l2Direction = line2.locator('[formcontrolname="direction"]');
-        if (await l2Direction.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l2Direction.selectOption('CR');
-        }
-
-        const l2Amount = line2.locator('[formcontrolname="amount"]');
-        if (await l2Amount.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await l2Amount.fill('500');
-        }
+        await selectAccountLine(2, '1100');
+        await formPanel.getByLabel('Direction for line 2').selectOption('CR');
+        await formPanel.getByLabel('Amount for line 2').fill('500');
 
         await shot(page, '40-journal-form-filled');
 
