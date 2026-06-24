@@ -574,6 +574,20 @@ def test_backlog_forecast_uses_contract_billing_wip_and_milestones(
     assert row["risk_level"] == "critical"
 
 
+def test_backlog_forecast_filters_only_valid_engagement_statuses(
+    mock_db: MagicMock,
+) -> None:
+    """Engagement status enum does not include project-only planning."""
+    chain = _chain([])
+    mock_db.table.return_value = chain
+
+    svc = _make_svc(mock_db)
+    result = svc.backlog_forecast()
+
+    assert result == []
+    chain.in_.assert_any_call("status", ["active", "on_hold"])
+
+
 def test_milestone_risk_includes_overdue_and_near_due_items(
     mock_db: MagicMock,
 ) -> None:
@@ -639,6 +653,20 @@ def test_milestone_risk_includes_overdue_and_near_due_items(
     assert result[0]["days_until_due"] == -1
     assert result[1]["risk_level"] == "critical"
     assert result[1]["days_until_due"] == 5
+
+
+def test_milestone_risk_keeps_project_planning_status(
+    mock_db: MagicMock,
+) -> None:
+    """Project status enum includes planning for delivery forecasts."""
+    chain = _chain([])
+    mock_db.table.return_value = chain
+
+    svc = _make_svc(mock_db)
+    result = svc.milestone_risk()
+
+    assert result == []
+    chain.in_.assert_any_call("status", ["planning", "active", "on_hold"])
 
 
 def test_client_profitability_reconciles_revenue_labor_and_expenses(

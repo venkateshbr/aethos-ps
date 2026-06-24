@@ -90,6 +90,7 @@ def test_safe_snapshot_masks_basic_pii_and_serializes_decimal() -> None:
 
 def test_tool_registry_classifies_copilot_tools() -> None:
     assert risk_class_for_tool("copilot_agent", "query_engagements") == "read_only"
+    assert risk_class_for_tool("copilot_agent", "run_finance_ops_check") == "read_only"
     assert risk_class_for_tool("copilot_agent", "log_time_entry") == "write_low_risk"
     assert risk_class_for_tool("copilot_agent", "update_rate_card") == "write_money_in"
     assert risk_class_for_tool("copilot_agent", "prepare_month_end_close") == "accounting"

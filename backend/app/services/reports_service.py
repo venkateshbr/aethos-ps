@@ -64,7 +64,8 @@ _SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"
 _CASH_ACCOUNT_CODES = {"1100"}
 _CASH_ACCOUNT_KEYWORDS = {"bank", "cash"}
 _OPERATING_WORKING_CAPITAL_PREFIXES = ("12", "13", "15", "20", "21", "23")
-_ACTIVE_DELIVERY_STATUSES = ["planning", "active", "on_hold"]
+_ACTIVE_ENGAGEMENT_STATUSES = ["active", "on_hold"]
+_ACTIVE_PROJECT_STATUSES = ["planning", "active", "on_hold"]
 _CLOSED_DELIVERY_STATUSES = {"completed", "cancelled"}
 _ACTION_QUEUE_ROLES = {
     "all",
@@ -3476,7 +3477,7 @@ class ReportsService:
                 "clients!client_id(id, name)"
             )
             .eq("tenant_id", self.tenant_id)
-            .in_("status", _ACTIVE_DELIVERY_STATUSES)
+            .in_("status", _ACTIVE_ENGAGEMENT_STATUSES)
             .is_("deleted_at", "null")
             .execute()
             .data
@@ -3589,7 +3590,7 @@ class ReportsService:
                 "engagements!engagement_id(id, name, service_line)"
             )
             .eq("tenant_id", self.tenant_id)
-            .in_("status", _ACTIVE_DELIVERY_STATUSES)
+            .in_("status", _ACTIVE_PROJECT_STATUSES)
             .is_("deleted_at", "null")
             .execute()
             .data

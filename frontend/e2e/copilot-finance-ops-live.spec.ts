@@ -1,7 +1,8 @@
 /**
- * Live Copilot finance-ops verification for #260, #261, #262, and #264.
+ * Live Copilot finance-ops verification for #260, #261, #262, #264, and #265.
  *
  * Browser flows:
+ * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
  * - Copilot chat -> bill-pay proposal -> Inbox approval -> payment batch.
  * - Copilot chat -> month-end close review -> Inbox approval -> close tasks UI.
  * - Copilot chat -> financial statement package tool -> Reports UI.
@@ -320,13 +321,65 @@ async function findBillBySourceDocument(
   return rows[0] ?? null;
 }
 
-test.describe('Copilot finance-ops live flows (#260 #261 #262 #264)', () => {
+test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265)', () => {
   test.use({ storageState: STORAGE_PATH });
 
   test.beforeEach(() => {
     test.skip(!fs.existsSync(STORAGE_PATH), 'no signed-in O2C tenant session');
     test.skip(!supabaseAdminConfig(), 'Supabase admin config missing');
     test.skip(!envValue('OPENROUTER_API_KEY'), 'OPENROUTER_API_KEY missing');
+  });
+
+  test('runs daily finance ops check through Copilot and report/action surfaces (#265)', async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const auth = getAuthFromStorage();
+    const config = supabaseAdminConfig();
+    test.skip(!auth || !config, 'auth or Supabase admin config missing');
+    const startedAt = new Date(Date.now() - 5_000).toISOString();
+
+    await sendCopilotPrompt(page, [
+      `Run today's finance ops check for ${CLOSE_PERIOD}.`,
+      'Use the run_finance_ops_check tool with limit 5.',
+      'Separate read-only findings from recommended actions that require Inbox approval.',
+      'Include AR, AP, WIP, close readiness, action queue, and recent agent/workflow status.',
+    ].join(' '));
+
+    await expect
+      .poll(async () => {
+        const rows = await restSelect<ToolInvocationRow>(request, config!, 'agent_tool_invocations', {
+          select: 'id,tool_name,status,input_snapshot,output_snapshot,created_at',
+          tenant_id: `eq.${auth!.tenantId}`,
+          tool_name: 'eq.run_finance_ops_check',
+          created_at: `gte.${startedAt}`,
+          order: 'created_at.desc',
+          limit: '10',
+        });
+        const match = rows.find((row) => {
+          const output = row.output_snapshot ?? {};
+          const findings = output['read_only_findings'];
+          const actions = output['recommended_actions'];
+          return row.status === 'succeeded'
+            && row.input_snapshot?.['period'] === CLOSE_PERIOD
+            && output['finance_ops_check'] === true
+            && findings !== null
+            && typeof findings === 'object'
+            && Object.keys(findings as Record<string, unknown>).length >= 3
+            && Array.isArray(actions);
+        });
+        return match?.id ?? '';
+      }, {
+        timeout: 150_000,
+        message: 'Copilot should invoke the daily finance ops command-center tool successfully',
+      })
+      .not.toBe('');
+
+    await page.goto(`${BASE}/app/reports`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /reports/i })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('tab', { name: /action queue/i }).click();
+    await expect(page.getByRole('button', { name: /finance/i })).toBeVisible({ timeout: 30_000 });
+
+    await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
   });
 
   test('proposes bill pay through Copilot, Inbox approval, and payment batch UI (#262)', async ({ page, request }) => {

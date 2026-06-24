@@ -1,6 +1,6 @@
 agent: copilot_agent
-version: 1
-prompt_version: cop-v1
+version: 2
+prompt_version: cop-v2
 model: claude-sonnet-4-6
 description: "Root chat orchestrator. Routes user intent to specialist agents via Pydantic Graph."
 
@@ -57,6 +57,22 @@ datasets:
       evaluators:
         - type: field_exact
           path: target_agent
+
+    - id: route_to_finance_ops_command_center
+      tags: [routing, finance_ops, command_center]
+      inputs:
+        message: "Run today's finance ops check"
+      expected:
+        target_agent: copilot_agent
+        tool_name: run_finance_ops_check
+        route_to_hitl: false
+      evaluators:
+        - type: field_exact
+          path: target_agent
+        - type: field_exact
+          path: tool_name
+        - type: field_exact
+          path: route_to_hitl
 
     - id: route_to_bill_pay
       tags: [routing, finance_ops, bill_pay]
