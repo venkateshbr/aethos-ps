@@ -1964,6 +1964,8 @@ class ReportsService:
         period_start: str | None = None,
         period_end: str | None = None,
         limit: int = 50,
+        assignee_user_id: str | None = None,
+        include_unassigned: bool = True,
     ) -> list[dict]:
         """Compose role-specific operating actions from evidence-backed reports."""
         role_filter = role if role in _ACTION_QUEUE_ROLES else "all"
@@ -2052,6 +2054,17 @@ class ReportsService:
                     service_line=str(row.get("service_line") or "unclassified"),
                     period_start=period_start,
                     period_end=period_end,
+                    assigned_to_user_id=_optional_str(row.get("project_manager_user_id"))
+                    or _optional_str(row.get("owner_user_id")),
+                    assigned_to_name=_optional_str(row.get("project_manager_name"))
+                    or _optional_str(row.get("owner_name")),
+                    assignment_source=(
+                        "project_manager"
+                        if row.get("project_manager_user_id")
+                        else "project_owner"
+                        if row.get("owner_user_id")
+                        else None
+                    ),
                 )
             )
 
@@ -2101,6 +2114,17 @@ class ReportsService:
                     service_line=str(row.get("practice_area") or "unclassified"),
                     period_start=row.get("period_start") or period_start,
                     period_end=row.get("period_end") or period_end,
+                    assigned_to_user_id=_optional_str(row.get("manager_user_id"))
+                    or _optional_str(row.get("employee_user_id")),
+                    assigned_to_name=_optional_str(row.get("manager_name"))
+                    or _optional_str(row.get("employee_name")),
+                    assignment_source=(
+                        "employee_manager"
+                        if row.get("manager_user_id")
+                        else "employee_user"
+                        if row.get("employee_user_id")
+                        else None
+                    ),
                 )
             )
 
@@ -2131,6 +2155,17 @@ class ReportsService:
                     },
                     route_hint="/app/reports",
                     service_line=str(row.get("service_line") or "unclassified"),
+                    assigned_to_user_id=_optional_str(row.get("partner_user_id"))
+                    or _optional_str(row.get("owner_user_id")),
+                    assigned_to_name=_optional_str(row.get("partner_name"))
+                    or _optional_str(row.get("owner_name")),
+                    assignment_source=(
+                        "engagement_partner"
+                        if row.get("partner_user_id")
+                        else "engagement_owner"
+                        if row.get("owner_user_id")
+                        else None
+                    ),
                 )
             )
 
@@ -2156,6 +2191,18 @@ class ReportsService:
                     },
                     route_hint=f"/app/projects/{row['project_id']}",
                     service_line=str(row.get("service_line") or "unclassified"),
+                    due_at=_optional_str(row.get("due_date")),
+                    assigned_to_user_id=_optional_str(row.get("project_manager_user_id"))
+                    or _optional_str(row.get("owner_user_id")),
+                    assigned_to_name=_optional_str(row.get("project_manager_name"))
+                    or _optional_str(row.get("owner_name")),
+                    assignment_source=(
+                        "project_manager"
+                        if row.get("project_manager_user_id")
+                        else "project_owner"
+                        if row.get("owner_user_id")
+                        else None
+                    ),
                 )
             )
 
@@ -2189,6 +2236,15 @@ class ReportsService:
                     ),
                     period_start=row.get("period_start") or period_start,
                     period_end=row.get("period_end") or period_end,
+                    assigned_to_user_id=_optional_str(row.get("assigned_to_user_id"))
+                    or _optional_str(row.get("owner_user_id")),
+                    assigned_to_name=_optional_str(row.get("assigned_to_name"))
+                    or _optional_str(row.get("owner_name")),
+                    assignment_source=(
+                        "recommendation_owner"
+                        if row.get("assigned_to_user_id") or row.get("owner_user_id")
+                        else None
+                    ),
                 )
             )
 
@@ -2225,6 +2281,17 @@ class ReportsService:
                         service_line=str(row.get("service_line") or "unclassified"),
                         period_start=period_start,
                         period_end=period_end,
+                        assigned_to_user_id=_optional_str(row.get("project_manager_user_id"))
+                        or _optional_str(row.get("owner_user_id")),
+                        assigned_to_name=_optional_str(row.get("project_manager_name"))
+                        or _optional_str(row.get("owner_name")),
+                        assignment_source=(
+                            "project_manager"
+                            if row.get("project_manager_user_id")
+                            else "project_owner"
+                            if row.get("owner_user_id")
+                            else None
+                        ),
                     )
                 )
 
@@ -2264,18 +2331,136 @@ class ReportsService:
                     service_line=str(row.get("practice_key") or "unclassified"),
                     period_start=period_start,
                     period_end=period_end,
+                    assigned_to_user_id=_optional_str(row.get("partner_user_id"))
+                    or _optional_str(row.get("owner_user_id")),
+                    assigned_to_name=_optional_str(row.get("partner_name"))
+                    or _optional_str(row.get("owner_name")),
+                    assignment_source=(
+                        "practice_partner"
+                        if row.get("partner_user_id")
+                        else "practice_owner"
+                        if row.get("owner_user_id")
+                        else None
+                    ),
                 )
             )
 
+        items.extend(self._hitl_action_queue_items(limit=capped_limit))
+
         unique_items: dict[str, dict] = {}
         for item in items:
-            if _role_matches(str(item["role"]), role_filter):
+            if _role_matches(str(item["role"]), role_filter) and _assignment_matches(
+                item,
+                assignee_user_id,
+                include_unassigned,
+            ):
                 unique_items.setdefault(str(item["id"]), item)
 
         return sorted(
             unique_items.values(),
             key=_action_queue_sort_key,
         )[:capped_limit]
+
+    def _hitl_action_queue_items(self, *, limit: int) -> list[dict]:
+        """Include concrete human-review tasks in the operating queue."""
+        try:
+            rows = (
+                self.db.table("hitl_tasks")
+                .select(
+                    "id,kind,priority,title,description,payload,status,assigned_to,due_at,"
+                    "created_at,updated_at,agent_suggestion_id,"
+                    "agent_suggestions(agent_name,action_type,confidence)"
+                )
+                .eq("tenant_id", self.tenant_id)
+                .in_("status", ["open", "in_progress"])
+                .order("due_at", desc=False, nullsfirst=False)
+                .limit(limit)
+                .execute()
+                .data
+            )
+        except Exception as exc:  # pragma: no cover - defensive for stale local schemas
+            logger.debug("action queue HITL task lookup failed: %s", exc)
+            return []
+        if not isinstance(rows, list):
+            return []
+
+        assignee_names = self._employee_names_by_user_id(
+            [
+                str(row["assigned_to"])
+                for row in rows
+                if row.get("assigned_to") is not None
+            ]
+        )
+        items: list[dict] = []
+        for row in rows:
+            suggestion = _embedded_one(row.get("agent_suggestions"))
+            role = _hitl_queue_role(
+                kind=str(row.get("kind") or ""),
+                agent_name=str(suggestion.get("agent_name") or ""),
+                action_type=str(suggestion.get("action_type") or ""),
+            )
+            assigned_to = _optional_str(row.get("assigned_to"))
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            items.append(
+                _action_queue_item(
+                    role=role,
+                    source_type="hitl_task",
+                    priority=_hitl_priority(str(row.get("priority") or "med")),
+                    entity_type="hitl_task",
+                    entity_id=str(row["id"]),
+                    entity_name=str(row.get("title") or row["id"]),
+                    summary=str(row.get("description") or row.get("title") or "Review task."),
+                    recommended_action=_hitl_recommended_action(
+                        kind=str(row.get("kind") or ""),
+                        status=str(row.get("status") or "open"),
+                    ),
+                    evidence=[
+                        f"Task status: {row.get('status') or 'open'}.",
+                        (
+                            f"Suggested by {suggestion.get('agent_name')}."
+                            if suggestion.get("agent_name")
+                            else ""
+                        ),
+                    ],
+                    metrics={
+                        "kind": row.get("kind"),
+                        "status": row.get("status"),
+                        "agent_name": suggestion.get("agent_name"),
+                        "confidence": suggestion.get("confidence"),
+                        "payload_keys": sorted(str(key) for key in payload.keys()),
+                    },
+                    route_hint="/app/inbox",
+                    due_at=_optional_str(row.get("due_at")),
+                    assigned_to_user_id=assigned_to,
+                    assigned_to_name=assignee_names.get(assigned_to or ""),
+                    assignment_source="hitl_task" if assigned_to else None,
+                )
+            )
+        return items
+
+    def _employee_names_by_user_id(self, user_ids: list[str]) -> dict[str, str]:
+        unique_user_ids = sorted({user_id for user_id in user_ids if user_id})
+        if not unique_user_ids:
+            return {}
+        try:
+            rows = (
+                self.db.table("employees")
+                .select("user_id, first_name, last_name, email")
+                .eq("tenant_id", self.tenant_id)
+                .in_("user_id", unique_user_ids)
+                .execute()
+                .data
+            )
+        except Exception as exc:  # pragma: no cover - defensive for stale local schemas
+            logger.debug("action queue assignee name lookup failed: %s", exc)
+            return {}
+        if not isinstance(rows, list):
+            return {}
+        return {
+            str(row["user_id"]): _employee_name(row)
+            for row in rows
+            if row.get("user_id") is not None
+        }
 
     def _scope_project_contexts(self, project_ids: list[str]) -> dict[str, dict]:
         if not project_ids:
@@ -3132,7 +3317,7 @@ class ReportsService:
         employees = (
             self.db.table("employees")
             .select(
-                "id, first_name, last_name, email, department, practice_area, "
+                "id, user_id, manager_id, first_name, last_name, email, department, practice_area, "
                 "seniority, available_hours_per_week, "
                 "target_billable_utilization_pct, status"
             )
@@ -3145,6 +3330,7 @@ class ReportsService:
         if not employees:
             return []
 
+        employees_by_id = {str(employee["id"]): employee for employee in employees}
         employee_ids = [str(employee["id"]) for employee in employees]
         time_by_employee = self._time_entries_by_employee(employee_ids, start, end)
         assignments_by_employee = self._assignments_by_employee(employee_ids, start, end)
@@ -3152,6 +3338,7 @@ class ReportsService:
         rows: list[dict] = []
         for employee in employees:
             employee_id = str(employee["id"])
+            manager = employees_by_id.get(str(employee.get("manager_id") or ""))
             entries = time_by_employee.get(employee_id, [])
             assignments = assignments_by_employee.get(employee_id, [])
             weekly_capacity = (
@@ -3182,6 +3369,9 @@ class ReportsService:
             rows.append(
                 {
                     "employee_id": employee_id,
+                    "employee_user_id": _optional_str(employee.get("user_id")),
+                    "manager_user_id": _optional_str(manager.get("user_id")) if manager else None,
+                    "manager_name": _employee_name(manager) if manager else None,
                     "employee_name": _employee_name(employee),
                     "email": employee.get("email"),
                     "department": employee.get("department"),
@@ -4256,6 +4446,10 @@ def _action_queue_item(
     service_line: str | None = None,
     period_start: str | None = None,
     period_end: str | None = None,
+    due_at: str | None = None,
+    assigned_to_user_id: str | None = None,
+    assigned_to_name: str | None = None,
+    assignment_source: str | None = None,
 ) -> dict[str, object]:
     item_id = f"{role}:{source_type}:{entity_type}:{entity_id}"
     return {
@@ -4269,6 +4463,11 @@ def _action_queue_item(
         "service_line": service_line,
         "period_start": period_start,
         "period_end": period_end,
+        "due_at": due_at,
+        "assigned_to_user_id": assigned_to_user_id,
+        "assigned_to_name": assigned_to_name,
+        "assignment_source": assignment_source,
+        "sla_status": _sla_status(due_at),
         "summary": summary,
         "recommended_action": recommended_action,
         "evidence": [item for item in evidence if item],
@@ -4281,13 +4480,109 @@ def _role_matches(item_role: str, role_filter: str) -> bool:
     return role_filter == "all" or item_role == role_filter
 
 
-def _action_queue_sort_key(row: dict) -> tuple[int, str, str, str]:
+def _assignment_matches(
+    item: dict,
+    assignee_user_id: str | None,
+    include_unassigned: bool,
+) -> bool:
+    if not assignee_user_id:
+        return True
+    assigned_to = _optional_str(item.get("assigned_to_user_id"))
+    if assigned_to == assignee_user_id:
+        return True
+    return include_unassigned and assigned_to is None
+
+
+def _action_queue_sort_key(row: dict) -> tuple[int, int, str, str, str]:
     return (
         _recommendation_priority_rank(str(row.get("priority") or "")),
+        _sla_sort_rank(str(row.get("sla_status") or "")),
         str(row.get("role") or ""),
         str(row.get("source_type") or ""),
         str(row.get("entity_name") or ""),
     )
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _sla_status(due_at: str | None) -> str:
+    if not due_at:
+        return "no_due_date"
+    parsed = _parse_datetime(due_at)
+    if parsed is None:
+        return "no_due_date"
+    now = datetime.now(UTC)
+    if parsed < now:
+        return "overdue"
+    if parsed <= now + timedelta(days=1):
+        return "due_soon"
+    return "on_track"
+
+
+def _parse_datetime(value: str) -> datetime | None:
+    if len(value.strip()) == 10:
+        parsed_date = _parse_date(value)
+        if parsed_date is None:
+            return None
+        return datetime.combine(parsed_date, datetime.max.time(), tzinfo=UTC)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        parsed_date = _parse_date(value)
+        if parsed_date is None:
+            return None
+        parsed = datetime.combine(parsed_date, datetime.min.time())
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _sla_sort_rank(status: str) -> int:
+    return {
+        "overdue": 0,
+        "due_soon": 1,
+        "on_track": 2,
+        "no_due_date": 3,
+    }.get(status, 4)
+
+
+def _hitl_priority(priority: str) -> str:
+    return {
+        "critical": "critical",
+        "high": "high",
+        "med": "medium",
+        "medium": "medium",
+        "low": "low",
+    }.get(priority.lower(), "medium")
+
+
+def _hitl_queue_role(*, kind: str, agent_name: str, action_type: str) -> str:
+    text = f"{kind} {agent_name} {action_type}".lower()
+    if any(token in text for token in ("bill", "payment", "payable", "vendor")):
+        return "ap_clerk"
+    if any(token in text for token in ("journal", "ledger", "close", "fx", "tax")):
+        return "finance_manager"
+    if any(token in text for token in ("project", "capacity", "milestone", "time_entry")):
+        return "project_manager"
+    if any(token in text for token in ("pricing", "scope", "backlog", "practice")):
+        return "partner"
+    return "finance_manager"
+
+
+def _hitl_recommended_action(*, kind: str, status: str) -> str:
+    kind_key = kind.lower()
+    if status == "in_progress":
+        return "Complete the in-progress human review task."
+    if "payment" in kind_key or "bill" in kind_key:
+        return "Review the suggested payables action in Inbox and approve, edit, or reject it."
+    if "journal" in kind_key or "ledger" in kind_key:
+        return "Review the accounting suggestion in Inbox and approve, edit, or reject it."
+    return "Review the assigned task in Inbox and approve, edit, or reject it."
 
 
 def _scope_change_drivers(drivers: list[dict]) -> list[dict]:

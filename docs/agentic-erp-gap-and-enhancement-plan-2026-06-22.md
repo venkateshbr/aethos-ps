@@ -21,7 +21,7 @@ Done:
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
 - Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
 - Local frontend runtime is pinned to supported Node 20 via root `.nvmrc` and frontend package `engines`; CI and Docker already use Node 20.
-- Current local quality gates passed on 2026-06-24: full backend pytest (`794 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
+- Current local quality gates passed on 2026-06-24: full backend pytest (`795 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
 - Agent controls are surfaced through `/api/v1/agents/*` and Settings UI: run dashboard, eval candidates, L3 policy, kill switches, and per-agent/tool circuit breaker controls.
@@ -30,6 +30,7 @@ Done:
 - Durable agent workflow runs are now visible through `/api/v1/agents/workflow-runs` and the Settings Agent Run Ledger, including workflow status, owner agent, current step, goal/state snapshots, trace, replay pointer, and error state.
 - Services-business intelligence endpoints and Angular typings now cover project health, capacity planning, client profitability, client-group profitability, segment profitability, practice dashboards, pricing/staffing recommendations, and scope-change advisor.
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
+- Personalized action queues are implemented through `/api/v1/reports/action-queue?assignee=me` and the Reports Action Queue tab. Queue items now expose assignee, assignment source, due date, and SLA status; capacity actions use employee manager/user ownership when available, and open/in-progress `hitl_tasks.assigned_to` records feed concrete Inbox-backed personal work.
 - Backlog forecast and milestone-risk reports are available through `/api/v1/reports/backlog-forecast` and `/api/v1/reports/milestone-risk`, surfaced in the Reports Backlog tab, and feed partner/project-manager action queues.
 - Client groups have API, UI, member roles, and profitability rollups.
 - Employee resource profiles now include a billable-utilization target, maintained in the People UI and used by capacity planning/action-queue evidence.
@@ -57,7 +58,6 @@ Done:
 Still open:
 - Demo report/screenshots were intentionally not regenerated in this pass.
 - Phase 3 long-running workflow state now has API/UI visibility; remaining depth is queue deployment evidence and future provider-backed workflow integrations such as email/calendar/bank feeds.
-- Role-based action queues are implemented from report evidence; deeper personalized ownership/assignment queues remain open.
 
 ## Executive Verdict
 
@@ -65,7 +65,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, launch-safe mutating/external-provider replay planning, and workflow-run visibility are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, queue deployment evidence when scheduled workers are required for demo, and deeper personalized assignment queues.
+2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, launch-safe mutating/external-provider replay planning, workflow-run visibility, and personalized assignment queues are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope and queue deployment evidence when scheduled workers are required for demo.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -254,7 +254,7 @@ Work items:
 - Done 2026-06-23: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
 
 Acceptance:
-- Done 2026-06-24: full backend pytest passed (`794 passed, 214 skipped, 56 xfailed`).
+- Done 2026-06-24: full backend pytest passed (`795 passed, 214 skipped, 56 xfailed`).
 - Done 2026-06-24: `uv run ruff check app tests` passes.
 - Done 2026-06-24: frontend spec TypeScript and production build pass; the production build still reports existing Angular optional-chain, Sass deprecation, and bundle-budget warnings.
 - Done 2026-06-24: full Chromium engagement-to-cash Playwright passed (`57 passed`).
@@ -342,7 +342,7 @@ Work items:
 - Done 2026-06-23: multi-entity client group rollups.
 
 Acceptance:
-- Done/partial 2026-06-23: evidence-backed recommendations now feed role-specific action queues for partner, finance manager, project manager, and AP clerk personas. Deeper personal ownership, SLA, and assignment queues remain open.
+- Done 2026-06-24: evidence-backed recommendations now feed role-specific action queues for partner, finance manager, project manager, and AP clerk personas. Personalized ownership filtering is available with `assignee=me`; queue items carry assignee, assignment source, due date, and SLA status, and assigned HITL tasks feed Inbox-backed personal work.
 
 ### Phase 5: Compliance And Enterprise Readiness
 
@@ -425,11 +425,11 @@ Priority 2:
 Priority 3:
 - P2P workflow depth: vendor onboarding controls, purchase requests, PO/service-order approval, cost-center approval policy snapshots, bill matching, payment-run ranking, and risk flags are implemented; remaining depth is org-chart-driven procurement routing, bank-native payment validation, provider-backed tax/sanctions/bank verification, and bank-specific cash/discount optimization.
 - R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, bank/suspense close blockers, and statutory reporting packs are implemented; jurisdiction-specific filing exports remain future compliance depth.
-- Advanced services intelligence: personalized assignment queues and demo-ready recommendation workflows.
+- Advanced services intelligence: personalized assignment queues are implemented; remaining depth is demo-ready recommendation workflow deployment evidence.
 
 ## Approval Recommendation
 
 Phase 0 is materially complete; the demo-readiness target has passed against the available launch/demo tenant, and docs evidence refresh remains intentionally separate from this code pass. The fastest path to launch is now:
 - refresh the docs evidence report only when screenshot/report updates are explicitly in scope;
-- close the remaining queue deployment evidence and deeper personalized assignment-queue gaps;
+- close the remaining queue deployment evidence gap when scheduled workers are required for demo;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

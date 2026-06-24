@@ -278,6 +278,7 @@ export interface ScopeChangeAdvisorRow {
 }
 
 export type ActionQueueRole = 'all' | 'partner' | 'finance_manager' | 'project_manager' | 'ap_clerk';
+export type ActionQueueAssignee = 'all' | 'me';
 
 export interface ActionQueueItem {
   id: string;
@@ -290,6 +291,11 @@ export interface ActionQueueItem {
   service_line?: string | null;
   period_start?: string | null;
   period_end?: string | null;
+  due_at?: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_to_name?: string | null;
+  assignment_source?: string | null;
+  sla_status?: 'overdue' | 'due_soon' | 'on_track' | 'no_due_date' | string | null;
   summary: string;
   recommended_action: string;
   evidence: string[];
@@ -493,8 +499,13 @@ export class ReportsService {
   getScopeChangeAdvisor = (): Observable<ScopeChangeAdvisorRow[]> =>
     this.http.get<ScopeChangeAdvisorRow[]>(`${this.base}/scope-change-advisor`);
 
-  getActionQueue = (role: ActionQueueRole = 'all'): Observable<ActionQueueItem[]> =>
-    this.http.get<ActionQueueItem[]>(`${this.base}/action-queue?role=${role}`);
+  getActionQueue = (
+    role: ActionQueueRole = 'all',
+    assignee: ActionQueueAssignee = 'all',
+  ): Observable<ActionQueueItem[]> =>
+    this.http.get<ActionQueueItem[]>(
+      `${this.base}/action-queue?role=${role}&assignee=${assignee}`,
+    );
 
   getUtilization = (): Observable<UtilRow[]> =>
     this.http.get<UtilRow[]>(`${this.base}/utilization`);

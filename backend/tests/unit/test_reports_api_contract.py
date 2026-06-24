@@ -147,11 +147,15 @@ def test_action_queue_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> 
             period_start: str | None,
             period_end: str | None,
             limit: int,
+            assignee_user_id: str | None,
+            include_unassigned: bool,
         ) -> list[dict[str, Any]]:
             assert role == "partner"
             assert period_start is None
             assert period_end is None
             assert limit == 5
+            assert assignee_user_id == "user-1"
+            assert include_unassigned is False
             return [
                 {
                     "id": "partner:practice_dashboard:practice:advisory",
@@ -184,7 +188,9 @@ def test_action_queue_route_uses_rls_client(monkeypatch: pytest.MonkeyPatch) -> 
 
     try:
         with TestClient(app) as client:
-            response = client.get("/api/v1/reports/action-queue?role=partner&limit=5")
+            response = client.get(
+                "/api/v1/reports/action-queue?role=partner&limit=5&assignee=me"
+            )
     finally:
         app.dependency_overrides.clear()
 

@@ -21,6 +21,7 @@ import {
   ScopeChangeAdvisorRow,
   ActionQueueItem,
   ActionQueueRole,
+  ActionQueueAssignee,
   UtilRow,
   WipRow,
   RevenueRow,
@@ -606,16 +607,29 @@ import {
         <!-- Action Queue -->
         <mat-tab label="Action Queue">
           <div class="pt-4 space-y-4">
-            <div class="flex flex-wrap gap-2">
-              @for (role of actionQueueRoles; track role.value) {
-                <button
-                  type="button"
-                  (click)="setActionQueueRole(role.value)"
-                  [class]="queueRoleButtonClass(role.value)"
-                >
-                  {{ role.label }}
-                </button>
-              }
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex flex-wrap gap-2">
+                @for (role of actionQueueRoles; track role.value) {
+                  <button
+                    type="button"
+                    (click)="setActionQueueRole(role.value)"
+                    [class]="queueRoleButtonClass(role.value)"
+                  >
+                    {{ role.label }}
+                  </button>
+                }
+              </div>
+              <div class="flex rounded border border-border-default bg-surface-raised p-1">
+                @for (assignee of actionQueueAssignees; track assignee.value) {
+                  <button
+                    type="button"
+                    (click)="setActionQueueAssignee(assignee.value)"
+                    [class]="queueAssigneeButtonClass(assignee.value)"
+                  >
+                    {{ assignee.label }}
+                  </button>
+                }
+              </div>
             </div>
 
             @defer (on viewport) {
@@ -635,17 +649,26 @@ import {
                             <h2 class="text-sm font-semibold text-text-primary">{{ row.entity_name }}</h2>
                             <span [class]="priorityChipClass(row.priority)">{{ labelize(row.priority) }}</span>
                             <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ roleLabel(row.role) }}</span>
+                            <span [class]="slaChipClass(row.sla_status)">{{ slaLabel(row.sla_status) }}</span>
                           </div>
                           <p class="mt-1 text-xs text-text-muted">
                             {{ labelize(row.source_type) }} · {{ labelize(row.entity_type) }}
                           </p>
                         </div>
-                        @if (row.service_line) {
-                          <span class="rounded bg-indigo-500/10 px-2 py-0.5 text-xs text-indigo-300">{{ serviceLineLabel(row.service_line) }}</span>
-                        }
+                        <div class="flex flex-wrap justify-end gap-2">
+                          <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">
+                            {{ assignmentLabel(row) }}
+                          </span>
+                          @if (row.service_line) {
+                            <span class="rounded bg-indigo-500/10 px-2 py-0.5 text-xs text-indigo-300">{{ serviceLineLabel(row.service_line) }}</span>
+                          }
+                        </div>
                       </div>
                       <p class="mt-3 text-sm text-text-primary">{{ row.summary }}</p>
                       <p class="mt-2 text-sm text-text-secondary">{{ row.recommended_action }}</p>
+                      @if (row.due_at) {
+                        <p class="mt-2 text-xs text-text-muted">Due {{ formatQueueDue(row.due_at) }}</p>
+                      }
                       @if (row.evidence.length) {
                         <ul class="mt-3 space-y-1 text-sm text-text-muted">
                           @for (evidence of row.evidence.slice(0, 3); track evidence) {
@@ -1423,12 +1446,17 @@ export class ReportsComponent implements OnInit {
   actionQueueError = signal(false);
   actionQueueRows = signal<ActionQueueItem[]>([]);
   actionQueueRole = signal<ActionQueueRole>('all');
+  actionQueueAssignee = signal<ActionQueueAssignee>('all');
   readonly actionQueueRoles: { value: ActionQueueRole; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'partner', label: 'Partner' },
     { value: 'finance_manager', label: 'Finance' },
     { value: 'project_manager', label: 'Projects' },
     { value: 'ap_clerk', label: 'AP' },
+  ];
+  readonly actionQueueAssignees: { value: ActionQueueAssignee; label: string }[] = [
+    { value: 'all', label: 'All work' },
+    { value: 'me', label: 'Assigned to me' },
   ];
 
   // Scope advisor
@@ -1650,10 +1678,15 @@ export class ReportsComponent implements OnInit {
     this.loadActionQueue();
   }
 
+  setActionQueueAssignee(assignee: ActionQueueAssignee): void {
+    this.actionQueueAssignee.set(assignee);
+    this.loadActionQueue();
+  }
+
   loadActionQueue(): void {
     this.actionQueueLoading.set(true);
     this.actionQueueError.set(false);
-    this.svc.getActionQueue(this.actionQueueRole()).subscribe({
+    this.svc.getActionQueue(this.actionQueueRole(), this.actionQueueAssignee()).subscribe({
       next: rows => { this.actionQueueRows.set(rows); this.actionQueueLoading.set(false); },
       error: () => { this.actionQueueError.set(true); this.actionQueueLoading.set(false); },
     });
@@ -1816,11 +1849,48 @@ export class ReportsComponent implements OnInit {
     return `${base} border-border-default text-text-secondary hover:border-accent/60 hover:text-text-primary`;
   }
 
+  queueAssigneeButtonClass(assignee: ActionQueueAssignee): string {
+    const base = 'h-7 rounded px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+    if (this.actionQueueAssignee() === assignee) {
+      return `${base} bg-accent/15 text-text-primary`;
+    }
+    return `${base} text-text-muted hover:text-text-primary`;
+  }
+
   roleLabel(role: string): string {
     if (role === 'finance_manager') return 'Finance';
     if (role === 'project_manager') return 'Projects';
     if (role === 'ap_clerk') return 'AP';
     return this.labelize(role);
+  }
+
+  assignmentLabel(row: ActionQueueItem): string {
+    if (row.assigned_to_name) return `Assigned: ${row.assigned_to_name}`;
+    if (row.assigned_to_user_id) return 'Assigned';
+    return 'Unassigned';
+  }
+
+  slaLabel(status: string | null | undefined): string {
+    if (status === 'overdue') return 'Overdue';
+    if (status === 'due_soon') return 'Due soon';
+    if (status === 'on_track') return 'On track';
+    return 'No due date';
+  }
+
+  slaChipClass(status: string | null | undefined): string {
+    const base = 'rounded px-2 py-0.5 text-xs';
+    switch (status) {
+      case 'overdue': return `${base} bg-red-500/10 text-red-300`;
+      case 'due_soon': return `${base} bg-orange-500/10 text-orange-300`;
+      case 'on_track': return `${base} bg-accent/10 text-accent-light`;
+      default: return `${base} bg-surface-base border border-border-subtle text-text-muted`;
+    }
+  }
+
+  formatQueueDue(value: string): string {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   confidenceChipClass(confidence: string): string {

@@ -310,11 +310,19 @@ def action_queue(
         "all",
         description="Persona queue to return.",
     ),
+    assignee: Literal["all", "me"] = Query(
+        "all",
+        description="Return all queue items or only items assigned to the authenticated user.",
+    ),
+    include_unassigned: bool = Query(
+        False,
+        description="When assignee=me, also include unassigned role queue items.",
+    ),
     period_start: str | None = Query(None, description="Queue evidence window from (YYYY-MM-DD)"),
     period_end: str | None = Query(None, description="Queue evidence window to (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=100),
     svc: ReportsService = Depends(_service),  # noqa: B008
-    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> list[dict]:
     """Role-specific operating action queue composed from report evidence."""
     return svc.action_queue(
@@ -322,6 +330,8 @@ def action_queue(
         period_start=period_start,
         period_end=period_end,
         limit=limit,
+        assignee_user_id=user.user_id if assignee == "me" else None,
+        include_unassigned=include_unassigned if assignee == "me" else True,
     )
 
 

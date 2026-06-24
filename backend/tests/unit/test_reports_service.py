@@ -1446,6 +1446,9 @@ def test_action_queue_composes_role_specific_items(
         return_value=[
             {
                 "employee_id": "emp-over",
+                "employee_user_id": "user-asha",
+                "manager_user_id": "user-manager",
+                "manager_name": "Mina Manager",
                 "employee_name": "Asha Rao",
                 "practice_area": "advisory",
                 "capacity_status": "overallocated",
@@ -1562,3 +1565,78 @@ def test_action_queue_composes_role_specific_items(
 
     assert [item["source_type"] for item in ap_clerk] == ["ap_aging"]
     assert ap_clerk[0]["priority"] == "high"
+
+    manager_queue = svc.action_queue(
+        role="project_manager",
+        assignee_user_id="user-manager",
+        include_unassigned=False,
+        limit=20,
+    )
+    assert [item["source_type"] for item in manager_queue] == ["capacity"]
+    assert manager_queue[0]["assigned_to_name"] == "Mina Manager"
+    assert manager_queue[0]["assignment_source"] == "employee_manager"
+
+
+def test_action_queue_includes_assigned_hitl_tasks(mock_db: MagicMock) -> None:
+    """Assigned HITL tasks become concrete personal queue items."""
+    due_at = (date.today() + timedelta(days=2)).isoformat()
+    _route_tables(
+        mock_db,
+        {
+            "hitl_tasks": [
+                {
+                    "id": "task-payrun",
+                    "tenant_id": TENANT_ID,
+                    "kind": "create_bill_payment_batch",
+                    "priority": "critical",
+                    "title": "Review payment batch",
+                    "description": "A payment batch is ready for review.",
+                    "payload": {"batch_id": "batch-1"},
+                    "status": "open",
+                    "assigned_to": "user-ap",
+                    "due_at": due_at,
+                    "agent_suggestions": {
+                        "agent_name": "bill_pay_agent",
+                        "action_type": "create_bill_payment_batch",
+                        "confidence": "high",
+                    },
+                }
+            ],
+            "employees": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-ap",
+                    "first_name": "Priya",
+                    "last_name": "Shah",
+                    "email": "priya@example.com",
+                }
+            ],
+        },
+    )
+    svc = _make_svc(mock_db)
+    svc.ar_aging = MagicMock(return_value={"total": "0"})
+    svc.ap_aging = MagicMock(return_value={"total": "0"})
+    svc.project_health_scores = MagicMock(return_value=[])
+    svc.capacity_planning = MagicMock(return_value=[])
+    svc.backlog_forecast = MagicMock(return_value=[])
+    svc.milestone_risk = MagicMock(return_value=[])
+    svc.pricing_staffing_recommendations = MagicMock(return_value=[])
+    svc.scope_change_advisor = MagicMock(return_value=[])
+    svc.practice_dashboard = MagicMock(return_value=[])
+
+    result = svc.action_queue(
+        role="ap_clerk",
+        assignee_user_id="user-ap",
+        include_unassigned=False,
+    )
+
+    assert len(result) == 1
+    item = result[0]
+    assert item["source_type"] == "hitl_task"
+    assert item["role"] == "ap_clerk"
+    assert item["priority"] == "critical"
+    assert item["assigned_to_user_id"] == "user-ap"
+    assert item["assigned_to_name"] == "Priya Shah"
+    assert item["assignment_source"] == "hitl_task"
+    assert item["route_hint"] == "/app/inbox"
+    assert item["sla_status"] in {"due_soon", "on_track"}
