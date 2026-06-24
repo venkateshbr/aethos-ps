@@ -16,11 +16,22 @@ from app.core.config import settings
 from app.core.db import get_service_role_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
+from app.services.operational_telemetry import TenantHealthService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/health")
+async def tenant_health(
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Return safe operational health signals for this tenant."""
+    return TenantHealthService(db, tenant_id).summary()
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)

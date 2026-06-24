@@ -10,6 +10,7 @@ Top-level regression map. Every shipped business workflow has its own scenario d
 | W2 | Procure to pay | [`e2e_procure_to_pay.md`](e2e_procure_to_pay.md) | Karya + Rupa; Aksha for regression |
 | W3 | Record to report | [`e2e_record_to_report.md`](e2e_record_to_report.md) | Karya; Aksha for regression |
 | W4 | Signup to first invoice | [`e2e_onboarding_signup.md`](e2e_onboarding_signup.md) | Karya + Rupa + Prahari (security); Aksha for regression |
+| W5 | Ops and security | [`e2e_ops_security.md`](e2e_ops_security.md) | Sthira + Prahari; Aksha for regression |
 
 ## Accounting & invariant tests
 
@@ -38,20 +39,20 @@ One per registered agent. Located in [`agent_evals/`](agent_evals/).
 
 ## Gate matrix
 
-| Gate (from `agent-harness/core/quality-gates.md`) | W1 | W2 | W3 | W4 |
-| --- | --- | --- | --- | --- |
-| Confidence | ✓ | ✓ | ✓ | ✓ |
-| TDD | ✓ | ✓ | ✓ | ✓ |
-| Package verification | ✓ | ✓ | — | ✓ |
-| Money | ✓ | ✓ | ✓ | ✓ |
-| Multi-tenant | ✓ | ✓ | ✓ | ✓ |
-| AI / agent | ✓ | ✓ | — | — |
-| Customer onboarding / payments | ✓ (Stripe Payment Link, webhook) | ✓ (NACHA / CSV) | — | ✓ (SaaS subscription + Stripe Connect) |
-| RBAC regression | ✓ | ✓ | ✓ | ✓ |
-| Concurrency / idempotency | ✓ | ✓ | ✓ | ✓ |
-| Observability | ✓ | ✓ | ✓ | ✓ |
-| Contract | ✓ | ✓ | — | ✓ |
-| E2E workflow | ✓ | ✓ | ✓ | ✓ |
+| Gate (from `agent-harness/core/quality-gates.md`) | W1 | W2 | W3 | W4 | W5 |
+| --- | --- | --- | --- | --- | --- |
+| Confidence | ✓ | ✓ | ✓ | ✓ | ✓ |
+| TDD | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Package verification | ✓ | ✓ | — | ✓ | — |
+| Money | ✓ | ✓ | ✓ | ✓ | — |
+| Multi-tenant | ✓ | ✓ | ✓ | ✓ | ✓ |
+| AI / agent | ✓ | ✓ | — | — | ✓ |
+| Customer onboarding / payments | ✓ (Stripe Payment Link, webhook) | ✓ (NACHA / CSV) | — | ✓ (SaaS subscription + Stripe Connect) | — |
+| RBAC regression | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Concurrency / idempotency | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Observability | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Contract | ✓ | ✓ | — | ✓ | ✓ |
+| E2E workflow | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Release readiness check
 

@@ -177,6 +177,16 @@ class Settings(BaseSettings):
     debug: bool = False
     environment: str = "development"
 
+    # ------------------------------------------------------------------
+    # App-level rate limiting
+    # ------------------------------------------------------------------
+    # First slice is intentionally in-process and protects only high-risk
+    # public/auth endpoints. Keep thresholds high enough for browser E2E setup.
+    rate_limit_enabled: bool = True
+    rate_limit_window_seconds: int = 60
+    rate_limit_signup_max_requests: int = 60
+    rate_limit_public_invoice_max_requests: int = 300
+
 
 # Module-level singleton — import this everywhere.
 settings = Settings()

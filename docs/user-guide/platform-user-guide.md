@@ -282,6 +282,7 @@ Settings are used for:
 - Agent autonomy configuration.
 - Scheduled Finance Ops Manager cadence through the Agents API.
 - Agent run ledger and workflow telemetry.
+- Tenant health checks for safe internal operator review.
 - Platform controls as enterprise slices land.
 
 Current guidance:
@@ -289,7 +290,21 @@ Current guidance:
 - Keep money-out, accounting, and external communication workflows review-gated.
 - Promote autonomy only after enough successful reviewed outcomes.
 - Use run ledger details to inspect tool execution and risk class.
+- Use tenant health for support-safe runtime, migration/table, request-failure,
+  agent failure, tool failure, and workflow failure signals.
 - Keep production provider credentials and mail/payment setup validated outside demo-only environments.
+
+Ops/Security first slice under #286:
+
+- `POST /api/v1/auth/signup` and `GET /api/v1/public/invoices/{token}` are
+  protected by app-level rate limits with safe `429` responses and retry
+  headers.
+- Request failures are counted by sanitized method/path/status, without raw
+  tokens or request payloads.
+- Tenant health exposes runtime config shape, table/migration checks, recent
+  request/background failure counters, and agent/tool/workflow failure counts.
+- Health output is intended for internal operators and admins; it must not
+  expose secrets, raw credentials, tokens, or customer document payloads.
 
 ## 11. Enterprise Readiness Roadmap
 
@@ -304,7 +319,7 @@ The following work is tracked under parent issue #278:
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations, first slice implemented |
 | #284 | P2P | Vendor invoice matching and coding exceptions, first slice implemented |
 | #285 | R2R | Close evidence package and reconciliation gates, first slice implemented |
-| #286 | Ops/Security | Rate limiting, telemetry, and tenant health |
+| #286 | Ops/Security | Rate limiting, telemetry, and tenant health, first slice implemented |
 
 ## 12. Documentation And Test Definition Of Done
 
