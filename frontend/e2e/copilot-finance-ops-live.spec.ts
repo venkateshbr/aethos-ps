@@ -3,7 +3,7 @@
  *
  * Browser flows:
  * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
- * - Copilot chat -> finance-ops action plan -> Inbox approval -> ledger evidence.
+ * - Copilot chat -> finance-ops action plan -> Inbox approval -> child task fan-out -> ledger evidence.
  * - Copilot chat -> collections reminders -> Inbox approval -> email send materialisation.
  * - Copilot chat -> bill-pay proposal -> Inbox approval -> payment batch.
  * - Copilot chat -> month-end close review -> Inbox approval -> close tasks UI.
@@ -663,7 +663,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await openInboxWithRetry(page);
   });
 
-  test('creates finance ops action plan through Copilot and Inbox approval (#272)', async ({ page, request }) => {
+  test('creates finance ops action plan through Copilot, Inbox approval, and child tasks (#272 #274)', async ({ page, request }) => {
     test.setTimeout(300_000);
     const auth = getAuthFromStorage();
     const config = supabaseAdminConfig();
@@ -719,7 +719,11 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     const task = tasks.find((candidate) => candidate.id === taskId);
     expect(task).toBeTruthy();
     const payload = payloadObject(task!);
+    const planId = String(payload['plan_id'] ?? '');
     const actionItems = payload['action_items'] as Array<Record<string, unknown>>;
+    const expectedChildCount = actionItems.filter(
+      (item) => item['requires_inbox_approval'] === true,
+    ).length;
     expect(actionItems.some((item) => item['suggested_tool'] === 'send_email'
       || item['suggested_tool'] === 'propose_bill_payment_batch')).toBeTruthy();
     expect(actionItems.every((item) => item['requires_inbox_approval'] === true)).toBeTruthy();
@@ -747,6 +751,37 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
         message: 'approved action plan should mark its suggestion approved',
       })
       .toBe('approved');
+
+    let childTaskId = '';
+    await expect
+      .poll(async () => {
+        const childTasks = await listOpenTasks(
+          request,
+          config!,
+          auth!.tenantId,
+          'finance_ops_action_item',
+        );
+        const matches = childTasks.filter((candidate) => {
+          const childPayload = payloadObject(candidate);
+          return childPayload['finance_ops_action_item'] === true
+            && childPayload['parent_plan_id'] === planId
+            && childPayload['period'] === CLOSE_PERIOD;
+        });
+        childTaskId = matches[0]?.id ?? '';
+        return matches.length;
+      }, {
+        timeout: 60_000,
+        message: 'approved action plan should create child Inbox work items',
+      })
+      .toBe(expectedChildCount);
+
+    await openInboxWithRetry(page);
+    await page.getByRole('button', { name: /^plan items$/i }).click();
+    const childCard = page.locator(`#task-${childTaskId}`);
+    await expect(childCard).toBeVisible({ timeout: 30_000 });
+    await expectSummaryEntry(childCard, 'period', CLOSE_PERIOD);
+    await expectSummaryEntry(childCard, 'parent plan id', planId);
+    await expect(childCard.getByRole('button', { name: /^edit/i })).toHaveCount(0);
 
     await expect
       .poll(async () => {

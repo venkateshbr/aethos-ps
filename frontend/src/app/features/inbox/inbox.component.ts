@@ -510,6 +510,7 @@ export class InboxComponent implements OnInit {
     { value: 'create_bill_payment_batch', label: 'Payments' },
     { value: 'copilot_prepare_month_end_close', label: 'Close' },
     { value: 'copilot_create_finance_ops_action_plan', label: 'Plans' },
+    { value: 'finance_ops_action_item', label: 'Plan Items' },
     { value: 'intelligence_alert',      label: 'Alerts' },
   ] as const;
 
@@ -714,6 +715,22 @@ export class InboxComponent implements OnInit {
         }
         return entries.slice(0, 6);
       }
+    }
+    if (task.kind === 'finance_ops_action_item') {
+      const fields = [
+        'period',
+        'domain',
+        'suggested_tool',
+        'risk_class',
+        'review_path',
+        'parent_plan_id',
+      ];
+      for (const f of fields) {
+        if (p[f] != null) {
+          entries.push({ key: f.replace(/_/g, ' '), value: String(p[f]) });
+        }
+      }
+      return entries.slice(0, 6);
     }
     const DISPLAY_FIELDS = [
       'client_name', 'vendor_name', 'vendor',

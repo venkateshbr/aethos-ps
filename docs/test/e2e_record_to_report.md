@@ -59,7 +59,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 14 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
 | 15 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
 | 16 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
-| 17 | Finance ops manager | Approves the action-plan task, then opens `/reports` Action Queue and `/inbox` | Approval records manager review only; invoices, payments, journals, and emails remain behind their specialist approval flows; empty domains are shown as explicit empty states, not invented totals |
+| 17 | Finance ops manager | Approves the action-plan task, then opens `/inbox` Plan Items and `/reports` Action Queue | Approval creates one `finance_ops_action_item` child Inbox task per review-required recommendation; child tasks preserve parent plan id, period, domain, specialist tool, risk class, rationale, and review path; invoices, payments, journals, statements, and emails remain behind specialist execution flows |
 
 ### §1.5 AI collections reminders through Inbox
 
