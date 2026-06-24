@@ -525,6 +525,11 @@ Prompt examples: see `docs/copilot/prompt-library.md` for user-facing Copilot
 prompts. The examples intentionally avoid internal tool names; Copilot should
 infer the right tool from the business request.
 
+User and QA guides:
+
+- Platform guide: `docs/user-guide/platform-user-guide.md`
+- Enterprise E2E scenario library: `docs/qa/enterprise-e2e-scenario-library.md`
+
 Current implementation assessment:
 
 | Capability | Current implementation | Product gap | Tracking |
