@@ -57,6 +57,13 @@ docs/            Plan, ADRs, agent catalog
 
 See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 
+## User And QA Guides
+
+- [`docs/user-guide/platform-user-guide.md`](docs/user-guide/platform-user-guide.md) — user-facing guide to the full platform and operating model.
+- [`docs/copilot/prompt-library.md`](docs/copilot/prompt-library.md) — user-facing Copilot prompt examples.
+- [`docs/qa/enterprise-e2e-scenario-library.md`](docs/qa/enterprise-e2e-scenario-library.md) — enterprise-readiness E2E scenarios to automate as slices land.
+- [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](docs/qa/launch-e2e-scenario-runbook-2026-06-24.md) — launch workflow evidence and scenario runbook.
+
 ## Local Runtime
 
 Use Node 20 for the Angular workspace. The repo pins `.nvmrc` to Node 20.19.0 because Angular 19 rejects unsupported local runtimes such as Node 24.
