@@ -13,6 +13,9 @@ export interface HitlTask {
   status: string;
   created_at: string;
   suggestion_payload: Record<string, unknown>;
+  required_approval_role?: string | null;
+  approval_policy_reason?: string | null;
+  approval_policy?: Record<string, unknown>;
   /** Entity that triggered this task — used for navigation on intelligence_alert cards. */
   related_entity_type?: string;
   related_entity_id?: string;

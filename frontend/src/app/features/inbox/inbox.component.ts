@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { HitlService, HitlTask } from '../../core/services/hitl.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
@@ -118,12 +119,32 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
         </div>
       </div>
 
+      <!-- Approval role filter -->
+      <div class="px-6 pt-3 flex flex-wrap items-center gap-2 flex-none" role="group" aria-label="Filter by required approver role">
+        @for (r of roleFilters; track r.value) {
+          <button
+            (click)="setRoleFilter(r.value)"
+            class="px-3 py-1.5 text-xs rounded border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [class]="roleFilter() === r.value
+              ? 'bg-accent/15 border-accent/40 text-accent-light font-medium'
+              : 'border-border-default text-text-muted hover:text-text-primary hover:bg-surface'"
+            [attr.aria-pressed]="roleFilter() === r.value"
+          >{{ r.label }}</button>
+        }
+      </div>
+
       <!-- Keyboard shortcut hint -->
       <div class="px-6 pt-2 pb-0 flex-none">
         <p class="text-xs text-text-muted">
           J&nbsp;/&nbsp;K to navigate &middot; A&nbsp;approve &middot; R&nbsp;reject &middot; E&nbsp;edit
         </p>
       </div>
+
+      @if (actionError()) {
+        <div class="mx-6 mt-3 rounded border border-confidence-low/30 bg-confidence-low/10 px-4 py-2 text-xs text-confidence-low" role="alert">
+          {{ actionError() }}
+        </div>
+      }
 
       <!-- Bulk approve bar -->
       @if (kindFilter() !== 'all' && tasks().length > 1) {
@@ -303,6 +324,11 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                     <span class="text-accent-light text-xs" aria-hidden="true">&#10022;</span>
                     <span class="text-xs text-text-muted">{{ task.agent_name | titlecase }}</span>
                     <app-confidence-chip [confidence]="task.confidence" />
+                    @if (task.required_approval_role) {
+                      <span class="rounded border border-border-default bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
+                        {{ roleLabel(task.required_approval_role) }} approval
+                      </span>
+                    }
                   </div>
                   <span [class]="priorityBadge(task.priority)" [attr.aria-label]="'Priority: ' + (task.priority)">
                     {{ task.priority }}
@@ -333,11 +359,11 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                 <div class="flex items-center gap-2">
                   <button
                     (click)="approve(task, $event)"
-                    [disabled]="actioning() === task.id"
+                    [disabled]="actioning() === task.id || !canApproveTask(task)"
                     class="px-3 py-1.5 text-xs font-medium rounded bg-accent hover:bg-accent-hover text-accent-on transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                    [attr.aria-label]="'Approve ' + (task.title)"
+                    [attr.aria-label]="canApproveTask(task) ? 'Approve ' + (task.title) : 'Approval requires ' + roleLabel(task.required_approval_role)"
                   >
-                    @if (actioning() === task.id) { Processing... } @else { Approve }
+                    @if (actioning() === task.id) { Processing... } @else if (!canApproveTask(task)) { Requires {{ roleLabel(task.required_approval_role) }} } @else { Approve }
                   </button>
 
                   @if (canEditTask(task)) {
@@ -485,6 +511,7 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
 export class InboxComponent implements OnInit {
   private hitlSvc = inject(HitlService);
   private router = inject(Router);
+  private auth = inject(AuthService);
 
   loading = signal(true);
   hasError = signal(false);
@@ -494,8 +521,10 @@ export class InboxComponent implements OnInit {
   errorDetail = signal('Something went wrong. Please try again.');
   allTasks = signal<HitlTask[]>([]);
   kindFilter = signal<string>('all');
+  roleFilter = signal<string>('all');
   focusedIdx = signal(0);
   actioning = signal<string | null>(null);
+  actionError = signal<string | null>(null);
 
   // Edit drawer state (#146)
   editingTask = signal<HitlTask | null>(null);
@@ -513,12 +542,22 @@ export class InboxComponent implements OnInit {
     { value: 'finance_ops_action_item', label: 'Plan Items' },
     { value: 'intelligence_alert',      label: 'Alerts' },
   ] as const;
+  readonly roleFilters = [
+    { value: 'all', label: 'All roles' },
+    { value: 'owner', label: 'Owner' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'manager', label: 'Manager' },
+  ] as const;
 
   tasks = computed(() => {
     const f = this.kindFilter();
-    return f === 'all'
+    const role = this.roleFilter();
+    const byKind = f === 'all'
       ? this.allTasks()
       : this.allTasks().filter(t => t.kind === f);
+    return role === 'all'
+      ? byKind
+      : byKind.filter(t => (t.required_approval_role ?? 'manager') === role);
   });
 
   ngOnInit(): void {
@@ -550,6 +589,11 @@ export class InboxComponent implements OnInit {
 
   setKindFilter(k: string): void {
     this.kindFilter.set(k);
+    this.focusedIdx.set(0);
+  }
+
+  setRoleFilter(role: string): void {
+    this.roleFilter.set(role);
     this.focusedIdx.set(0);
   }
 
@@ -796,15 +840,21 @@ export class InboxComponent implements OnInit {
   approve(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
     if (this.actioning() === task.id) return;
+    if (!this.canApproveTask(task)) {
+      this.actionError.set(`Approval requires ${this.roleLabel(task.required_approval_role)} role or higher.`);
+      return;
+    }
+    this.actionError.set(null);
     this.actioning.set(task.id);
     this.hitlSvc.approve(task.id).subscribe({
       next: () => {
         this.removeTask(task.id);
         this.actioning.set(null);
       },
-      error: () => {
+      error: (err: unknown) => {
         // User-friendly: don't expose internal error detail
         console.error(`Failed to approve task ${task.id}`);
+        this.actionError.set(userMessageForError(err, 'Inbox approval'));
         this.actioning.set(null);
       },
     });
@@ -870,6 +920,11 @@ export class InboxComponent implements OnInit {
   saveEdit(): void {
     const task = this.editingTask();
     if (!task || this.savingEdit()) return;
+    if (!this.canApproveTask(task)) {
+      this.actionError.set(`Approval requires ${this.roleLabel(task.required_approval_role)} role or higher.`);
+      return;
+    }
+    this.actionError.set(null);
     this.savingEdit.set(true);
     // Merge edits over the original payload so internal fields (confidence,
     // original_document_id, etc.) the form doesn't expose are preserved.
@@ -881,8 +936,9 @@ export class InboxComponent implements OnInit {
         this.editForm.set({});
         this.removeTask(task.id);
       },
-      error: () => {
+      error: (err: unknown) => {
         console.error(`Failed to save edits for task ${task.id}`);
+        this.actionError.set(userMessageForError(err, 'Inbox approval'));
         this.savingEdit.set(false);
       },
     });
@@ -911,7 +967,12 @@ export class InboxComponent implements OnInit {
   }
 
   approveAll(): void {
-    const tasks = [...this.tasks()];
+    this.actionError.set(null);
+    const tasks = this.tasks().filter(t => this.canApproveTask(t));
+    if (!tasks.length) {
+      this.actionError.set('No visible tasks can be approved by your current role.');
+      return;
+    }
     tasks.forEach(t => {
       this.hitlSvc.approve(t.id).subscribe({
         next: () => this.removeTask(t.id),
@@ -920,6 +981,28 @@ export class InboxComponent implements OnInit {
         },
       });
     });
+  }
+
+  canApproveTask(task: HitlTask): boolean {
+    const required = task.required_approval_role ?? 'manager';
+    return this.roleRank(this.auth.role()) >= this.roleRank(required);
+  }
+
+  roleLabel(role: string | null | undefined): string {
+    const value = role ?? 'manager';
+    return value.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  private roleRank(role: string | null | undefined): number {
+    const ranks: Record<string, number> = {
+      owner: 5,
+      admin: 4,
+      manager: 3,
+      member: 2,
+      viewer: 1,
+      employee: 0,
+    };
+    return ranks[role ?? 'viewer'] ?? 1;
   }
 
   private removeTask(taskId: string): void {

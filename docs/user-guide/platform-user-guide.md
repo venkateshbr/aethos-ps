@@ -43,6 +43,24 @@ Enterprise role expansion is planned under #282.
 | Auditor / External CPA | Inspect records and evidence | Read-only audit workbench and export package |
 | Executive / Viewer | Read dashboards and reports | Read-only management cockpit |
 
+### Current approval policy matrix
+
+The first enterprise controls slice adds a seeded approval matrix for Inbox
+approvals:
+
+| Task risk | Required approver |
+| --- | --- |
+| Draft or low-risk write | Manager or higher |
+| Money-in action | Manager or higher |
+| Money-out action | Admin or higher |
+| Money-out action at or above 50,000 in task currency | Owner |
+| Accounting action | Admin or higher |
+
+Inbox shows the required approval role on review cards and lets users filter by
+required role. The API enforces the same policy at approval time, including
+approve-with-edits, so a corrected payload cannot bypass a higher approval
+threshold.
+
 ## 3. Copilot And AI Finance Ops Manager
 
 Use Copilot for chat-first finance operations:
@@ -88,9 +106,9 @@ Common Inbox actions:
 | Approve with edits | Correct the payload before materialization |
 | Reject | Stop the recommendation and record feedback |
 | Filter by task type | Focus on invoices, payments, emails, documents, close, or Plan Items |
+| Filter by required role | Focus on tasks needing Owner, Admin, or Manager approval |
 
-Enterprise roadmap items #280 and #281 will deepen role-aware routing and
-immutable decision history.
+Enterprise roadmap item #281 will deepen immutable decision history.
 
 ## 5. Order To Cash
 
@@ -213,7 +231,7 @@ The following work is tracked under parent issue #278:
 | Issue | Area | Outcome |
 | --- | --- | --- |
 | #279 | Docs and QA | Platform user guide and enterprise E2E scenario library |
-| #280 | Controls | Approval policy matrix and role-aware Inbox routing |
+| #280 | Controls | Approval policy matrix and role-aware Inbox routing, first slice implemented |
 | #281 | Controls | Immutable decision audit trail |
 | #282 | RBAC | Finance roles and permission proof |
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations |

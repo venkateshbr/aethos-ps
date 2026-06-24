@@ -25,6 +25,9 @@ class HitlTaskSummary(BaseModel):
     status: str
     created_at: str
     suggestion_payload: dict  # agent_suggestions.output_snapshot
+    required_approval_role: str | None = None
+    approval_policy_reason: str | None = None
+    approval_policy: dict = Field(default_factory=dict)
 
 
 class HitlTaskDetail(HitlTaskSummary):

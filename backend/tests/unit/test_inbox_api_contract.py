@@ -40,6 +40,10 @@ class _Query:
         self._eq_filters.append((key, value))
         return self
 
+    def is_(self, key: str, value: Any) -> _Query:
+        self._eq_filters.append((key, None if value == "null" else value))
+        return self
+
     def order(self, key: str, *, desc: bool = False) -> _Query:
         self._order_key = key
         self._order_desc = desc
@@ -114,7 +118,13 @@ class _FakeDb:
                 }
             ],
             "tenant_users": [
-                {"tenant_id": TENANT_ID, "user_id": "owner-1", "role": "owner"}
+                {"tenant_id": TENANT_ID, "user_id": "owner-1", "role": "owner"},
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-1",
+                    "role": "manager",
+                    "deleted_at": None,
+                },
             ],
         }
         self.suggestion_by_id = {
@@ -167,6 +177,92 @@ def test_inbox_read_routes_use_rls_client(
     assert detail_response.status_code == 200, detail_response.text
     assert detail_response.json()["tenant_id"] == TENANT_ID
     assert detail_response.json()["payload"] == {"source": "document-1"}
+    assert detail_response.json()["required_approval_role"] == "manager"
+
+
+def test_inbox_tasks_expose_enterprise_approval_policy(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["agent_suggestions"][0]["output_snapshot"] = {
+        "risk_class": "write_money_out",
+        "total_amount": "75000.00",
+    }
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "create_bill_payment_batch",
+            "payload": {"total_amount": "75000.00"},
+        }
+    )
+
+    response = client.get("/api/v1/inbox/tasks/task-1")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["required_approval_role"] == "owner"
+    assert body["approval_policy_reason"] == "money_out_above_owner_review_threshold"
+    assert body["approval_policy"]["threshold"] == "50000"
+
+
+def test_inbox_approval_denies_user_below_required_policy_role(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["agent_suggestions"][0]["output_snapshot"] = {
+        "risk_class": "write_money_out",
+        "total_amount": "75000.00",
+    }
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "create_bill_payment_batch",
+            "payload": {
+                "total_amount": "75000.00",
+                "proposed_bill_ids": ["bill-1"],
+            },
+        }
+    )
+
+    response = client.post("/api/v1/inbox/tasks/task-1/approve")
+
+    assert response.status_code == 403, response.text
+    assert "requires owner or higher" in response.json()["detail"]
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "pending"
+
+
+def test_inbox_approve_with_edits_evaluates_corrected_payload_policy(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["agent_suggestions"][0]["output_snapshot"] = {
+        "risk_class": "write_money_out",
+        "total_amount": "1000.00",
+    }
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "create_bill_payment_batch",
+            "payload": {
+                "risk_class": "write_money_out",
+                "total_amount": "1000.00",
+                "proposed_bill_ids": ["bill-1"],
+            },
+        }
+    )
+
+    response = client.post(
+        "/api/v1/inbox/tasks/task-1/approve-with-edits",
+        json={
+            "corrected_payload": {
+                "risk_class": "write_money_out",
+                "total_amount": "75000.00",
+                "proposed_bill_ids": ["bill-1"],
+            }
+        },
+    )
+
+    assert response.status_code == 403, response.text
+    assert "requires owner or higher" in response.json()["detail"]
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
 
 
 def test_inbox_escalation_uses_service_role_client(
