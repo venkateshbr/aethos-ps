@@ -24,6 +24,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.agents.tool_registry import (
+    action_type_for_tool,
     risk_class_allows,
     risk_class_for_action,
     risk_class_for_tool,
@@ -136,6 +137,12 @@ _VALID_AUTO_RISKS = {
     "write_money_out",
     "accounting",
 }
+_EXTERNAL_PROVIDER_TOOLS = frozenset(
+    {
+        ("collections_agent", "send_email"),
+        ("time_entry_agent", "send_time_entry_reminder"),
+    }
+)
 
 _AUTONOMY_COLUMNS = (
     "agent_name,action_type,level,is_enabled,failure_count,failure_threshold,"
@@ -573,6 +580,11 @@ class AgentsService:
             for step in steps
             if step["replay_status"] in {"blocked_by_risk", "unsupported_executor"}
         )
+        planned_count = sum(
+            1
+            for step in steps
+            if step["replay_status"] == "planned_for_human_reexecution"
+        )
         drift_count = sum(1 for step in steps if step["replay_status"] == "drift_detected")
         failed_count = sum(1 for step in steps if step["replay_status"] == "failed")
 
@@ -580,6 +592,10 @@ class AgentsService:
             overall_status = "failed"
         elif drift_count:
             overall_status = "drift_detected"
+        elif planned_count and executed_count:
+            overall_status = "partially_planned"
+        elif planned_count:
+            overall_status = "planned"
         elif executed_count and blocked_count:
             overall_status = "partially_reexecuted"
         elif executed_count:
@@ -610,8 +626,13 @@ class AgentsService:
             "validation_mode": "current_code_dry_run",
             "overall_status": overall_status,
             "can_reexecute": bool(steps) and executed_count == len(steps) and failed_count == 0,
+            "can_request_human_reexecution": bool(planned_count)
+            and failed_count == 0
+            and drift_count == 0
+            and blocked_count == 0,
             "manifest_hash": stable_payload_hash(manifest),
             "reexecuted_step_count": executed_count,
+            "planned_step_count": planned_count,
             "blocked_step_count": blocked_count,
             "drift_step_count": drift_count,
             "failed_step_count": failed_count,
@@ -897,14 +918,25 @@ class AgentsService:
             "output_hash_matches": None,
             "duration_ms": None,
             "current_output_snapshot": None,
+            "reexecution_plan": None,
             "error_message": None,
         }
 
         if current_risk != "read_only":
+            reexecution_plan = self._build_reexecution_plan(
+                agent_name=agent_name,
+                tool=tool,
+                current_risk=current_risk,
+                input_snapshot=input_snapshot,
+            )
             return {
                 **base,
-                "replay_status": "blocked_by_risk",
-                "reason": f"Current tool risk is {current_risk}; dry-run only executes read-only tools",
+                "replay_status": "planned_for_human_reexecution",
+                "reason": (
+                    f"Current tool risk is {current_risk}; validation built a "
+                    "human-approved re-execution plan and did not execute side effects"
+                ),
+                "reexecution_plan": reexecution_plan,
             }
 
         started_at = time.perf_counter()
@@ -951,6 +983,65 @@ class AgentsService:
             "output_hash_matches": output_hash_matches,
             "duration_ms": int((time.perf_counter() - started_at) * 1000),
             "current_output_snapshot": safe_snapshot(current_output),
+        }
+
+    def _build_reexecution_plan(
+        self,
+        *,
+        agent_name: str,
+        tool: dict,
+        current_risk: str,
+        input_snapshot: dict[str, Any],
+    ) -> dict:
+        tool_name = tool["tool_name"]
+        action_type = action_type_for_tool(agent_name, tool_name)
+        external_side_effect = bool(tool.get("external_tool_call_id")) or (
+            agent_name,
+            tool_name,
+        ) in _EXTERNAL_PROVIDER_TOOLS
+        idempotency_key = stable_payload_hash(
+            {
+                "tenant_id": self.tenant_id,
+                "agent_name": agent_name,
+                "tool_invocation_id": tool["id"],
+                "tool_name": tool_name,
+                "input_hash": tool.get("input_hash")
+                or stable_payload_hash(input_snapshot),
+            }
+        )
+        approval_role = "admin" if current_risk in {"write_money_out", "accounting"} else "manager"
+        if external_side_effect:
+            operator_action = (
+                "Review the recorded provider call, verify the recipient/amount/content, "
+                "and replay through the provider-specific workflow only after human approval."
+            )
+        else:
+            operator_action = (
+                "Replay through the normal application service after human approval; "
+                "do not bypass tool policy, HITL, or accounting guards."
+            )
+        return {
+            "mode": "human_approved_current_code_reexecution",
+            "dry_run_only": True,
+            "agent_name": agent_name,
+            "tool_name": tool_name,
+            "action_type": action_type,
+            "risk_class": current_risk,
+            "requires_human_approval": True,
+            "approval_role": approval_role,
+            "external_side_effect": external_side_effect,
+            "external_tool_call_id": tool.get("external_tool_call_id"),
+            "idempotency_key": idempotency_key,
+            "input_hash": tool.get("input_hash") or stable_payload_hash(input_snapshot),
+            "recorded_output_hash": tool.get("output_hash"),
+            "preconditions": [
+                "tenant scope must match the recorded run",
+                "input hash must match the reviewed replay payload",
+                "agent/tool circuit breaker must be closed",
+                "current role and autonomy policy must still allow the action",
+                "business idempotency check must pass before any mutation",
+            ],
+            "operator_action": operator_action,
         }
 
     def _execute_current_read_only_tool(

@@ -274,6 +274,7 @@ class AgentReplayValidationStepResponse(BaseModel):
     output_hash_matches: bool | None = None
     duration_ms: int | None = None
     current_output_snapshot: dict | None = None
+    reexecution_plan: dict | None = None
     error_message: str | None = None
 
 
@@ -285,8 +286,10 @@ class AgentRunReplayValidationResponse(BaseModel):
     validation_mode: str
     overall_status: str
     can_reexecute: bool
+    can_request_human_reexecution: bool = False
     manifest_hash: str
     reexecuted_step_count: int
+    planned_step_count: int = 0
     blocked_step_count: int
     drift_step_count: int
     failed_step_count: int

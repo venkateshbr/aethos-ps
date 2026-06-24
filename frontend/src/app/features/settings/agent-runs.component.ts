@@ -81,6 +81,14 @@ interface AgentReplayPreview {
   steps: AgentReplayStep[];
 }
 
+interface AgentReplayReexecutionPlan {
+  action_type: string;
+  approval_role: string;
+  external_side_effect: boolean;
+  idempotency_key: string;
+  operator_action: string;
+}
+
 interface AgentReplayValidationStep {
   index: number;
   tool_invocation_id: string;
@@ -97,6 +105,7 @@ interface AgentReplayValidationStep {
   output_hash_matches: boolean | null;
   duration_ms: number | null;
   current_output_snapshot: Record<string, unknown> | null;
+  reexecution_plan: AgentReplayReexecutionPlan | null;
   error_message: string | null;
 }
 
@@ -106,8 +115,10 @@ interface AgentReplayValidationResult {
   validation_mode: string;
   overall_status: string;
   can_reexecute: boolean;
+  can_request_human_reexecution: boolean;
   manifest_hash: string;
   reexecuted_step_count: number;
+  planned_step_count: number;
   blocked_step_count: number;
   drift_step_count: number;
   failed_step_count: number;
@@ -350,7 +361,7 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                 }
 
                 @if (validationResult()) {
-                  <div class="mt-3 grid gap-3 text-xs sm:grid-cols-4">
+                  <div class="mt-3 grid gap-3 text-xs sm:grid-cols-5">
                     <div>
                       <div class="uppercase tracking-wide text-text-disabled">Validation</div>
                       <div class="mt-1 font-mono text-text-secondary">{{ statusLabel(validationResult()!.overall_status) }}</div>
@@ -358,6 +369,10 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                     <div>
                       <div class="uppercase tracking-wide text-text-disabled">Re-executed</div>
                       <div class="mt-1 font-mono text-text-secondary">{{ validationResult()!.reexecuted_step_count }}</div>
+                    </div>
+                    <div>
+                      <div class="uppercase tracking-wide text-text-disabled">Planned</div>
+                      <div class="mt-1 font-mono text-text-secondary">{{ validationResult()!.planned_step_count }}</div>
                     </div>
                     <div>
                       <div class="uppercase tracking-wide text-text-disabled">Blocked</div>
@@ -387,6 +402,16 @@ const STATUS_OPTIONS = ['', 'running', 'succeeded', 'failed', 'cancelled'];
                                 {{ statusLabel(step.replay_status) }}
                               </span>
                               <div class="mt-1 max-w-sm text-text-muted">{{ step.reason }}</div>
+                              @if (step.reexecution_plan) {
+                                <div class="mt-1 max-w-sm text-text-secondary">
+                                  {{ step.reexecution_plan.approval_role }} approval /
+                                  {{ step.reexecution_plan.external_side_effect ? 'external' : 'internal' }} /
+                                  {{ step.reexecution_plan.action_type }}
+                                </div>
+                                <div class="mt-1 font-mono text-text-disabled">
+                                  key {{ shortHash(step.reexecution_plan.idempotency_key) }}
+                                </div>
+                              }
                             </td>
                             <td class="px-3 py-2 text-text-secondary">{{ riskLabel(step.current_risk_class) }}</td>
                             <td class="px-3 py-2 font-mono text-text-disabled">
@@ -586,9 +611,9 @@ export class AgentRunsComponent implements OnInit {
     if (status === 'succeeded' || status === 'matched') return 'bg-emerald-500/15 text-emerald-300';
     if (status === 'failed' || status === 'drift_detected') return 'bg-confidence-low/15 text-confidence-low';
     if (status === 'running') return 'bg-blue-500/15 text-blue-300';
-    if (status === 'skipped' || status === 'blocked_by_risk' || status === 'unsupported_executor') return 'bg-amber-500/15 text-amber-300';
+    if (status === 'skipped' || status === 'blocked_by_risk' || status === 'unsupported_executor' || status === 'planned_for_human_reexecution') return 'bg-amber-500/15 text-amber-300';
     if (status === 'cancelled') return 'bg-slate-500/15 text-slate-300';
-    if (status === 'partially_reexecuted' || status === 'executed_no_baseline') return 'bg-blue-500/15 text-blue-300';
+    if (status === 'partially_reexecuted' || status === 'executed_no_baseline' || status === 'planned' || status === 'partially_planned') return 'bg-blue-500/15 text-blue-300';
     return 'bg-surface text-text-muted';
   }
 

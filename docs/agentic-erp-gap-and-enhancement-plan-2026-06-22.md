@@ -21,11 +21,12 @@ Done:
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
 - Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
 - Local frontend runtime is pinned to supported Node 20 via root `.nvmrc` and frontend package `engines`; CI and Docker already use Node 20.
-- Current local quality gates passed on 2026-06-24: full backend pytest (`790 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
+- Current local quality gates passed on 2026-06-24: full backend pytest (`791 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
 - Agent controls are surfaced through `/api/v1/agents/*` and Settings UI: run dashboard, eval candidates, L3 policy, kill switches, and per-agent/tool circuit breaker controls.
-- Deterministic recorded replay is available through `POST /api/v1/agents/runs/{run_id}/replay` and the Settings agent-run panel; it reconstructs stored tool-call snapshots without executing tools. Current-code replay validation is also available through `POST /api/v1/agents/runs/{run_id}/replay/validate` and the Settings Validate action, executing supported read-only Copilot/reporting tools and blocking mutating steps by risk class.
+- Deterministic recorded replay is available through `POST /api/v1/agents/runs/{run_id}/replay` and the Settings agent-run panel; it reconstructs stored tool-call snapshots without executing tools. Current-code replay validation is also available through `POST /api/v1/agents/runs/{run_id}/replay/validate` and the Settings Validate action, executing supported read-only Copilot/reporting tools and producing human-approved re-execution plans for mutating or external-provider steps without firing side effects.
+- Mutating/external-provider replay now has an explicit launch-safe control plane: validation returns planned step counts, approval role, action type, risk class, idempotency key, external-side-effect marker, preconditions, and operator action in both API and Settings UI. Direct live provider re-fire remains intentionally outside automatic replay.
 - Services-business intelligence endpoints and Angular typings now cover project health, capacity planning, client profitability, client-group profitability, segment profitability, practice dashboards, pricing/staffing recommendations, and scope-change advisor.
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
 - Backlog forecast and milestone-risk reports are available through `/api/v1/reports/backlog-forecast` and `/api/v1/reports/milestone-risk`, surfaced in the Reports Backlog tab, and feed partner/project-manager action queues.
@@ -54,7 +55,6 @@ Done:
 
 Still open:
 - Demo report/screenshots were intentionally not regenerated in this pass.
-- Recorded agent replay and read-only current-code validation are implemented; full mutating re-execution and external-provider replay remain open.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
 - Role-based action queues are implemented from report evidence; deeper personalized ownership/assignment queues remain open.
 
@@ -64,7 +64,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, and audit/event-suggestion evidence are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope and mutating/external-provider agent replay re-execution.
+2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, and launch-safe mutating/external-provider replay planning are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, Phase 3 workflow orchestration depth, and deeper personalized assignment queues.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -189,7 +189,7 @@ Present:
 - PII masking helper exists and text prompts use it in several agents.
 
 Gaps / status:
-- Done/partial 2026-06-23: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, a recorded replay manifest, and current-code validation for supported read-only Copilot/reporting tools. Coverage across every agent-created mutation and mutating/external-provider re-execution still need hardening.
+- Done/partial 2026-06-24: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, a recorded replay manifest, current-code validation for supported read-only Copilot/reporting tools, and launch-safe human-approved replay plans for mutating/external-provider steps. Coverage across every agent-created mutation and direct write path still needs hardening.
 - Done 2026-06-23: central tool registry with per-agent tool/action risk classes exists.
 - Done/monitor 2026-06-23: `agent_workflow_runs` exists as the durable workflow container. The monthly retainer billing-run worker, weekly time-entry reminder worker, monthly financial close-preparation worker, nightly collections worker, and daily project-health worker now record running/skipped/waiting-on-human/failed workflow states. Remaining monitoring is for newly added workers and non-scheduled direct write paths.
 - Queue is `not_configured` in the live readiness check, so scheduled autonomy is not operational in this local/live run.
@@ -253,7 +253,7 @@ Work items:
 - Done 2026-06-23: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
 
 Acceptance:
-- Done 2026-06-24: full backend pytest passed (`790 passed, 214 skipped, 56 xfailed`).
+- Done 2026-06-24: full backend pytest passed (`791 passed, 214 skipped, 56 xfailed`).
 - Done 2026-06-24: `uv run ruff check app tests` passes.
 - Done 2026-06-24: frontend spec TypeScript and production build pass; the production build still reports existing Angular optional-chain, Sass deprecation, and bundle-budget warnings.
 - Done 2026-06-24: full Chromium engagement-to-cash Playwright passed (`57 passed`).
@@ -289,14 +289,14 @@ Work items:
 - Done 2026-06-23: create a tool registry with risk class: read-only, draft, write-low-risk, write-money-in, write-money-out, accounting.
 - Done/monitor 2026-06-23: enforce tool authorization by agent, autonomy level, role, tenant, and risk class for registered tools.
 - Done/verification open 2026-06-23: move Copilot write tools through the same tool policy/HITL/autonomy path; live LLM time logging remains tracked by issue #253.
-- Done/partial 2026-06-23: store prompt version, model version, source-document hash, input hash, output hash, cost, trace ID, and replay pointer. Recorded replay is runnable from the agent-run dashboard, and current-code dry-run validation executes supported read-only Copilot/reporting tools while explicitly blocking mutating steps by risk class. Mutating/external-provider replay remains open.
+- Done 2026-06-24: store prompt version, model version, source-document hash, input hash, output hash, cost, trace ID, and replay pointer. Recorded replay is runnable from the agent-run dashboard, current-code dry-run validation executes supported read-only Copilot/reporting tools, and mutating/external-provider steps produce deterministic human-approved re-execution plans with idempotency keys and side-effect markers.
 - Done 2026-06-23: add agent run dashboard in Settings/Admin.
 - Done 2026-06-23: add kill switch and per-agent/tool circuit breakers.
 - Done 2026-06-23: make human corrections automatically candidates for eval cases.
 
 Acceptance:
 - Partial 2026-06-23: agent run/tool provenance exists. The "every agent-created mutation" bar remains open until coverage is verified across all agents and direct write paths.
-- Done/partial 2026-06-23: a failed agent run can be replayed from recorded tool snapshots and validated against current code for supported read-only Copilot/reporting tools; deterministic mutating/external-provider re-execution remains open.
+- Done 2026-06-24: a failed agent run can be replayed from recorded tool snapshots and validated against current code for supported read-only Copilot/reporting tools. Mutating/external-provider steps are not automatically re-fired; they now return deterministic, idempotency-keyed, human-approved re-execution plans for controlled operator replay.
 - Done/monitor 2026-06-23: L3 promotion gates require eval pass metadata, approval history, admin opt-in, and tool-risk permission.
 
 ### Phase 3: Autonomous Workflow Loops
@@ -430,5 +430,5 @@ Priority 3:
 
 Phase 0 is materially complete; the demo-readiness target has passed against the available launch/demo tenant, and docs evidence refresh remains intentionally separate from this code pass. The fastest path to launch is now:
 - refresh the docs evidence report only when screenshot/report updates are explicitly in scope;
-- close the remaining mutating/external-provider replay re-execution gap;
+- close the remaining Phase 3 workflow orchestration and deeper personalized assignment-queue gaps;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

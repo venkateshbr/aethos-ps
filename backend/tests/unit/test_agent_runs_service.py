@@ -340,7 +340,7 @@ def test_build_agent_run_replay_validation_executes_read_only_current_code() -> 
     assert validation["steps"][0]["current_output_snapshot"] == tool_output
 
 
-def test_build_agent_run_replay_validation_blocks_write_tools() -> None:
+def test_build_agent_run_replay_validation_plans_write_tools() -> None:
     db = _Db(
         {
             "agent_runs": [_run_row(id="run-1")],
@@ -350,6 +350,7 @@ def test_build_agent_run_replay_validation_blocks_write_tools() -> None:
                     agent_run_id="run-1",
                     tool_name="log_time_entry",
                     risk_class="write_low_risk",
+                    external_tool_call_id=None,
                     input_snapshot={"project_id": "proj-1", "hours": "2.00"},
                     output_snapshot={"time_entry_id": "time-1"},
                 ),
@@ -360,12 +361,49 @@ def test_build_agent_run_replay_validation_blocks_write_tools() -> None:
     validation = AgentsService(db, "tenant-1").build_agent_run_replay_validation("run-1")  # type: ignore[arg-type]
 
     assert validation is not None
-    assert validation["overall_status"] == "blocked"
+    assert validation["overall_status"] == "planned"
     assert validation["can_reexecute"] is False
+    assert validation["can_request_human_reexecution"] is True
     assert validation["reexecuted_step_count"] == 0
-    assert validation["blocked_step_count"] == 1
-    assert validation["steps"][0]["replay_status"] == "blocked_by_risk"
+    assert validation["planned_step_count"] == 1
+    assert validation["blocked_step_count"] == 0
+    assert validation["steps"][0]["replay_status"] == "planned_for_human_reexecution"
     assert validation["steps"][0]["current_risk_class"] == "write_low_risk"
+    plan = validation["steps"][0]["reexecution_plan"]
+    assert plan["action_type"] == "copilot_log_time_entry"
+    assert plan["approval_role"] == "manager"
+    assert plan["external_side_effect"] is False
+    assert plan["idempotency_key"]
+
+
+def test_build_agent_run_replay_validation_flags_external_provider_plan() -> None:
+    db = _Db(
+        {
+            "agent_runs": [_run_row(id="run-1", agent_name="collections_agent")],
+            "agent_tool_invocations": [
+                _tool_row(
+                    id="tool-1",
+                    agent_run_id="run-1",
+                    tool_name="send_email",
+                    risk_class="write_money_in",
+                    external_tool_call_id="email-provider-call-1",
+                    input_snapshot={"invoice_id": "invoice-1", "tone": "firm"},
+                    output_snapshot={"message_id": "msg-1"},
+                ),
+            ],
+        }
+    )
+
+    validation = AgentsService(db, "tenant-1").build_agent_run_replay_validation("run-1")  # type: ignore[arg-type]
+
+    assert validation is not None
+    assert validation["overall_status"] == "planned"
+    plan = validation["steps"][0]["reexecution_plan"]
+    assert validation["steps"][0]["replay_status"] == "planned_for_human_reexecution"
+    assert plan["action_type"] == "send_email"
+    assert plan["external_side_effect"] is True
+    assert plan["external_tool_call_id"] == "email-provider-call-1"
+    assert "provider" in plan["operator_action"]
 
 
 def test_build_agent_run_replay_validation_returns_none_for_missing_run() -> None:
