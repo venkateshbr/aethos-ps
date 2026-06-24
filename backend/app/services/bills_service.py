@@ -81,6 +81,8 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         vendor_invoice_number=row.get("vendor_invoice_number"),
         po_match_status=row.get("po_match_status") or "not_linked",
         po_match_summary=dict(row.get("po_match_summary") or {}),
+        vendor_invoice_review=dict(row.get("vendor_invoice_review") or {}),
+        source_document_id=str(row["source_document_id"]) if row.get("source_document_id") else None,
         notes=row.get("notes"),
         created_at=str(row["created_at"]),
         lines=[_line_to_response(ln) for ln in (lines or [])],
@@ -204,7 +206,13 @@ class BillsService:
     # Create
     # ------------------------------------------------------------------
 
-    async def create_bill(self, data: BillCreate) -> BillResponse:
+    async def create_bill(
+        self,
+        data: BillCreate,
+        *,
+        source_document_id: str | None = None,
+        vendor_invoice_review: dict[str, object] | None = None,
+    ) -> BillResponse:
         # 1. Verify client exists and kind is vendor-capable
         client = await self._clients_repo.get(data.client_id)
         if client is None:
@@ -256,6 +264,10 @@ class BillsService:
             "po_match_status": po_match_status,
             "po_match_summary": po_match_summary,
         }
+        if source_document_id is not None:
+            bill_data["source_document_id"] = source_document_id
+        if vendor_invoice_review is not None:
+            bill_data["vendor_invoice_review"] = vendor_invoice_review
         if data.purchase_order_id is not None:
             bill_data["purchase_order_id"] = data.purchase_order_id
         if data.issue_date is not None:

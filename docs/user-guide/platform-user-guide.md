@@ -187,9 +187,25 @@ Typical workflow:
 8. Review AP Aging and Cash Flow impact.
 
 Current implementation supports vendor invoice upload, bill creation after Inbox
-approval, bill-pay proposals, and payment-batch UI visibility. Enterprise P2P
-depth is planned under #284: matching, coding exceptions, duplicate guards,
-multi-step approvals, recurring bills, and native bank formats.
+approval, bill-pay proposals, and payment-batch UI visibility.
+
+Vendor invoice review now carries AI evidence into Inbox:
+
+- vendor match status and matched vendor candidate;
+- GL/account coding suggestions per invoice line;
+- duplicate, anomaly, tax-id, prompt-injection, vendor-match, and coding review exceptions;
+- source document linkage; and
+- reviewed evidence persisted on the created bill.
+
+Duplicate invoice drafts cannot be approved as-is. A reviewer must use
+approve-with-edits and add `duplicate_review.approved_duplicate=true` plus a
+reason before the bill can be materialized. Approved vendor invoice drafts now
+create bill lines through the same Bills service path used by manual bill
+creation, so account coding and PO match validation are preserved.
+
+Remaining enterprise P2P depth is planned under #284 follow-up and later
+advanced P2P work: richer browser UI for exception cards, multi-step bill
+approvals, recurring bills, and native bank formats.
 
 ## 7. Record To Report
 
@@ -275,7 +291,7 @@ The following work is tracked under parent issue #278:
 | #281 | Controls | Immutable Inbox decision audit trail, first slice implemented |
 | #282 | RBAC | Finance role mapping and read-only permission proof, first slice implemented |
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations, first slice implemented |
-| #284 | P2P | Vendor invoice matching and coding exceptions |
+| #284 | P2P | Vendor invoice matching and coding exceptions, first slice implemented |
 | #285 | R2R | Close evidence package and reconciliation gates |
 | #286 | Ops/Security | Rate limiting, telemetry, and tenant health |
 

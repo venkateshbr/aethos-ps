@@ -434,7 +434,7 @@ class InboxService:
         elif kind in ("create_expense", "create_expense_draft"):
             return await self._materialise_expense(payload)
         elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
-            return await self._materialise_bill(payload)
+            return await self._materialise_bill(payload, user_id=user_id)
         elif kind in (
             "copilot_log_time_entry",
             "copilot_update_rate_card",
@@ -1192,60 +1192,194 @@ class InboxService:
         )
         return {"entity_type": "expense", "entity_id": str(exp_row.data[0]["id"])}
 
-    async def _materialise_bill(self, payload: dict) -> dict:
+    async def _materialise_bill(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
         import asyncio
 
+        self._raise_if_duplicate_bill_review_required(payload)
         vendor_name = payload.get("vendor_name") or payload.get("vendor", "Unknown Vendor")
 
-        # Find or create vendor client
-        existing = await asyncio.to_thread(
-            lambda: self._db.table("clients")
-            .select("id")
-            .eq("tenant_id", self._tenant_id)
-            .eq("kind", "vendor")
-            .ilike("name", vendor_name)
-            .limit(1)
-            .execute()
-        )
-        if existing.data:
-            client_id = existing.data[0]["id"]
+        matched_client_id = self._vendor_invoice_matched_client_id(payload)
+        if matched_client_id:
+            client_id = matched_client_id
         else:
-            client_row = await asyncio.to_thread(
+            # Find or create vendor client
+            existing = await asyncio.to_thread(
                 lambda: self._db.table("clients")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "name": vendor_name,
-                        "kind": "vendor",
-                    }
-                )
+                .select("id")
+                .eq("tenant_id", self._tenant_id)
+                .eq("kind", "vendor")
+                .ilike("name", vendor_name)
+                .limit(1)
                 .execute()
             )
-            client_id = client_row.data[0]["id"]
+            if existing.data:
+                client_id = existing.data[0]["id"]
+            else:
+                client_row = await asyncio.to_thread(
+                    lambda: self._db.table("clients")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "name": vendor_name,
+                            "kind": "vendor",
+                        }
+                    )
+                    .execute()
+                )
+                client_id = client_row.data[0]["id"]
 
         subtotal = Decimal(str(payload.get("subtotal") or payload.get("amount", "0")))
         tax_total = Decimal(str(payload.get("tax_total", "0")))
         total = Decimal(str(payload.get("total", "0"))) or (subtotal + tax_total)
 
-        bill_row = await asyncio.to_thread(
-            lambda: self._db.table("bills")
-            .insert(
-                {
-                    "tenant_id": self._tenant_id,
-                    "client_id": client_id,
-                    "currency": payload.get("currency", "USD"),
-                    "subtotal": str(subtotal),
-                    "tax_total": str(tax_total),
-                    "total": str(total),
-                    "vendor_invoice_number": payload.get("vendor_invoice_number"),
-                    "issue_date": payload.get("issue_date"),
-                    "due_date": payload.get("due_date"),
-                    "source_document_id": self._source_document_id(payload),  # #127
-                }
-            )
-            .execute()
+        from app.models.bills import BillCreate
+        from app.services.bills_service import BillsService
+
+        bill = await BillsService(self._db, self._tenant_id).create_bill(
+            BillCreate(
+                client_id=str(client_id),
+                purchase_order_id=_non_empty(payload.get("purchase_order_id")),
+                currency=str(payload.get("currency") or "USD"),
+                issue_date=payload.get("issue_date"),
+                due_date=payload.get("due_date"),
+                vendor_invoice_number=payload.get("vendor_invoice_number"),
+                notes=_non_empty(payload.get("notes")),
+                lines=self._vendor_invoice_bill_lines(payload, subtotal=subtotal),
+            ),
+            source_document_id=self._source_document_id(payload),
+            vendor_invoice_review=self._vendor_invoice_review_evidence(
+                payload,
+                user_id=user_id,
+            ),
         )
-        return {"entity_type": "bill", "entity_id": str(bill_row.data[0]["id"])}
+        if total != Decimal(str(bill.total)):
+            logger.info(
+                "Vendor invoice reviewed total differs from line-derived bill total",
+                extra={
+                    "tenant_id": self._tenant_id,
+                    "review_total": str(total),
+                    "bill_total": bill.total,
+                },
+            )
+        return {"entity_type": "bill", "entity_id": bill.id}
+
+    @staticmethod
+    def _raise_if_duplicate_bill_review_required(payload: dict) -> None:
+        if not payload.get("possible_duplicate"):
+            return
+        duplicate_review = payload.get("duplicate_review")
+        if not isinstance(duplicate_review, dict):
+            duplicate_review = {}
+        reason = _non_empty(duplicate_review.get("reason"))
+        if duplicate_review.get("approved_duplicate") is True and reason:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "duplicate_vendor_invoice_review_required",
+                "message": (
+                    "Possible duplicate vendor invoice requires approve-with-edits "
+                    "with duplicate_review.approved_duplicate=true and a reason."
+                ),
+            },
+        )
+
+    @staticmethod
+    def _vendor_invoice_matched_client_id(payload: dict) -> str | None:
+        if payload.get("client_id"):
+            return str(payload["client_id"])
+        vendor_match = payload.get("vendor_match")
+        if not isinstance(vendor_match, dict):
+            return None
+        matched_client_id = _non_empty(vendor_match.get("matched_client_id"))
+        if matched_client_id and float(vendor_match.get("confidence") or 0) >= 0.70:
+            return matched_client_id
+        return None
+
+    @staticmethod
+    def _vendor_invoice_bill_lines(
+        payload: dict,
+        *,
+        subtotal: Decimal,
+    ) -> list[dict]:
+        raw_lines = payload.get("lines") if isinstance(payload.get("lines"), list) else []
+        if not raw_lines:
+            return [
+                {
+                    "description": "Vendor invoice",
+                    "quantity": Decimal("1"),
+                    "unit_price": subtotal,
+                    "amount": subtotal,
+                    "tax_amount": Decimal(str(payload.get("tax_total") or "0")),
+                }
+            ]
+
+        gl_suggestions = (
+            payload.get("gl_suggestions")
+            if isinstance(payload.get("gl_suggestions"), list)
+            else []
+        )
+        lines: list[dict] = []
+        for index, raw_line in enumerate(raw_lines):
+            if not isinstance(raw_line, dict):
+                continue
+            amount = Decimal(str(raw_line.get("amount") or raw_line.get("unit_price") or "0"))
+            quantity = Decimal(str(raw_line.get("quantity") or "1"))
+            unit_price = Decimal(str(raw_line.get("unit_price") or amount))
+            account_id = _non_empty(raw_line.get("account_id"))
+            if account_id is None and index < len(gl_suggestions):
+                suggestion = gl_suggestions[index]
+                if (
+                    isinstance(suggestion, dict)
+                    and float(suggestion.get("confidence") or 0) >= 0.75
+                ):
+                    account_id = _non_empty(suggestion.get("account_id"))
+            line = {
+                "description": str(raw_line.get("description") or "Vendor invoice line"),
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "amount": amount,
+                "tax_amount": Decimal(str(raw_line.get("tax_amount") or "0")),
+            }
+            if account_id:
+                line["account_id"] = account_id
+            lines.append(line)
+        if lines:
+            return lines
+        return [
+            {
+                "description": "Vendor invoice",
+                "quantity": Decimal("1"),
+                "unit_price": subtotal,
+                "amount": subtotal,
+                "tax_amount": Decimal(str(payload.get("tax_total") or "0")),
+            }
+        ]
+
+    def _vendor_invoice_review_evidence(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None,
+    ) -> dict[str, object]:
+        return {
+            "source": "inbox_vendor_invoice_review",
+            "source_document_id": self._source_document_id(payload),
+            "reviewed_by_user_id": user_id,
+            "vendor_name": payload.get("vendor_name") or payload.get("vendor"),
+            "vendor_invoice_number": payload.get("vendor_invoice_number"),
+            "match_status": payload.get("match_status"),
+            "coding_status": payload.get("coding_status"),
+            "vendor_match": payload.get("vendor_match") or {},
+            "gl_suggestions": payload.get("gl_suggestions") or [],
+            "review_exceptions": payload.get("review_exceptions") or [],
+            "duplicate_review": payload.get("duplicate_review") or {},
+        }
 
 
 # ------------------------------------------------------------------

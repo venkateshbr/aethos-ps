@@ -42,8 +42,8 @@ agent ledger.
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Implemented first slice; browser automation pending | #282 |
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
-| ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Planned | #284 |
-| ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Planned | #284 |
+| ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Implemented first slice; browser automation pending | #284 |
+| ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Planned | #285 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Planned | #285 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Planned | #286 |
@@ -298,6 +298,13 @@ Automation target:
 
 Persona: AP Lead.
 
+Status: First slice implemented. Vendor invoice extraction now serializes vendor
+match, GL coding suggestions, match/coding status, and review exceptions into
+the Inbox payload. Approval materializes bills through the Bills service path,
+creates reviewed bill lines, preserves source document linkage, and stores
+`vendor_invoice_review` evidence on the bill. Browser automation is still
+pending.
+
 Steps:
 
 1. Upload a vendor invoice with ambiguous project/account coding.
@@ -313,9 +320,23 @@ Expected result:
 - Source document and coding evidence are preserved.
 - Reports reflect the reviewed coding.
 
+Automation target:
+
+- API/unit: seed a vendor invoice payload with low-confidence or corrected
+  account coding, approve-with-edits, and assert `bill_lines.account_id`,
+  `bills.source_document_id`, and `bills.vendor_invoice_review`.
+- Browser: upload invoice, open Inbox bill task, verify match/coding status and
+  exception count, edit coding, approve, then open Bill detail and verify lines.
+
 ## ENT-P2P-002 - Duplicate Or Mismatch Review
 
 Persona: AP Lead and Controller.
+
+Status: First slice implemented. Possible duplicate vendor invoice drafts are
+blocked on approve-as-is. They require approve-with-edits with
+`duplicate_review.approved_duplicate=true` and a reason. PO mismatch validation
+continues to run through the Bills service path during materialization and bill
+approval.
 
 Steps:
 
@@ -329,6 +350,14 @@ Expected result:
 - Duplicate/mismatch is flagged before bill creation.
 - Approval requires explicit review and reason where configured.
 - Rejection creates no bill.
+
+Automation target:
+
+- API: approve-as-is for a `possible_duplicate=true` bill task returns 409 with
+  `duplicate_vendor_invoice_review_required`.
+- API: approve-with-edits including duplicate override reason materializes the
+  bill and persists the duplicate review evidence.
+- Browser: duplicate card displays match/coding exception summary before review.
 
 ## ENT-R2R-001 - Close Evidence Package
 

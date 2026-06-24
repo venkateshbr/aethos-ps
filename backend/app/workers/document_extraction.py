@@ -118,6 +118,111 @@ def _normalise_engagement_onboarding_output(output: dict) -> dict:
     return result
 
 
+def _normalise_vendor_invoice_output(output: dict, draft: BillDraft) -> dict:
+    """Attach vendor-match, coding, and review exception evidence to bill drafts."""
+    result = dict(output)
+    vendor_match = getattr(draft, "_vendor_match", None)
+    gl_suggestions = getattr(draft, "_gl_suggestions", None) or []
+    if vendor_match is not None:
+        result["vendor_match"] = vendor_match.model_dump(mode="json")
+        matched_client_id = result["vendor_match"].get("matched_client_id")
+        if matched_client_id:
+            result["client_id"] = matched_client_id
+
+    serialised_gl: list[dict | None] = []
+    lines = result.get("lines") if isinstance(result.get("lines"), list) else []
+    for index, suggestion in enumerate(gl_suggestions):
+        if suggestion is None:
+            serialised_gl.append(None)
+            continue
+        suggestion_dict = suggestion.model_dump(mode="json")
+        serialised_gl.append(suggestion_dict)
+        if index < len(lines) and isinstance(lines[index], dict):
+            confidence = float(suggestion_dict.get("confidence") or 0)
+            if confidence >= 0.75 and not lines[index].get("account_id"):
+                lines[index]["account_id"] = suggestion_dict.get("account_id")
+                lines[index]["account_code"] = suggestion_dict.get("account_code")
+                lines[index]["account_name"] = suggestion_dict.get("account_name")
+                lines[index]["coding_source"] = "ai_gl_suggestion"
+    result["gl_suggestions"] = serialised_gl
+
+    result["match_status"] = _vendor_invoice_match_status(result)
+    result["coding_status"] = _vendor_invoice_coding_status(result)
+    result["review_exceptions"] = _vendor_invoice_review_exceptions(result)
+    return result
+
+
+def _vendor_invoice_match_status(output: dict) -> str:
+    if output.get("possible_duplicate"):
+        return "duplicate_review_required"
+    vendor_match = output.get("vendor_match") if isinstance(output.get("vendor_match"), dict) else {}
+    if vendor_match.get("matched_client_id"):
+        confidence = float(vendor_match.get("confidence") or 0)
+        return "matched" if confidence >= 0.70 else "match_review_required"
+    return "new_vendor_review_required"
+
+
+def _vendor_invoice_coding_status(output: dict) -> str:
+    lines = output.get("lines") if isinstance(output.get("lines"), list) else []
+    if not lines:
+        return "needs_review"
+    coded_count = sum(1 for line in lines if isinstance(line, dict) and line.get("account_id"))
+    return "coded" if coded_count == len(lines) else "needs_review"
+
+
+def _vendor_invoice_review_exceptions(output: dict) -> list[dict]:
+    exceptions: list[dict] = []
+    if output.get("possible_duplicate"):
+        exceptions.append(
+            {
+                "code": "possible_duplicate",
+                "severity": "high",
+                "message": "A bill with this vendor invoice number may already exist.",
+            }
+        )
+    if output.get("anomaly_detected"):
+        exceptions.append(
+            {
+                "code": "amount_or_date_anomaly",
+                "severity": "high",
+                "message": "The extracted invoice has an amount, date, or total anomaly.",
+            }
+        )
+    if output.get("suspected_injection"):
+        exceptions.append(
+            {
+                "code": "suspected_prompt_injection",
+                "severity": "critical",
+                "message": "The source document may contain adversarial instructions.",
+            }
+        )
+    for warning in output.get("tax_id_warnings") or []:
+        exceptions.append(
+            {
+                "code": "tax_id_warning",
+                "severity": "medium",
+                "message": str(warning),
+            }
+        )
+    if output.get("match_status") in {"new_vendor_review_required", "match_review_required"}:
+        exceptions.append(
+            {
+                "code": output["match_status"],
+                "severity": "medium",
+                "message": "Vendor match needs human review before bill creation.",
+            }
+        )
+    if output.get("coding_status") == "needs_review":
+        exceptions.append(
+            {
+                "code": "coding_needs_review",
+                "severity": "medium",
+                "message": "One or more invoice lines need GL/account coding review.",
+            }
+        )
+    return exceptions
+
+
 @app.task(name="extract_document_worker", queue="extraction")
 async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
     """Procrastinate task entrypoint for document extraction.
@@ -221,6 +326,8 @@ async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
         output_dict = draft.model_dump(mode="json")
         if doc_type == "engagement_letter":
             output_dict = _normalise_engagement_onboarding_output(output_dict)
+        elif doc_type == "vendor_invoice":
+            output_dict = _normalise_vendor_invoice_output(output_dict, draft)
         await write_agent_suggestion(
             deps=deps,
             agent_name=agent_name,

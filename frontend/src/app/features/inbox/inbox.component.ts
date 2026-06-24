@@ -815,6 +815,30 @@ export class InboxComponent implements OnInit {
       }
       return entries.slice(0, 8);
     }
+    if (task.kind === 'create_bill' || task.kind === 'create_bill_draft' || task.kind === 'vendor_invoice') {
+      const fields = [
+        'vendor_name',
+        'vendor_invoice_number',
+        'total',
+        'currency',
+        'match_status',
+        'coding_status',
+      ];
+      for (const f of fields) {
+        if (p[f] != null) {
+          entries.push({ key: f.replace(/_/g, ' '), value: String(p[f]) });
+        }
+      }
+      const exceptions = Array.isArray(p['review_exceptions']) ? p['review_exceptions'] : [];
+      if (exceptions.length) {
+        const first = exceptions[0] as Record<string, unknown>;
+        entries.push({
+          key: 'exceptions',
+          value: `${exceptions.length}: ${String(first['code'] ?? 'review required')}`,
+        });
+      }
+      return entries.slice(0, 8);
+    }
     if (task.kind === 'copilot_create_finance_ops_action_plan') {
       const preview = p['preview'];
       const source = (

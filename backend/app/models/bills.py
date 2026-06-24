@@ -78,6 +78,8 @@ class BillResponse(BaseModel):
     vendor_invoice_number: str | None
     po_match_status: str = "not_linked"
     po_match_summary: dict[str, object] = Field(default_factory=dict)
+    vendor_invoice_review: dict[str, object] = Field(default_factory=dict)
+    source_document_id: str | None = None
     notes: str | None
     created_at: str
     lines: list[BillLineResponse] = Field(default_factory=list)

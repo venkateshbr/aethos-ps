@@ -13,8 +13,14 @@ logger = logging.getLogger(__name__)
 
 _BILLS_TABLE = "bills"
 _LINES_TABLE = "bill_lines"
-_OPTIONAL_PO_MATCH_FIELDS = frozenset(
-    {"purchase_order_id", "po_match_status", "po_match_summary"}
+_OPTIONAL_BILL_FIELDS = frozenset(
+    {
+        "purchase_order_id",
+        "po_match_status",
+        "po_match_summary",
+        "source_document_id",
+        "vendor_invoice_review",
+    }
 )
 _OPTIONAL_BILL_LINE_FIELDS = frozenset(
     {"is_prepaid", "service_start_date", "service_end_date"}
@@ -83,9 +89,9 @@ class BillsRepository:
                 lambda: self.db.table(_BILLS_TABLE).insert(payload).execute()
             )
         except Exception as exc:
-            if not is_missing_column_error(exc, _OPTIONAL_PO_MATCH_FIELDS):
+            if not is_missing_column_error(exc, _OPTIONAL_BILL_FIELDS):
                 raise
-            fallback_payload = _without_fields(payload, _OPTIONAL_PO_MATCH_FIELDS)
+            fallback_payload = _without_fields(payload, _OPTIONAL_BILL_FIELDS)
             if fallback_payload == payload:
                 raise
             logger.warning(
@@ -110,9 +116,9 @@ class BillsRepository:
                 .execute()
             )
         except Exception as exc:
-            if not is_missing_column_error(exc, _OPTIONAL_PO_MATCH_FIELDS):
+            if not is_missing_column_error(exc, _OPTIONAL_BILL_FIELDS):
                 raise
-            fallback_patch = _without_fields(patch, _OPTIONAL_PO_MATCH_FIELDS)
+            fallback_patch = _without_fields(patch, _OPTIONAL_BILL_FIELDS)
             if fallback_patch == patch:
                 raise
             if not fallback_patch:
