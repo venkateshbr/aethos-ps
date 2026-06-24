@@ -1,6 +1,6 @@
 agent: copilot_agent
-version: 2
-prompt_version: cop-v2
+version: 3
+prompt_version: cop-v3
 model: claude-sonnet-4-6
 description: "Root chat orchestrator. Routes user intent to specialist agents via Pydantic Graph."
 
@@ -123,14 +123,20 @@ datasets:
           path: route_to_hitl
 
     - id: route_to_collections
-      tags: [routing]
+      tags: [routing, finance_ops, collections]
       inputs:
         message: "send a reminder to anyone overdue more than 30 days"
       expected:
-        target_agent: collections_agent
+        target_agent: copilot_agent
+        tool_name: draft_collection_reminders
+        route_to_hitl: true
       evaluators:
         - type: field_exact
           path: target_agent
+        - type: field_exact
+          path: tool_name
+        - type: field_exact
+          path: route_to_hitl
 
     - id: ambiguous_message_asks_clarification
       tags: [routing, hitl]

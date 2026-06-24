@@ -60,6 +60,14 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 15 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
 | 16 | Finance ops manager | Opens `/reports` Action Queue and `/inbox` | Report/action surfaces reflect the operating queues referenced by Copilot; empty domains are shown as explicit empty states, not invented totals |
 
+### §1.5 AI collections reminders through Inbox
+
+| # | Actor | Action | System effect |
+| --- | --- | --- | --- |
+| 17 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
+| 18 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
+| 19 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
+
 ---
 
 ## §2 Variants

@@ -525,13 +525,13 @@ Current implementation assessment:
 
 | Capability | Current implementation | Product gap | Tracking |
 | --- | --- | --- | --- |
-| Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and live E2E coverage | Unified command-center synthesis remains narrower than a full finance department | Parent #259 |
+| Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and #265 command-center synthesis/live E2E coverage | Broader finance-department orchestration remains parent-level depth | #265 / Parent #259 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch | Export/send/settlement remain explicit downstream guarded steps | #262 |
 | AI month-end close controller | Implemented and browser-verified: Copilot routes close preparation to Inbox, then approval runs the close workflow and bootstraps close tasks | Final lock remains separately guarded by readiness | #260 |
 | AI financial statement package | Implemented and browser-verified: Copilot generates a read-only statement package summary from posted journal/report services | Management commentary/variance explanations remain future command-center depth | #261 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | Full PO matching/project coding from document remains broader P2P coverage | #264 |
-| AI collections | Collections agent and email materialisation exist | Copilot workflow and launch scenario coverage remain backlog after core finance ops | Parent #259 |
+| AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 
 ## Scenario 11 - AI Finance Department Command Center
 
@@ -552,8 +552,7 @@ Expected result:
 - The run ledger proves which tools ran and why review was required.
 
 Implementation status:
-- Partially implemented. Read tools, HITL policy, Inbox, ledger, invoice drafting, bill-pay proposal, month-end close preparation, and statement package generation exist.
-- Full finance-department command-center synthesis remains under #259.
+- Implemented under #265 for the daily command-center synthesis. Read tools, HITL policy, Inbox, ledger, invoice drafting, bill-pay proposal, month-end close preparation, statement package generation, and the read-only command-center check exist. Broader autonomous orchestration remains under parent #259.
 
 Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API errors.
 
@@ -689,7 +688,7 @@ Expected result:
 - Rejections are logged for learning/audit.
 
 Implementation status:
-- Backlog under parent #259 after invoice, bill pay, close, and statements.
+- Implemented and browser-verified under #266. Copilot uses `draft_collection_reminders` to discover eligible overdue invoices, create one Inbox `send_email` task per reminder, and record collections-agent read/draft/send ledger steps. Approval materialises through the existing collections email path, with non-deliverable QA recipients recorded as skipped sends; rejection records the correction/audit signal.
 
 Evidence: AR Aging, Inbox reminder, send status, ledger/workflow detail.
 
@@ -759,7 +758,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/multi-tenant-isolation.spec.ts` | Isolation supplement | Use to confirm isolation in addition to manual tenant switch checks |
 | `frontend/e2e/login.spec.ts`, `frontend/e2e/auth-guard.spec.ts`, `frontend/e2e/change-password.spec.ts` | Access supplement | Use for baseline auth/profile checks |
 | `frontend/e2e/copilot-draft-invoice-live.spec.ts` | AI invoice drafting live proof | Uses Copilot chat, Inbox approval, and Invoices UI against the live QA tenant; supplemental to Scenario 13 browser evidence |
-| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, and Bills UI against the live QA tenant for Scenarios 14-16 and 18 |
+| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, and Bills UI against the live QA tenant for Scenarios 14-18 |
 
 ## Verification Matrix
 
@@ -773,7 +772,7 @@ Final verification on 2026-06-24:
 - Timesheet production build: `npx ng build timesheet` passed with existing Sass deprecation warnings.
 - Original launch-gap issue scan before the AI finance-ops expansion returned no open issues. The AI expansion added #258-#264 to track the new agentic finance-department scenarios, implementation slices, and browser QA.
 - AI invoice live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-draft-invoice-live.spec.ts --project=chromium --reporter=list` passed after the Copilot draft-invoice implementation.
-- AI finance-ops live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `5 passed (1.0m)`.
+- AI finance-ops live proof: `AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `7 passed (1.9m)`.
 - QA database schema was brought current through Supabase migrations `0065`-`0083`; migrations `0068`, `0075`, and `0076` were aligned to the existing `public.is_tenant_member(auth.uid(), tenant_id)` RLS helper before push.
 
 Implemented during this validation pass:

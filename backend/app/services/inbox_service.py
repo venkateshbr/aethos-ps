@@ -94,6 +94,7 @@ class InboxService:
             entity_id=entity.get("entity_id"),
             entity_type=entity.get("entity_type"),
             message=f"Task {task_id} approved and materialised as {entity.get('entity_type', kind)}",
+            materialisation=entity,
         )
 
     async def approve_with_edits(
@@ -127,6 +128,7 @@ class InboxService:
             entity_id=entity.get("entity_id"),
             entity_type=entity.get("entity_type"),
             message=f"Task {task_id} approved with edits and materialised as {entity.get('entity_type', kind)}",
+            materialisation=entity,
         )
 
     async def reject(self, task_id: str, reason: str, user_id: str) -> RejectResponse:

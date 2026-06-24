@@ -306,6 +306,50 @@ async def test_bill_pay_policy_suppresses_duplicate_review_task(
 
 
 @pytest.mark.asyncio
+async def test_collections_policy_routes_to_collections_inbox_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_money_in_requires_human_review",
+            user_role=UserRole.manager,
+            minimum_role=UserRole.manager,
+            autonomy_level=2,
+        )
+    )
+    agent._draft_collection_reminders = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "requires_review": True,
+            "target_agent": "collections_agent",
+            "action_type": "send_email",
+            "created_review_tasks": 2,
+        }
+    )
+    write_suggestion = AsyncMock(return_value={"id": "sug-should-not-exist"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "draft_collection_reminders",
+        {"minimum_days_overdue": 30},
+    )
+
+    assert result["requires_review"] is True
+    assert result["target_agent"] == "collections_agent"
+    assert result["action_type"] == "send_email"
+    assert result["created_review_tasks"] == 2
+    agent._draft_collection_reminders.assert_awaited_once_with(
+        {"minimum_days_overdue": 30}
+    )
+    write_suggestion.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_month_end_close_policy_routes_to_hitl_with_review_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

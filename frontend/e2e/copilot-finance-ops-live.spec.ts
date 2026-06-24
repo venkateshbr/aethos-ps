@@ -1,15 +1,16 @@
 /**
- * Live Copilot finance-ops verification for #260, #261, #262, #264, and #265.
+ * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, and #266.
  *
  * Browser flows:
  * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
+ * - Copilot chat -> collections reminders -> Inbox approval -> email send materialisation.
  * - Copilot chat -> bill-pay proposal -> Inbox approval -> payment batch.
  * - Copilot chat -> month-end close review -> Inbox approval -> close tasks UI.
  * - Copilot chat -> financial statement package tool -> Reports UI.
  * - Copilot document upload -> extraction Inbox task -> approval -> Bills UI.
  */
 
-import { test, expect, APIRequestContext, APIResponse, Page } from '@playwright/test';
+import { test, expect, APIRequestContext, APIResponse, Locator, Page } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -26,13 +27,23 @@ type AuthContext = { token: string; tenantId: string; userId: string };
 type LoginCredentials = { email: string; password: string };
 type SupabaseAdminConfig = { url: string; serviceRoleKey: string };
 type ClientRow = { id: string; name: string };
+type EngagementRow = { id: string; name: string };
+type InvoiceRow = {
+  id: string;
+  invoice_number?: string;
+  status?: string;
+  total?: string;
+  currency?: string;
+};
 type BillRow = { id: string; bill_number?: string; status?: string; total?: string };
 type HitlTaskRow = {
   id: string;
   title: string;
   kind: string;
   payload?: Record<string, unknown>;
+  agent_suggestion_id?: string;
 };
+type SuggestionRow = { id: string; status: string };
 type BatchItemRow = { batch_id: string; bill_id: string };
 type BatchRow = { id: string; status: string; total: string | number; currency: string };
 type DocumentRow = { id: string; status: string; original_filename: string };
@@ -80,6 +91,14 @@ function parseJwtSub(token: string): string {
   } catch {
     return '';
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function expectSummaryEntry(card: Locator, key: string, value: string): Promise<void> {
+  await expect(card.getByText(new RegExp(`${escapeRegExp(key)}:\\s*${escapeRegExp(value)}`))).toBeVisible();
 }
 
 function getAuthFromStorage(): AuthContext | null {
@@ -156,6 +175,22 @@ async function restSelect<T>(
     timeout: API_REQUEST_TIMEOUT,
   });
   await expectOk(resp, `select ${table}`);
+  return await resp.json() as T[];
+}
+
+async function restPatch<T>(
+  request: APIRequestContext,
+  config: SupabaseAdminConfig,
+  table: string,
+  params: Record<string, string>,
+  payload: Record<string, unknown>,
+): Promise<T[]> {
+  const resp = await request.patch(restUrl(config, table, params), {
+    headers: supabaseAdminHeaders(config, { Prefer: 'return=representation' }),
+    data: payload,
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(resp, `patch ${table}`);
   return await resp.json() as T[];
 }
 
@@ -244,6 +279,112 @@ async function createApprovedVendorBill(
   return { vendor, bill, amount };
 }
 
+async function createOverdueCustomerInvoice(
+  request: APIRequestContext,
+  auth: AuthContext,
+  config: SupabaseAdminConfig,
+): Promise<{ client: ClientRow; engagement: EngagementRow; invoice: InvoiceRow; recipient: string }> {
+  const suffix = randomUUID().slice(0, 8);
+  const amount = '1250.00';
+  const recipient = `collections-${suffix}@aethos-qa.dev`;
+  const clientName = `Copilot Collections Customer ${suffix} [E2E]`;
+  const clientResp = await request.post(`${API}/api/v1/clients`, {
+    headers: apiHeaders(auth),
+    data: {
+      name: clientName,
+      legal_name: clientName,
+      kind: 'customer',
+      email: recipient,
+      billing_address: { email: recipient },
+      payment_terms_days: 30,
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(clientResp, 'create collections customer');
+  const client = await clientResp.json() as ClientRow;
+
+  const engagementResp = await request.post(`${API}/api/v1/engagements`, {
+    headers: apiHeaders(auth),
+    data: {
+      client_id: client.id,
+      name: `Collections Advisory ${suffix}`,
+      billing_arrangement: 'fixed_fee',
+      currency: 'USD',
+      total_value: amount,
+      service_line: 'accounting',
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(engagementResp, 'create collections engagement');
+  const engagement = await engagementResp.json() as EngagementRow;
+
+  const invoiceResp = await request.post(`${API}/api/v1/invoices`, {
+    headers: apiHeaders(auth),
+    data: {
+      engagement_id: engagement.id,
+      client_id: client.id,
+      issue_date: '2025-01-01',
+      due_date: '2025-01-15',
+      currency: 'USD',
+      lines: [
+        {
+          description: 'Overdue collections proof invoice',
+          quantity: '1',
+          unit_price: amount,
+        },
+      ],
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(invoiceResp, 'create overdue collections invoice');
+  const invoice = await invoiceResp.json() as InvoiceRow;
+
+  const patched = await restPatch<InvoiceRow>(request, config, 'invoices', {
+    id: `eq.${invoice.id}`,
+    tenant_id: `eq.${auth.tenantId}`,
+  }, {
+    status: 'sent',
+    sent_at: new Date().toISOString(),
+  });
+  return { client, engagement, invoice: patched[0] ?? invoice, recipient };
+}
+
+async function createAdditionalOverdueInvoice(
+  request: APIRequestContext,
+  auth: AuthContext,
+  config: SupabaseAdminConfig,
+  seed: { client: ClientRow; engagement: EngagementRow },
+): Promise<InvoiceRow> {
+  const invoiceResp = await request.post(`${API}/api/v1/invoices`, {
+    headers: apiHeaders(auth),
+    data: {
+      engagement_id: seed.engagement.id,
+      client_id: seed.client.id,
+      issue_date: '2025-01-02',
+      due_date: '2025-01-16',
+      currency: 'USD',
+      lines: [
+        {
+          description: 'Second overdue collections proof invoice',
+          quantity: '1',
+          unit_price: '990.00',
+        },
+      ],
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(invoiceResp, 'create second overdue collections invoice');
+  const invoice = await invoiceResp.json() as InvoiceRow;
+  const patched = await restPatch<InvoiceRow>(request, config, 'invoices', {
+    id: `eq.${invoice.id}`,
+    tenant_id: `eq.${auth.tenantId}`,
+  }, {
+    status: 'sent',
+    sent_at: new Date().toISOString(),
+  });
+  return patched[0] ?? invoice;
+}
+
 async function listOpenTasks(
   request: APIRequestContext,
   config: SupabaseAdminConfig,
@@ -251,7 +392,7 @@ async function listOpenTasks(
   kind: string,
 ): Promise<HitlTaskRow[]> {
   return await restSelect<HitlTaskRow>(request, config, 'hitl_tasks', {
-    select: 'id,title,kind,payload,created_at',
+    select: 'id,title,kind,payload,agent_suggestion_id,created_at',
     tenant_id: `eq.${tenantId}`,
     kind: `eq.${kind}`,
     status: 'eq.open',
@@ -321,7 +462,7 @@ async function findBillBySourceDocument(
   return rows[0] ?? null;
 }
 
-test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265)', () => {
+test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266)', () => {
   test.use({ storageState: STORAGE_PATH });
 
   test.beforeEach(() => {
@@ -380,6 +521,125 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265)', () =>
 
     await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('drafts collections reminders through Copilot, Inbox approval, and rejection (#266)', async ({ page, request }) => {
+    test.setTimeout(300_000);
+    const auth = getAuthFromStorage();
+    const config = supabaseAdminConfig();
+    test.skip(!auth || !config, 'auth or Supabase admin config missing');
+
+    const seed = await createOverdueCustomerInvoice(request, auth!, config!);
+    const secondInvoice = await createAdditionalOverdueInvoice(request, auth!, config!, seed);
+    const targetInvoiceIds = new Set([seed.invoice.id, secondInvoice.id]);
+    const startedAt = new Date(Date.now() - 5_000).toISOString();
+
+    await sendCopilotPrompt(page, [
+      'Draft collections reminders for invoices more than 30 days overdue.',
+      'Use the draft_collection_reminders tool with minimum_days_overdue 30 and limit 10.',
+      `Set client_name to "${seed.client.name}" so only this E2E customer is considered.`,
+      'Create Inbox review tasks only. Do not send any email without review.',
+    ].join(' '));
+
+    let tasks: HitlTaskRow[] = [];
+    await expect
+      .poll(async () => {
+        const rows = await listOpenTasks(request, config!, auth!.tenantId, 'send_email');
+        tasks = rows.filter((task) => targetInvoiceIds.has(String(payloadObject(task)['invoice_id'] ?? '')));
+        return tasks.length;
+      }, {
+        timeout: 150_000,
+        message: 'Copilot should create collections send_email Inbox tasks for both seed invoices',
+      })
+      .toBeGreaterThanOrEqual(2);
+
+    await expect
+      .poll(async () => {
+        const rows = await restSelect<ToolInvocationRow>(request, config!, 'agent_tool_invocations', {
+          select: 'id,tool_name,status,input_snapshot,output_snapshot,created_at',
+          tenant_id: `eq.${auth!.tenantId}`,
+          tool_name: 'eq.draft_collection_reminders',
+          created_at: `gte.${startedAt}`,
+          order: 'created_at.desc',
+          limit: '10',
+        });
+        const match = rows.find((row) =>
+          row.status === 'skipped'
+          && Number(row.output_snapshot?.['created_review_tasks'] ?? 0) >= 2
+        );
+        return match?.id ?? '';
+      }, {
+        timeout: 60_000,
+        message: 'Copilot ledger should record the collections tool as review-routed',
+      })
+      .not.toBe('');
+
+    await expect
+      .poll(async () => {
+        const rows = await restSelect<ToolInvocationRow>(request, config!, 'agent_tool_invocations', {
+          select: 'id,tool_name,status,input_snapshot,output_snapshot,created_at',
+          tenant_id: `eq.${auth!.tenantId}`,
+          tool_name: 'eq.send_email',
+          created_at: `gte.${startedAt}`,
+          order: 'created_at.desc',
+          limit: '10',
+        });
+        const match = rows.find((row) =>
+          row.status === 'skipped'
+          && Number(row.output_snapshot?.['review_tasks_created'] ?? 0) >= 2
+        );
+        return match?.id ?? '';
+      }, {
+        timeout: 60_000,
+        message: 'Collections-agent ledger should record send_email as skipped pending Inbox approval',
+      })
+      .not.toBe('');
+
+    await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+    const approveTask = tasks[0];
+    const rejectTask = tasks[1];
+    const approvePayload = payloadObject(approveTask);
+    const approveCard = page.locator(`#task-${approveTask.id}`);
+    await expect(approveCard).toBeVisible({ timeout: 30_000 });
+    await expectSummaryEntry(approveCard, 'invoice number', String(approvePayload['invoice_number']));
+    await expectSummaryEntry(approveCard, 'client name', seed.client.name);
+    await expectSummaryEntry(approveCard, 'client email', seed.recipient);
+    await expect(approveCard.getByText(/tone:\s*(final|firm|gentle)/i)).toBeVisible();
+    await expectSummaryEntry(approveCard, 'subject', String(approvePayload['subject']));
+    await expectSummaryEntry(approveCard, 'body preview', String(approvePayload['body_preview']).slice(0, 40));
+
+    const approveResp = await request.post(`${API}/api/v1/inbox/tasks/${approveTask.id}/approve`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(approveResp, 'approve collections reminder');
+    const approved = await approveResp.json() as { materialisation?: Record<string, unknown> };
+    expect(approved.materialisation?.['entity_type']).toBe('collections_email');
+    expect(approved.materialisation?.['entity_id']).toBe(String(approvePayload['invoice_id']));
+    expect(['sent', 'skipped']).toContain(String(approved.materialisation?.['send_status']));
+
+    const rejectResp = await request.post(`${API}/api/v1/inbox/tasks/${rejectTask.id}/reject`, {
+      headers: apiHeaders(auth!),
+      data: { reason: 'E2E collections rejection proof' },
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(rejectResp, 'reject collections reminder');
+
+    const approvedSuggestion = await restSelect<SuggestionRow>(request, config!, 'agent_suggestions', {
+      select: 'id,status',
+      tenant_id: `eq.${auth!.tenantId}`,
+      id: `eq.${approveTask.agent_suggestion_id}`,
+      limit: '1',
+    });
+    const rejectedSuggestion = await restSelect<SuggestionRow>(request, config!, 'agent_suggestions', {
+      select: 'id,status',
+      tenant_id: `eq.${auth!.tenantId}`,
+      id: `eq.${rejectTask.agent_suggestion_id}`,
+      limit: '1',
+    });
+    expect(approvedSuggestion[0]?.status).toBe('approved');
+    expect(rejectedSuggestion[0]?.status).toBe('rejected');
   });
 
   test('proposes bill pay through Copilot, Inbox approval, and payment batch UI (#262)', async ({ page, request }) => {

@@ -47,6 +47,7 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     AgentToolDefinition("copilot_agent", "get_ap_aging", "read_only"),
     AgentToolDefinition("copilot_agent", "get_wip", "read_only"),
     AgentToolDefinition("copilot_agent", "run_finance_ops_check", "read_only"),
+    AgentToolDefinition("copilot_agent", "draft_collection_reminders", "write_money_in"),
     AgentToolDefinition("copilot_agent", "log_time_entry", "write_low_risk"),
     AgentToolDefinition("copilot_agent", "update_rate_card", "write_money_in"),
     AgentToolDefinition("copilot_agent", "draft_invoice", "write_money_in"),
@@ -78,6 +79,8 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     _persisted_action("vendor_invoice_agent", "create_bill_draft", "draft"),
     _persisted_action("invoice_drafter_agent", "draft_invoice", "write_money_in"),
     _persisted_action("billing_run_agent", "approve_billing_run", "write_money_in"),
+    _persisted_action("collections_agent", "find_overdue_invoices", "read_only"),
+    _persisted_action("collections_agent", "draft_collection_email", "draft"),
     _persisted_action("collections_agent", "send_email", "write_money_in"),
     _persisted_action(
         "time_entry_agent",
