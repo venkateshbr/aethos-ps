@@ -1,8 +1,9 @@
 /**
- * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, #266, and #267.
+ * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, #266, #267, and #272.
  *
  * Browser flows:
  * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
+ * - Copilot chat -> finance-ops action plan -> Inbox approval -> ledger evidence.
  * - Copilot chat -> collections reminders -> Inbox approval -> email send materialisation.
  * - Copilot chat -> bill-pay proposal -> Inbox approval -> payment batch.
  * - Copilot chat -> month-end close review -> Inbox approval -> close tasks UI.
@@ -23,6 +24,7 @@ const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const API_REQUEST_TIMEOUT = 90_000;
 const CLOSE_PERIOD = '2026-06';
+const TRANSIENT_REST_ERROR = /(ETIMEDOUT|ECONNRESET|EAI_AGAIN|network|timeout)/i;
 
 type AuthContext = { token: string; tenantId: string; userId: string };
 type LoginCredentials = { email: string; password: string };
@@ -73,6 +75,7 @@ type DocumentRow = {
 type ToolInvocationRow = {
   id: string;
   tool_name: string;
+  risk_class?: string;
   status: string;
   input_snapshot?: Record<string, unknown>;
   output_snapshot?: Record<string, unknown>;
@@ -187,16 +190,60 @@ async function expectOk(resp: APIResponse, context: string): Promise<void> {
   throw new Error(`${context} failed: HTTP ${resp.status()} ${body.slice(0, 500)}`);
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTransientRestRetry<T>(
+  context: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      if (!TRANSIENT_REST_ERROR.test(String(err)) || attempt === 3) break;
+      await delay(attempt * 1000);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${context} failed`);
+}
+
+async function withTransientApiRetry(
+  context: string,
+  operation: () => Promise<APIResponse>,
+): Promise<APIResponse> {
+  let lastResponse: APIResponse | null = null;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await operation();
+      if (response.ok() || response.status() < 500) return response;
+      lastResponse = response;
+    } catch (err) {
+      lastError = err;
+      if (!TRANSIENT_REST_ERROR.test(String(err)) && attempt === 3) break;
+    }
+    if (attempt < 3) await delay(attempt * 1000);
+  }
+  if (lastResponse) return lastResponse;
+  throw lastError instanceof Error ? lastError : new Error(`${context} failed`);
+}
+
 async function restSelect<T>(
   request: APIRequestContext,
   config: SupabaseAdminConfig,
   table: string,
   params: Record<string, string>,
 ): Promise<T[]> {
-  const resp = await request.get(restUrl(config, table, params), {
-    headers: supabaseAdminHeaders(config),
-    timeout: API_REQUEST_TIMEOUT,
-  });
+  const resp = await withTransientRestRetry(`select ${table}`, async () => (
+    await request.get(restUrl(config, table, params), {
+      headers: supabaseAdminHeaders(config),
+      timeout: API_REQUEST_TIMEOUT,
+    })
+  ));
   await expectOk(resp, `select ${table}`);
   return await resp.json() as T[];
 }
@@ -208,11 +255,13 @@ async function restPatch<T>(
   params: Record<string, string>,
   payload: Record<string, unknown>,
 ): Promise<T[]> {
-  const resp = await request.patch(restUrl(config, table, params), {
-    headers: supabaseAdminHeaders(config, { Prefer: 'return=representation' }),
-    data: payload,
-    timeout: API_REQUEST_TIMEOUT,
-  });
+  const resp = await withTransientRestRetry(`patch ${table}`, async () => (
+    await request.patch(restUrl(config, table, params), {
+      headers: supabaseAdminHeaders(config, { Prefer: 'return=representation' }),
+      data: payload,
+      timeout: API_REQUEST_TIMEOUT,
+    })
+  ));
   await expectOk(resp, `patch ${table}`);
   return await resp.json() as T[];
 }
@@ -243,13 +292,34 @@ async function sendCopilotPrompt(page: Page, prompt: string): Promise<void> {
   await page.getByRole('button', { name: /send message/i }).click();
 }
 
-async function approveInboxTask(page: Page, taskId: string): Promise<void> {
+async function openInboxWithRetry(page: Page): Promise<void> {
   await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const retry = page.getByRole('button', { name: /^retry$/i });
+    const hasRetry = await retry.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!hasRetry) return;
+    await retry.click();
+    await expect(retry).toBeHidden({ timeout: 30_000 }).catch(() => undefined);
+    if (!(await retry.isVisible({ timeout: 500 }).catch(() => false))) return;
+    await delay(attempt * 1000);
+  }
+  throw new Error('Inbox did not load after retries');
+}
+
+async function approveInboxTask(
+  page: Page,
+  taskId: string,
+  filterLabel?: string,
+): Promise<void> {
+  await openInboxWithRetry(page);
+  if (filterLabel) {
+    await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(filterLabel)}$`, 'i') }).click();
+  }
   const taskCard = page.locator(`#task-${taskId}`);
   await expect(taskCard).toBeVisible({ timeout: 30_000 });
   await taskCard.getByRole('button', { name: /^approve/i }).click();
-  await expect(taskCard).toBeHidden({ timeout: 45_000 });
+  await expect(taskCard).toBeHidden({ timeout: 120_000 });
 }
 
 async function createApprovedVendorBill(
@@ -259,7 +329,7 @@ async function createApprovedVendorBill(
   const suffix = randomUUID().slice(0, 8);
   const amount = '432.10';
   const vendorName = `Copilot Bill Pay Vendor ${suffix} [E2E]`;
-  const clientResp = await request.post(`${API}/api/v1/clients`, {
+  const clientResp = await withTransientApiRetry('create bill-pay vendor', async () => request.post(`${API}/api/v1/clients`, {
     headers: apiHeaders(auth),
     data: {
       name: vendorName,
@@ -268,11 +338,11 @@ async function createApprovedVendorBill(
       currency: 'USD',
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(clientResp, 'create bill-pay vendor');
   const vendor = await clientResp.json() as ClientRow;
 
-  const billResp = await request.post(`${API}/api/v1/bills`, {
+  const billResp = await withTransientApiRetry('create bill-pay bill', async () => request.post(`${API}/api/v1/bills`, {
     headers: apiHeaders(auth),
     data: {
       client_id: vendor.id,
@@ -290,14 +360,14 @@ async function createApprovedVendorBill(
       ],
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(billResp, 'create bill-pay bill');
   const bill = await billResp.json() as BillRow;
 
-  const approveResp = await request.patch(`${API}/api/v1/bills/${bill.id}/approve`, {
+  const approveResp = await withTransientApiRetry('approve bill-pay bill', async () => request.patch(`${API}/api/v1/bills/${bill.id}/approve`, {
     headers: apiHeaders(auth),
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(approveResp, 'approve bill-pay bill');
   return { vendor, bill, amount };
 }
@@ -311,7 +381,7 @@ async function createOverdueCustomerInvoice(
   const amount = '1250.00';
   const recipient = `collections-${suffix}@aethos-qa.dev`;
   const clientName = `Copilot Collections Customer ${suffix} [E2E]`;
-  const clientResp = await request.post(`${API}/api/v1/clients`, {
+  const clientResp = await withTransientApiRetry('create collections customer', async () => request.post(`${API}/api/v1/clients`, {
     headers: apiHeaders(auth),
     data: {
       name: clientName,
@@ -322,11 +392,11 @@ async function createOverdueCustomerInvoice(
       payment_terms_days: 30,
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(clientResp, 'create collections customer');
   const client = await clientResp.json() as ClientRow;
 
-  const engagementResp = await request.post(`${API}/api/v1/engagements`, {
+  const engagementResp = await withTransientApiRetry('create collections engagement', async () => request.post(`${API}/api/v1/engagements`, {
     headers: apiHeaders(auth),
     data: {
       client_id: client.id,
@@ -337,11 +407,11 @@ async function createOverdueCustomerInvoice(
       service_line: 'accounting',
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(engagementResp, 'create collections engagement');
   const engagement = await engagementResp.json() as EngagementRow;
 
-  const invoiceResp = await request.post(`${API}/api/v1/invoices`, {
+  const invoiceResp = await withTransientApiRetry('create overdue collections invoice', async () => request.post(`${API}/api/v1/invoices`, {
     headers: apiHeaders(auth),
     data: {
       engagement_id: engagement.id,
@@ -358,7 +428,7 @@ async function createOverdueCustomerInvoice(
       ],
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(invoiceResp, 'create overdue collections invoice');
   const invoice = await invoiceResp.json() as InvoiceRow;
 
@@ -378,7 +448,7 @@ async function createAdditionalOverdueInvoice(
   config: SupabaseAdminConfig,
   seed: { client: ClientRow; engagement: EngagementRow },
 ): Promise<InvoiceRow> {
-  const invoiceResp = await request.post(`${API}/api/v1/invoices`, {
+  const invoiceResp = await withTransientApiRetry('create second overdue collections invoice', async () => request.post(`${API}/api/v1/invoices`, {
     headers: apiHeaders(auth),
     data: {
       engagement_id: seed.engagement.id,
@@ -395,7 +465,7 @@ async function createAdditionalOverdueInvoice(
       ],
     },
     timeout: API_REQUEST_TIMEOUT,
-  });
+  }));
   await expectOk(invoiceResp, 'create second overdue collections invoice');
   const invoice = await invoiceResp.json() as InvoiceRow;
   const patched = await restPatch<InvoiceRow>(request, config, 'invoices', {
@@ -533,7 +603,7 @@ async function findBillBySourceDocument(
   return rows[0] ?? null;
 }
 
-test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #267)', () => {
+test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #267 #272)', () => {
   test.use({ storageState: STORAGE_PATH });
 
   test.beforeEach(() => {
@@ -590,8 +660,115 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await page.getByRole('tab', { name: /action queue/i }).click();
     await expect(page.getByRole('button', { name: /finance/i })).toBeVisible({ timeout: 30_000 });
 
-    await page.goto(`${BASE}/app/inbox`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+    await openInboxWithRetry(page);
+  });
+
+  test('creates finance ops action plan through Copilot and Inbox approval (#272)', async ({ page, request }) => {
+    test.setTimeout(300_000);
+    const auth = getAuthFromStorage();
+    const config = supabaseAdminConfig();
+    test.skip(!auth || !config, 'auth or Supabase admin config missing');
+
+    await createApprovedVendorBill(request, auth!);
+    await createOverdueCustomerInvoice(request, auth!, config!);
+    const startedAt = new Date(Date.now() - 5_000).toISOString();
+
+    await sendCopilotPrompt(page, [
+      `Create the next recommended finance ops work items for ${CLOSE_PERIOD}.`,
+      'Use the create_finance_ops_action_plan tool with limit 5.',
+      'Route the manager action plan to Inbox for review.',
+      'Do not approve invoices, payments, journals, or emails directly.',
+    ].join(' '));
+
+    let suggestionId = '';
+    let taskId = '';
+    await expect
+      .poll(async () => {
+        const tasks = await listOpenTasks(
+          request,
+          config!,
+          auth!.tenantId,
+          'copilot_create_finance_ops_action_plan',
+        );
+        const match = tasks.find((candidate) => {
+          const payload = payloadObject(candidate);
+          const preview = payload['preview'] as Record<string, unknown> | undefined;
+          const actionItems = payload['action_items'];
+          return payload['finance_ops_action_plan'] === true
+            && payload['period'] === CLOSE_PERIOD
+            && Array.isArray(actionItems)
+            && actionItems.length >= 1
+            && typeof preview === 'object'
+            && preview?.['status'] === 'ready_for_review';
+        });
+        taskId = match?.id ?? '';
+        suggestionId = match?.agent_suggestion_id ?? '';
+        return taskId;
+      }, {
+        timeout: 150_000,
+        message: 'Copilot should create a finance ops action-plan Inbox task',
+      })
+      .not.toBe('');
+
+    const tasks = await listOpenTasks(
+      request,
+      config!,
+      auth!.tenantId,
+      'copilot_create_finance_ops_action_plan',
+    );
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    expect(task).toBeTruthy();
+    const payload = payloadObject(task!);
+    const actionItems = payload['action_items'] as Array<Record<string, unknown>>;
+    expect(actionItems.some((item) => item['suggested_tool'] === 'send_email'
+      || item['suggested_tool'] === 'propose_bill_payment_batch')).toBeTruthy();
+    expect(actionItems.every((item) => item['requires_inbox_approval'] === true)).toBeTruthy();
+
+    await openInboxWithRetry(page);
+    const card = page.locator(`#task-${taskId}`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expectSummaryEntry(card, 'period', CLOSE_PERIOD);
+    await expectSummaryEntry(card, 'status', 'ready_for_review');
+    await expect(card.getByRole('button', { name: /^edit/i })).toHaveCount(0);
+    await card.getByRole('button', { name: /^approve/i }).click();
+    await expect(card).toBeHidden({ timeout: 45_000 });
+
+    await expect
+      .poll(async () => {
+        const suggestions = await restSelect<SuggestionRow>(request, config!, 'agent_suggestions', {
+          select: 'id,status',
+          tenant_id: `eq.${auth!.tenantId}`,
+          id: `eq.${suggestionId}`,
+          limit: '1',
+        });
+        return suggestions[0]?.status ?? '';
+      }, {
+        timeout: 45_000,
+        message: 'approved action plan should mark its suggestion approved',
+      })
+      .toBe('approved');
+
+    await expect
+      .poll(async () => {
+        const rows = await restSelect<ToolInvocationRow>(request, config!, 'agent_tool_invocations', {
+          select: 'id,tool_name,risk_class,status,input_snapshot,output_snapshot,created_at',
+          tenant_id: `eq.${auth!.tenantId}`,
+          tool_name: 'eq.create_finance_ops_action_plan',
+          created_at: `gte.${startedAt}`,
+          order: 'created_at.desc',
+          limit: '10',
+        });
+        const match = rows.find((row) => row.status === 'skipped'
+          && row.risk_class === 'draft'
+          && row.input_snapshot?.['period'] === CLOSE_PERIOD
+          && row.output_snapshot?.['action_type'] === 'copilot_create_finance_ops_action_plan'
+          && typeof row.output_snapshot?.['suggestion_id'] === 'string');
+        return match?.id ?? '';
+      }, {
+        timeout: 90_000,
+        message: 'action-plan tool invocation should be recorded as review-gated',
+      })
+      .not.toBe('');
   });
 
   test('drafts collections reminders through Copilot, Inbox approval, and rejection (#266)', async ({ page, request }) => {
@@ -680,21 +857,21 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await expectSummaryEntry(approveCard, 'subject', String(approvePayload['subject']));
     await expectSummaryEntry(approveCard, 'body preview', String(approvePayload['body_preview']).slice(0, 40));
 
-    const approveResp = await request.post(`${API}/api/v1/inbox/tasks/${approveTask.id}/approve`, {
+    const approveResp = await withTransientApiRetry('approve collections reminder', async () => request.post(`${API}/api/v1/inbox/tasks/${approveTask.id}/approve`, {
       headers: apiHeaders(auth!),
       timeout: API_REQUEST_TIMEOUT,
-    });
+    }));
     await expectOk(approveResp, 'approve collections reminder');
     const approved = await approveResp.json() as { materialisation?: Record<string, unknown> };
     expect(approved.materialisation?.['entity_type']).toBe('collections_email');
     expect(approved.materialisation?.['entity_id']).toBe(String(approvePayload['invoice_id']));
     expect(['sent', 'skipped']).toContain(String(approved.materialisation?.['send_status']));
 
-    const rejectResp = await request.post(`${API}/api/v1/inbox/tasks/${rejectTask.id}/reject`, {
+    const rejectResp = await withTransientApiRetry('reject collections reminder', async () => request.post(`${API}/api/v1/inbox/tasks/${rejectTask.id}/reject`, {
       headers: apiHeaders(auth!),
       data: { reason: 'E2E collections rejection proof' },
       timeout: API_REQUEST_TIMEOUT,
-    });
+    }));
     await expectOk(rejectResp, 'reject collections reminder');
 
     const approvedSuggestion = await restSelect<SuggestionRow>(request, config!, 'agent_suggestions', {
@@ -753,7 +930,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       })
       .not.toBe('');
 
-    await approveInboxTask(page, taskId);
+    await approveInboxTask(page, taskId, 'Payments');
 
     let batch: BatchRow | null = null;
     await expect
@@ -803,14 +980,14 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       })
       .not.toBe('');
 
-    await approveInboxTask(page, taskId);
+    await approveInboxTask(page, taskId, 'Close');
 
     await expect
       .poll(async () => {
-        const resp = await request.get(`${API}/api/v1/accounting/periods/${CLOSE_PERIOD}/close-tasks`, {
+        const resp = await withTransientApiRetry('list close tasks', async () => request.get(`${API}/api/v1/accounting/periods/${CLOSE_PERIOD}/close-tasks`, {
           headers: apiHeaders(auth!),
           timeout: API_REQUEST_TIMEOUT,
-        });
+        }));
         await expectOk(resp, 'list close tasks');
         const data = await resp.json() as { tasks?: unknown[] };
         return data.tasks?.length ?? 0;
@@ -1043,11 +1220,11 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       first_project_description: scopeSummary,
       scope_summary: scopeSummary,
     };
-    const approveResp = await request.post(`${API}/api/v1/inbox/tasks/${task!.id}/approve-with-edits`, {
+    const approveResp = await withTransientApiRetry('approve engagement onboarding with edits', async () => request.post(`${API}/api/v1/inbox/tasks/${task!.id}/approve-with-edits`, {
       headers: apiHeaders(auth!),
       data: { corrected_payload: correctedPayload },
       timeout: API_REQUEST_TIMEOUT,
-    });
+    }));
     await expectOk(approveResp, 'approve engagement onboarding with edits');
     const approved = await approveResp.json() as { materialisation?: Record<string, unknown> };
     const materialisation = approved.materialisation ?? {};

@@ -398,6 +398,73 @@ async def test_month_end_close_policy_routes_to_hitl_with_review_payload(
 
 
 @pytest.mark.asyncio
+async def test_finance_ops_action_plan_policy_routes_to_hitl_with_plan_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="draft_tool_requires_human_review",
+            user_role=UserRole.admin,
+            minimum_role=UserRole.member,
+            autonomy_level=2,
+        )
+    )
+    plan_payload = {
+        "finance_ops_action_plan": True,
+        "plan_id": "finance-ops-plan-1",
+        "period": "2026-06",
+        "action_count": 2,
+        "requires_inbox_approval_count": 2,
+        "action_items": [
+            {
+                "domain": "ar",
+                "recommendation": "Draft reminders.",
+                "suggested_tool": "send_email",
+                "risk_class": "write_money_in",
+                "requires_inbox_approval": True,
+                "rationale": "AR aging total is 1000.00.",
+                "review_path": "/app/inbox",
+            }
+        ],
+        "preview": {
+            "period": "2026-06",
+            "status": "ready_for_review",
+            "action_count": 2,
+            "requires_inbox_approval_count": 2,
+            "domains": "ar, wip",
+        },
+    }
+    agent._build_finance_ops_action_plan_payload = AsyncMock(  # type: ignore[method-assign]
+        return_value=plan_payload
+    )
+    agent._execute_tool = AsyncMock(return_value={"should_not_execute": True})
+    write_suggestion = AsyncMock(return_value={"id": "sug-plan-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "create_finance_ops_action_plan",
+        {"period": "2026-06", "limit": 5},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-plan-1"
+    assert result["action_type"] == "copilot_create_finance_ops_action_plan"
+    assert result["risk_class"] == "draft"
+    agent._execute_tool.assert_not_awaited()
+    suggestion_kwargs = write_suggestion.await_args.kwargs
+    assert suggestion_kwargs["action_type"] == "copilot_create_finance_ops_action_plan"
+    assert suggestion_kwargs["output"]["tool_name"] == "create_finance_ops_action_plan"
+    assert suggestion_kwargs["output"]["finance_ops_action_plan"] is True
+    assert suggestion_kwargs["output"]["preview"] == plan_payload["preview"]
+
+
+@pytest.mark.asyncio
 async def test_policy_denial_returns_structured_error() -> None:
     agent = _make_agent()
     agent.tool_policy = _StaticPolicy(
@@ -521,6 +588,38 @@ async def test_inbox_materialises_copilot_month_end_close(
         "prepare_month_end_close",
         {"period": "2026-06"},
     )
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_copilot_finance_ops_action_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(return_value={"should_not_execute": True})
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "tool_name": "create_finance_ops_action_plan",
+            "tool_input": {"period": "2026-06"},
+            "requested_by_user_id": "user-1",
+            "plan_id": "finance-ops-plan-1",
+            "action_count": 3,
+            "approval_effect": "Approval records manager review only.",
+        }
+    )
+
+    assert result == {
+        "entity_type": "finance_ops_action_plan",
+        "entity_id": "finance-ops-plan-1",
+        "action_count": 3,
+        "approval_effect": "Approval records manager review only.",
+    }
+    execute_tool.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -58,15 +58,16 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | --- | --- | --- | --- |
 | 14 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
 | 15 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
-| 16 | Finance ops manager | Opens `/reports` Action Queue and `/inbox` | Report/action surfaces reflect the operating queues referenced by Copilot; empty domains are shown as explicit empty states, not invented totals |
+| 16 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
+| 17 | Finance ops manager | Approves the action-plan task, then opens `/reports` Action Queue and `/inbox` | Approval records manager review only; invoices, payments, journals, and emails remain behind their specialist approval flows; empty domains are shown as explicit empty states, not invented totals |
 
 ### §1.5 AI collections reminders through Inbox
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 17 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
-| 18 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
-| 19 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
+| 18 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
+| 19 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
+| 20 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
 
 ---
 
