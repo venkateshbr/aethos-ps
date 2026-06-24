@@ -75,6 +75,8 @@ class _FakeDb:
                     "original_filename": "acme-invoice.pdf",
                     "mime_type": "application/pdf",
                     "storage_path": f"{TENANT_ID}/2026/06/{DOCUMENT_ID}.pdf",
+                    "file_size_bytes": 1234,
+                    "sha256": "a" * 64,
                     "document_type": "vendor_invoice",
                     "status": "extracted",
                     "created_at": "2026-06-22T00:00:00+00:00",
@@ -85,6 +87,8 @@ class _FakeDb:
                     "original_filename": "foreign.pdf",
                     "mime_type": "application/pdf",
                     "storage_path": f"{OTHER_TENANT_ID}/2026/06/foreign.pdf",
+                    "file_size_bytes": 999,
+                    "sha256": "b" * 64,
                     "document_type": "vendor_invoice",
                     "status": "uploaded",
                     "created_at": "2026-06-23T00:00:00+00:00",
@@ -158,6 +162,56 @@ def test_document_list_uses_rls_client() -> None:
             "created_at": "2026-06-22T00:00:00+00:00",
         }
     ]
+
+
+def test_document_detail_uses_rls_client_and_returns_status() -> None:
+    fake_db = _FakeDb()
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/api/v1/documents/{DOCUMENT_ID}")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "id": DOCUMENT_ID,
+        "tenant_id": TENANT_ID,
+        "storage_path": f"{TENANT_ID}/2026/06/{DOCUMENT_ID}.pdf",
+        "mime_type": "application/pdf",
+        "file_size_bytes": 1234,
+        "sha256": "a" * 64,
+        "status": "extracted",
+        "created_at": "2026-06-22T00:00:00+00:00",
+    }
+
+
+def test_document_detail_cross_tenant_yields_404() -> None:
+    fake_db = _FakeDb()
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/documents/44444444-4444-4444-8444-444444444444")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404, response.text
 
 
 def test_document_url_authorizes_with_rls_and_uses_service_role_for_storage() -> None:

@@ -183,6 +183,34 @@ async def test_3_13_low_confidence_routes_to_hitl() -> None:
     assert result["id"] == "sug-abc123"
 
 
+async def test_write_agent_suggestion_mirrors_document_id_into_hitl_payload() -> None:
+    """Document-backed HITL tasks must carry source FK into approval materialisation."""
+    from app.agents.suggestion_writer import write_agent_suggestion
+
+    db = MagicMock()
+    db.table.return_value.insert.return_value.execute.return_value.data = [
+        {"id": "sug-doc-001", "status": "pending", "hitl_required": True}
+    ]
+    deps = _make_deps(db)
+
+    await write_agent_suggestion(
+        deps=deps,
+        agent_name="vendor_invoice_agent",
+        action_type="create_bill_draft",
+        document_id="doc-001",
+        output={"vendor_name": "Acme Supplies", "total": "100.00"},
+        confidence=0.80,
+        autonomy_level=2,
+    )
+
+    hitl_insert = next(
+        call.args[0]
+        for call in db.table.return_value.insert.call_args_list
+        if call.args and call.args[0].get("kind") == "create_bill_draft"
+    )
+    assert hitl_insert["payload"]["original_document_id"] == "doc-001"
+
+
 async def test_write_agent_suggestion_persists_related_entity_without_document_fk() -> None:
     """Non-document suggestions should attach business entity metadata, not document FK."""
     from app.agents.suggestion_writer import write_agent_suggestion

@@ -66,11 +66,22 @@ class CopilotAgent:
         "When users ask about their engagements or projects, use the query_engagements tool.\n"
         "When users ask about outstanding invoices or receivables, use get_ar_aging.\n"
         "When users ask about outstanding bills or payables, use get_ap_aging.\n"
+        "When users ask to pay vendors or run bill pay, use the "
+        "propose_bill_payment_batch tool. It creates an Inbox review task before "
+        "any payment batch is created.\n"
+        "When users ask to prepare month-end close, use the prepare_month_end_close "
+        "tool. It creates an Inbox review task before bootstrapping close tasks "
+        "or journal proposals.\n"
+        "When users ask for financial statements or a statement package, use the "
+        "generate_financial_statement_package tool.\n"
         "When users ask about unbilled work or WIP, use get_wip.\n"
         "When users ask to log hours or time (e.g. 'log 3 hours on Nexus for today'), "
         "use the log_time_entry tool — match the project name from what the user says.\n"
         "When users ask to update a billing rate or set an employee's rate "
         "(e.g. 'Set Marcus rate to £380/hr'), use the update_rate_card tool.\n"
+        "When users ask to draft, create, or prepare a customer invoice for an "
+        "engagement, use the draft_invoice tool. It drafts the invoice for Inbox "
+        "review only; it does not approve, send, or collect payment.\n"
         "Be concise and professional. Format monetary values with their currency symbol."
     )
 
@@ -236,6 +247,118 @@ class CopilotAgent:
                     },
                 },
                 "required": ["employee_name", "rate"],
+            },
+        },
+        {
+            "name": "draft_invoice",
+            "description": (
+                "Draft a customer invoice for an engagement using billing terms, "
+                "approved/unbilled time, expenses, retainers, milestones, and taxes. "
+                "Use when the user asks to invoice a client or prepare an invoice. "
+                "The draft is routed to Inbox before any invoice row is created."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "engagement_name": {
+                        "type": "string",
+                        "description": (
+                            "Name of the engagement to invoice. Will be fuzzy-matched."
+                        ),
+                    },
+                    "engagement_id": {
+                        "type": "string",
+                        "description": (
+                            "Known engagement ID from a prior tool result, if available."
+                        ),
+                    },
+                    "period_start": {
+                        "type": "string",
+                        "description": "Optional billing period start date, YYYY-MM-DD.",
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "description": "Optional billing period end date, YYYY-MM-DD.",
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "propose_bill_payment_batch",
+            "description": (
+                "Ask the bill-pay specialist to propose a controlled vendor payment "
+                "batch from approved bills. Use when the user asks to pay bills, "
+                "run bill pay, or prepare vendor payments. The proposal is routed "
+                "to Inbox before any payment batch is created."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "due_within_days": {
+                        "type": "integer",
+                        "default": 7,
+                        "minimum": 1,
+                        "maximum": 90,
+                        "description": "Include approved bills due within this many days.",
+                    },
+                    "bank_account_label": {
+                        "type": "string",
+                        "description": (
+                            "Optional operator-facing bank account label. "
+                            "Never include raw bank account numbers."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "prepare_month_end_close",
+            "description": (
+                "Prepare the month-end close workflow for an accounting period. "
+                "Use when the user asks to run or prepare month-end close. The "
+                "request is routed to Inbox before creating close tasks or journal "
+                "review proposals."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": "Accounting period to prepare, formatted YYYY-MM.",
+                    },
+                },
+                "required": ["period"],
+            },
+        },
+        {
+            "name": "generate_financial_statement_package",
+            "description": (
+                "Generate a read-only financial statement package from posted journals, "
+                "including trial balance, balance sheet, income statement, cash flow, "
+                "retained earnings, and tax controls. Use when the user asks for "
+                "financial statements or a statement package."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "period_start": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": "First accounting period in the package, YYYY-MM.",
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": (
+                            "Last accounting period in the package, YYYY-MM. "
+                            "Defaults to period_start."
+                        ),
+                    },
+                },
+                "required": ["period_start"],
             },
         },
     ]
@@ -563,6 +686,17 @@ class CopilotAgent:
             return await self._log_time_entry(tool_input)
         if tool_name == "update_rate_card":
             return await self._update_rate_card(tool_input)
+        if tool_name == "draft_invoice":
+            payload = await self._build_invoice_draft_payload(tool_input)
+            if payload.get("error"):
+                return payload
+            return await self._persist_invoice_draft_payload(payload["invoice_draft"])
+        if tool_name == "propose_bill_payment_batch":
+            return await self._build_bill_payment_batch_payload(tool_input)
+        if tool_name == "prepare_month_end_close":
+            return await self._prepare_month_end_close(tool_input)
+        if tool_name == "generate_financial_statement_package":
+            return await self._generate_financial_statement_package(tool_input)
         logger.warning(
             "Unknown tool requested by LLM",
             extra={"tool_name": tool_name, "tenant_id": self.deps.tenant_id},
@@ -613,6 +747,54 @@ class CopilotAgent:
     ) -> dict:
         """Create a HITL suggestion/task for a write-capable Copilot tool."""
         try:
+            output: dict = {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "risk_class": risk_class,
+                "policy_reason": decision.reason,
+                "requested_by_user_id": str(self.deps.user_id),
+            }
+            if tool_name == "draft_invoice":
+                draft_payload = await self._build_invoice_draft_payload(tool_input)
+                if draft_payload.get("error"):
+                    return {
+                        "error": draft_payload["error"],
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                    }
+                output.update(draft_payload)
+            elif tool_name == "propose_bill_payment_batch":
+                bill_pay_payload = await self._build_bill_payment_batch_payload(tool_input)
+                if bill_pay_payload.get("error"):
+                    return {
+                        "error": bill_pay_payload["error"],
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                    }
+                duplicate_id = bill_pay_payload.pop("duplicate_suggestion_id", None)
+                if duplicate_id:
+                    return {
+                        "requires_review": True,
+                        "suggestion_id": duplicate_id,
+                        "action_type": action_type,
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                        "duplicate_suppressed": True,
+                        "message": (
+                            "An open Inbox review task already covers this bill-pay batch."
+                        ),
+                    }
+                output.update(bill_pay_payload)
+            elif tool_name == "prepare_month_end_close":
+                close_payload = await self._build_month_end_close_review_payload(tool_input)
+                if close_payload.get("error"):
+                    return {
+                        "error": close_payload["error"],
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                    }
+                output.update(close_payload)
+
             suggestion = await write_agent_suggestion(
                 deps=AgentDeps(
                     tenant_id=self.deps.tenant_id,
@@ -622,13 +804,7 @@ class CopilotAgent:
                 agent_name="copilot_agent",
                 action_type=action_type,
                 document_id=None,
-                output={
-                    "tool_name": tool_name,
-                    "tool_input": tool_input,
-                    "risk_class": risk_class,
-                    "policy_reason": decision.reason,
-                    "requested_by_user_id": str(self.deps.user_id),
-                },
+                output=output,
                 confidence=0.0,
                 autonomy_level=decision.autonomy_level,
                 confidence_threshold=1.0,
@@ -760,6 +936,485 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc), "entries": []}
+
+    async def _build_bill_payment_batch_payload(self, args: dict) -> dict:
+        """Build a reviewable bill-payment proposal without creating a batch."""
+        import asyncio
+
+        try:
+            due_within_days = int(args.get("due_within_days") or 7)
+            if due_within_days < 1 or due_within_days > 90:
+                raise ValueError("due_within_days must be between 1 and 90")
+
+            from app.agents.bill_pay_agent import (
+                find_duplicate_payment_proposal,
+                propose_payment_batch,
+            )
+
+            deps = AgentDeps(
+                tenant_id=self.deps.tenant_id,
+                user_id=str(self.deps.user_id),
+                db=self.deps.db_client,  # type: ignore[arg-type]
+            )
+            proposal = await asyncio.to_thread(
+                lambda: propose_payment_batch(deps, due_within_days)
+            )
+            payload = proposal.model_dump(mode="json")
+            bank_account_label = str(args.get("bank_account_label") or "").strip()
+            if bank_account_label:
+                payload["bank_account_label"] = bank_account_label
+
+            bill_ids = payload.get("proposed_bill_ids") or []
+            if not bill_ids:
+                return {
+                    "error": (
+                        "No approved bills were available for a bill-pay batch. "
+                        "Approve vendor bills before asking Copilot to run bill pay."
+                    ),
+                    "proposal": payload,
+                }
+
+            duplicate_id = await asyncio.to_thread(
+                lambda: find_duplicate_payment_proposal(deps, proposal.proposed_bill_ids)
+            )
+            payload["preview"] = {
+                "bill_count": len(bill_ids),
+                "currency": payload.get("currency"),
+                "total": payload.get("total_amount"),
+                "proposed_pay_date": payload.get("proposed_pay_date"),
+                "early_pay_discount_captured": payload.get(
+                    "early_pay_discount_captured"
+                ),
+                "flagged_for_review_count": len(
+                    payload.get("flagged_for_review") or []
+                ),
+            }
+            if duplicate_id:
+                payload["duplicate_suggestion_id"] = duplicate_id
+            return payload
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "bill-pay proposal build failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _build_month_end_close_review_payload(self, args: dict) -> dict:
+        """Build the review payload shown before preparing month-end close."""
+        import asyncio
+
+        try:
+            period = self._parse_period(args.get("period"))
+
+            from app.services.close_package_service import ClosePackageService
+            from app.services.close_status_service import CloseStatusService
+
+            close_status = await asyncio.to_thread(
+                lambda: CloseStatusService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).get_status(period)
+            )
+            close_package = await asyncio.to_thread(
+                lambda: ClosePackageService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).build_package(period)
+            )
+            status_payload = close_status.as_dict()
+            gl_summary = close_package.get("gl_summary") or {}
+            working_capital = close_package.get("working_capital") or {}
+
+            return {
+                "period": period,
+                "preview": {
+                    "period": period,
+                    "workflow": "month_end_close",
+                    "lock_blocker_count": len(status_payload.get("lock_blockers") or []),
+                    "pending_review_count": len(status_payload.get("pending_reviews") or []),
+                    "net_income": gl_summary.get("net_income"),
+                    "ar_open_total": working_capital.get("ar_open_total"),
+                    "ap_open_total": working_capital.get("ap_open_total"),
+                    "wip_total": working_capital.get("wip_total"),
+                    "variance_comment_count": len(
+                        close_package.get("variance_commentary") or []
+                    ),
+                },
+                "close_status": status_payload,
+                "close_package_summary": {
+                    "period": period,
+                    "period_start": close_package.get("period_start"),
+                    "period_end": close_package.get("period_end"),
+                    "gl_summary": gl_summary,
+                    "working_capital": working_capital,
+                    "variance_commentary": close_package.get(
+                        "variance_commentary",
+                        [],
+                    )[:5],
+                },
+            }
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "month-end close review payload build failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _prepare_month_end_close(self, args: dict) -> dict:
+        """Run the existing close-preparation workflow after Inbox approval."""
+        try:
+            period = self._parse_period(args.get("period"))
+
+            from app.workers.close_scheduler_worker import _run_close_for_tenant
+
+            result = await _run_close_for_tenant(
+                self.deps.db_client,  # type: ignore[arg-type]
+                tenant_id=self.deps.tenant_id,
+                period=period,
+                created_by="copilot_agent",
+            )
+            return {"close_prepared": True, **result}
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "month-end close preparation failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _generate_financial_statement_package(self, args: dict) -> dict:
+        """Generate a compact read-only financial statement package summary."""
+        import asyncio
+
+        try:
+            period_start = self._parse_period(args.get("period_start"), "period_start")
+            period_end = self._parse_period(
+                args.get("period_end") or period_start,
+                "period_end",
+            )
+            if period_end < period_start:
+                raise ValueError("period_end must be the same as or after period_start")
+
+            from app.services.reports_service import ReportsService
+
+            package = await asyncio.to_thread(
+                lambda: ReportsService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).statutory_reporting_pack(
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+            )
+            data = package.model_dump(mode="json")
+            balance_sheet = data["balance_sheet"]
+            income_statement = data["income_statement"]
+            cash_flow = data["cash_flow"]
+            retained_earnings = data["retained_earnings_roll_forward"]
+            tax_summary = data["tax_summary"]
+
+            return {
+                "generated_statement_package": True,
+                "period_start": period_start,
+                "period_end": period_end,
+                "as_of_period": data["as_of_period"],
+                "review_path": "/app/reports",
+                "summary": {
+                    "trial_balance_balanced": data["trial_balance"]["is_balanced"],
+                    "balance_sheet": {
+                        "total_assets": balance_sheet["total_assets"],
+                        "total_liabilities": balance_sheet["total_liabilities"],
+                        "total_equity": balance_sheet["total_equity"],
+                        "is_balanced": balance_sheet["is_balanced"],
+                    },
+                    "income_statement": {
+                        "total_revenue": income_statement["total_revenue"],
+                        "total_expenses": income_statement["total_expenses"],
+                        "net_income": income_statement["net_income"],
+                        "revenue_line_count": len(
+                            income_statement["revenue_lines"]
+                        ),
+                        "expense_line_count": len(
+                            income_statement["expense_lines"]
+                        ),
+                    },
+                    "cash_flow": {
+                        "net_change_in_cash": cash_flow["net_change_in_cash"],
+                        "ending_cash": cash_flow["ending_cash"],
+                    },
+                    "retained_earnings": {
+                        "ending_retained_earnings": retained_earnings[
+                            "ending_retained_earnings"
+                        ],
+                    },
+                    "tax_summary": {
+                        "tax_label": tax_summary["tax_label"],
+                        "ledger_net_tax_payable": tax_summary[
+                            "ledger_net_tax_payable"
+                        ],
+                    },
+                },
+            }
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "financial statement package generation failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _build_invoice_draft_payload(self, args: dict) -> dict:
+        """Build a reviewable invoice draft payload without persisting it."""
+        try:
+            engagement = await self._resolve_invoice_engagement(args)
+            if engagement.get("error"):
+                return engagement
+
+            period_start = self._parse_optional_date(args.get("period_start"))
+            period_end = self._parse_optional_date(args.get("period_end"))
+
+            from app.agents.invoice_drafter_agent import draft_invoice
+
+            invoice_draft = draft_invoice(
+                engagement["id"],
+                AgentDeps(
+                    tenant_id=self.deps.tenant_id,
+                    user_id=str(self.deps.user_id),
+                    db=self.deps.db_client,  # type: ignore[arg-type]
+                ),
+                period_start=period_start,
+                period_end=period_end,
+            )
+
+            if invoice_draft.error:
+                return {"error": invoice_draft.error}
+            if not invoice_draft.lines:
+                return {
+                    "error": (
+                        "No invoiceable lines were found for "
+                        f"{engagement['name']}. Add approved time, billable expenses, "
+                        "or billing terms before drafting an invoice."
+                    )
+                }
+
+            issue_date = period_end or datetime.date.today()
+            lines = [
+                {
+                    "description": line.description,
+                    "quantity": str(line.quantity),
+                    "unit_price": str(line.unit_price),
+                    "tax_rate_id": line.tax_rate_id,
+                    "time_entry_id": line.time_entry_id,
+                    "expense_id": line.expense_id,
+                    "service_catalogue_id": line.service_catalogue_id,
+                    "amount": str(line.amount),
+                    "tax_amount": str(line.tax_amount),
+                }
+                for line in invoice_draft.lines
+            ]
+            invoice_payload = {
+                "engagement_id": invoice_draft.engagement_id,
+                "engagement_name": engagement["name"],
+                "client_id": invoice_draft.client_id,
+                "currency": invoice_draft.currency,
+                "issue_date": issue_date.isoformat(),
+                "period_start": (
+                    period_start.isoformat()
+                    if period_start
+                    else invoice_draft.period_start
+                ),
+                "period_end": (
+                    period_end.isoformat() if period_end else invoice_draft.period_end
+                ),
+                "notes": invoice_draft.summary,
+                "billing_arrangement": invoice_draft.billing_arrangement,
+                "subtotal": str(invoice_draft.subtotal),
+                "tax_total": str(invoice_draft.tax_total),
+                "total": str(invoice_draft.total),
+                "confidence": invoice_draft.confidence,
+                "lines": lines,
+            }
+            return {
+                "invoice_draft": invoice_payload,
+                "preview": {
+                    "engagement": engagement["name"],
+                    "currency": invoice_draft.currency,
+                    "subtotal": str(invoice_draft.subtotal),
+                    "tax_total": str(invoice_draft.tax_total),
+                    "total": str(invoice_draft.total),
+                    "line_count": len(lines),
+                    "billing_arrangement": invoice_draft.billing_arrangement,
+                    "issue_date": issue_date.isoformat(),
+                },
+            }
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "draft_invoice payload build failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _resolve_invoice_engagement(self, args: dict) -> dict:
+        """Resolve an engagement by explicit ID or fuzzy name for invoice drafting."""
+        import asyncio
+
+        db = self.deps.db_client  # type: ignore[assignment]
+        engagement_id = str(args.get("engagement_id") or "").strip()
+        engagement_name = str(args.get("engagement_name") or "").strip()
+
+        if engagement_id:
+            def _fetch_by_id() -> list[dict]:
+                result = (
+                    db.table("engagements")
+                    .select("id, name, client_id, currency, billing_arrangement, status")
+                    .eq("tenant_id", self.deps.tenant_id)
+                    .eq("id", engagement_id)
+                    .is_("deleted_at", "null")
+                    .limit(1)
+                    .execute()
+                )
+                return result.data or []
+
+            rows = await asyncio.to_thread(_fetch_by_id)
+            if rows:
+                return rows[0]
+            return {"error": f"Could not find engagement ID {engagement_id!r}."}
+
+        if not engagement_name:
+            return {
+                "error": (
+                    "Tell me which engagement to invoice, for example "
+                    "'draft an invoice for Northstar Managed Accounting for June'."
+                )
+            }
+
+        def _fetch_engagements() -> list[dict]:
+            result = (
+                db.table("engagements")
+                .select("id, name, client_id, currency, billing_arrangement, status")
+                .eq("tenant_id", self.deps.tenant_id)
+                .is_("deleted_at", "null")
+                .limit(100)
+                .execute()
+            )
+            return result.data or []
+
+        engagements = await asyncio.to_thread(_fetch_engagements)
+        if not engagements:
+            return {"error": "No engagements found for this tenant."}
+
+        for engagement in engagements:
+            if str(engagement.get("name", "")).casefold() == engagement_name.casefold():
+                return engagement
+
+        names = [str(engagement["name"]) for engagement in engagements]
+        matches = difflib.get_close_matches(engagement_name, names, n=3, cutoff=0.4)
+        if not matches:
+            return {
+                "error": (
+                    f"Could not find an engagement matching '{engagement_name}'. "
+                    f"Available engagements: {', '.join(names)}"
+                )
+            }
+        if len(matches) > 1 and len(engagement_name) < 6:
+            return {
+                "error": (
+                    f"Which engagement did you mean: {', '.join(matches)}?"
+                )
+            }
+        return next(engagement for engagement in engagements if engagement["name"] == matches[0])
+
+    async def _persist_invoice_draft_payload(self, invoice_draft: dict) -> dict:
+        """Persist an approved Copilot invoice draft as an invoice in draft status."""
+        try:
+            from app.models.invoices import InvoiceCreate, InvoiceLineCreate
+            from app.services.invoices_service import InvoicesService
+
+            issue_date = None
+            if invoice_draft.get("issue_date"):
+                issue_date = datetime.date.fromisoformat(str(invoice_draft["issue_date"]))
+
+            invoice_lines = [
+                InvoiceLineCreate(
+                    description=str(line["description"]),
+                    quantity=Decimal(str(line["quantity"])),
+                    unit_price=Decimal(str(line["unit_price"])),
+                    tax_rate_id=line.get("tax_rate_id"),
+                    time_entry_id=line.get("time_entry_id"),
+                    expense_id=line.get("expense_id"),
+                    service_catalogue_id=line.get("service_catalogue_id"),
+                )
+                for line in invoice_draft.get("lines", [])
+            ]
+            if not invoice_lines:
+                return {"error": "Approved invoice draft has no lines."}
+
+            invoice_create = InvoiceCreate(
+                engagement_id=str(invoice_draft["engagement_id"]),
+                client_id=str(invoice_draft["client_id"]),
+                currency=str(invoice_draft.get("currency") or "USD"),
+                issue_date=issue_date,
+                notes=invoice_draft.get("notes") or invoice_draft.get("summary"),
+                lines=invoice_lines,
+            )
+            invoice = await InvoicesService(
+                self.deps.db_client,  # type: ignore[arg-type]
+                self.deps.tenant_id,
+            ).create_invoice(invoice_create, str(self.deps.user_id) or "copilot_agent")
+
+            return {
+                "invoice_created": True,
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "status": invoice.status,
+                "engagement_id": invoice.engagement_id,
+                "engagement": invoice_draft.get("engagement_name"),
+                "currency": invoice.currency,
+                "total": invoice.total,
+                "line_count": len(invoice_lines),
+            }
+        except Exception as exc:
+            logger.error(
+                "Copilot approved invoice draft persistence failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    @staticmethod
+    def _parse_optional_date(value: object) -> datetime.date | None:
+        if not value:
+            return None
+        if isinstance(value, datetime.date):
+            return value
+        return datetime.date.fromisoformat(str(value))
+
+    @staticmethod
+    def _parse_period(value: object, field_name: str = "period") -> str:
+        period = str(value or "").strip()
+        if len(period) != 7 or period[4] != "-":
+            raise ValueError(f"{field_name} must be formatted as YYYY-MM")
+        try:
+            year = int(period[:4])
+            month = int(period[5:7])
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be formatted as YYYY-MM") from exc
+        if year < 1900 or month < 1 or month > 12:
+            raise ValueError(f"{field_name} must be a valid accounting period")
+        return f"{year:04d}-{month:02d}"
 
     async def _log_time_entry(self, args: dict) -> dict:
         """Log a time entry via chat — fuzzy-matches project name, resolves employee from user_id.

@@ -655,7 +655,8 @@ async def test_inbox_materialises_bill_payment_batch(monkeypatch: pytest.MonkeyP
             "proposed_bill_ids": ["bill-1", "bill-2"],
             "proposed_pay_date": "2026-06-30",
             "bank_account_label": "Operating",
-        }
+        },
+        user_id=USER_ID,
     )
 
     assert result == {"entity_type": "bill_payment_batch", "entity_id": "batch-1"}
@@ -665,9 +666,30 @@ async def test_inbox_materialises_bill_payment_batch(monkeypatch: pytest.MonkeyP
             "bill_ids": ["bill-1", "bill-2"],
             "pay_date": date(2026, 6, 30),
             "bank_account_label": "Operating",
-            "created_by": "bill_pay_agent",
+            "created_by": USER_ID,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialise_bill_payment_batch_requires_approver() -> None:
+    from fastapi import HTTPException
+
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = MagicMock()
+    svc._tenant_id = TENANT_ID
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc._materialise_bill_payment_batch(
+            {
+                "proposed_bill_ids": ["bill-1"],
+                "proposed_pay_date": "2026-06-30",
+            }
+        )
+
+    assert exc_info.value.status_code == 422
 
 
 @pytest.mark.asyncio

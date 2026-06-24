@@ -8,7 +8,7 @@ TDD: these tests are written BEFORE the implementation so they must be red first
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -453,6 +453,75 @@ def test_system_prompt_mentions_rate_card():
     )
 
 
+def test_draft_invoice_tool_registered():
+    """draft_invoice must be present in CopilotAgent.TOOLS."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    tool_names = [t["name"] for t in CopilotAgent.TOOLS]
+    assert "draft_invoice" in tool_names, (
+        f"draft_invoice missing from TOOLS. Found: {tool_names}"
+    )
+
+
+def test_draft_invoice_tool_schema():
+    """draft_invoice schema must identify engagement and billing period inputs."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    tool = next((t for t in CopilotAgent.TOOLS if t["name"] == "draft_invoice"), None)
+    assert tool is not None, "draft_invoice tool not found"
+    schema = tool["input_schema"]
+    assert "engagement_name" in schema["properties"]
+    assert "engagement_id" in schema["properties"]
+    assert "period_start" in schema["properties"]
+    assert "period_end" in schema["properties"]
+
+
+def test_system_prompt_mentions_invoice_drafting():
+    """System prompt must mention invoice drafting so the LLM uses the tool."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    prompt = CopilotAgent.SYSTEM_PROMPT.lower()
+    assert "draft" in prompt and "invoice" in prompt
+    assert "inbox" in prompt
+
+
+def test_finance_ops_tools_registered():
+    """Copilot must expose finance-ops orchestration tools."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    tool_names = {t["name"] for t in CopilotAgent.TOOLS}
+    assert "propose_bill_payment_batch" in tool_names
+    assert "prepare_month_end_close" in tool_names
+    assert "generate_financial_statement_package" in tool_names
+
+
+def test_finance_ops_tool_schemas():
+    """Finance-ops tools must declare the expected period/payment inputs."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    tools = {t["name"]: t for t in CopilotAgent.TOOLS}
+    bill_pay_schema = tools["propose_bill_payment_batch"]["input_schema"]
+    close_schema = tools["prepare_month_end_close"]["input_schema"]
+    statements_schema = tools["generate_financial_statement_package"]["input_schema"]
+
+    assert "due_within_days" in bill_pay_schema["properties"]
+    assert "bank_account_label" in bill_pay_schema["properties"]
+    assert close_schema["required"] == ["period"]
+    assert "period" in close_schema["properties"]
+    assert statements_schema["required"] == ["period_start"]
+    assert "period_end" in statements_schema["properties"]
+
+
+def test_system_prompt_mentions_finance_ops_tools():
+    """System prompt must steer finance-ops requests to the new tools."""
+    from app.agents.copilot.graph import CopilotAgent
+
+    prompt = CopilotAgent.SYSTEM_PROMPT.lower()
+    assert "bill pay" in prompt or "payment batch" in prompt
+    assert "month-end close" in prompt
+    assert "financial statement" in prompt
+
+
 def test_execute_tool_dispatches_log_time_entry():
     """_execute_tool source must contain a branch for log_time_entry."""
     import inspect
@@ -471,3 +540,122 @@ def test_execute_tool_dispatches_update_rate_card():
 
     source = inspect.getsource(CopilotAgent._execute_tool)
     assert "update_rate_card" in source, "_execute_tool must dispatch update_rate_card"
+
+
+def test_execute_tool_dispatches_draft_invoice():
+    """_execute_tool source must contain a branch for draft_invoice."""
+    import inspect
+
+    from app.agents.copilot.graph import CopilotAgent
+
+    source = inspect.getsource(CopilotAgent._execute_tool)
+    assert "draft_invoice" in source, "_execute_tool must dispatch draft_invoice"
+
+
+def test_execute_tool_dispatches_finance_ops_tools():
+    """_execute_tool source must contain finance-ops branches."""
+    import inspect
+
+    from app.agents.copilot.graph import CopilotAgent
+
+    source = inspect.getsource(CopilotAgent._execute_tool)
+    assert "propose_bill_payment_batch" in source
+    assert "prepare_month_end_close" in source
+    assert "generate_financial_statement_package" in source
+
+
+@pytest.mark.asyncio
+async def test_draft_invoice_execute_persists_generated_payload():
+    """Direct execution drafts, then persists the reviewed invoice payload."""
+    agent, _db = _make_agent({})
+    draft_payload = {
+        "invoice_draft": {
+            "engagement_id": "eng-1",
+            "engagement_name": "Northstar Managed Accounting",
+            "client_id": "client-1",
+            "currency": "USD",
+            "issue_date": "2026-06-30",
+            "notes": "June invoice",
+            "lines": [
+                {
+                    "description": "Monthly retainer",
+                    "quantity": "1",
+                    "unit_price": "12000.00",
+                }
+            ],
+        },
+        "preview": {"total": "12000.00"},
+    }
+    agent._build_invoice_draft_payload = AsyncMock(return_value=draft_payload)  # type: ignore[method-assign]
+    agent._persist_invoice_draft_payload = AsyncMock(  # type: ignore[method-assign]
+        return_value={"invoice_created": True, "invoice_id": "inv-1"}
+    )
+
+    result = await agent._execute_tool(
+        "draft_invoice",
+        {"engagement_name": "Northstar", "period_end": "2026-06-30"},
+    )
+
+    assert result == {"invoice_created": True, "invoice_id": "inv-1"}
+    agent._build_invoice_draft_payload.assert_awaited_once_with(
+        {"engagement_name": "Northstar", "period_end": "2026-06-30"}
+    )
+    agent._persist_invoice_draft_payload.assert_awaited_once_with(
+        draft_payload["invoice_draft"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_bill_pay_execute_builds_review_payload():
+    """Direct bill-pay execution returns a proposal payload, not a payment batch."""
+    agent, _db = _make_agent({})
+    agent._build_bill_payment_batch_payload = AsyncMock(  # type: ignore[method-assign]
+        return_value={"proposed_bill_ids": ["bill-1"], "total_amount": "900.00"}
+    )
+
+    result = await agent._execute_tool(
+        "propose_bill_payment_batch",
+        {"due_within_days": 14},
+    )
+
+    assert result == {"proposed_bill_ids": ["bill-1"], "total_amount": "900.00"}
+    agent._build_bill_payment_batch_payload.assert_awaited_once_with(
+        {"due_within_days": 14}
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepare_month_end_close_execute_runs_workflow():
+    """Direct close execution delegates to the close workflow helper."""
+    agent, _db = _make_agent({})
+    agent._prepare_month_end_close = AsyncMock(  # type: ignore[method-assign]
+        return_value={"close_prepared": True, "period": "2026-06"}
+    )
+
+    result = await agent._execute_tool("prepare_month_end_close", {"period": "2026-06"})
+
+    assert result == {"close_prepared": True, "period": "2026-06"}
+    agent._prepare_month_end_close.assert_awaited_once_with({"period": "2026-06"})
+
+
+@pytest.mark.asyncio
+async def test_financial_statement_package_execute_generates_summary():
+    """Direct statement-package execution returns the read-only summary."""
+    agent, _db = _make_agent({})
+    agent._generate_financial_statement_package = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "generated_statement_package": True,
+            "period_start": "2026-06",
+            "period_end": "2026-06",
+        }
+    )
+
+    result = await agent._execute_tool(
+        "generate_financial_statement_package",
+        {"period_start": "2026-06"},
+    )
+
+    assert result["generated_statement_package"] is True
+    agent._generate_financial_statement_package.assert_awaited_once_with(
+        {"period_start": "2026-06"}
+    )

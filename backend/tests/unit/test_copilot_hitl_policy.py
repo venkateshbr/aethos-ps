@@ -111,6 +111,249 @@ async def test_write_policy_routes_to_hitl_without_executing_tool(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_draft_invoice_policy_routes_to_hitl_with_review_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_money_in_requires_human_review",
+            user_role=UserRole.manager,
+            minimum_role=UserRole.manager,
+            autonomy_level=2,
+        )
+    )
+    review_payload = {
+        "invoice_draft": {
+            "engagement_id": "eng-1",
+            "engagement_name": "Northstar Managed Accounting",
+            "client_id": "client-1",
+            "currency": "USD",
+            "issue_date": "2026-06-30",
+            "lines": [
+                {
+                    "description": "Monthly retainer",
+                    "quantity": "1",
+                    "unit_price": "12000.00",
+                }
+            ],
+        },
+        "preview": {
+            "engagement": "Northstar Managed Accounting",
+            "currency": "USD",
+            "total": "12000.00",
+            "line_count": 1,
+        },
+    }
+    agent._build_invoice_draft_payload = AsyncMock(return_value=review_payload)  # type: ignore[method-assign]
+    agent._execute_tool = AsyncMock(return_value={"invoice_created": True})
+    write_suggestion = AsyncMock(return_value={"id": "sug-invoice-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "draft_invoice",
+        {"engagement_name": "Northstar", "period_end": "2026-06-30"},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-invoice-1"
+    assert result["action_type"] == "copilot_draft_invoice"
+    assert result["risk_class"] == "write_money_in"
+    agent._execute_tool.assert_not_awaited()
+    agent._build_invoice_draft_payload.assert_awaited_once()
+    suggestion_kwargs = write_suggestion.await_args.kwargs
+    assert suggestion_kwargs["output"]["tool_name"] == "draft_invoice"
+    assert suggestion_kwargs["output"]["tool_input"] == {
+        "engagement_name": "Northstar",
+        "period_end": "2026-06-30",
+    }
+    assert suggestion_kwargs["output"]["invoice_draft"] == review_payload["invoice_draft"]
+    assert suggestion_kwargs["output"]["preview"] == review_payload["preview"]
+
+
+@pytest.mark.asyncio
+async def test_draft_invoice_policy_returns_error_without_hitl_when_no_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_money_in_requires_human_review",
+            user_role=UserRole.manager,
+            minimum_role=UserRole.manager,
+            autonomy_level=2,
+        )
+    )
+    agent._build_invoice_draft_payload = AsyncMock(  # type: ignore[method-assign]
+        return_value={"error": "No invoiceable lines were found"}
+    )
+    write_suggestion = AsyncMock(return_value={"id": "sug-should-not-exist"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "draft_invoice",
+        {"engagement_name": "Northstar"},
+    )
+
+    assert result == {
+        "error": "No invoiceable lines were found",
+        "tool_name": "draft_invoice",
+        "risk_class": "write_money_in",
+    }
+    write_suggestion.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bill_pay_policy_routes_to_hitl_with_review_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_money_out_requires_human_review",
+            user_role=UserRole.admin,
+            minimum_role=UserRole.admin,
+            autonomy_level=2,
+        )
+    )
+    review_payload = {
+        "proposed_bill_ids": ["bill-1", "bill-2"],
+        "proposed_pay_date": "2026-06-30",
+        "total_amount": "3000.00",
+        "currency": "USD",
+        "rationale": "Two approved bills are due.",
+        "preview": {
+            "bill_count": 2,
+            "currency": "USD",
+            "total": "3000.00",
+            "proposed_pay_date": "2026-06-30",
+        },
+    }
+    agent._build_bill_payment_batch_payload = AsyncMock(return_value=review_payload)  # type: ignore[method-assign]
+    agent._execute_tool = AsyncMock(return_value={"created": True})
+    write_suggestion = AsyncMock(return_value={"id": "sug-bill-pay-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "propose_bill_payment_batch",
+        {"due_within_days": 7},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-bill-pay-1"
+    assert result["action_type"] == "create_bill_payment_batch"
+    assert result["risk_class"] == "write_money_out"
+    agent._execute_tool.assert_not_awaited()
+    suggestion_kwargs = write_suggestion.await_args.kwargs
+    assert suggestion_kwargs["agent_name"] == "copilot_agent"
+    assert suggestion_kwargs["action_type"] == "create_bill_payment_batch"
+    assert suggestion_kwargs["output"]["tool_name"] == "propose_bill_payment_batch"
+    assert suggestion_kwargs["output"]["proposed_bill_ids"] == ["bill-1", "bill-2"]
+    assert suggestion_kwargs["output"]["preview"] == review_payload["preview"]
+
+
+@pytest.mark.asyncio
+async def test_bill_pay_policy_suppresses_duplicate_review_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="write_money_out_requires_human_review",
+            user_role=UserRole.admin,
+            minimum_role=UserRole.admin,
+            autonomy_level=2,
+        )
+    )
+    agent._build_bill_payment_batch_payload = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "proposed_bill_ids": ["bill-1"],
+            "duplicate_suggestion_id": "sug-existing",
+        }
+    )
+    write_suggestion = AsyncMock(return_value={"id": "sug-should-not-exist"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "propose_bill_payment_batch",
+        {"due_within_days": 7},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-existing"
+    assert result["duplicate_suppressed"] is True
+    write_suggestion.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_month_end_close_policy_routes_to_hitl_with_review_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="accounting_requires_human_review",
+            user_role=UserRole.admin,
+            minimum_role=UserRole.admin,
+            autonomy_level=2,
+        )
+    )
+    review_payload = {
+        "period": "2026-06",
+        "preview": {
+            "period": "2026-06",
+            "workflow": "month_end_close",
+            "pending_review_count": 3,
+        },
+        "close_status": {"period": "2026-06"},
+    }
+    agent._build_month_end_close_review_payload = AsyncMock(return_value=review_payload)  # type: ignore[method-assign]
+    agent._execute_tool = AsyncMock(return_value={"close_prepared": True})
+    write_suggestion = AsyncMock(return_value={"id": "sug-close-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "prepare_month_end_close",
+        {"period": "2026-06"},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-close-1"
+    assert result["action_type"] == "copilot_prepare_month_end_close"
+    assert result["risk_class"] == "accounting"
+    agent._execute_tool.assert_not_awaited()
+    suggestion_kwargs = write_suggestion.await_args.kwargs
+    assert suggestion_kwargs["output"]["tool_name"] == "prepare_month_end_close"
+    assert suggestion_kwargs["output"]["period"] == "2026-06"
+    assert suggestion_kwargs["output"]["preview"] == review_payload["preview"]
+
+
+@pytest.mark.asyncio
 async def test_policy_denial_returns_structured_error() -> None:
     agent = _make_agent()
     agent.tool_policy = _StaticPolicy(
@@ -154,6 +397,85 @@ async def test_inbox_materialises_copilot_log_time_entry(monkeypatch: pytest.Mon
     execute_tool.assert_awaited_once_with(
         "log_time_entry",
         {"project_name": "Nexus", "hours": 2},
+    )
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_copilot_draft_invoice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    persist_draft = AsyncMock(
+        return_value={
+            "invoice_created": True,
+            "invoice_id": "inv-1",
+            "invoice_number": "INV-0001",
+        }
+    )
+    execute_tool = AsyncMock(return_value={"invoice_created": True})
+    monkeypatch.setattr(graph.CopilotAgent, "_persist_invoice_draft_payload", persist_draft)
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
+
+    payload = {
+        "tool_name": "draft_invoice",
+        "tool_input": {"engagement_name": "Northstar"},
+        "requested_by_user_id": "user-1",
+        "invoice_draft": {
+            "engagement_id": "eng-1",
+            "client_id": "client-1",
+            "currency": "USD",
+            "issue_date": "2026-06-30",
+            "lines": [
+                {
+                    "description": "Monthly retainer",
+                    "quantity": "1",
+                    "unit_price": "12000.00",
+                }
+            ],
+        },
+    }
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(payload)
+
+    assert result == {"entity_type": "invoice", "entity_id": "inv-1"}
+    persist_draft.assert_awaited_once_with(payload["invoice_draft"])
+    execute_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_copilot_month_end_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(
+        return_value={
+            "close_prepared": True,
+            "period": "2026-06",
+            "workflow_status": "waiting_on_human",
+        }
+    )
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "tool_name": "prepare_month_end_close",
+            "tool_input": {"period": "2026-06"},
+            "requested_by_user_id": "user-1",
+        }
+    )
+
+    assert result == {"entity_type": "month_end_close", "entity_id": "2026-06"}
+    execute_tool.assert_awaited_once_with(
+        "prepare_month_end_close",
+        {"period": "2026-06"},
     )
 
 

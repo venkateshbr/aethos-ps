@@ -581,6 +581,66 @@ export class InboxComponent implements OnInit {
   payloadSummary(task: HitlTask): { key: string; value: string }[] {
     const p = task.suggestion_payload ?? {};
     const entries: { key: string; value: string }[] = [];
+    if (task.kind === 'copilot_draft_invoice') {
+      const preview = p['preview'];
+      const source = (
+        typeof preview === 'object' && preview !== null
+          ? preview
+          : p['invoice_draft']
+      ) as Record<string, unknown> | undefined;
+      if (source) {
+        const fields = [
+          'engagement',
+          'engagement_name',
+          'currency',
+          'subtotal',
+          'tax_total',
+          'total',
+          'line_count',
+          'billing_arrangement',
+          'issue_date',
+        ];
+        for (const f of fields) {
+          if (source[f] != null) {
+            entries.push({ key: f.replace(/_/g, ' '), value: String(source[f]) });
+          }
+        }
+        return entries.slice(0, 6);
+      }
+    }
+    if (task.kind === 'create_bill_payment_batch' || task.kind === 'copilot_prepare_month_end_close') {
+      const preview = p['preview'];
+      const source = (
+        typeof preview === 'object' && preview !== null
+          ? preview
+          : p
+      ) as Record<string, unknown> | undefined;
+      if (source) {
+        const fields = task.kind === 'create_bill_payment_batch'
+          ? [
+              'bill_count',
+              'currency',
+              'total',
+              'total_amount',
+              'proposed_pay_date',
+              'flagged_for_review_count',
+            ]
+          : [
+              'period',
+              'workflow',
+              'lock_blocker_count',
+              'pending_review_count',
+              'net_income',
+              'variance_comment_count',
+            ];
+        for (const f of fields) {
+          if (source[f] != null) {
+            entries.push({ key: f.replace(/_/g, ' '), value: String(source[f]) });
+          }
+        }
+        return entries.slice(0, 6);
+      }
+    }
     const DISPLAY_FIELDS = [
       'client_name', 'vendor_name', 'vendor',
       'amount', 'total', 'currency',

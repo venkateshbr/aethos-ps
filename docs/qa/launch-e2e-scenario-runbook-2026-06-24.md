@@ -508,6 +508,213 @@ Additional checks:
 - Empty state: in a new tenant or filtered view with no records, dashboards must show clear empty states rather than failed tables.
 - Evidence: management/recommendation tabs, Action Queue all/me, autonomy table before/after, agent run detail, workflow run expansion, no-console-error log.
 
+## AI Finance Ops Manager Scenarios
+
+These scenarios extend the launch pass for the intended agentic operating model:
+an AI Finance Ops Manager coordinates finance work across billing, AP, close,
+reporting, collections, document intake, and controls. Human users approve
+financially sensitive transitions through Inbox when the action changes money,
+accounting, external communications, or governance state.
+
+Recommended product language: use `AI Finance Ops Manager` for the consolidated
+role. The product can still expose specialist agents internally, but the user
+experience should feel like one finance-operations manager assigning work to
+AI specialists and routing approvals to the right human.
+
+Current implementation assessment:
+
+| Capability | Current implementation | Product gap | Tracking |
+| --- | --- | --- | --- |
+| Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and live E2E coverage | Unified command-center synthesis remains narrower than a full finance department | Parent #259 |
+| AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
+| AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch | Export/send/settlement remain explicit downstream guarded steps | #262 |
+| AI month-end close controller | Implemented and browser-verified: Copilot routes close preparation to Inbox, then approval runs the close workflow and bootstraps close tasks | Final lock remains separately guarded by readiness | #260 |
+| AI financial statement package | Implemented and browser-verified: Copilot generates a read-only statement package summary from posted journal/report services | Management commentary/variance explanations remain future command-center depth | #261 |
+| AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | Full PO matching/project coding from document remains broader P2P coverage | #264 |
+| AI collections | Collections agent and email materialisation exist | Copilot workflow and launch scenario coverage remain backlog after core finance ops | Parent #259 |
+
+## Scenario 11 - AI Finance Department Command Center
+
+Persona: Maya Rao, Owner/Admin. AI role: Finance Ops Manager.
+
+Browser steps:
+1. `/app/copilot`: start a new chat.
+2. Ask: `Run today's finance ops check for Launch QA 20260624. Tell me what needs billing, payment, collections, close, and review.`
+3. Verify Copilot uses live data, not invented values, for AR, AP, WIP, action queue, close readiness, and agent run status where available.
+4. Ask Copilot to create the next recommended work items.
+5. `/app/inbox`: verify sensitive actions appear as review tasks instead of silently changing invoices, bills, journals, emails, or payments.
+6. `/app/settings`: open Agent Run Ledger and verify Copilot tool invocations are recorded with risk class, status, duration, and payload summary.
+
+Expected result:
+- Copilot behaves as the consolidated finance-ops manager, not a passive Q&A bot.
+- Read-only analysis can execute directly.
+- Money/accounting/external-send actions route to Inbox.
+- The run ledger proves which tools ran and why review was required.
+
+Implementation status:
+- Partially implemented. Read tools, HITL policy, Inbox, ledger, invoice drafting, bill-pay proposal, month-end close preparation, and statement package generation exist.
+- Full finance-department command-center synthesis remains under #259.
+
+Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API errors.
+
+## Scenario 12 - AI Client Onboarding From Engagement Letter
+
+Persona: Engagement Manager. AI role: Finance Ops Manager with engagement-letter specialist.
+
+Browser steps:
+1. `/app/copilot`: upload a new SOW or engagement letter for `Launch QA 20260624 - AI Onboarding`.
+2. Ask Copilot: `Review this SOW, create the client, engagement, billing terms, and first project. Send anything risky to Inbox.`
+3. `/app/inbox`: review the extracted customer, engagement, billing arrangement, dates, rates, and project proposal.
+4. Approve with edits where required.
+5. `/app/clients`, `/app/engagements`, `/app/projects`: verify records were created from the reviewed payload.
+6. `/app/documents`: verify the source document links back to the created records where supported.
+
+Expected result:
+- AI extracts the engagement structure from the document.
+- Humans review extracted commercial terms before records are created.
+- The source document remains traceable.
+
+Implementation status:
+- Partially implemented. Copilot upload, document extraction worker, engagement draft suggestions, Inbox materialisation, and actionable upload status links exist.
+- Vendor-invoice document intake is browser-verified under #264. Full engagement-letter-to-client/engagement/project orchestration remains future command-center depth under parent #259.
+
+Evidence: upload state, Inbox detail, created engagement/project, document source linkage.
+
+## Scenario 13 - AI Drafts Customer Invoice
+
+Persona: Controller or Owner/Admin. AI role: Finance Ops Manager with invoice drafter.
+
+Browser steps:
+1. Ensure a customer engagement has billing terms plus invoiceable time, expenses, retainers, milestones, or fixed-fee terms.
+2. `/app/copilot`: ask `Draft the June invoice for Launch QA 20260624 - Northstar Managed Accounting.`
+3. Verify Copilot creates an Inbox review task instead of directly creating an approved/sent invoice.
+4. `/app/inbox`: open the task and verify engagement, period, line count, subtotal, tax, total, and supporting line details.
+5. Approve the task.
+6. `/app/invoices`: verify a draft invoice exists with matching lines and totals.
+7. Continue the normal invoice approval/send/payment flow from the invoice page.
+
+Expected result:
+- AI does the invoice calculation and line preparation.
+- Inbox approval materialises only a draft invoice.
+- Invoice approval/send/payment stay separate.
+
+Implementation status:
+- Implemented and browser-verified under #263. Live evidence covers Copilot prompt, Inbox approval, and draft invoice visibility.
+
+Evidence: Copilot chat, Inbox review payload, draft invoice detail, AR/WIP report effect.
+
+## Scenario 14 - AI Vendor Invoice Processing
+
+Persona: AP Lead. AI role: Finance Ops Manager with vendor invoice specialist.
+
+Browser steps:
+1. `/app/copilot`: upload a vendor invoice PDF for a known vendor and project.
+2. Ask: `Process this vendor invoice, match it to the right PO or service order, code it to the project, and send exceptions to Inbox.`
+3. `/app/inbox`: verify extracted vendor, invoice number, service period, amount, tax, project/account coding, and match status.
+4. Approve a clean bill and reject or edit a mismatch.
+5. `/app/bills`: verify approved payload created a bill and duplicate invoice numbers are blocked or warned.
+6. `/app/reports`: verify AP Aging and Project P&L update.
+
+Expected result:
+- AI extracts and codes the bill.
+- Match exceptions require human approval or correction.
+- Approved bills are visible for payment selection.
+
+Implementation status:
+- Partially implemented. Vendor invoice extraction and bill materialisation exist.
+- Browser-verified under #264 for Copilot upload, extraction status, Inbox approval, and bill creation with source-document traceability.
+- Remaining launch depth: PO/service-order matching, project/account coding, and mismatch exception editing.
+
+Evidence: upload, Inbox review, bill detail, AP Aging/Project P&L.
+
+## Scenario 15 - AI Bill-Pay Run
+
+Persona: Controller or AP Lead. AI role: Finance Ops Manager with bill-pay specialist.
+
+Browser steps:
+1. Ensure multiple approved unpaid bills exist.
+2. `/app/copilot`: ask `Prepare this week's bill-pay run. Prioritize due and overdue approved bills, exclude anything disputed, and send the batch to Inbox.`
+3. Verify Copilot proposes the payment batch, pay date, eligible bills, excluded bills, total, currency, and rationale.
+4. `/app/inbox`: approve the proposed batch.
+5. `/app/billing-runs` or Pay Bills route: verify the batch exists and can follow export/send/settlement controls.
+6. `/app/reports`: verify AP Aging and Cash Flow after settlement.
+
+Expected result:
+- AI prepares the batch and explains eligibility.
+- Human approval creates the batch.
+- Settlement remains an explicit downstream state change.
+
+Implementation status:
+- Implemented and browser-verified under #262. Live evidence covers Copilot proposal, Inbox approval, draft payment batch creation, and Pay Bills UI visibility.
+
+Evidence: Copilot proposal, Inbox task, payment batch, AP Aging before/after.
+
+## Scenario 16 - AI Month-End Close Controller
+
+Persona: Controller. AI role: Finance Ops Manager with accounting specialists.
+
+Browser steps:
+1. `/app/copilot`: ask `Run month-end close readiness for the current period. Prepare WIP, expense accrual, deferred revenue, prepaid amortization, recurring journal, and revenue recognition proposals where needed.`
+2. Verify Copilot summarizes readiness blockers, missing approvals, unposted journals, open AR/AP, and proposed journals.
+3. `/app/inbox`: approve one generated journal proposal, reject one, and edit one if available.
+4. `/app/accounting/journals`: verify approved proposals post balanced journals only.
+5. Return to Copilot and ask for the remaining close blockers.
+6. Load the close package and attempt period lock only when readiness is green.
+
+Expected result:
+- AI coordinates close tasks and proposals.
+- All accounting postings remain balanced and review-gated.
+- Close readiness updates after approvals/rejections.
+
+Implementation status:
+- Implemented and browser-verified under #260. Live evidence covers Copilot close-prep request, Inbox approval, close-task bootstrap, and Accounting Journals close panel visibility.
+
+Evidence: Copilot readiness summary, Inbox tasks, posted journal, close package, readiness/lock state.
+
+## Scenario 17 - AI Collections Agent
+
+Persona: Owner/Admin or Controller. AI role: Finance Ops Manager with collections specialist.
+
+Browser steps:
+1. Ensure at least one sent unpaid invoice is overdue.
+2. `/app/copilot`: ask `Draft collections reminders for invoices more than 30 days overdue. Do not send without review.`
+3. Verify Copilot identifies overdue invoices from AR Aging and drafts customer-specific reminder copy.
+4. `/app/inbox`: approve one reminder and reject one reminder.
+5. Verify approved reminders use the configured send-email materialisation path and rejected reminders do not send.
+6. `/app/settings`: verify agent run/tool invocation status and any workflow waiting-on-human state.
+
+Expected result:
+- AI identifies overdue invoices and drafts reminders.
+- Human approval gates external communications.
+- Rejections are logged for learning/audit.
+
+Implementation status:
+- Backlog under parent #259 after invoice, bill pay, close, and statements.
+
+Evidence: AR Aging, Inbox reminder, send status, ledger/workflow detail.
+
+## Scenario 18 - AI Financial Statement Package
+
+Persona: Owner/Admin and Controller. AI role: Finance Ops Manager with reporting specialist.
+
+Browser steps:
+1. Complete invoice, bill, payment, and close activity for the period.
+2. `/app/copilot`: ask `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, and management commentary.`
+3. Verify Copilot uses posted journal/report data and flags any missing close prerequisites.
+4. `/app/reports`: cross-check each statement tab against Copilot's package summary.
+5. Ask Copilot to explain material variances, open risks, and next actions.
+6. Verify the package does not claim final/locked status unless the period is actually ready or locked.
+
+Expected result:
+- AI assembles and explains statements from real accounting data.
+- The package is traceable to report tabs and posted journals.
+- Missing close work is surfaced as blockers, not hidden.
+
+Implementation status:
+- Implemented and browser-verified under #261. Live evidence covers Copilot statement-package generation and Reports UI cross-checks for Balance Sheet, Income Statement, and Statutory Pack.
+
+Evidence: Copilot package, report tabs, variance commentary, close readiness status.
+
 ## End-To-End Execution Schedule
 
 Run the launch pass in this order so every scenario builds on earlier browser-entered data.
@@ -551,6 +758,8 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/engagement-to-cash.spec.ts` | Deep API edge regression | Covers many edge cases, RBAC, FX, idempotency; mark as supplemental unless the step is browser-driven |
 | `frontend/e2e/multi-tenant-isolation.spec.ts` | Isolation supplement | Use to confirm isolation in addition to manual tenant switch checks |
 | `frontend/e2e/login.spec.ts`, `frontend/e2e/auth-guard.spec.ts`, `frontend/e2e/change-password.spec.ts` | Access supplement | Use for baseline auth/profile checks |
+| `frontend/e2e/copilot-draft-invoice-live.spec.ts` | AI invoice drafting live proof | Uses Copilot chat, Inbox approval, and Invoices UI against the live QA tenant; supplemental to Scenario 13 browser evidence |
+| `frontend/e2e/copilot-finance-ops-live.spec.ts` | AI finance-ops live proof | Uses Copilot chat/upload, Inbox approval, Pay Bills, Accounting Journals, Reports, Documents, and Bills UI against the live QA tenant for Scenarios 14-16 and 18 |
 
 ## Verification Matrix
 
@@ -562,7 +771,10 @@ Final verification on 2026-06-24:
 - Backend lint: `uv run ruff check .` passed.
 - Main frontend production build: `npm run build` passed with existing Angular optional-chain, Sass deprecation, and bundle budget warnings.
 - Timesheet production build: `npx ng build timesheet` passed with existing Sass deprecation warnings.
-- GitHub issue scan: `gh issue list --state open --limit 200` returned no open issues. No new launch-gap issue remains because all browser findings from the walkthrough were fixed and revalidated.
+- Original launch-gap issue scan before the AI finance-ops expansion returned no open issues. The AI expansion added #258-#264 to track the new agentic finance-department scenarios, implementation slices, and browser QA.
+- AI invoice live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-draft-invoice-live.spec.ts --project=chromium --reporter=list` passed after the Copilot draft-invoice implementation.
+- AI finance-ops live proof: `CI=1 AETHOS_PS_WEB_URL=http://localhost:4201 AETHOS_PS_API_URL=http://localhost:8011 npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium --reporter=list` passed `5 passed (1.0m)`.
+- QA database schema was brought current through Supabase migrations `0065`-`0083`; migrations `0068`, `0075`, and `0076` were aligned to the existing `public.is_tenant_member(auth.uid(), tenant_id)` RLS helper before push.
 
 Implemented during this validation pass:
 
@@ -572,6 +784,10 @@ Implemented during this validation pass:
 - Copilot now has a persistent `Log time` quick action that pre-fills the natural-language time logging prompt.
 - Reports Trial Balance reloads when its eager initial request fails before the tab is active, and the launch walkthrough verifies the visible active tab instead of hidden stale tab content.
 - The launch walkthrough creates richer data through the UI: contact profile, employee classification, service line, engagement total value/dates, project budgets, time entries, invoice, bills surfaces, reports, and manual journal.
+- Copilot finance-ops tools now cover bill-pay proposals, month-end close preparation, and financial statement package generation with tool policy/HITL routing.
+- Copilot document upload status now has a document detail API path, actionable Documents/Inbox links, and source-document metadata preserved through HITL approval into created bills.
+- Bill-pay Inbox approval now attributes draft payment batch creation to the approving user UUID instead of a non-UUID agent label.
+- Month-end close preparation now fails loudly if close-task bootstrap returns no tasks, preventing a false successful close in a database missing migration `0068_accounting_close_tasks.sql`.
 
 | Scenario | Browser-only setup | Browser validation | Current result | Notes |
 | --- | --- | --- | --- | --- |
@@ -581,9 +797,9 @@ Implemented during this validation pass:
 | 4. One-time fixed-fee tax compliance | Browser-capable | Browser + automated equivalent | Passed | Fixed-fee invoicing covered by full E2E §2.1, invoice lifecycle, paid state, and financial reports |
 | 5. IT infrastructure procurement | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor/bills/pay-bills routes render and procurement API contract covers PO/match lifecycle; run manual script for launch-demo data entry |
 | 6. Contractor service order | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor bill/procurement, project-cost, AP Aging, and close proposal paths covered by automated suite; manual script validates named contractor scenario |
-| 7. Bill payment batch and settlement | Browser-capable | Browser + automated equivalent | Passed | Pay Bills route and AP Aging checks pass; bill payment/service tests cover approved-bill settlement semantics |
-| 8. Month-end close | Browser-capable | Browser + automated equivalent | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, and reports all passed |
-| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, and financial statement unit/report tests passed |
+| 7. Bill payment batch and settlement | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Pay Bills route and AP Aging checks pass; Copilot live proof verifies AI proposal, Inbox approval, and draft batch creation; bill payment/service tests cover settlement semantics |
+| 8. Month-end close | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, and Copilot close-task bootstrap all passed |
+| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, and Copilot statement-package live proof passed |
 | 10. Management reports and action queues | Browser-capable | Browser + automated equivalent | Passed | Project Health, Capacity, Action Queue, report tabs, Inbox/HITL, agent run/workflow surfaces covered by full browser/backend suites |
 
 ## Gaps To Record As Issues
