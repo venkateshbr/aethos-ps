@@ -78,6 +78,46 @@ def _get_mime_type(filename: str) -> str:
     return "text/plain"
 
 
+def _normalise_engagement_onboarding_output(output: dict) -> dict:
+    """Ensure engagement-letter HITL payloads contain the full onboarding proposal."""
+    result = dict(output)
+    client_name = str(result.get("client_name") or "").strip() or "Unknown Client"
+    scope_summary = str(result.get("scope_summary") or "").strip()
+
+    engagement_name = str(result.get("engagement_name") or "").strip()
+    if not engagement_name:
+        engagement_name = f"{client_name} Engagement"
+    result["engagement_name"] = engagement_name
+
+    first_project_name = str(result.get("first_project_name") or "").strip()
+    if not first_project_name:
+        first_project_name = "General"
+    result["first_project_name"] = first_project_name
+
+    first_project_description = str(result.get("first_project_description") or "").strip()
+    if not first_project_description and scope_summary:
+        first_project_description = scope_summary
+    if first_project_description:
+        result["first_project_description"] = first_project_description
+
+    hints = result.get("rate_card_hints") or []
+    if isinstance(hints, list) and hints:
+        currency = str(result.get("currency") or "USD").upper()
+        parts: list[str] = []
+        for hint in hints:
+            if not isinstance(hint, dict):
+                continue
+            role = str(hint.get("role") or "").strip()
+            rate = str(hint.get("rate") or "").strip()
+            if role and rate:
+                parts.append(f"{role}: {currency} {rate}/hr")
+        if parts:
+            result["rate_card_summary"] = "; ".join(parts)
+
+    result["onboarding_intent"] = "create_client_engagement_project"
+    return result
+
+
 @app.task(name="extract_document_worker", queue="extraction")
 async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
     """Procrastinate task entrypoint for document extraction.
@@ -179,6 +219,8 @@ async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
 
         # Step 6: Persist agent suggestion + HITL task
         output_dict = draft.model_dump(mode="json")
+        if doc_type == "engagement_letter":
+            output_dict = _normalise_engagement_onboarding_output(output_dict)
         await write_agent_suggestion(
             deps=deps,
             agent_name=agent_name,

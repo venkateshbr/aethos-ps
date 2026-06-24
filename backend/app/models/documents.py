@@ -10,6 +10,14 @@ class DocumentResponse(BaseModel):
 
     id: str = Field(..., description="UUID of the documents row")
     tenant_id: str = Field(..., description="Owning tenant UUID")
+    original_filename: str | None = Field(
+        default=None,
+        description="Original filename as uploaded",
+    )
+    document_type: str = Field(
+        default="vendor_invoice",
+        description="Classified type: engagement_letter | expense | vendor_invoice",
+    )
     storage_path: str = Field(..., description="Path within the Supabase Storage bucket")
     mime_type: str = Field(..., description="MIME type of the uploaded file")
     file_size_bytes: int = Field(..., ge=0, description="Raw file size in bytes")

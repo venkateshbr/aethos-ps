@@ -138,6 +138,28 @@ def test_mime_to_ext_map_is_complete() -> None:
         )
 
 
+def test_engagement_onboarding_output_includes_first_project_and_rates() -> None:
+    from app.workers.document_extraction import _normalise_engagement_onboarding_output
+
+    output = _normalise_engagement_onboarding_output(
+        {
+            "client_name": "Northwind Industries",
+            "currency": "USD",
+            "scope_summary": "Q3 strategy review and operating model design.",
+            "rate_card_hints": [
+                {"role": "Senior Consultant", "rate": "350"},
+                {"role": "Analyst", "rate": "175"},
+            ],
+        }
+    )
+
+    assert output["onboarding_intent"] == "create_client_engagement_project"
+    assert output["engagement_name"] == "Northwind Industries Engagement"
+    assert output["first_project_name"] == "General"
+    assert output["first_project_description"] == "Q3 strategy review and operating model design."
+    assert output["rate_card_summary"] == "Senior Consultant: USD 350/hr; Analyst: USD 175/hr"
+
+
 # ---------------------------------------------------------------------------
 # File size guard
 # ---------------------------------------------------------------------------

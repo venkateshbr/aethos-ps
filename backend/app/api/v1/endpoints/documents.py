@@ -233,18 +233,38 @@ async def upload_document(
             exc,
         )
 
+    response_row = saved_row
+    try:
+        current = (
+            db.table("documents")
+            .select(
+                "id, tenant_id, original_filename, document_type, storage_path, "
+                "mime_type, file_size_bytes, sha256, status, created_at"
+            )
+            .eq("id", document_id)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+        if current.data:
+            response_row = current.data[0]
+    except Exception as exc:
+        logger.warning("Document response refresh failed for %s: %s", document_id, exc)
+
     # ------------------------------------------------------------------
     # 7. Return response.
     # ------------------------------------------------------------------
     return DocumentResponse(
-        id=saved_row.get("id", document_id),
-        tenant_id=saved_row.get("tenant_id", tenant_id),
-        storage_path=saved_row.get("storage_path", storage_path),
-        mime_type=saved_row.get("mime_type", content_type),
-        file_size_bytes=saved_row.get("file_size_bytes", len(content)),
-        sha256=saved_row.get("sha256", sha256_hex),
-        status=saved_row.get("status", "uploaded"),
-        created_at=saved_row.get("created_at", now_iso),
+        id=response_row.get("id", document_id),
+        tenant_id=response_row.get("tenant_id", tenant_id),
+        original_filename=response_row.get("original_filename"),
+        document_type=response_row.get("document_type") or "vendor_invoice",
+        storage_path=response_row.get("storage_path", storage_path),
+        mime_type=response_row.get("mime_type", content_type),
+        file_size_bytes=response_row.get("file_size_bytes", len(content)),
+        sha256=response_row.get("sha256", sha256_hex),
+        status=response_row.get("status", "uploaded"),
+        created_at=response_row.get("created_at", now_iso),
     )
 
 
@@ -310,7 +330,8 @@ async def get_document(
         result = (
             db.table("documents")
             .select(
-                "id, tenant_id, storage_path, mime_type, file_size_bytes, sha256, status, created_at"
+                "id, tenant_id, original_filename, document_type, storage_path, "
+                "mime_type, file_size_bytes, sha256, status, created_at"
             )
             .eq("id", document_id)
             .eq("tenant_id", tenant_id)
@@ -340,6 +361,8 @@ async def get_document(
     return DocumentResponse(
         id=row["id"],
         tenant_id=row.get("tenant_id") or tenant_id,
+        original_filename=row.get("original_filename"),
+        document_type=row.get("document_type") or "vendor_invoice",
         storage_path=row["storage_path"],
         mime_type=row["mime_type"],
         file_size_bytes=int(row.get("file_size_bytes") or 0),
