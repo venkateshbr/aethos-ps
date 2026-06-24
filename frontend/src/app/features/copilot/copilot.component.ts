@@ -574,6 +574,16 @@ export class CopilotComponent implements OnInit {
             );
           }
 
+          if (typeof payload['tool_result'] === 'string') {
+            this.messages.update(msgs =>
+              msgs.map(m =>
+                m.id === assistantId
+                  ? { ...m, toolName: payload['tool_result'] as string, toolDone: true }
+                  : m
+              )
+            );
+          }
+
           // Card frame — agent extracted a structured entity
           if (typeof payload['card_type'] === 'string') {
             this.messages.update(msgs =>

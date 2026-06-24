@@ -54,6 +54,7 @@ Done:
 - Webhook event audit is now queryable by tenant admins through `/api/v1/webhook-events`, with focused API/service tests. Stripe checkout webhooks also derive tenant context from nested Stripe object metadata before falling back to Stripe customer mapping.
 - Vendor and bill writes now tolerate `PGRST204` stale-schema errors for optional rollout columns covering vendor controls, PO matching, and prepaid bill-line metadata, preserving core E2E setup while migrations catch up.
 - Full Chromium engagement-to-cash E2E was rerun against local backend/frontend and passed (`57 passed`).
+- Live Copilot `log_time_entry` verification is complete. Chromium drove Copilot chat with a live LLM key, observed the `log_time_entry` tool card complete, approved the HITL review task through the Inbox UI, verified the materialized Supabase `time_entries` row, and verified the new entry appeared in `/app/time`.
 - `make demo-ready` was executed against demo tenant `30733766-c54e-40fd-b0c1-49670d0190b6` on local backend/frontend. It reset and seeded the tenant, passed API smoke, and passed the selected Meridian demo Playwright run (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`) with evidence under `frontend/test-results/demo-v2-meridian/`.
 
 Still open:
@@ -140,7 +141,7 @@ Gaps / status:
 - Partial 2026-06-23: WIP accrual, employee reimbursement expense accrual, deferred revenue release, milestone revenue recognition, percentage-of-completion revenue recognition, prepaid expense amortization, and recurring-journal proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Retainer drawdown now has a persisted ledger, balance-aware invoice offsets, floor warnings from actual draw/balance, and automatic draw entries from invoice creation. Remaining revenue-recognition/close depth is broader schedule management and scheduled execution.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
 - Open: no client portal workflow beyond public invoice payment.
-- Done/verification open 2026-06-23: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM time logging remains open for verification in GitHub issue #253.
+- Done 2026-06-24: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM `log_time_entry` is verified in Chromium: chat emits a completed tool card, policy creates a HITL review task, Inbox approval materializes the time entry, and `/app/time` shows the new row.
 
 ### Procure To Pay
 
@@ -197,7 +198,7 @@ Gaps / status:
 - Done 2026-06-24: `/health/ready` now reports queue `configured` and `required` flags. Queue remains optional in sync-mode local/demo runs and becomes a readiness gate when `QUEUE_REQUIRED=true` or `EXTRACTION_MODE=async`.
 - Done 2026-06-23: document preflight scanning masks decoded text and withholds sensitive/adversarial PDF/image content from external LLM calls when detected.
 - Partial 2026-06-23: human corrections become eval candidates and L3 policy fields exist. Runnable eval gate and drift dashboard are still not mature.
-- Done/verification open 2026-06-23: Copilot UI/E2E resilience was hardened in PR #256; live LLM tool execution still needs issue #253 verification.
+- Done 2026-06-24: Copilot UI/E2E resilience was hardened in PR #256, and live LLM `log_time_entry` execution is now covered by `frontend/e2e/copilot-log-time-live.spec.ts`.
 
 ### Frontend And Contract Surface
 
@@ -290,7 +291,7 @@ Work items:
 - Done 2026-06-23: add `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, and `agent_memory_items` or equivalent tables.
 - Done 2026-06-23: create a tool registry with risk class: read-only, draft, write-low-risk, write-money-in, write-money-out, accounting.
 - Done/monitor 2026-06-23: enforce tool authorization by agent, autonomy level, role, tenant, and risk class for registered tools.
-- Done/verification open 2026-06-23: move Copilot write tools through the same tool policy/HITL/autonomy path; live LLM time logging remains tracked by issue #253.
+- Done 2026-06-24: move Copilot write tools through the same tool policy/HITL/autonomy path; live LLM time logging is verified through Copilot chat, HITL Inbox approval, persisted `time_entries`, and `/app/time` UI evidence.
 - Done 2026-06-24: store prompt version, model version, source-document hash, input hash, output hash, cost, trace ID, and replay pointer. Recorded replay is runnable from the agent-run dashboard, current-code dry-run validation executes supported read-only Copilot/reporting tools, and mutating/external-provider steps produce deterministic human-approved re-execution plans with idempotency keys and side-effect markers.
 - Done 2026-06-23: add agent run dashboard in Settings/Admin.
 - Done 2026-06-23: add kill switch and per-agent/tool circuit breakers.
@@ -419,7 +420,7 @@ Priority 1:
 
 Priority 2:
 - Done 2026-06-23: agent run ledger and tool registry.
-- Done/verification open 2026-06-23: unified HITL/autonomy enforcement for Copilot tools; verify live LLM `log_time_entry` in issue #253.
+- Done 2026-06-24: unified HITL/autonomy enforcement for Copilot tools, including live LLM `log_time_entry` verification through browser-driven Copilot, Inbox approval, and Time Entries UI.
 - Partial 2026-06-23: eval runner and correction-to-eval loop; correction candidates exist, runnable promotion gate still needs maturity.
 - Done 2026-06-23: agent dashboard and kill switches.
 
