@@ -703,6 +703,12 @@ async def test_inbox_materialises_copilot_finance_ops_action_plan(
     assert first_suggestion["output_snapshot"]["parent_plan_id"] == "finance-ops-plan-1"
     assert first_suggestion["output_snapshot"]["action_item_id"] == "finance-ops-01-ar"
     assert first_suggestion["output_snapshot"]["suggested_tool"] == "send_email"
+    assert first_suggestion["output_snapshot"]["dispatch_tool"] == "draft_collection_reminders"
+    assert first_suggestion["output_snapshot"]["dispatch_input"] == {
+        "minimum_days_overdue": 1,
+        "limit": 10,
+        "tone": "auto",
+    }
 
     first_task = db.tables["hitl_tasks"][0]
     assert first_task["agent_suggestion_id"] == first_suggestion["id"]
@@ -715,8 +721,23 @@ async def test_inbox_materialises_copilot_finance_ops_action_plan(
 
 
 @pytest.mark.asyncio
-async def test_inbox_materialises_finance_ops_action_item_as_ack_only() -> None:
+async def test_inbox_materialises_finance_ops_action_item_dispatches_collections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(
+        return_value={
+            "collections_reminders_drafted": True,
+            "requires_review": True,
+            "tool_name": "draft_collection_reminders",
+            "created_review_tasks": 2,
+            "message": "Created 2 Inbox review task(s) for collections reminders.",
+        }
+    )
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool_with_policy", execute_tool)
 
     svc = InboxService(MagicMock(), tenant_id="tenant-abc")
     result = await svc._materialise_copilot_tool(
@@ -724,19 +745,145 @@ async def test_inbox_materialises_finance_ops_action_item_as_ack_only() -> None:
             "finance_ops_action_item": True,
             "parent_plan_id": "finance-ops-plan-1",
             "action_item_id": "finance-ops-plan-1-1",
+            "period": "2026-06",
+            "domain": "ar",
             "suggested_tool": "send_email",
-        }
+        },
+        user_id="approver-1",
     )
 
-    assert result == {
-        "entity_type": "finance_ops_action_item",
-        "entity_id": "finance-ops-plan-1-1",
-        "parent_plan_id": "finance-ops-plan-1",
-        "approval_effect": (
-            "Approval records follow-up review only; downstream execution must "
-            "run through the specialist agent flow."
-        ),
-    }
+    execute_tool.assert_awaited_once_with(
+        "draft_collection_reminders",
+        {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"},
+    )
+    assert result["entity_type"] == "finance_ops_action_item"
+    assert result["entity_id"] == "finance-ops-plan-1-1"
+    assert result["parent_plan_id"] == "finance-ops-plan-1"
+    assert result["dispatched_tool"] == "draft_collection_reminders"
+    assert result["child_review_tasks_created"] == 2
+    assert result["dispatch_result"]["created_review_tasks"] == 2
+    assert "existing review gates" in result["approval_effect"]
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_finance_ops_action_item_dispatches_bill_pay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(
+        return_value={
+            "requires_review": True,
+            "suggestion_id": "sug-bill-pay",
+            "tool_name": "propose_bill_payment_batch",
+            "action_type": "create_bill_payment_batch",
+        }
+    )
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool_with_policy", execute_tool)
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "finance_ops_action_item": True,
+            "parent_plan_id": "finance-ops-plan-1",
+            "action_item_id": "finance-ops-plan-1-2",
+            "period": "2026-06",
+            "domain": "ap",
+            "suggested_tool": "propose_bill_payment_batch",
+        },
+        user_id="approver-1",
+    )
+
+    execute_tool.assert_awaited_once_with(
+        "propose_bill_payment_batch",
+        {"due_within_days": 7},
+    )
+    assert result["dispatched_tool"] == "propose_bill_payment_batch"
+    assert result["child_review_tasks_created"] == 1
+
+
+@pytest.mark.asyncio
+async def test_inbox_finance_ops_action_item_requires_invoice_context() -> None:
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    with pytest.raises(HTTPException) as exc:
+        await svc._materialise_copilot_tool(
+            {
+                "finance_ops_action_item": True,
+                "parent_plan_id": "finance-ops-plan-1",
+                "action_item_id": "finance-ops-plan-1-3",
+                "period": "2026-06",
+                "domain": "wip",
+                "suggested_tool": "draft_invoice",
+            },
+            user_id="approver-1",
+        )
+
+    assert exc.value.status_code == 422
+    assert "engagement_id or engagement_name" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_inbox_finance_ops_action_item_requires_invoice_context_for_child_metadata() -> None:
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    with pytest.raises(HTTPException) as exc:
+        await svc._materialise_copilot_tool(
+            {
+                "finance_ops_action_item": True,
+                "parent_plan_id": "finance-ops-plan-1",
+                "action_item_id": "finance-ops-plan-1-3",
+                "period": "2026-06",
+                "domain": "wip",
+                "suggested_tool": "draft_invoice",
+                "dispatch_tool": "draft_invoice",
+                "dispatch_input": {},
+                "source_plan_action": {
+                    "domain": "wip",
+                    "suggested_tool": "draft_invoice",
+                },
+            },
+            user_id="approver-1",
+        )
+
+    assert exc.value.status_code == 422
+    assert "engagement_id or engagement_name" in str(exc.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_inbox_finance_ops_action_item_dispatch_error_keeps_task_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(
+        graph.CopilotAgent,
+        "_execute_tool_with_policy",
+        AsyncMock(return_value={"error": "propose_bill_payment_batch requires admin"}),
+    )
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    with pytest.raises(HTTPException) as exc:
+        await svc._materialise_copilot_tool(
+            {
+                "finance_ops_action_item": True,
+                "parent_plan_id": "finance-ops-plan-1",
+                "action_item_id": "finance-ops-plan-1-4",
+                "period": "2026-06",
+                "domain": "ap",
+                "suggested_tool": "propose_bill_payment_batch",
+            },
+            user_id="approver-1",
+        )
+
+    assert exc.value.status_code == 409
+    assert "Plan Item dispatch failed" in str(exc.value.detail)
 
 
 @pytest.mark.asyncio

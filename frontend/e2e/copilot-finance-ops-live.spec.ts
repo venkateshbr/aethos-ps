@@ -1,5 +1,5 @@
 /**
- * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, #266, #267, and #272.
+ * Live Copilot finance-ops verification for #260, #261, #262, #264, #265, #266, #267, #272, and #276.
  *
  * Browser flows:
  * - Copilot chat -> daily finance-ops command center -> report/action surfaces.
@@ -62,6 +62,7 @@ type HitlTaskRow = {
   kind: string;
   payload?: Record<string, unknown>;
   agent_suggestion_id?: string;
+  created_at?: string;
 };
 type SuggestionRow = { id: string; status: string };
 type BatchItemRow = { batch_id: string; bill_id: string };
@@ -603,7 +604,7 @@ async function findBillBySourceDocument(
   return rows[0] ?? null;
 }
 
-test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #267 #272)', () => {
+test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #267 #272 #276)', () => {
   test.use({ storageState: STORAGE_PATH });
 
   test.beforeEach(() => {
@@ -663,19 +664,19 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await openInboxWithRetry(page);
   });
 
-  test('creates finance ops action plan through Copilot, Inbox approval, and child tasks (#272 #274)', async ({ page, request }) => {
+  test('creates finance ops action plan, child tasks, and specialist dispatch (#272 #274 #276)', async ({ page, request }) => {
     test.setTimeout(300_000);
     const auth = getAuthFromStorage();
     const config = supabaseAdminConfig();
     test.skip(!auth || !config, 'auth or Supabase admin config missing');
 
     await createApprovedVendorBill(request, auth!);
-    await createOverdueCustomerInvoice(request, auth!, config!);
+    const collectionsSeed = await createOverdueCustomerInvoice(request, auth!, config!);
     const startedAt = new Date(Date.now() - 5_000).toISOString();
 
     await sendCopilotPrompt(page, [
       `Create the next recommended finance ops work items for ${CLOSE_PERIOD}.`,
-      'Use the create_finance_ops_action_plan tool with limit 5.',
+      'Create at most five manager-reviewed work items.',
       'Route the manager action plan to Inbox for review.',
       'Do not approve invoices, payments, journals, or emails directly.',
     ].join(' '));
@@ -752,7 +753,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       })
       .toBe('approved');
 
-    let childTaskId = '';
+    let childTasksForPlan: HitlTaskRow[] = [];
     await expect
       .poll(async () => {
         const childTasks = await listOpenTasks(
@@ -767,7 +768,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
             && childPayload['parent_plan_id'] === planId
             && childPayload['period'] === CLOSE_PERIOD;
         });
-        childTaskId = matches[0]?.id ?? '';
+        childTasksForPlan = matches;
         return matches.length;
       }, {
         timeout: 60_000,
@@ -775,13 +776,75 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       })
       .toBe(expectedChildCount);
 
+    const arChildTask = childTasksForPlan.find((candidate) => {
+      const childPayload = payloadObject(candidate);
+      return String(childPayload['domain'] ?? '').toLowerCase() === 'ar'
+        && childPayload['dispatch_tool'] === 'draft_collection_reminders';
+    });
+    expect(arChildTask, 'action-plan fan-out should include an AR collections child task').toBeTruthy();
+    const arChildPayload = payloadObject(arChildTask!);
+
     await openInboxWithRetry(page);
     await page.getByRole('button', { name: /^plan items$/i }).click();
-    const childCard = page.locator(`#task-${childTaskId}`);
+    const childCard = page.locator(`#task-${arChildTask!.id}`);
     await expect(childCard).toBeVisible({ timeout: 30_000 });
     await expectSummaryEntry(childCard, 'period', CLOSE_PERIOD);
     await expectSummaryEntry(childCard, 'parent plan id', planId);
+    await expectSummaryEntry(childCard, 'suggested tool', 'send_email');
     await expect(childCard.getByRole('button', { name: /^edit/i })).toHaveCount(0);
+
+    const dispatchStartedAt = new Date(Date.now() - 5_000).toISOString();
+    await childCard.getByRole('button', { name: /^approve/i }).click();
+    await expect(childCard).toBeHidden({ timeout: 120_000 });
+
+    await expect
+      .poll(async () => {
+        const suggestions = await restSelect<SuggestionRow>(request, config!, 'agent_suggestions', {
+          select: 'id,status',
+          tenant_id: `eq.${auth!.tenantId}`,
+          id: `eq.${arChildTask!.agent_suggestion_id}`,
+          limit: '1',
+        });
+        return suggestions[0]?.status ?? '';
+      }, {
+        timeout: 45_000,
+        message: 'approved Plan Item should mark its suggestion approved',
+      })
+      .toBe('approved');
+
+    let dispatchedEmailTask: HitlTaskRow | undefined;
+    await expect
+      .poll(async () => {
+        const rows = await restSelect<HitlTaskRow>(request, config!, 'hitl_tasks', {
+          select: 'id,title,kind,payload,agent_suggestion_id,created_at',
+          tenant_id: `eq.${auth!.tenantId}`,
+          kind: 'eq.send_email',
+          status: 'eq.open',
+          created_at: `gte.${dispatchStartedAt}`,
+          order: 'created_at.desc',
+          limit: '50',
+        });
+        dispatchedEmailTask = rows.find((candidate) => {
+          const emailPayload = payloadObject(candidate);
+          return emailPayload['client_name'] === collectionsSeed.client.name;
+        }) ?? rows[0];
+        return rows.length;
+      }, {
+        timeout: 90_000,
+        message: 'approved AR Plan Item should dispatch collections send_email review tasks',
+      })
+      .toBeGreaterThan(0);
+
+    await openInboxWithRetry(page);
+    const emailCard = page.locator(`#task-${dispatchedEmailTask!.id}`);
+    await expect(emailCard).toBeVisible({ timeout: 30_000 });
+    const emailPayload = payloadObject(dispatchedEmailTask!);
+    await expectSummaryEntry(emailCard, 'subject', String(emailPayload['subject']));
+    expect(arChildPayload['dispatch_input']).toEqual({
+      minimum_days_overdue: 1,
+      limit: 10,
+      tone: 'auto',
+    });
 
     await expect
       .poll(async () => {
