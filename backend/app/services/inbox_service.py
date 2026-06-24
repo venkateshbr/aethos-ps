@@ -261,7 +261,7 @@ class InboxService:
             "copilot_create_finance_ops_action_plan",
             "finance_ops_action_item",
         ):
-            return await self._materialise_copilot_tool(payload)
+            return await self._materialise_copilot_tool(payload, user_id=user_id)
         elif kind == "approve_billing_run":
             return await self._materialise_billing_run(payload)
         elif kind == "send_email":
@@ -286,10 +286,18 @@ class InboxService:
         """
         return payload.get("original_document_id")
 
-    async def _materialise_copilot_tool(self, payload: dict) -> dict:
+    async def _materialise_copilot_tool(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
         tool_name = payload.get("tool_name")
         if payload.get("finance_ops_action_item") is True:
-            return self._materialise_finance_ops_action_item(payload)
+            return await self._materialise_finance_ops_action_item(
+                payload,
+                user_id=user_id,
+            )
 
         if tool_name not in (
             "log_time_entry",
@@ -354,17 +362,171 @@ class InboxService:
             ),
         }
 
-    @staticmethod
-    def _materialise_finance_ops_action_item(payload: dict) -> dict:
+    async def _materialise_finance_ops_action_item(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
+        dispatch = self._finance_ops_action_item_dispatch(payload)
+        if dispatch.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=dispatch["error"],
+            )
+
+        from app.agents.copilot.graph import CopilotAgent, CopilotDeps
+
+        agent = CopilotAgent(
+            CopilotDeps(
+                tenant_id=self._tenant_id,
+                user_id=str(
+                    user_id
+                    or payload.get("requested_by_user_id")
+                    or payload.get("approved_by_user_id")
+                    or ""
+                ),
+                db_client=self._db,
+            )
+        )
+        dispatch_tool = str(dispatch["tool_name"])
+        dispatch_input = dispatch["tool_input"]
+        result = await agent._execute_tool_with_policy(dispatch_tool, dispatch_input)
+        if result.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Plan Item dispatch failed: {result['error']}",
+            )
+
+        child_review_tasks_created = self._finance_ops_child_review_task_count(result)
         return {
             "entity_type": "finance_ops_action_item",
             "entity_id": str(payload.get("action_item_id") or ""),
             "parent_plan_id": payload.get("parent_plan_id"),
+            "dispatched_tool": dispatch_tool,
+            "dispatch_input": dispatch_input,
+            "dispatch_result": result,
+            "child_review_tasks_created": child_review_tasks_created,
             "approval_effect": (
-                "Approval records follow-up review only; downstream execution must "
-                "run through the specialist agent flow."
+                "Approval dispatched the specialist workflow through its existing "
+                "review gates; downstream business records still require the "
+                "specialist Inbox approval."
             ),
         }
+
+    @staticmethod
+    def _finance_ops_action_item_dispatch(payload: dict) -> dict:
+        suggested_tool = str(payload.get("suggested_tool") or "").strip()
+        domain = str(payload.get("domain") or "").strip().lower()
+        period = str(payload.get("period") or "").strip()
+        explicit_tool = payload.get("dispatch_tool")
+        explicit_input = payload.get("dispatch_input")
+        if isinstance(explicit_tool, str) and explicit_tool.strip():
+            tool_name = explicit_tool.strip()
+            tool_input = dict(explicit_input) if isinstance(explicit_input, dict) else {}
+            if tool_name == "draft_collection_reminders" and not tool_input:
+                tool_input = {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"}
+            elif tool_name == "propose_bill_payment_batch" and not tool_input:
+                tool_input = {"due_within_days": 7}
+            elif tool_name == "prepare_month_end_close":
+                if not tool_input.get("period") and period:
+                    tool_input["period"] = period
+                if not tool_input.get("period"):
+                    return {
+                        "error": "Close Plan Item dispatch requires a period.",
+                    }
+            elif tool_name == "draft_invoice":
+                invoice_input = InboxService._finance_ops_invoice_dispatch_input(
+                    payload,
+                    tool_input=tool_input,
+                )
+                if invoice_input.get("error"):
+                    return invoice_input
+                tool_input = invoice_input["tool_input"]
+            else:
+                return {
+                    "error": (
+                        "Unsupported finance ops Plan Item dispatch target: "
+                        f"{tool_name}"
+                    )
+                }
+            return {"tool_name": tool_name, "tool_input": tool_input}
+
+        if suggested_tool in {"send_email", "draft_collection_reminders"} or domain == "ar":
+            return {
+                "tool_name": "draft_collection_reminders",
+                "tool_input": {
+                    "minimum_days_overdue": 1,
+                    "limit": 10,
+                    "tone": "auto",
+                },
+            }
+        if suggested_tool == "propose_bill_payment_batch" or domain == "ap":
+            return {
+                "tool_name": "propose_bill_payment_batch",
+                "tool_input": {"due_within_days": 7},
+            }
+        if suggested_tool == "prepare_month_end_close" or domain == "close":
+            if not period:
+                return {
+                    "error": "Close Plan Item dispatch requires a period.",
+                }
+            return {
+                "tool_name": "prepare_month_end_close",
+                "tool_input": {"period": period},
+            }
+        if suggested_tool == "draft_invoice" or domain == "wip":
+            return InboxService._finance_ops_invoice_dispatch_input(payload)
+
+        return {
+            "error": (
+                "Unsupported finance ops Plan Item dispatch target: "
+                f"{suggested_tool or domain or 'unknown'}"
+            )
+        }
+
+    @staticmethod
+    def _finance_ops_invoice_dispatch_input(
+        payload: dict,
+        *,
+        tool_input: dict | None = None,
+    ) -> dict:
+        tool_input = dict(tool_input or {})
+        source = payload.get("source_plan_action")
+        source = source if isinstance(source, dict) else {}
+        engagement_id = (
+            tool_input.get("engagement_id")
+            or payload.get("engagement_id")
+            or source.get("engagement_id")
+        )
+        engagement_name = (
+            tool_input.get("engagement_name")
+            or payload.get("engagement_name")
+            or source.get("engagement_name")
+        )
+        if not engagement_id and not engagement_name:
+            return {
+                "error": (
+                    "Invoice Plan Item dispatch requires an engagement_id or "
+                    "engagement_name."
+                ),
+            }
+        if engagement_id:
+            tool_input["engagement_id"] = str(engagement_id)
+        if engagement_name:
+            tool_input["engagement_name"] = str(engagement_name)
+        return {"tool_name": "draft_invoice", "tool_input": tool_input}
+
+    @staticmethod
+    def _finance_ops_child_review_task_count(result: dict) -> int:
+        count = result.get("created_review_tasks")
+        if isinstance(count, int):
+            return count
+        if isinstance(count, str) and count.isdigit():
+            return int(count)
+        if result.get("requires_review") and result.get("suggestion_id"):
+            return 1
+        return 0
 
     async def _create_finance_ops_action_item_tasks(self, payload: dict) -> int:
         action_items = payload.get("action_items")
@@ -460,12 +622,50 @@ class InboxService:
             "requires_inbox_approval": True,
             "rationale": item.get("rationale"),
             "review_path": item.get("review_path"),
+            "dispatch_tool": InboxService._finance_ops_dispatch_tool(item),
+            "dispatch_input": InboxService._finance_ops_dispatch_input(
+                item,
+                period=period,
+            ),
             "source_plan_action": item,
             "approval_effect": (
-                "Approving this item records follow-up review only. It does not "
-                "create invoices, payments, journals, statements, or external sends."
+                "Approving this item dispatches the mapped specialist workflow. "
+                "It does not create invoices, payments, journals, statements, or "
+                "external sends directly."
             ),
         }
+
+    @staticmethod
+    def _finance_ops_dispatch_tool(item: dict) -> str | None:
+        suggested_tool = str(item.get("suggested_tool") or "").strip()
+        domain = str(item.get("domain") or "").strip().lower()
+        if suggested_tool in {"send_email", "draft_collection_reminders"} or domain == "ar":
+            return "draft_collection_reminders"
+        if suggested_tool == "propose_bill_payment_batch" or domain == "ap":
+            return "propose_bill_payment_batch"
+        if suggested_tool == "prepare_month_end_close" or domain == "close":
+            return "prepare_month_end_close"
+        if suggested_tool == "draft_invoice" or domain == "wip":
+            return "draft_invoice"
+        return None
+
+    @staticmethod
+    def _finance_ops_dispatch_input(item: dict, *, period: str) -> dict:
+        dispatch_tool = InboxService._finance_ops_dispatch_tool(item)
+        if dispatch_tool == "draft_collection_reminders":
+            return {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"}
+        if dispatch_tool == "propose_bill_payment_batch":
+            return {"due_within_days": 7}
+        if dispatch_tool == "prepare_month_end_close":
+            return {"period": period}
+        if dispatch_tool == "draft_invoice":
+            result: dict = {}
+            if item.get("engagement_id"):
+                result["engagement_id"] = str(item["engagement_id"])
+            if item.get("engagement_name"):
+                result["engagement_name"] = str(item["engagement_name"])
+            return result
+        return {}
 
     @staticmethod
     def _finance_ops_action_item_priority(payload: dict) -> str:
