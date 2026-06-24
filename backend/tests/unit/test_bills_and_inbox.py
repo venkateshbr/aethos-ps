@@ -753,6 +753,8 @@ async def test_materialise_bill_creates_lines_and_review_evidence() -> None:
                     "confidence": 0.91,
                 }
             ],
+            "project_hints": [{"project_id": "project-1", "confidence": 0.82}],
+            "customer_hints": [{"client_id": "customer-1", "confidence": 0.79}],
             "review_exceptions": [{"code": "possible_duplicate", "severity": "high"}],
             "lines": [
                 {
@@ -772,6 +774,8 @@ async def test_materialise_bill_creates_lines_and_review_evidence() -> None:
     assert bill["vendor_invoice_review"]["reviewed_by_user_id"] == "manager-1"
     assert bill["vendor_invoice_review"]["duplicate_review"]["approved_duplicate"] is True
     assert bill["vendor_invoice_review"]["match_status"] == "duplicate_review_required"
+    assert bill["vendor_invoice_review"]["project_hints"][0]["project_id"] == "project-1"
+    assert bill["vendor_invoice_review"]["customer_hints"][0]["client_id"] == "customer-1"
     assert db.tables["bill_lines"][0]["account_id"] == "acct-software"
 
 

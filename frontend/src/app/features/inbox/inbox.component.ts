@@ -13,6 +13,7 @@ import { userMessageForError } from '../../core/utils/error-message';
 
 /** HITL task kinds that originate from an AI document extraction (#127). */
 const EXTRACTION_KINDS = new Set(['create_engagement_draft', 'create_expense_draft', 'create_bill_draft']);
+const VENDOR_INVOICE_KINDS = new Set(['create_bill', 'create_bill_draft', 'vendor_invoice']);
 
 /** Human-readable labels for intelligence_alert sub-types. */
 const INTELLIGENCE_ALERT_LABELS: Record<string, string> = {
@@ -368,6 +369,49 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                   </div>
                 }
 
+                @if (isVendorInvoiceReview(task)) {
+                  <div class="mb-4 rounded border border-border-default bg-surface-raised/40 px-3 py-3">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                      <p class="text-xs font-medium uppercase tracking-wide text-text-secondary">AP review evidence</p>
+                      @if (needsDuplicateReview(task)) {
+                        <span class="rounded bg-confidence-low/10 px-2 py-0.5 text-xs text-confidence-low">
+                          Duplicate reason required
+                        </span>
+                      }
+                    </div>
+                    <div class="grid gap-2 md:grid-cols-2">
+                      @for (entry of vendorInvoiceEvidence(task); track entry.key) {
+                        <div class="rounded bg-surface px-2 py-1.5">
+                          <p class="text-[11px] uppercase tracking-wide text-text-disabled">{{ entry.key }}</p>
+                          <p class="mt-0.5 text-xs text-text-primary">{{ entry.value }}</p>
+                        </div>
+                      }
+                    </div>
+                    @if (vendorInvoiceExceptions(task).length) {
+                      <div class="mt-3 space-y-1">
+                        @for (exception of vendorInvoiceExceptions(task); track exception.code + exception.message) {
+                          <div class="rounded border border-confidence-low/20 bg-confidence-low/10 px-2 py-1.5 text-xs text-confidence-low">
+                            <span class="font-medium">{{ exception.code }}</span>
+                            @if (exception.message) { <span> - {{ exception.message }}</span> }
+                          </div>
+                        }
+                      </div>
+                    }
+                    @if (vendorInvoiceGlSuggestions(task).length) {
+                      <div class="mt-3">
+                        <p class="mb-1 text-[11px] uppercase tracking-wide text-text-disabled">Coding suggestions</p>
+                        <div class="flex flex-wrap gap-1.5">
+                          @for (suggestion of vendorInvoiceGlSuggestions(task); track suggestion.label) {
+                            <span class="rounded bg-surface px-2 py-1 text-xs text-text-secondary">
+                              {{ suggestion.label }}
+                            </span>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+
                 @if (decisionHistory(task).length > 0) {
                   <div class="mb-4 rounded border border-border-default bg-surface-raised/40 px-3 py-2">
                     <p class="mb-2 text-xs font-medium text-text-secondary">Decision history</p>
@@ -402,7 +446,7 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                       class="px-3 py-1.5 text-xs font-medium rounded bg-accent hover:bg-accent-hover text-accent-on transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                       [attr.aria-label]="canApproveTask(task) ? 'Approve ' + (task.title) : 'Approval requires ' + roleLabel(task.required_approval_role)"
                     >
-                      @if (actioning() === task.id) { Processing... } @else if (!canApproveTask(task)) { Requires {{ roleLabel(task.required_approval_role) }} } @else { Approve }
+                      @if (actioning() === task.id) { Processing... } @else if (!canApproveTask(task)) { Requires {{ roleLabel(task.required_approval_role) }} } @else if (needsDuplicateReview(task)) { Review duplicate } @else { Approve }
                     </button>
 
                     @if (canEditTask(task)) {
@@ -508,6 +552,24 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                     class="w-full bg-surface border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
                   />
                 }
+              </div>
+            }
+            @if (requiresDuplicateReasonInEditor(task)) {
+              <div class="rounded border border-confidence-low/30 bg-confidence-low/10 px-3 py-3">
+                <label for="edit-duplicate-review-reason" class="block text-xs font-medium text-confidence-low mb-1">
+                  Duplicate review reason
+                </label>
+                <textarea
+                  id="edit-duplicate-review-reason"
+                  [ngModel]="fieldValue('duplicate_review_reason')"
+                  (ngModelChange)="setField('duplicate_review_reason', $event)"
+                  rows="3"
+                  placeholder="Explain why this duplicate-looking invoice is legitimate."
+                  class="w-full bg-surface border border-confidence-low/30 rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-disabled focus:border-confidence-low focus:outline-none resize-none"
+                ></textarea>
+                <p class="mt-1 text-xs text-text-muted">
+                  Required before approval. The reason is saved into bill review evidence.
+                </p>
               </div>
             }
           </div>
@@ -689,10 +751,13 @@ export class InboxComponent implements OnInit {
    * (autonomy promotions, escalations, etc.) return null. (#127)
    */
   sourceDocId(task: HitlTask): string | null {
-    if (!EXTRACTION_KINDS.has(task.kind)) return null;
+    if (!EXTRACTION_KINDS.has(task.kind) && !VENDOR_INVOICE_KINDS.has(task.kind)) return null;
     const p = task.suggestion_payload ?? {};
-    const id = p['original_document_id'];
-    return typeof id === 'string' && id.length > 0 ? id : null;
+    for (const key of ['original_document_id', 'source_document_id', 'document_id']) {
+      const id = p[key];
+      if (typeof id === 'string' && id.length > 0) return id;
+    }
+    return null;
   }
 
   decisionHistory(task: HitlTask): HitlDecisionEvent[] {
@@ -714,7 +779,115 @@ export class InboxComponent implements OnInit {
   }
 
   hasOpenApprovableTasks(): boolean {
-    return this.tasks().some(t => t.status === 'open' && this.canApproveTask(t));
+    return this.tasks().some(t => t.status === 'open' && this.canApproveTask(t) && !this.needsDuplicateReview(t));
+  }
+
+  isVendorInvoiceReview(task: HitlTask): boolean {
+    if (!VENDOR_INVOICE_KINDS.has(task.kind)) return false;
+    const payload = task.suggestion_payload ?? {};
+    if (payload['possible_duplicate'] === true || this.sourceDocId(task)) return true;
+    return [
+      'vendor_match',
+      'gl_suggestions',
+      'review_exceptions',
+      'match_status',
+      'coding_status',
+      'project_hints',
+      'project_matches',
+      'customer_hints',
+      'client_hints',
+    ].some(key => {
+      const value = payload[key];
+      return Array.isArray(value) ? value.length > 0 : value != null;
+    });
+  }
+
+  needsDuplicateReview(task: HitlTask): boolean {
+    if (!this.isVendorInvoiceReview(task)) return false;
+    const payload = task.suggestion_payload ?? {};
+    if (payload['possible_duplicate'] !== true) return false;
+    const review = payload['duplicate_review'];
+    if (typeof review !== 'object' || review === null) return true;
+    const duplicateReview = review as Record<string, unknown>;
+    return duplicateReview['approved_duplicate'] !== true || !String(duplicateReview['reason'] ?? '').trim();
+  }
+
+  requiresDuplicateReasonInEditor(task: HitlTask): boolean {
+    return this.isVendorInvoiceReview(task) && (task.suggestion_payload?.['possible_duplicate'] === true);
+  }
+
+  vendorInvoiceEvidence(task: HitlTask): { key: string; value: string }[] {
+    const payload = task.suggestion_payload ?? {};
+    const vendorMatch = (
+      typeof payload['vendor_match'] === 'object' && payload['vendor_match'] !== null
+        ? payload['vendor_match']
+        : {}
+    ) as Record<string, unknown>;
+    const duplicateReview = (
+      typeof payload['duplicate_review'] === 'object' && payload['duplicate_review'] !== null
+        ? payload['duplicate_review']
+        : {}
+    ) as Record<string, unknown>;
+    const entries = [
+      { key: 'Vendor match', value: this.matchEvidenceLabel(payload, vendorMatch) },
+      { key: 'Duplicate guard', value: this.duplicateEvidenceLabel(payload, duplicateReview) },
+      { key: 'Coding', value: String(payload['coding_status'] ?? 'unknown') },
+    ];
+    const source = this.sourceDocId(task);
+    if (source) entries.push({ key: 'Source document', value: source });
+    const projectHints = this.hintCount(payload['project_hints'] ?? payload['project_matches']);
+    if (projectHints) entries.push({ key: 'Project hints', value: `${projectHints} hint(s)` });
+    const customerHints = this.hintCount(payload['customer_hints'] ?? payload['client_hints']);
+    if (customerHints) entries.push({ key: 'Customer hints', value: `${customerHints} hint(s)` });
+    return entries;
+  }
+
+  vendorInvoiceExceptions(task: HitlTask): { code: string; message: string }[] {
+    const exceptions = task.suggestion_payload?.['review_exceptions'];
+    if (!Array.isArray(exceptions)) return [];
+    return exceptions
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map(item => ({
+        code: String(item['code'] ?? 'review_required'),
+        message: String(item['message'] ?? ''),
+      }));
+  }
+
+  vendorInvoiceGlSuggestions(task: HitlTask): { label: string }[] {
+    const suggestions = task.suggestion_payload?.['gl_suggestions'];
+    if (!Array.isArray(suggestions)) return [];
+    return suggestions
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map(item => {
+        const account = [item['account_code'], item['account_name']]
+          .filter(value => value !== undefined && value !== null && String(value).trim())
+          .join(' ');
+        const confidence = item['confidence'] != null
+          ? ` (${Math.round(Number(item['confidence']) * 100)}%)`
+          : '';
+        return { label: `${account || 'Suggested account'}${confidence}` };
+      });
+  }
+
+  private matchEvidenceLabel(payload: Record<string, unknown>, vendorMatch: Record<string, unknown>): string {
+    const status = String(payload['match_status'] ?? 'unknown');
+    const confidence = vendorMatch['confidence'] != null
+      ? ` - ${Math.round(Number(vendorMatch['confidence']) * 100)}%`
+      : '';
+    const reason = vendorMatch['match_reason'] ? ` - ${String(vendorMatch['match_reason'])}` : '';
+    return `${status}${confidence}${reason}`;
+  }
+
+  private duplicateEvidenceLabel(payload: Record<string, unknown>, duplicateReview: Record<string, unknown>): string {
+    if (payload['possible_duplicate'] !== true) return 'No duplicate flagged';
+    if (duplicateReview['approved_duplicate'] === true && duplicateReview['reason']) {
+      return `Approved duplicate - ${String(duplicateReview['reason'])}`;
+    }
+    return 'Possible duplicate requires review reason';
+  }
+
+  private hintCount(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
   }
 
   payloadSummary(task: HitlTask): { key: string; value: string }[] {
@@ -951,6 +1124,11 @@ export class InboxComponent implements OnInit {
       this.actionError.set(`Approval requires ${this.roleLabel(task.required_approval_role)} role or higher.`);
       return;
     }
+    if (this.needsDuplicateReview(task)) {
+      this.actionError.set('Possible duplicate vendor invoice requires a reviewer reason before approval.');
+      this.startEdit(task, e);
+      return;
+    }
     this.actionError.set(null);
     this.actioning.set(task.id);
     this.hitlSvc.approve(task.id).subscribe({
@@ -996,7 +1174,14 @@ export class InboxComponent implements OnInit {
     // user corrects fields then Save → approve-with-edits. (Previously this
     // stub just called approve(), which silently approved the raw extraction
     // and made the card "disappear" — #146.)
-    this.editForm.set({ ...(task.suggestion_payload ?? {}) });
+    const payload = { ...(task.suggestion_payload ?? {}) };
+    const duplicateReview = payload['duplicate_review'];
+    if (typeof duplicateReview === 'object' && duplicateReview !== null) {
+      payload['duplicate_review_reason'] = String(
+        (duplicateReview as Record<string, unknown>)['reason'] ?? '',
+      );
+    }
+    this.editForm.set(payload);
     this.editingTask.set(task);
   }
 
@@ -1038,6 +1223,25 @@ export class InboxComponent implements OnInit {
     // Merge edits over the original payload so internal fields (confidence,
     // original_document_id, etc.) the form doesn't expose are preserved.
     const corrected = { ...(task.suggestion_payload ?? {}), ...this.editForm() };
+    if (this.requiresDuplicateReasonInEditor(task)) {
+      const reason = String(corrected['duplicate_review_reason'] ?? '').trim();
+      if (reason.length < 10) {
+        this.actionError.set('Duplicate review reason must be at least 10 characters.');
+        this.savingEdit.set(false);
+        return;
+      }
+      const existingReview = (
+        typeof corrected['duplicate_review'] === 'object' && corrected['duplicate_review'] !== null
+          ? corrected['duplicate_review']
+          : {}
+      ) as Record<string, unknown>;
+      corrected['duplicate_review'] = {
+        ...existingReview,
+        approved_duplicate: true,
+        reason,
+      };
+      delete corrected['duplicate_review_reason'];
+    }
     this.hitlSvc.approveWithEdits(task.id, corrected).subscribe({
       next: () => {
         this.savingEdit.set(false);
@@ -1077,7 +1281,7 @@ export class InboxComponent implements OnInit {
 
   approveAll(): void {
     this.actionError.set(null);
-    const tasks = this.tasks().filter(t => t.status === 'open' && this.canApproveTask(t));
+    const tasks = this.tasks().filter(t => t.status === 'open' && this.canApproveTask(t) && !this.needsDuplicateReview(t));
     if (!tasks.length) {
       this.actionError.set('No visible tasks can be approved by your current role.');
       return;

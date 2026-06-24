@@ -39,6 +39,7 @@ interface BillDetail {
   paid_at?: string | null;
   notes?: string | null;
   source_document_id?: string | null;
+  vendor_invoice_review?: Record<string, unknown> | null;
   confidence?: string | number | null;
   lines: BillLine[];
 }
@@ -190,6 +191,51 @@ interface BillDetail {
               label="Open vendor invoice"
             />
           </div>
+        }
+
+        @if (hasVendorInvoiceReview(bill()!)) {
+          <section class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4" aria-labelledby="ap-review-heading">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="ap-review-heading" class="text-sm font-semibold text-text-primary">AP review evidence</h2>
+                <p class="mt-0.5 text-xs text-text-muted">Vendor invoice intake, coding, and duplicate review trail.</p>
+              </div>
+              <span class="rounded bg-surface px-2 py-0.5 text-xs text-text-secondary">
+                {{ reviewValue(bill()!, 'match_status') || 'reviewed' }}
+              </span>
+            </div>
+            <div class="grid gap-3 md:grid-cols-3">
+              <div class="rounded border border-border-subtle bg-surface px-3 py-2">
+                <p class="text-[11px] uppercase tracking-wide text-text-disabled">Vendor match</p>
+                <p class="mt-1 text-xs text-text-primary">{{ vendorMatchSummary(bill()!) }}</p>
+              </div>
+              <div class="rounded border border-border-subtle bg-surface px-3 py-2">
+                <p class="text-[11px] uppercase tracking-wide text-text-disabled">Duplicate guard</p>
+                <p class="mt-1 text-xs text-text-primary">{{ duplicateReviewSummary(bill()!) }}</p>
+              </div>
+              <div class="rounded border border-border-subtle bg-surface px-3 py-2">
+                <p class="text-[11px] uppercase tracking-wide text-text-disabled">Coding</p>
+                <p class="mt-1 text-xs text-text-primary">{{ reviewValue(bill()!, 'coding_status') || 'unknown' }}</p>
+              </div>
+            </div>
+            @if (reviewExceptions(bill()!).length) {
+              <div class="mt-3 space-y-1">
+                @for (exception of reviewExceptions(bill()!); track exception.code + exception.message) {
+                  <div class="rounded border border-confidence-low/20 bg-confidence-low/10 px-2 py-1.5 text-xs text-confidence-low">
+                    <span class="font-medium">{{ exception.code }}</span>
+                    @if (exception.message) { <span> - {{ exception.message }}</span> }
+                  </div>
+                }
+              </div>
+            }
+            @if (reviewBadges(bill()!).length) {
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                @for (badge of reviewBadges(bill()!); track badge) {
+                  <span class="rounded bg-surface px-2 py-1 text-xs text-text-secondary">{{ badge }}</span>
+                }
+              </div>
+            }
+          </section>
         }
 
         <!-- ── Meta cards ─────────────────────────────────────────────── -->
@@ -446,6 +492,81 @@ export class BillDetailComponent implements OnInit {
         setTimeout(() => this.actionError.set(null), 6000);
       },
     });
+  }
+
+  hasVendorInvoiceReview(bill: BillDetail): boolean {
+    return !!bill.vendor_invoice_review && Object.keys(bill.vendor_invoice_review).length > 0;
+  }
+
+  reviewValue(bill: BillDetail, key: string): string {
+    const value = bill.vendor_invoice_review?.[key];
+    return value == null ? '' : String(value);
+  }
+
+  vendorMatchSummary(bill: BillDetail): string {
+    const review = bill.vendor_invoice_review ?? {};
+    const match = (
+      typeof review['vendor_match'] === 'object' && review['vendor_match'] !== null
+        ? review['vendor_match']
+        : {}
+    ) as Record<string, unknown>;
+    const status = String(review['match_status'] ?? 'unknown');
+    const confidence = match['confidence'] != null
+      ? ` - ${Math.round(Number(match['confidence']) * 100)}%`
+      : '';
+    const reason = match['match_reason'] ? ` - ${String(match['match_reason'])}` : '';
+    return `${status}${confidence}${reason}`;
+  }
+
+  duplicateReviewSummary(bill: BillDetail): string {
+    const review = bill.vendor_invoice_review ?? {};
+    const duplicate = (
+      typeof review['duplicate_review'] === 'object' && review['duplicate_review'] !== null
+        ? review['duplicate_review']
+        : {}
+    ) as Record<string, unknown>;
+    if (duplicate['approved_duplicate'] === true && duplicate['reason']) {
+      return `Approved duplicate - ${String(duplicate['reason'])}`;
+    }
+    const exceptions = this.reviewExceptions(bill).map(item => item.code);
+    return exceptions.includes('possible_duplicate') ? 'Possible duplicate reviewed' : 'No duplicate flagged';
+  }
+
+  reviewExceptions(bill: BillDetail): { code: string; message: string }[] {
+    const exceptions = bill.vendor_invoice_review?.['review_exceptions'];
+    if (!Array.isArray(exceptions)) return [];
+    return exceptions
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map(item => ({
+        code: String(item['code'] ?? 'review_required'),
+        message: String(item['message'] ?? ''),
+      }));
+  }
+
+  reviewBadges(bill: BillDetail): string[] {
+    const review = bill.vendor_invoice_review ?? {};
+    const badges: string[] = [];
+    const suggestions = Array.isArray(review['gl_suggestions']) ? review['gl_suggestions'] : [];
+    for (const item of suggestions) {
+      if (typeof item !== 'object' || item === null) continue;
+      const suggestion = item as Record<string, unknown>;
+      const account = [suggestion['account_code'], suggestion['account_name']]
+        .filter(value => value !== undefined && value !== null && String(value).trim())
+        .join(' ');
+      const confidence = suggestion['confidence'] != null
+        ? ` (${Math.round(Number(suggestion['confidence']) * 100)}%)`
+        : '';
+      badges.push(`${account || 'Suggested account'}${confidence}`);
+    }
+    this.pushHintBadge(badges, review['project_hints'], 'project');
+    this.pushHintBadge(badges, review['customer_hints'], 'customer');
+    return badges.slice(0, 8);
+  }
+
+  private pushHintBadge(badges: string[], value: unknown, label: string): void {
+    if (Array.isArray(value) && value.length) {
+      badges.push(`${value.length} ${label} hint(s)`);
+    }
   }
 
   statusClass(status: string): string {
