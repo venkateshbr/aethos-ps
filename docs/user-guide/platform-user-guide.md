@@ -280,7 +280,7 @@ Settings are used for:
 - Firm and tenant configuration.
 - Tax rates and market setup.
 - Agent autonomy configuration.
-- Scheduled Finance Ops Manager cadence through the Agents API.
+- Scheduled Finance Ops Manager cadence through Settings and the Agents API.
 - Agent run ledger and workflow telemetry.
 - Tenant health checks for safe internal operator review.
 - Platform controls as enterprise slices land.
@@ -289,6 +289,8 @@ Current guidance:
 
 - Keep money-out, accounting, and external communication workflows review-gated.
 - Promote autonomy only after enough successful reviewed outcomes.
+- Use Settings -> Agent Autonomy -> Finance Ops Manager Schedule to enable,
+  pause, or tune scheduled action-plan cadence and stale-approval escalation.
 - Use run ledger details to inspect tool execution and risk class.
 - Use tenant health for support-safe runtime, migration/table, request-failure,
   agent failure, tool failure, and workflow failure signals.
@@ -320,6 +322,13 @@ The following work is tracked under parent issue #278:
 | #284 | P2P | Vendor invoice matching and coding exceptions, first slice implemented |
 | #285 | R2R | Close evidence package and reconciliation gates, first slice implemented |
 | #286 | Ops/Security | Rate limiting, telemetry, and tenant health, first slice implemented |
+| #295 | AI Ops | Settings UI for scheduled Finance Ops Manager cadence, first slice implemented |
+| #296 | Controls | Tenant-configurable approval policy UI, planned |
+| #297 | Audit | Business-record decision timeline and browser proof, planned |
+| #298 | RBAC | Finance-role taxonomy and browser permission proof, planned |
+| #299 | P2P | Vendor invoice exception review UX and multi-step approval, planned |
+| #300 | R2R | Close override wizard and statement commentary, planned |
+| #301 | Ops/Security | Distributed rate limiting, health dashboard, and alert routing, planned |
 
 ## 12. Documentation And Test Definition Of Done
 

@@ -10,6 +10,7 @@ written in user language and intentionally avoid internal tool names.
 | Daily finance check | `Run today's finance ops check for June 2026. Tell me what needs billing, payment, collections, close, and review. Separate read-only findings from actions that need Inbox approval.` |
 | Create reviewed work plan | `Create the next recommended finance ops work items for June 2026. Create at most five manager-reviewed work items. Route the action plan to Inbox for review. Do not approve invoices, payments, journals, or emails directly.` |
 | Configure scheduled manager | `Set the Finance Ops Manager to run every business morning at 07:00 UTC for the current month, create a reviewed action plan in Inbox, and escalate stale high-risk approvals without changing the original tasks.` |
+| Check schedule settings | `Show me the current Finance Ops Manager schedule, escalation settings, latest scheduled run, and any open scheduled action plans waiting in Inbox.` |
 | Review scheduled output | `Show me the latest scheduled Finance Ops Manager run. Summarize the action plan, open Plan Items, stale approval escalations, and anything waiting on Owner or Admin review.` |
 | Dispatch reviewed plan items | `After I approve the action plan, create the specialist follow-up tasks for the approved Plan Items. Keep final invoices, payments, journals, statements, and emails behind their own approvals.` |
 | Explain blockers | `Explain the current finance ops blockers for June 2026. Group them by AR, AP, WIP, close, reporting, and approvals. Tell me what can run now and what needs human review.` |
@@ -71,3 +72,7 @@ Good Copilot prompts usually include:
 Avoid asking for internal tool names. Copilot should infer the right tool from
 the business request. Test specs may name tools to reduce automation
 nondeterminism, but users should not need to.
+
+For persistent scheduled Finance Ops Manager changes, admins can also use
+Settings -> Agent Autonomy -> Finance Ops Manager Schedule. Prompts remain
+useful for reviewing schedule status and run output in context.

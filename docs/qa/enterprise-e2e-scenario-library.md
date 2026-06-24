@@ -42,12 +42,19 @@ agent ledger.
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Implemented first slice; browser automation pending | #282 |
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
+| ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Implemented first slice; Playwright automation pending | #295 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Implemented first slice; browser automation pending | #284 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
+| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Planned | #299 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
+| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Planned | #300 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
+| ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
+| ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Planned | #296 |
+| ENT-AUD-003 | Business record exposes immutable decision timeline | Planned | #297 |
+| ENT-RBAC-002 | Finance-role personas are browser-proven | Planned | #298 |
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 
@@ -130,6 +137,26 @@ Expected result:
 - Task remains open and assigned to the correct review lane.
 - Denied attempt is safe to audit when the audit slice is implemented.
 
+## ENT-CTRL-003 - Tenant Approval Policy Configuration
+
+Persona: Admin configuring finance controls.
+
+Status: Planned under #296.
+
+Steps:
+
+1. Open Settings approval policy matrix.
+2. Raise bill-pay approval from Admin to Owner for high-value batches.
+3. Ask Copilot to prepare a bill-pay run above the threshold.
+4. Open Inbox as Admin and Owner.
+
+Expected result:
+
+- Tenant policy persists and is used by Copilot/Inbox routing.
+- Admin can inspect but not approve work that now requires Owner.
+- Owner approval materializes through the existing guarded path.
+- Approve-with-edits re-evaluates the edited payload against the saved policy.
+
 ## ENT-AUD-001 - Immutable Decision Event
 
 Persona: Controller approving an AI-created draft.
@@ -190,6 +217,27 @@ Evidence:
   suggestion id, actor role, and policy metadata.
 - `agent_corrections` still stores the training signal for the edited output.
 
+## ENT-AUD-003 - Business Record Decision Timeline
+
+Persona: Controller reviewing an invoice, bill, journal, payment, or close record.
+
+Status: Planned under #297.
+
+Steps:
+
+1. Create a finance record from an Inbox-approved AI proposal.
+2. Navigate away from Inbox to the materialized business record.
+3. Open the record decision timeline.
+4. Compare approve, approve-with-edits, reject, and approval-denial history.
+
+Expected result:
+
+- Business record detail pages expose immutable decision events relevant to the
+  record.
+- Timeline entries include actor role, decision type, timestamp, related Inbox
+  task, and before/after summary when available.
+- Read-only users can inspect permitted audit metadata but cannot mutate.
+
 ## ENT-RBAC-001 - Auditor Read-Only Persona
 
 Persona: External CPA or auditor.
@@ -222,19 +270,40 @@ Automation target:
 - API: verify viewer can read Bills/Procurement/Inbox/Reports but receives 403
   for create/approve/edit/reject/convert actions and for financial-events list/export.
 
+## ENT-RBAC-002 - Finance Role Persona Proof
+
+Persona: AP Lead, AR Lead, Controller, Auditor, Executive, and Owner/Admin.
+
+Status: Planned under #298.
+
+Steps:
+
+1. Sign in as each finance persona.
+2. Open Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings.
+3. Attempt persona-appropriate and persona-restricted actions.
+4. Repeat direct API attempts for restricted money, posting, send, and settings actions.
+
+Expected result:
+
+- Product-facing finance personas map to enforced backend roles without
+  weakening current RBAC.
+- Browser controls are hidden or disabled consistently with API enforcement.
+- Auditor and Executive personas remain read-only for finance mutation paths.
+- Owner/Admin can still perform settings and final approval workflows.
+
 ## ENT-AIOPS-001 - Scheduled Finance Ops Manager Run
 
 Persona: Owner/Admin configuring AI operations.
 
 Status: First slice implemented. Admins can configure the tenant cadence through
-`GET/PUT /api/v1/agents/finance-ops/schedule`. The hourly Procrastinate worker
-creates a `scheduled_finance_ops_manager` workflow run and a reviewed
-`copilot_create_finance_ops_action_plan` Inbox task when the cadence is due.
-Browser automation is still pending.
+Settings or `GET/PUT /api/v1/agents/finance-ops/schedule`. The hourly
+Procrastinate worker creates a `scheduled_finance_ops_manager` workflow run and
+a reviewed `copilot_create_finance_ops_action_plan` Inbox task when the cadence
+is due. Browser automation is still pending.
 
 Steps:
 
-1. Configure or seed a daily Finance Ops Manager run.
+1. Open Settings and configure a daily Finance Ops Manager run.
 2. Wait for or trigger the scheduled run.
 3. Open Copilot/Inbox/Settings run ledger.
 4. Verify findings and reviewed action plan are created.
@@ -253,8 +322,9 @@ Automation target:
 - API: `PUT /api/v1/agents/finance-ops/schedule`, call the worker helper or
   trigger the Procrastinate task, then assert one open scheduled action-plan
   task and one workflow run.
-- Browser: open Settings workflow runs, filter for scheduled Finance Ops
-  Manager, open Inbox, approve the plan, and verify Plan Items were created.
+- Browser: open Settings, save schedule cadence, open Settings workflow runs,
+  filter for scheduled Finance Ops Manager, open Inbox, approve the plan, and
+  verify Plan Items were created.
 - Idempotency: rerun the worker for the same tenant/cadence bucket and assert a
   duplicate open plan is not created.
 
@@ -293,6 +363,39 @@ Automation target:
   not duplicate arbitrary source payload fields.
 - Browser: open Inbox as the assigned role, verify the escalation notice, then
   open the source task and approve/reject it separately.
+
+## ENT-AIOPS-003 - Settings Schedule Configuration
+
+Persona: Admin configuring AI operations; Manager inspecting schedule.
+
+Status: First slice implemented. Settings now exposes Finance Ops Manager
+cadence, enabled state, period mode, work item limit, stale-approval windows,
+and escalation toggle. Admin/Owner users can save changes; Manager users can
+inspect but not edit.
+
+Steps:
+
+1. Open Settings as Admin or Owner.
+2. In Agent Autonomy, edit Finance Ops Manager Schedule to weekly, a specific
+   UTC run hour/day, previous-month period mode, and escalation windows.
+3. Save the schedule.
+4. Refresh the card and confirm the saved values remain.
+5. Re-open Settings as Manager and confirm the card is read-only.
+
+Expected result:
+
+- Schedule loads from `GET /api/v1/agents/finance-ops/schedule`.
+- Save sends the existing `PUT /api/v1/agents/finance-ops/schedule` contract.
+- High-risk stale hours cannot exceed stale hours.
+- Manager users can inspect schedule state but cannot save edits.
+- Schedule changes do not execute finance actions directly; scheduled runs
+  still create reviewed Inbox action plans.
+
+Automation target:
+
+- Component: load seeded default, save admin edits, and block Manager save.
+- Browser: login as Admin, save weekly schedule, verify success state, then
+  login as Manager and assert form controls are disabled.
 
 ## ENT-P2P-001 - Vendor Invoice Coding Exception
 
@@ -359,6 +462,28 @@ Automation target:
   bill and persists the duplicate review evidence.
 - Browser: duplicate card displays match/coding exception summary before review.
 
+## ENT-P2P-003 - Browser Vendor Invoice Exception Review
+
+Persona: AP Lead and Controller.
+
+Status: Planned under #299.
+
+Steps:
+
+1. Upload a vendor invoice with vendor ambiguity, duplicate evidence, and coding
+   exceptions.
+2. Open the Inbox/AP review card.
+3. Review source document, vendor match, duplicate guard, GL/project coding
+   suggestions, and required corrections.
+4. Approve intake/coding review, then keep payment approval separate.
+
+Expected result:
+
+- Review card exposes exception evidence without requiring raw payload reading.
+- Duplicate approval requires a reviewer reason.
+- Intake/coding approval and payment approval are separate guarded decisions.
+- Bill evidence preserves source document and reviewer decisions.
+
 ## ENT-R2R-001 - Close Evidence Package
 
 Persona: Controller.
@@ -422,6 +547,26 @@ Automation target:
 - Browser: record override reason from close review UI once the richer close
   wizard exists, then verify the close package displays it.
 
+## ENT-R2R-003 - Close Wizard And Statement Commentary
+
+Persona: Controller and Owner/Admin.
+
+Status: Planned under #300.
+
+Steps:
+
+1. Open Accounting close review for a period with AR/AP/WIP/GL blockers.
+2. Review blocker evidence and enter a reasoned override for a named blocker.
+3. Generate the financial statement package.
+4. Inspect management commentary and material variance explanations.
+
+Expected result:
+
+- Close wizard prevents silent locks and requires named override reasons.
+- Override evidence appears in the close package.
+- Statement commentary is grounded in reports and close readiness evidence.
+- Missing close prerequisites remain visible in the statement package.
+
 ## ENT-OPS-001 - Rate-Limited Endpoint
 
 Persona: Security reviewer.
@@ -480,3 +625,26 @@ Automation target:
   table checks are present.
 - API: assert health output includes no API keys, JWTs, raw invoice public
   tokens, request payloads, or document text.
+
+## ENT-OPS-003 - Distributed Ops Protection And Alerts
+
+Persona: Internal operator and security reviewer.
+
+Status: Planned under #301.
+
+Steps:
+
+1. Configure distributed rate limiting for the environment.
+2. Generate excess public endpoint traffic across more than one app instance.
+3. Open tenant health dashboard.
+4. Trigger repeated background or agent workflow failures.
+5. Inspect alert routing evidence.
+
+Expected result:
+
+- Distributed limiter preserves the safe 429 response contract.
+- Tenant health dashboard shows sanitized operational signals.
+- Alert thresholds route degraded health or abuse to the configured support or
+  runbook channel.
+- Telemetry never emits raw tokens, JWTs, API keys, document text, or request
+  payloads.
