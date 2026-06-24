@@ -16,7 +16,11 @@ from app.core.tenant import get_tenant_id
 from app.main import app
 from app.models.accounting import ManualJournalEntryResponse
 from app.services.close_package_service import ClosePackageService
-from app.services.close_reconciliation_service import CloseReconciliationService
+from app.services.close_reconciliation_service import (
+    CloseReconciliationResult,
+    CloseReconciliationService,
+    ReconciliationFinding,
+)
 from app.services.close_status_service import CloseStatusService
 from app.services.manual_journal_service import ManualJournalService
 
@@ -198,6 +202,8 @@ class _FakeDb:
                     "deleted_at": None,
                 }
             ],
+            "accounting_close_overrides": [],
+            "agent_suggestions": [],
             "recurring_journal_templates": [
                 {
                     "id": "template-rent",
@@ -286,6 +292,9 @@ def test_accounting_read_routes_use_rls_client(
                 "checklist": [],
                 "findings": [],
                 "pending_reviews": [],
+                "unposted_journals": [],
+                "incomplete_tasks": [],
+                "overrides": [],
                 "lock_blockers": [],
             }
 
@@ -319,6 +328,8 @@ def test_accounting_read_routes_use_rls_client(
             "gl_summary": {},
             "previous_gl_summary": {},
             "working_capital": {},
+            "readiness_evidence": {},
+            "close_overrides": [],
             "trial_balance": {},
             "ar_aging": {},
             "ap_aging": {},
@@ -486,6 +497,88 @@ def test_close_task_bootstrap_and_update_use_service_role_client(
     assert body["status"] == "done"
     assert body["completed_by"] == "manager-1"
     assert body["evidence"] == {"reviewed": True}
+
+
+def test_close_override_create_uses_service_role_and_records_actor(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/accounting/periods/2026-06/close-overrides",
+        json={
+            "blocker_code": "unposted_journals",
+            "reason": "Controller confirmed the draft journal should be excluded.",
+            "blocker_ref": {"journal_entry_id": "journal-draft-001"},
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["blocker_code"] == "unposted_journals"
+    assert body["created_by"] == "manager-1"
+    assert fake_db.tables["accounting_close_overrides"][0]["reason"].startswith(
+        "Controller confirmed"
+    )
+
+
+def test_lock_period_requires_matching_override_for_reconciliation_blocker(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    fake_db.tables["period_locks"] = []
+    fake_db.tables["accounting_close_tasks"] = []
+
+    def _blocked_reconciliation(
+        self: CloseReconciliationService,
+        period: str,
+    ) -> CloseReconciliationResult:
+        assert self.db is fake_db
+        return CloseReconciliationResult(
+            period=period,
+            ready=False,
+            trial_balance_balanced=True,
+            findings=[
+                ReconciliationFinding(
+                    code="missing_invoice_journal",
+                    source_table="invoices",
+                    source_id="invoice-1",
+                    source_number="INV-001",
+                    reason="Approved invoice has no posted AR journal.",
+                    expected_reference_type="invoice",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(CloseReconciliationService, "check_period", _blocked_reconciliation)
+
+    blocked = client.post("/api/v1/accounting/periods/2026-06/lock")
+    allowed = client.post(
+        "/api/v1/accounting/periods/2026-06/lock",
+        json={
+            "overrides": [
+                {
+                    "blocker_code": "subledger_reconciliation",
+                    "reason": "Controller reconciled the invoice externally for this close.",
+                    "blocker_ref": {"invoice_id": "invoice-1"},
+                }
+            ]
+        },
+    )
+
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["detail"]["code"] == "close_reconciliation_failed"
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["override_count"] == 1
+    assert fake_db.tables["accounting_close_overrides"][0]["blocker_code"] == (
+        "subledger_reconciliation"
+    )
+    assert fake_db.tables["period_locks"][0]["period"] == "2026-06"
 
 
 def test_expense_accrual_proposal_uses_service_role_client(

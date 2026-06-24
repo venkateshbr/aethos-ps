@@ -44,8 +44,8 @@ agent ledger.
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Implemented first slice; browser automation pending | #284 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
-| ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Planned | #285 |
-| ENT-R2R-002 | Close override requires reason and is audit-visible | Planned | #285 |
+| ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
+| ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Planned | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Planned | #286 |
 
@@ -363,6 +363,12 @@ Automation target:
 
 Persona: Controller.
 
+Status: First slice implemented. Close package responses now include
+`readiness_evidence` for AR, AP, WIP, GL, approvals, and overrides. Close status
+also includes unposted journals, incomplete close tasks, and recorded overrides
+so the package and lock guard share the same readiness model. Browser automation
+is still pending.
+
 Steps:
 
 1. Generate close readiness for a period.
@@ -376,9 +382,23 @@ Expected result:
 - Blockers are actionable.
 - Package ties to reports and journal evidence.
 
+Automation target:
+
+- API: seed AR/AP reconciliation findings, WIP rows, an unposted journal, and
+  pending close tasks; assert `close-package.readiness_evidence` categorizes
+  each area and includes supporting record references.
+- Browser: open Accounting > Journal Entries close package, verify AR/AP/WIP/GL
+  metrics and close commentary render without requiring tool names.
+
 ## ENT-R2R-002 - Close Override With Reason
 
 Persona: Owner/Admin.
+
+Status: First slice implemented. Close overrides are durable rows with blocker
+code, reason, actor, timestamp, and blocker evidence. The period-lock API still
+returns the existing blocker errors unless the matching override is recorded
+or submitted with the lock request. Override evidence is visible in the close
+package.
 
 Steps:
 
@@ -392,6 +412,15 @@ Expected result:
 - Unauthorized close remains blocked.
 - Authorized override requires reason.
 - Override is visible in close evidence and audit trail.
+
+Automation target:
+
+- API: attempt lock with an unposted journal and no override; assert 409.
+- API: attempt lock with a short override reason; assert 422.
+- API: attempt lock with a valid `unposted_journals` override; assert period is
+  locked and `accounting_close_overrides` contains reason and actor.
+- Browser: record override reason from close review UI once the richer close
+  wizard exists, then verify the close package displays it.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 
