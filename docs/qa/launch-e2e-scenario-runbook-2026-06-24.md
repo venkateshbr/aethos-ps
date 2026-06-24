@@ -547,7 +547,7 @@ Current implementation assessment:
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slices in #280 and #296: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, and Settings now lets Admin/Owner users raise tenant approval roles for money-out, accounting, money-in, draft, external-send, and high-risk AI actions | Deeper finance-role taxonomy remains future enterprise controls | #280, #296 |
 | Enterprise decision audit | Implemented first slices in #281 and #297: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents now expose record-scoped decision timelines for bills, invoices, engagements, payment batches, journals, close periods, and document-driven rejection review | Full Playwright automation across approve, approve-with-edits, rejection, and read-only auditor personas remains future depth | #281, #297 |
-| Enterprise RBAC permission proof | Implemented first slice: current enterprise personas are mapped to owner/admin/manager/member/viewer/employee, API tests prove viewer read-only boundaries, and Bills/AP disables restricted viewer actions | Dedicated finance-role enum expansion and browser E2E proof remain future depth | #282 |
+| Enterprise RBAC permission proof | Implemented first slices in #282 and #298: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, API tests prove viewer read-only boundaries, and Bills/AP disables restricted viewer actions | Dedicated finance-role enum expansion and full multi-persona Playwright matrix remain future depth | #282, #298 |
 | Enterprise ops hardening | Implemented first slice in #286: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, and tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets | Distributed rate-limit storage, dashboards, and alert routing remain future production depth | #286 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -730,6 +730,43 @@ Implementation status:
 
 Evidence: Copilot package, report tabs, variance commentary, close readiness status.
 
+## Scenario 19 - Finance Role Persona And Permission Proof
+
+Persona: Owner/Admin, AP Lead, AR Lead, Controller, Auditor, and Executive.
+AI role: Finance Ops Manager as access explainer only.
+
+Browser steps:
+1. `/app/settings`: open Approval Controls and verify the Finance role personas card shows the current enforced role.
+2. As Owner/Admin, Manager, and Viewer sessions, verify compatible persona chips:
+   Owner/Admin should include Owner/Admin, Controller, AP Lead, and AR Lead;
+   Manager should include AP Lead and AR Lead; Viewer should include Auditor
+   and Executive.
+3. `/app/copilot`: ask `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.`
+4. As Viewer, open Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and Settings.
+5. Attempt restricted finance actions: approve, edit, create, convert, post, pay,
+   send, lock, and settings mutation.
+6. Repeat direct API calls for the same restricted paths.
+
+Expected result:
+- Finance persona labels are understandable to users but remain mapped to the
+  enforced backend role hierarchy.
+- Viewer-backed Auditor and Executive personas can inspect permitted records and
+  decision evidence but cannot mutate finance or settings state.
+- Manager-backed AP/AR personas can prepare work and use manager-threshold flows
+  without gaining admin/owner approval rights.
+- Owner/Admin and Controller mappings keep final approval and settings authority
+  behind the existing tenant role gates.
+
+Implementation status:
+- First slice implemented under #282 and #298. The backend exposes
+  `GET /api/v1/tenants/finance-personas`, Settings renders the catalog under
+  Approval Controls, component tests cover manager/viewer persona compatibility,
+  and backend tests prove viewer readability plus existing role mapping. Full
+  browser automation across all personas remains pending.
+
+Evidence: Settings persona card, Copilot access explanation, disabled UI
+controls, API 403 responses, no console/API errors.
+
 ## End-To-End Execution Schedule
 
 Run the launch pass in this order so every scenario builds on earlier browser-entered data.
@@ -745,7 +782,7 @@ Run the launch pass in this order so every scenario builds on earlier browser-en
 | 6. R2R month close | Controller | Scenario 8 journals, proposals, Inbox, close package | Balanced journals and close tasks pass; imbalanced/early-lock cases blocked |
 | 7. Quarter reporting | Controller, Owner/Admin | Scenario 9 statement tie-outs | Trial Balance and Balance Sheet balance; statements reflect O2C/P2P activity |
 | 8. Management cockpit | Owner/Admin, Engagement Manager | Scenario 10 reports, action queue, agent telemetry | Reports explain risks; all/me queues and agent settings work |
-| 9. RBAC and isolation | All roles | Revisit key create/approve/settings/report routes by role and tenant | Mutations allowed only by intended roles; no cross-tenant leakage |
+| 9. RBAC and isolation | All roles | Scenario 19 finance persona catalog plus key create/approve/settings/report routes by role and tenant | Mutations allowed only by intended roles; no cross-tenant leakage |
 | 10. Regression sweep | Owner/Admin | Refresh detail routes, narrow viewport, console/network review | No broken refresh, stuck loading state, console error, or API 500 remains |
 
 ## Browser Evidence Checklist

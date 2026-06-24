@@ -37,18 +37,26 @@ later without weakening the existing approval gates.
 
 | Enterprise persona | Current role mapping | What they can do today | Current restrictions |
 | --- | --- | --- | --- |
-| Owner | `owner` | Configure tenant, unlock high-risk accounting states, approve owner-threshold Inbox work | None inside tenant; still tenant-scoped |
-| Admin / Controller | `admin` | Approve money-out, accounting, bills, invoice sends/payments, financial events, settings, and agent controls | Cannot cross tenants |
-| Finance Manager / AP Lead | `manager` | Create bills, procurement documents, contacts, engagements, projects, employees, and review manager-threshold Inbox work | Cannot approve admin/owner-threshold money-out/accounting actions |
+| Owner/Admin | `owner`, `admin` | Configure tenant and AI operations, inspect all finance records, and approve owner/admin-threshold Inbox work | Tenant-scoped only |
+| Controller | `admin`, `owner` | Own close, journals, statements, accounting approvals, reports, and decision evidence | Cannot bypass owner-threshold policy or tenant boundaries |
+| AP Lead | `manager`, `admin`, `owner` | Create/review bills and procurement documents, resolve vendor invoice exceptions, and prepare bill-pay batches | Cannot approve admin/owner-threshold money-out work unless mapped to admin/owner |
+| AR Lead | `manager`, `admin`, `owner` | Draft/review invoices, collections work, WIP, revenue, and AR Aging | Cannot bypass send, payment, or admin-threshold approval gates unless mapped to admin/owner |
 | Engagement Manager | `manager` | Maintain customers, engagements, projects, services, WIP, draft invoices, and team workflow | Cannot bypass admin approval for posting/sending/payment |
 | Staff / Consultant | `member` or Timesheet `employee` | Participate in delivery workflows such as time/expense where exposed | Cannot approve finance, accounting, payment, settings, or agent-control actions |
-| Auditor / External CPA | `viewer` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and read-only evidence | Cannot create, approve, edit, reject, convert, pay, send, or export admin-only audit events |
-| Executive / Viewer | `viewer` | Read dashboards, management reports, and operational status | Same read-only mutation restrictions as auditor |
+| Auditor | `viewer` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and record-scoped decision evidence | Cannot create, approve, edit, reject, convert, post, pay, send, lock, change settings, or export admin-only audit events |
+| Executive | `viewer` | Read dashboards, management reports, operational status, and AI Finance Ops Manager summaries | Same read-only mutation restrictions as auditor |
 
 The Bills/AP UI now disables read-only users from creating bills or procurement
 documents, approving procurement, converting purchase requests, or opening Pay
 Bills from the Bills page. Backend RBAC remains authoritative and returns 403
 for direct read-only mutation attempts.
+
+Settings -> Approval Controls -> Finance role personas shows the live
+product-facing persona catalog from `GET /api/v1/tenants/finance-personas`.
+The card is readable by viewer users, highlights which personas match the
+current enforced tenant role, and explains the actions that remain restricted.
+This is a compatibility layer over the current role enum; dedicated finance-role
+enum expansion remains future depth.
 
 ### Current approval policy matrix
 
@@ -302,6 +310,7 @@ Settings are used for:
 - Agent autonomy configuration.
 - Scheduled Finance Ops Manager cadence through Settings and the Agents API.
 - Approval policy thresholds for AI-created finance actions.
+- Finance role persona mapping for RBAC compatibility and user education.
 - Agent run ledger and workflow telemetry.
 - Tenant health checks for safe internal operator review.
 - Platform controls as enterprise slices land.
@@ -315,6 +324,9 @@ Current guidance:
 - Use Settings -> Approval Controls -> Approval Policy Matrix to raise review
   roles for money-out, accounting, money-in, draft, external-send, and
   high-risk AI actions.
+- Use Settings -> Approval Controls -> Finance role personas to explain which
+  product-facing finance personas map to the current tenant role and what each
+  persona can or cannot do through existing approval gates.
 - Use run ledger details to inspect tool execution and risk class.
 - Use tenant health for support-safe runtime, migration/table, request-failure,
   agent failure, tool failure, and workflow failure signals.
@@ -349,7 +361,7 @@ The following work is tracked under parent issue #278:
 | #295 | AI Ops | Settings UI for scheduled Finance Ops Manager cadence, first slice implemented |
 | #296 | Controls | Tenant-configurable approval policy UI, first slice implemented |
 | #297 | Audit | Business-record decision timeline and browser proof, first slice implemented |
-| #298 | RBAC | Finance-role taxonomy and browser permission proof, planned |
+| #298 | RBAC | Finance-role taxonomy compatibility catalog, Settings visibility, and API/unit permission proof, first slice implemented |
 | #299 | P2P | Vendor invoice exception review UX and staged payment approval, first slice implemented |
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |
 | #301 | Ops/Security | Distributed rate limiting, health dashboard, and alert routing, planned |

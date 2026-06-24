@@ -60,6 +60,7 @@ written in user language and intentionally avoid internal tool names.
 | --- | --- |
 | Record decision trail | `Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
 | Audit sample | `Prepare an audit sample of AI-assisted finance decisions this week. Separate approvals, approve-with-edits, rejections, and approval denials. Flag records where the reviewed payload changed materially.` |
+| Review finance access | `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.` |
 
 ## Client And Engagement Onboarding
 
@@ -87,3 +88,6 @@ Settings -> Agent Autonomy -> Finance Ops Manager Schedule. Prompts remain
 useful for reviewing schedule status and run output in context.
 For persistent approval-threshold changes, admins should use Settings ->
 Approval Controls -> Approval Policy Matrix.
+For role mapping review, all users can use Settings -> Approval Controls ->
+Finance role personas to see product-facing finance personas mapped to enforced
+tenant roles.

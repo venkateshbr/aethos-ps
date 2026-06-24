@@ -11,6 +11,7 @@ import pytest
 from starlette.requests import Request
 
 from app.core.auth import CurrentUser
+from app.core.finance_personas import finance_persona_catalog, persona_ids_for_role
 from app.core.rbac import ROLE_HIERARCHY, UserRole, _resolve_role
 from app.core.tenant import _VERIFIED_TENANT_ROLE_STATE_KEY, _VERIFIED_TENANT_STATE_KEY
 
@@ -40,6 +41,20 @@ def test_role_enum_values_are_strings() -> None:
     """Roles must be str enum so they round-trip through JSON cleanly."""
     for role in UserRole:
         assert isinstance(role.value, str)
+
+
+def test_finance_personas_map_to_existing_roles_without_new_permissions() -> None:
+    catalog = finance_persona_catalog()
+    persona_ids = {persona["id"] for persona in catalog}
+
+    assert {"owner_admin", "controller", "ap_lead", "ar_lead", "auditor", "executive"} <= persona_ids
+    assert persona_ids_for_role(UserRole.manager) == ["ap_lead", "ar_lead"]
+    assert persona_ids_for_role(UserRole.viewer) == ["auditor", "executive"]
+    assert "auditor" not in persona_ids_for_role(UserRole.admin)
+    assert all(
+        set(persona["mapped_roles"]) <= {role.value for role in UserRole}
+        for persona in catalog
+    )
 
 
 def test_admin_outranks_manager() -> None:
