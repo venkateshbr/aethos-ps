@@ -52,6 +52,14 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 12 | WIP | Unbilled effort × rate per project |
 | 13 | Trial balance | DR total = CR total for the period; if not, raise alarm |
 
+### §1.4 AI Finance Ops Manager command center
+
+| # | Actor | Action | System effect |
+| --- | --- | --- | --- |
+| 14 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
+| 15 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
+| 16 | Finance ops manager | Opens `/reports` Action Queue and `/inbox` | Report/action surfaces reflect the operating queues referenced by Copilot; empty domains are shown as explicit empty states, not invented totals |
+
 ---
 
 ## §2 Variants

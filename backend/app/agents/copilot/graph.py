@@ -66,6 +66,9 @@ class CopilotAgent:
         "When users ask about their engagements or projects, use the query_engagements tool.\n"
         "When users ask about outstanding invoices or receivables, use get_ar_aging.\n"
         "When users ask about outstanding bills or payables, use get_ap_aging.\n"
+        "When users ask for today's finance ops check, a daily finance ops check, "
+        "or the AI Finance Ops Manager command center, use run_finance_ops_check. "
+        "It is read-only and separates findings from actions that need Inbox approval.\n"
         "When users ask to pay vendors or run bill pay, use the "
         "propose_bill_payment_batch tool. It creates an Inbox review task before "
         "any payment batch is created.\n"
@@ -167,6 +170,36 @@ class CopilotAgent:
                         "type": "string",
                         "description": "Filter by engagement ID (optional).",
                     }
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "run_finance_ops_check",
+            "description": (
+                "Compile a read-only AI Finance Ops Manager command-center summary "
+                "across AR, AP, WIP, close readiness, the report action queue, "
+                "and recent agent/workflow status. Use when the user asks for "
+                "today's finance ops check or a daily command-center review."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": (
+                            "Accounting period for close readiness, formatted YYYY-MM. "
+                            "Defaults to the current month."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 25,
+                        "description": "Maximum queue/run/project examples to include.",
+                    },
                 },
                 "required": [],
             },
@@ -448,7 +481,7 @@ class CopilotAgent:
             trigger_type="chat",
             user_id=str(self.deps.user_id),
             input_payload={"message": safe_message},
-            prompt_version="cop-v1",
+            prompt_version="cop-v2",
             trace_id=trace_id_var.get("") or None,
             replay_pointer=f"chat_threads/{thread_id}" if thread_id else None,
         )
@@ -682,6 +715,8 @@ class CopilotAgent:
 
             svc = ReportsService(self.deps.db_client, self.deps.tenant_id)  # type: ignore[arg-type]
             return {"wip": svc.wip(engagement_id=tool_input.get("engagement_id"))}
+        if tool_name == "run_finance_ops_check":
+            return await self._run_finance_ops_check(tool_input)
         if tool_name == "log_time_entry":
             return await self._log_time_entry(tool_input)
         if tool_name == "update_rate_card":
@@ -1172,6 +1207,377 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc)}
+
+    async def _run_finance_ops_check(self, args: dict) -> dict:
+        """Build a read-only finance-ops command-center synthesis."""
+        import asyncio
+
+        try:
+            period = self._parse_period(
+                args.get("period") or datetime.date.today().strftime("%Y-%m")
+            )
+            limit = int(args.get("limit") or 10)
+            if limit < 1 or limit > 25:
+                raise ValueError("limit must be between 1 and 25")
+
+            from app.services.agents_service import AgentsService
+            from app.services.close_status_service import CloseStatusService
+            from app.services.reports_service import ReportsService
+
+            def _build() -> dict:
+                reports = ReportsService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                )
+                agents = AgentsService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                )
+                close_status_obj = CloseStatusService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).get_status(period)
+
+                close_status = (
+                    close_status_obj.as_dict()
+                    if hasattr(close_status_obj, "as_dict")
+                    else dict(close_status_obj or {})
+                )
+                ar_aging = reports.ar_aging() or {}
+                ap_aging = reports.ap_aging() or {}
+                wip = reports.wip() or []
+                action_queue = reports.action_queue(role="all", limit=limit) or []
+                agent_runs = (agents.list_agent_runs(limit=limit) or {}).get("runs") or []
+                workflow_runs = (
+                    (agents.list_agent_workflow_runs(limit=limit) or {}).get(
+                        "workflow_runs"
+                    )
+                    or []
+                )
+                return self._format_finance_ops_check(
+                    period=period,
+                    limit=limit,
+                    ar_aging=ar_aging,
+                    ap_aging=ap_aging,
+                    wip=wip,
+                    close_status=close_status,
+                    action_queue=action_queue,
+                    agent_runs=agent_runs,
+                    workflow_runs=workflow_runs,
+                )
+
+            return await asyncio.to_thread(_build)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "finance ops command-center check failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    def _format_finance_ops_check(
+        self,
+        *,
+        period: str,
+        limit: int,
+        ar_aging: dict,
+        ap_aging: dict,
+        wip: list[dict],
+        close_status: dict,
+        action_queue: list[dict],
+        agent_runs: list[dict],
+        workflow_runs: list[dict],
+    ) -> dict:
+        ar_total = self._money_decimal(ar_aging.get("total"))
+        ap_total = self._money_decimal(ap_aging.get("total"))
+        wip_total = self._sum_money_rows(wip, "wip_value")
+        failed_run_count = sum(
+            1
+            for row in agent_runs
+            if row.get("status") == "failed" or int(row.get("failed_tool_count") or 0) > 0
+        )
+        failed_workflow_count = sum(
+            1 for row in workflow_runs if row.get("status") == "failed"
+        )
+        active_workflow_count = sum(
+            1
+            for row in workflow_runs
+            if row.get("status") in {"running", "pending", "queued"}
+        )
+
+        read_only_findings = {
+            "ar": {
+                "source": "reports.ar_aging",
+                "status": "empty" if ar_total == 0 else "attention",
+                "total": str(ar_aging.get("total", "0")),
+                "over_90": str(ar_aging.get("over_90", "0")),
+                "buckets": self._money_buckets(ar_aging),
+                "review_path": "/app/reports",
+            },
+            "ap": {
+                "source": "reports.ap_aging",
+                "status": "empty" if ap_total == 0 else "attention",
+                "total": str(ap_aging.get("total", "0")),
+                "over_90": str(ap_aging.get("over_90", "0")),
+                "buckets": self._money_buckets(ap_aging),
+                "review_path": "/app/reports",
+            },
+            "wip": {
+                "source": "reports.wip",
+                "status": "empty" if wip_total == 0 else "attention",
+                "project_count": len(wip),
+                "total": str(wip_total.quantize(Decimal("0.01"))),
+                "top_projects": self._top_wip_projects(wip, limit),
+                "review_path": "/app/reports",
+            },
+            "close_readiness": {
+                "source": "close_status",
+                "status": close_status.get("status") or "unknown",
+                "period": period,
+                "ready_to_lock": bool(close_status.get("ready_to_lock")),
+                "locked": bool(close_status.get("locked")),
+                "lock_blocker_count": len(close_status.get("lock_blockers") or []),
+                "pending_review_count": len(close_status.get("pending_reviews") or []),
+                "checklist": [
+                    {
+                        "code": item.get("code"),
+                        "status": item.get("status"),
+                        "summary": item.get("summary"),
+                    }
+                    for item in close_status.get("checklist") or []
+                ][:limit],
+                "review_path": "/app/accounting/journals",
+            },
+            "action_queue": {
+                "source": "reports.action_queue",
+                "status": "empty" if not action_queue else "attention",
+                "item_count": len(action_queue),
+                "items": [
+                    self._summarise_action_queue_item(item)
+                    for item in action_queue[:limit]
+                ],
+                "review_path": "/app/reports",
+            },
+            "agent_workflows": {
+                "source": "agents_service",
+                "status": self._agent_workflow_status(
+                    agent_runs,
+                    workflow_runs,
+                    failed_run_count + failed_workflow_count,
+                ),
+                "recent_run_count": len(agent_runs),
+                "failed_run_count": failed_run_count,
+                "recent_workflow_count": len(workflow_runs),
+                "active_workflow_count": active_workflow_count,
+                "failed_workflow_count": failed_workflow_count,
+                "recent_runs": [
+                    self._summarise_agent_run(row) for row in agent_runs[:limit]
+                ],
+                "recent_workflows": [
+                    self._summarise_workflow_run(row)
+                    for row in workflow_runs[:limit]
+                ],
+                "review_path": "/app/settings",
+            },
+        }
+        empty_states = self._finance_ops_empty_states(read_only_findings)
+        return {
+            "finance_ops_check": True,
+            "period": period,
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "read_only_findings": read_only_findings,
+            "recommended_actions": self._finance_ops_recommended_actions(
+                ar_total=ar_total,
+                ap_total=ap_total,
+                wip_total=wip_total,
+                close_status=close_status,
+            ),
+            "empty_states": empty_states,
+            "review_paths": [
+                "/app/copilot",
+                "/app/reports",
+                "/app/inbox",
+                "/app/settings",
+            ],
+        }
+
+    @staticmethod
+    def _money_decimal(value: object) -> Decimal:
+        try:
+            return Decimal(str(value or "0"))
+        except Exception:
+            return Decimal("0")
+
+    @classmethod
+    def _sum_money_rows(cls, rows: list[dict], key: str) -> Decimal:
+        total = Decimal("0")
+        for row in rows:
+            total += cls._money_decimal(row.get(key))
+        return total
+
+    @staticmethod
+    def _money_buckets(payload: dict) -> dict:
+        return {
+            "0_30": str(payload.get("0_30", "0")),
+            "31_60": str(payload.get("31_60", "0")),
+            "61_90": str(payload.get("61_90", "0")),
+            "over_90": str(payload.get("over_90", "0")),
+        }
+
+    @classmethod
+    def _top_wip_projects(cls, rows: list[dict], limit: int) -> list[dict]:
+        sorted_rows = sorted(
+            rows,
+            key=lambda row: cls._money_decimal(row.get("wip_value")),
+            reverse=True,
+        )
+        return [
+            {
+                "project_id": str(row.get("project_id") or ""),
+                "project_name": str(row.get("project_name") or ""),
+                "unbilled_hours": str(row.get("unbilled_hours") or "0"),
+                "wip_value": str(row.get("wip_value") or "0"),
+            }
+            for row in sorted_rows[:limit]
+        ]
+
+    @staticmethod
+    def _summarise_action_queue_item(item: dict) -> dict:
+        return {
+            "id": str(item.get("id") or ""),
+            "role": item.get("role"),
+            "source_type": item.get("source_type"),
+            "priority": item.get("priority"),
+            "entity_type": item.get("entity_type"),
+            "entity_id": str(item.get("entity_id") or ""),
+            "entity_name": str(item.get("entity_name") or ""),
+            "summary": item.get("summary"),
+            "recommended_action": item.get("recommended_action"),
+            "route_hint": item.get("route_hint"),
+        }
+
+    @staticmethod
+    def _summarise_agent_run(row: dict) -> dict:
+        return {
+            "id": str(row.get("id") or ""),
+            "agent_name": row.get("agent_name"),
+            "status": row.get("status"),
+            "tool_count": int(row.get("tool_count") or 0),
+            "failed_tool_count": int(row.get("failed_tool_count") or 0),
+            "created_at": str(row.get("created_at") or ""),
+            "completed_at": (
+                str(row.get("completed_at")) if row.get("completed_at") else None
+            ),
+        }
+
+    @staticmethod
+    def _summarise_workflow_run(row: dict) -> dict:
+        return {
+            "id": str(row.get("id") or ""),
+            "workflow_name": row.get("workflow_name"),
+            "status": row.get("status"),
+            "current_step": row.get("current_step"),
+            "created_at": str(row.get("created_at") or ""),
+            "updated_at": str(row.get("updated_at") or ""),
+        }
+
+    @staticmethod
+    def _agent_workflow_status(
+        agent_runs: list[dict],
+        workflow_runs: list[dict],
+        failed_count: int,
+    ) -> str:
+        if not agent_runs and not workflow_runs:
+            return "empty"
+        return "attention" if failed_count else "ok"
+
+    @staticmethod
+    def _finance_ops_empty_states(read_only_findings: dict) -> list[dict]:
+        messages = {
+            "ar": "No open AR balance was found.",
+            "ap": "No open AP balance was found.",
+            "wip": "No unbilled WIP was found.",
+            "action_queue": "No finance action queue items were found.",
+            "agent_workflows": "No recent agent runs or workflows were found.",
+        }
+        return [
+            {"domain": domain, "message": messages[domain]}
+            for domain in messages
+            if read_only_findings.get(domain, {}).get("status") == "empty"
+        ]
+
+    @staticmethod
+    def _finance_ops_recommended_actions(
+        *,
+        ar_total: Decimal,
+        ap_total: Decimal,
+        wip_total: Decimal,
+        close_status: dict,
+    ) -> list[dict]:
+        actions: list[dict] = []
+        if ar_total > 0:
+            actions.append(
+                {
+                    "domain": "ar",
+                    "action": (
+                        "Review overdue invoices and draft collections reminders "
+                        "for Inbox approval."
+                    ),
+                    "requires_inbox_approval": True,
+                    "suggested_agent": "collections_agent",
+                    "suggested_tool": "send_email",
+                    "risk_class": "write_money_in",
+                    "review_path": "/app/inbox",
+                }
+            )
+        if ap_total > 0:
+            actions.append(
+                {
+                    "domain": "ap",
+                    "action": (
+                        "Prepare a controlled bill-pay proposal for approved bills "
+                        "and route it to Inbox."
+                    ),
+                    "requires_inbox_approval": True,
+                    "suggested_agent": "copilot_agent",
+                    "suggested_tool": "propose_bill_payment_batch",
+                    "risk_class": "write_money_out",
+                    "review_path": "/app/inbox",
+                }
+            )
+        if wip_total > 0:
+            actions.append(
+                {
+                    "domain": "wip",
+                    "action": (
+                        "Draft customer invoices for billable WIP and route them "
+                        "to Inbox before creation."
+                    ),
+                    "requires_inbox_approval": True,
+                    "suggested_agent": "copilot_agent",
+                    "suggested_tool": "draft_invoice",
+                    "risk_class": "write_money_in",
+                    "review_path": "/app/inbox",
+                }
+            )
+        if close_status.get("status") == "blocked" or close_status.get("pending_reviews"):
+            actions.append(
+                {
+                    "domain": "close",
+                    "action": (
+                        "Prepare or refresh the month-end close review package "
+                        "before creating close tasks."
+                    ),
+                    "requires_inbox_approval": True,
+                    "suggested_agent": "copilot_agent",
+                    "suggested_tool": "prepare_month_end_close",
+                    "risk_class": "accounting",
+                    "review_path": "/app/inbox",
+                }
+            )
+        return actions
 
     async def _build_invoice_draft_payload(self, args: dict) -> dict:
         """Build a reviewable invoice draft payload without persisting it."""

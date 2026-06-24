@@ -490,6 +490,7 @@ def test_finance_ops_tools_registered():
     from app.agents.copilot.graph import CopilotAgent
 
     tool_names = {t["name"] for t in CopilotAgent.TOOLS}
+    assert "run_finance_ops_check" in tool_names
     assert "propose_bill_payment_batch" in tool_names
     assert "prepare_month_end_close" in tool_names
     assert "generate_financial_statement_package" in tool_names
@@ -500,10 +501,14 @@ def test_finance_ops_tool_schemas():
     from app.agents.copilot.graph import CopilotAgent
 
     tools = {t["name"]: t for t in CopilotAgent.TOOLS}
+    command_center_schema = tools["run_finance_ops_check"]["input_schema"]
     bill_pay_schema = tools["propose_bill_payment_batch"]["input_schema"]
     close_schema = tools["prepare_month_end_close"]["input_schema"]
     statements_schema = tools["generate_financial_statement_package"]["input_schema"]
 
+    assert "period" in command_center_schema["properties"]
+    assert "limit" in command_center_schema["properties"]
+    assert command_center_schema["required"] == []
     assert "due_within_days" in bill_pay_schema["properties"]
     assert "bank_account_label" in bill_pay_schema["properties"]
     assert close_schema["required"] == ["period"]
@@ -517,6 +522,7 @@ def test_system_prompt_mentions_finance_ops_tools():
     from app.agents.copilot.graph import CopilotAgent
 
     prompt = CopilotAgent.SYSTEM_PROMPT.lower()
+    assert "finance ops check" in prompt or "command center" in prompt
     assert "bill pay" in prompt or "payment batch" in prompt
     assert "month-end close" in prompt
     assert "financial statement" in prompt
@@ -559,9 +565,241 @@ def test_execute_tool_dispatches_finance_ops_tools():
     from app.agents.copilot.graph import CopilotAgent
 
     source = inspect.getsource(CopilotAgent._execute_tool)
+    assert "run_finance_ops_check" in source
     assert "propose_bill_payment_batch" in source
     assert "prepare_month_end_close" in source
     assert "generate_financial_statement_package" in source
+
+
+@pytest.mark.asyncio
+async def test_finance_ops_check_execute_builds_command_center(monkeypatch):
+    """Daily command-center synthesis covers finance domains and approval actions."""
+    agent, _db = _make_agent({})
+
+    class _ReportsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def ar_aging(self):
+            return {
+                "0_30": "700.00",
+                "31_60": "200.00",
+                "61_90": "0.00",
+                "over_90": "100.00",
+                "total": "1000.00",
+            }
+
+        def ap_aging(self):
+            return {
+                "0_30": "300.00",
+                "31_60": "0.00",
+                "61_90": "0.00",
+                "over_90": "0.00",
+                "total": "300.00",
+            }
+
+        def wip(self):
+            return [
+                {
+                    "project_id": "proj-1",
+                    "project_name": "Nexus CFO",
+                    "unbilled_hours": "3.00",
+                    "wip_value": "750.00",
+                }
+            ]
+
+        def action_queue(self, **_kwargs):
+            return [
+                {
+                    "id": "queue-1",
+                    "role": "finance_manager",
+                    "source_type": "ar_aging",
+                    "priority": "high",
+                    "entity_type": "receivables",
+                    "entity_id": "ar-aging",
+                    "entity_name": "Accounts receivable",
+                    "summary": "Open AR total is 1000.00.",
+                    "recommended_action": "Review overdue invoices.",
+                    "route_hint": "/app/reports",
+                }
+            ]
+
+    class _CloseStatus:
+        def as_dict(self):
+            return {
+                "period": "2026-06",
+                "status": "blocked",
+                "ready_to_lock": False,
+                "locked": False,
+                "lock_blockers": ["close_reviews"],
+                "pending_reviews": [{"id": "review-1"}],
+                "checklist": [
+                    {
+                        "code": "close_reviews",
+                        "status": "pending",
+                        "summary": "1 close review is pending.",
+                    }
+                ],
+            }
+
+    class _CloseStatusService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def get_status(self, period):
+            assert period == "2026-06"
+            return _CloseStatus()
+
+    class _AgentsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def list_agent_runs(self, **_kwargs):
+            return {
+                "runs": [
+                    {
+                        "id": "run-1",
+                        "agent_name": "copilot_agent",
+                        "status": "succeeded",
+                        "created_at": "2026-06-24T10:00:00Z",
+                        "tool_count": 2,
+                        "failed_tool_count": 0,
+                    }
+                ],
+                "total": 1,
+            }
+
+        def list_agent_workflow_runs(self, **_kwargs):
+            return {
+                "workflow_runs": [
+                    {
+                        "id": "wf-1",
+                        "workflow_name": "month_end_close",
+                        "status": "running",
+                        "current_step": "review",
+                        "created_at": "2026-06-24T10:05:00Z",
+                    }
+                ],
+                "total": 1,
+            }
+
+    monkeypatch.setattr("app.services.reports_service.ReportsService", _ReportsService)
+    monkeypatch.setattr(
+        "app.services.close_status_service.CloseStatusService",
+        _CloseStatusService,
+    )
+    monkeypatch.setattr("app.services.agents_service.AgentsService", _AgentsService)
+
+    result = await agent._execute_tool(
+        "run_finance_ops_check",
+        {"period": "2026-06", "limit": 5},
+    )
+
+    assert result["finance_ops_check"] is True
+    assert result["period"] == "2026-06"
+    findings = result["read_only_findings"]
+    assert set(findings) >= {
+        "ar",
+        "ap",
+        "wip",
+        "close_readiness",
+        "action_queue",
+        "agent_workflows",
+    }
+    assert findings["ar"]["total"] == "1000.00"
+    assert findings["ap"]["status"] == "attention"
+    assert findings["wip"]["total"] == "750.00"
+    assert findings["close_readiness"]["lock_blocker_count"] == 1
+    assert findings["action_queue"]["item_count"] == 1
+    assert findings["agent_workflows"]["recent_run_count"] == 1
+    assert any(
+        action["suggested_tool"] == "propose_bill_payment_batch"
+        and action["requires_inbox_approval"] is True
+        for action in result["recommended_actions"]
+    )
+    assert any(
+        action["suggested_tool"] == "draft_invoice"
+        and action["requires_inbox_approval"] is True
+        for action in result["recommended_actions"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_finance_ops_check_reports_explicit_empty_states(monkeypatch):
+    """Empty domains are returned as empty states instead of invented values."""
+    agent, _db = _make_agent({})
+
+    class _ReportsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def ar_aging(self):
+            return {"0_30": "0", "31_60": "0", "61_90": "0", "over_90": "0", "total": "0"}
+
+        def ap_aging(self):
+            return {"0_30": "0", "31_60": "0", "61_90": "0", "over_90": "0", "total": "0"}
+
+        def wip(self):
+            return []
+
+        def action_queue(self, **_kwargs):
+            return []
+
+    class _CloseStatus:
+        def as_dict(self):
+            return {
+                "period": "2026-06",
+                "status": "ready",
+                "ready_to_lock": True,
+                "locked": False,
+                "lock_blockers": [],
+                "pending_reviews": [],
+                "checklist": [],
+            }
+
+    class _CloseStatusService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def get_status(self, _period):
+            return _CloseStatus()
+
+    class _AgentsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def list_agent_runs(self, **_kwargs):
+            return {"runs": [], "total": 0}
+
+        def list_agent_workflow_runs(self, **_kwargs):
+            return {"workflow_runs": [], "total": 0}
+
+    monkeypatch.setattr("app.services.reports_service.ReportsService", _ReportsService)
+    monkeypatch.setattr(
+        "app.services.close_status_service.CloseStatusService",
+        _CloseStatusService,
+    )
+    monkeypatch.setattr("app.services.agents_service.AgentsService", _AgentsService)
+
+    result = await agent._execute_tool(
+        "run_finance_ops_check",
+        {"period": "2026-06"},
+    )
+
+    findings = result["read_only_findings"]
+    assert findings["ar"]["status"] == "empty"
+    assert findings["ap"]["status"] == "empty"
+    assert findings["wip"]["status"] == "empty"
+    assert findings["action_queue"]["status"] == "empty"
+    assert findings["agent_workflows"]["status"] == "empty"
+    assert {state["domain"] for state in result["empty_states"]} >= {
+        "ar",
+        "ap",
+        "wip",
+        "action_queue",
+        "agent_workflows",
+    }
+    assert result["recommended_actions"] == []
 
 
 @pytest.mark.asyncio
