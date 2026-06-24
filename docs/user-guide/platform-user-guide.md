@@ -144,6 +144,14 @@ actor role, action, timestamp, source suggestion link, policy metadata, safe
 before/after payload summaries, payload hashes, and materialized entity
 references where available.
 
+When an Inbox decision materializes a business record, the same immutable
+decision is projected onto that record. Bill, invoice, engagement, payment
+batch, journal, close-period, and source-document surfaces can show a
+record-scoped decision timeline with the actor role, decision type, timestamp,
+related Inbox task, safe before/after review summary, and event hash.
+Viewer/auditor personas can inspect this record-scoped metadata without gaining
+mutation access.
+
 Admins can also inspect or export the full financial event ledger through the
 `/api/v1/financial-events` API. This is useful for audit sampling and for
 cross-checking task decisions against posted journal, period-lock, and
@@ -340,7 +348,7 @@ The following work is tracked under parent issue #278:
 | #286 | Ops/Security | Rate limiting, telemetry, and tenant health, first slice implemented |
 | #295 | AI Ops | Settings UI for scheduled Finance Ops Manager cadence, first slice implemented |
 | #296 | Controls | Tenant-configurable approval policy UI, first slice implemented |
-| #297 | Audit | Business-record decision timeline and browser proof, planned |
+| #297 | Audit | Business-record decision timeline and browser proof, first slice implemented |
 | #298 | RBAC | Finance-role taxonomy and browser permission proof, planned |
 | #299 | P2P | Vendor invoice exception review UX and staged payment approval, first slice implemented |
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |

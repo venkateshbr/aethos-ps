@@ -21,6 +21,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -211,6 +212,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
     MoneyPipe,
     EmptyStateComponent,
     SkeletonRowsComponent,
+    DecisionTimelineComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -365,6 +367,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                 }
               </div>
             }
+            <app-decision-timeline entityType="month_end_close" [entityId]="closePeriod()" title="Close approval timeline" />
             <div class="divide-y divide-border-subtle border border-border-subtle rounded bg-surface">
               @for (comment of closePackage()!.variance_commentary; track comment.code) {
                 <div class="px-3 py-2">
@@ -731,6 +734,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     } @else {
                       <p class="text-text-disabled text-xs">No line detail available.</p>
                     }
+                    <app-decision-timeline entityType="journal_entry" [entityId]="row.id" title="Journal approval timeline" />
                   </div>
                 }
               </td>

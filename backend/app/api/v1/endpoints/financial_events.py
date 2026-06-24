@@ -42,6 +42,24 @@ def list_financial_events(
     )
 
 
+@router.get(
+    "/business-records/{entity_type}/{entity_id}/decisions",
+    response_model=FinancialEventListResponse,
+)
+def list_business_record_decisions(
+    entity_type: str,
+    entity_id: str,
+    limit: int = Query(default=25, ge=1, le=50),
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+    svc: FinancialEventsService = Depends(_service),  # noqa: B008
+) -> FinancialEventListResponse:
+    return svc.list_business_record_decisions(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        limit=limit,
+    )
+
+
 @router.get("/export")
 def export_financial_events(
     event_type: str | None = Query(default=None, description="Filter by event type"),

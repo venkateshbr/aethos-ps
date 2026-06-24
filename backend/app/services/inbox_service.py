@@ -350,6 +350,34 @@ class InboxService:
     ) -> None:
         task_id = str(task.get("id") or "")
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
+        before_state = {
+            "task": _task_audit_summary(task),
+            "payload": _safe_payload_summary(before_payload),
+            "payload_hash": stable_payload_hash(before_payload),
+        }
+        after_state = {
+            "task": {
+                **_task_audit_summary(task),
+                "status": (
+                    "open"
+                    if action.endswith("_denied")
+                    else "done"
+                ),
+            },
+            "payload": _safe_payload_summary(after_payload),
+            "payload_hash": stable_payload_hash(after_payload),
+            "materialisation": _materialisation_audit_summary(materialisation),
+        }
+        metadata = {
+            "kind": str(task.get("kind") or ""),
+            "agent_name": str(task.get("agent_name") or "unknown"),
+            "confidence": str(task.get("confidence") or ""),
+            "policy": decision.to_metadata(),
+            "decision_result": _decision_result(action),
+            "required_role": decision.required_role.value,
+            "actor_role": actor_role.value,
+            "agent_suggestion_id": str(suggestion_id) if suggestion_id else None,
+        }
         await self._repo.append_financial_event(
             event_type=event_type,
             entity_type="hitl_task",
@@ -359,36 +387,40 @@ class InboxService:
             actor_user_id=actor_user_id,
             actor_role=actor_role.value,
             action=action,
-            before_state={
-                "task": _task_audit_summary(task),
-                "payload": _safe_payload_summary(before_payload),
-                "payload_hash": stable_payload_hash(before_payload),
-            },
-            after_state={
-                "task": {
-                    **_task_audit_summary(task),
-                    "status": (
-                        "open"
-                        if action.endswith("_denied")
-                        else "done"
-                    ),
-                },
-                "payload": _safe_payload_summary(after_payload),
-                "payload_hash": stable_payload_hash(after_payload),
-                "materialisation": _materialisation_audit_summary(materialisation),
-            },
-            metadata={
-                "kind": str(task.get("kind") or ""),
-                "agent_name": str(task.get("agent_name") or "unknown"),
-                "confidence": str(task.get("confidence") or ""),
-                "policy": decision.to_metadata(),
-                "decision_result": _decision_result(action),
-                "required_role": decision.required_role.value,
-                "actor_role": actor_role.value,
-                "agent_suggestion_id": str(suggestion_id) if suggestion_id else None,
-            },
+            before_state=before_state,
+            after_state=after_state,
+            metadata=metadata,
             idempotency_key=idempotency_key,
         )
+        for target_type, target_id in _business_record_projection_targets(
+            materialisation,
+            before_payload,
+            after_payload,
+        ):
+            await self._repo.append_financial_event(
+                event_type=event_type,
+                entity_type=target_type,
+                entity_id=target_id,
+                source_type="hitl_task",
+                source_id=task_id,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role.value,
+                action=action,
+                before_state=before_state,
+                after_state=after_state,
+                metadata={
+                    **metadata,
+                    "business_record_projection": True,
+                    "source_hitl_task_id": task_id,
+                },
+                idempotency_key=_projected_decision_idempotency_key(
+                    idempotency_key,
+                    event_type=event_type,
+                    task_id=task_id,
+                    entity_type=target_type,
+                    entity_id=target_id,
+                ),
+            )
 
     async def _fetch_user_role(self, user_id: str) -> UserRole:
         try:
@@ -1527,6 +1559,56 @@ def _materialisation_audit_summary(materialisation: dict | None) -> dict[str, An
     if not result:
         result["keys"] = sorted(str(key) for key in materialisation.keys())[:20]
     return result
+
+
+def _business_record_projection_targets(
+    materialisation: dict | None,
+    before_payload: dict | None,
+    payload: dict | None,
+) -> list[tuple[str, str]]:
+    targets: list[tuple[str, str]] = []
+    if materialisation:
+        entity_type = _non_empty(materialisation.get("entity_type"))
+        entity_id = _non_empty(materialisation.get("entity_id"))
+        if entity_type and entity_id and entity_type != "hitl_task":
+            targets.append((entity_type, entity_id))
+    source_document_id = (
+        _source_document_id_from_payload(payload)
+        or _source_document_id_from_payload(before_payload)
+    )
+    if source_document_id:
+        targets.append(("document", source_document_id))
+
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for target in targets:
+        if target in seen:
+            continue
+        seen.add(target)
+        deduped.append(target)
+    return deduped
+
+
+def _source_document_id_from_payload(payload: dict | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("source_document_id", "original_document_id", "document_id"):
+        value = _non_empty(payload.get(key))
+        if value:
+            return value
+    return None
+
+
+def _projected_decision_idempotency_key(
+    idempotency_key: str | None,
+    *,
+    event_type: str,
+    task_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> str:
+    base = idempotency_key or f"{event_type}:{task_id}"
+    return f"{base}:record:{entity_type}:{entity_id}"
 
 
 def _safe_payload_summary(payload: dict | None) -> dict[str, Any]:

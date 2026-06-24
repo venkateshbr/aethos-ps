@@ -54,6 +54,13 @@ written in user language and intentionally avoid internal tool names.
 | Financial statements | `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and evidence-backed management commentary.` |
 | Variance explanation | `Explain material variances in June 2026 financial statements and recommend next actions. Do not post journals or lock the period without approval.` |
 
+## Audit And Controls
+
+| Goal | Prompt |
+| --- | --- |
+| Record decision trail | `Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
+| Audit sample | `Prepare an audit sample of AI-assisted finance decisions this week. Separate approvals, approve-with-edits, rejections, and approval denials. Flag records where the reviewed payload changed materially.` |
+
 ## Client And Engagement Onboarding
 
 | Goal | Prompt |

@@ -463,6 +463,8 @@ def test_inbox_reject_writes_decision_audit_event(
     client: TestClient,
     fake_db: _FakeDb,
 ) -> None:
+    fake_db.tables["hitl_tasks"][0]["payload"]["original_document_id"] = "document-1"
+
     response = client.post(
         "/api/v1/inbox/tasks/task-1/reject",
         json={"reason": "Duplicate vendor invoice"},
@@ -477,6 +479,10 @@ def test_inbox_reject_writes_decision_audit_event(
     assert event["action"] == "rejected"
     assert event["after_state"]["payload"]["reason"] == "Duplicate vendor invoice"
     assert event["metadata"]["decision_result"] == "rejected"
+    document_event = fake_db.tables["financial_events"][1]
+    assert document_event["entity_type"] == "document"
+    assert document_event["entity_id"] == "document-1"
+    assert document_event["metadata"]["source_hitl_task_id"] == "task-1"
 
 
 def test_inbox_done_task_detail_exposes_decision_history(

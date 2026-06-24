@@ -12,6 +12,7 @@ import { EngagementService, EngagementDetail, EngagementFinancialSummary } from 
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { ProjectsListComponent } from '../projects/projects-list.component';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
 
 /** Minimal unbilled-time row used to drive the invoice draft picker. */
@@ -60,6 +61,7 @@ interface EmployeeMeta {
     MoneyPipe,
     ProjectsListComponent,
     SourceDocumentLinkComponent,
+    DecisionTimelineComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -128,6 +130,8 @@ interface EmployeeMeta {
             </span>
           </div>
         </div>
+
+        <app-decision-timeline entityType="engagement" [entityId]="engagement()!.id" />
 
         <!-- Financial summary (#242) -->
         @if (financialSummary()) {
