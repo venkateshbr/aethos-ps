@@ -5,8 +5,8 @@ exchange rate than the rate used when the invoice was created. The difference
 is a realised FX gain (if we received more than expected) or loss (if less).
 
 Journal pattern:
-  Gain: DR 1200 AR  /  CR 7100 FX Gain
-  Loss: DR 7200 FX Loss  /  CR 1200 AR
+  Gain: DR 1200 AR  /  CR 7900 Realized FX Gain/Loss
+  Loss: DR 7900 Realized FX Gain/Loss / CR 1200 AR
 
 The delta is immaterial if |delta| < $0.01 (after rounding HALF_DOWN).
 """
@@ -91,7 +91,7 @@ async def post_fx_gain_loss_if_needed(
             db.table("accounts")
             .select("id, code")
             .eq("tenant_id", tenant_id)
-            .in_("code", ["1200", "7100", "7200"])
+            .in_("code", ["1200", "7900"])
             .execute()
         )
         return {r["code"]: r["id"] for r in (result.data or [])}
@@ -118,7 +118,7 @@ async def post_fx_gain_loss_if_needed(
         return None
 
     if delta > Decimal("0"):
-        # Gain: DR 1200 AR (reversal) / CR 7100 FX Gain
+        # Gain: DR 1200 AR (reversal) / CR 7900 Realized FX Gain/Loss
         lines = [
             JournalLineSpec(
                 direction="DR",
@@ -130,24 +130,24 @@ async def post_fx_gain_loss_if_needed(
             ),
             JournalLineSpec(
                 direction="CR",
-                account_code="7100",
+                account_code="7900",
                 amount=delta,
                 description=f"FX gain on invoice {invoice_number}",
-                account_id=acct_map.get("7100"),
+                account_id=acct_map.get("7900"),
                 currency=payment_currency,
             ),
         ]
         label = "gain"
     else:
-        # Loss: DR 7200 FX Loss / CR 1200 AR (reversal)
+        # Loss: DR 7900 Realized FX Gain/Loss / CR 1200 AR (reversal)
         abs_delta = delta.copy_abs()
         lines = [
             JournalLineSpec(
                 direction="DR",
-                account_code="7200",
+                account_code="7900",
                 amount=abs_delta,
                 description=f"FX loss on invoice {invoice_number}",
-                account_id=acct_map.get("7200"),
+                account_id=acct_map.get("7900"),
                 currency=payment_currency,
             ),
             JournalLineSpec(

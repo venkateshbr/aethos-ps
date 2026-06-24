@@ -687,7 +687,7 @@ async function createApprovedInvoice(
   request: APIRequestContext,
   auth: { token: string; tenantId: string },
   line: { description: string; quantity: string; unit_price: string },
-  options: { issue_date?: string; due_date?: string } = {},
+  options: { issue_date?: string; due_date?: string; currency?: string } = {},
 ): Promise<Record<string, unknown>> {
   const { clientId, engagementId } = await createClientAndEngagement(
     request, auth, 'time_and_materials',
@@ -706,6 +706,25 @@ async function createApprovedInvoice(
   });
   await expectOk(approveResp, 'approve invoice for webhook test');
   return invoice;
+}
+
+async function expectFxGainLossJournal(
+  request: APIRequestContext,
+  auth: { token: string; tenantId: string },
+  invoiceId: string,
+): Promise<void> {
+  const journalResp = await request.get(
+    `${API}/api/v1/accounting/journal-entries?reference_type=fx_gain_loss&limit=50`,
+    { headers: apiHeaders(auth), timeout: API_REQUEST_TIMEOUT },
+  );
+  await expectOk(journalResp, 'list FX gain/loss journal entries');
+  const journals = await journalResp.json();
+  expect(
+    (journals as Array<{ reference?: string | null; description?: string }>)
+      .some((journal) =>
+        journal.reference === invoiceId && /fx (gain|loss)/i.test(journal.description ?? ''),
+      ),
+  ).toBeTruthy();
 }
 
 async function sendInvoiceForPaymentLink(
@@ -1600,8 +1619,33 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     expect(parseFloat(te.hours)).toBe(2);
   });
 
-  test.fixme('E5 FX moved between send and pay → realised FX gain/loss', async () => {
-    // Blocked: requires Stripe payment simulation with different FX rate
+  test('E5 FX moved between send and pay → realised FX gain/loss', async ({ request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'GBP invoice paid after FX move', quantity: '1', unit_price: '100.00' },
+      { currency: 'GBP' },
+    );
+    const invoiceId = String(invoice.id);
+
+    const { response } = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId,
+      amountCents: 11000,
+      currency: 'USD',
+    });
+    await expectOk(response, 'signed cross-currency webhook with FX movement');
+
+    await expectFxGainLossJournal(request, auth!, invoiceId);
+    const payments = await listPaymentsForInvoice(request, auth!, invoiceId);
+    expect(payments.some((payment) => payment.currency === 'USD')).toBeTruthy();
   });
 
   test('E6 public token rotated mid-payment → old 410, new works', async ({ page, request }) => {
@@ -1707,8 +1751,31 @@ test.describe('engagement-to-cash — §4 Edge Cases', () => {
     }
   });
 
-  test.fixme('E9 currency roundtrip residual → FX gain/loss', async () => {
-    // Blocked: requires Stripe payment simulation with FX-converted amount
+  test('E9 currency roundtrip residual → FX gain/loss', async ({ request }) => {
+    test.setTimeout(120_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'GBP roundtrip residual invoice', quantity: '1', unit_price: '100.00' },
+      { currency: 'GBP' },
+    );
+    const invoiceId = String(invoice.id);
+
+    const { response } = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId,
+      amountCents: 10001,
+      currency: 'USD',
+    });
+    await expectOk(response, 'signed cross-currency webhook with one-cent residual');
+
+    await expectFxGainLossJournal(request, auth!, invoiceId);
   });
 
   test('E10 DST transition — time entries on DST boundary stored without duplication', async ({ request }) => {
