@@ -11,6 +11,7 @@ import { CollectionsPolicyComponent } from './collections-policy.component';
 import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
 import { ApprovalPolicyComponent } from './approval-policy.component';
 import { FinancePersonasComponent } from './finance-personas.component';
+import { TenantHealthComponent } from './tenant-health.component';
 
 @Component({
   selector: 'app-settings',
@@ -28,6 +29,7 @@ import { FinancePersonasComponent } from './finance-personas.component';
     FinanceOpsScheduleComponent,
     ApprovalPolicyComponent,
     FinancePersonasComponent,
+    TenantHealthComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -101,6 +103,13 @@ import { FinancePersonasComponent } from './finance-personas.component';
             <app-finance-ops-schedule />
             <app-autonomy />
           </div>
+        </section>
+
+        <section aria-labelledby="operational-health-heading">
+          <h2 id="operational-health-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Operational Health
+          </h2>
+          <app-tenant-health />
         </section>
 
         <section aria-labelledby="agent-runs-heading">

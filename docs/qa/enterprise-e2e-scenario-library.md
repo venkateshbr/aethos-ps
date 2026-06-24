@@ -51,7 +51,7 @@ agent ledger.
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Implemented first slice; browser automation pending | #300 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
-| ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
+| ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Implemented first slice; Playwright automation pending | #301 |
 | ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Implemented first slice; Playwright automation pending | #296 |
 | ENT-AUD-003 | Business record exposes immutable decision timeline | Implemented first slice; Playwright automation pending | #297 |
 | ENT-RBAC-002 | Finance-role personas are browser-proven | Implemented first slice; Playwright role matrix pending | #298 |
@@ -705,7 +705,13 @@ Automation target:
 
 Persona: Internal operator and security reviewer.
 
-Status: Planned under #301.
+Status: First slice implemented. `RATE_LIMIT_BACKEND=supabase` activates a
+Postgres-backed limiter using hashed subjects and the same safe `429` response
+contract. If the distributed RPC is unavailable, the limiter falls back to
+in-memory mode by default and records a sanitized background failure. Settings
+now exposes an Operational Health dashboard backed by `/api/v1/tenants/health`,
+including table checks, rate-limit backend status, sanitized failure counters,
+and routed alert items. Full browser automation remains pending.
 
 Steps:
 
@@ -723,3 +729,16 @@ Expected result:
   runbook channel.
 - Telemetry never emits raw tokens, JWTs, API keys, document text, or request
   payloads.
+
+Automation target:
+
+- API: lower thresholds, configure Supabase limiter, and assert the second
+  process sees the same limit state while preserving the safe `429` body and
+  headers.
+- API: force distributed limiter RPC failure and assert fallback mode is used,
+  no exception leaks, and a sanitized `rate_limit_distributed_backend`
+  background failure is visible in tenant health.
+- Browser: open Settings -> Operational Health as Admin/Owner and verify table
+  checks, rate-limit backend, request failures, background failures, agent/tool
+  failures, workflow failures, and routed alerts render without raw sensitive
+  values.

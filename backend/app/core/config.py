@@ -183,9 +183,27 @@ class Settings(BaseSettings):
     # First slice is intentionally in-process and protects only high-risk
     # public/auth endpoints. Keep thresholds high enough for browser E2E setup.
     rate_limit_enabled: bool = True
+    # "memory" is local-process only. "supabase" uses the Postgres-backed
+    # `check_rate_limit` RPC from migration 0089 so limits apply across app
+    # instances. The distributed backend falls back to memory by default if the
+    # RPC is unavailable.
+    rate_limit_backend: str = "memory"
+    rate_limit_distributed_fallback_to_memory: bool = True
     rate_limit_window_seconds: int = 60
     rate_limit_signup_max_requests: int = 60
     rate_limit_public_invoice_max_requests: int = 300
+
+    # ------------------------------------------------------------------
+    # Operator alert routing
+    # ------------------------------------------------------------------
+    # Empty webhook means "route to runbook queue" in health output. We do not
+    # send outbound alerts from request handlers; external routing can poll the
+    # safe health API or consume the same thresholds.
+    ops_alert_channel: str = "runbook"
+    ops_alert_webhook_url: str = ""
+    ops_alert_rate_limit_threshold: int = 10
+    ops_alert_background_failure_threshold: int = 3
+    ops_alert_agent_failure_threshold: int = 1
 
 
 # Module-level singleton — import this everywhere.
