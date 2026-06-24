@@ -39,7 +39,7 @@ agent ledger.
 | ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Implemented first slice; browser automation pending | #280 |
 | ENT-AUD-001 | Inbox approval writes immutable decision event | Implemented first slice; browser automation pending | #281 |
 | ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Implemented first slice; browser automation pending | #281 |
-| ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Planned | #282 |
+| ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Implemented first slice; browser automation pending | #282 |
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Planned | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Planned | #283 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Planned | #284 |
@@ -194,18 +194,33 @@ Evidence:
 
 Persona: External CPA or auditor.
 
+Status: First slice implemented. Current `viewer` role maps to auditor/read-only
+personas; API tests prove read-only access to reports, bills/procurement, and
+Inbox while denying mutating finance actions. Bills/AP UI disables create,
+approval, conversion, and Pay Bills entry actions for read-only users. Browser
+automation is still pending.
+
 Steps:
 
 1. Sign in as auditor/read-only persona.
-2. Open reports, invoices, bills, journals, documents, and decision history.
-3. Attempt to approve an Inbox task, create a journal, send an invoice, and approve a payment batch.
+2. Open reports, invoices, bills, procurement, journals, documents, Inbox Done/All history, and permitted dashboards.
+3. Attempt to approve an Inbox task, create a bill, create or approve a procurement document, convert a purchase request, send an invoice, and approve a payment batch.
+4. Attempt to list admin-only financial events directly.
 
 Expected result:
 
 - Read access matches the role definition.
 - Mutating actions are hidden or disabled in UI.
 - Direct API mutation attempts fail cleanly.
+- Admin-only audit export/list endpoints remain blocked for viewer users.
 - Cross-tenant access still returns 404/403 without leaking data.
+
+Automation target:
+
+- Browser: login as viewer, open Bills, verify New Procurement, New Bill, Pay
+  Bills, Approve, and Convert controls are disabled.
+- API: verify viewer can read Bills/Procurement/Inbox/Reports but receives 403
+  for create/approve/edit/reject/convert actions and for financial-events list/export.
 
 ## ENT-AIOPS-001 - Scheduled Finance Ops Manager Run
 

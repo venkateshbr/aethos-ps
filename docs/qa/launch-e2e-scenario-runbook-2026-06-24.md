@@ -31,7 +31,7 @@ The operational scenarios should be executed primarily as a tenant admin or owne
 | Staff Consultant | Nina Patel | Can enter time/expenses where UI allows; cannot approve invoices, bills, journals, or tenant settings |
 | AP Lead | Chris Moore | Can work vendor onboarding, bills, procurement, pay-bills, and AP Aging; cannot approve revenue actions unless explicitly allowed |
 | Controller | Rachel Kim | Can post journals, work close tasks, review financial statements, and inspect statutory reports |
-| Viewer/Auditor | Read-only QA user | Can view permitted data, mutation buttons are hidden or disabled, direct mutating actions fail cleanly |
+| Viewer/Auditor | Read-only QA user | Can view permitted data, Bills/AP mutation buttons are disabled, direct Inbox/Bills/Procurement/Financial Events mutations fail cleanly |
 
 If role-auth users are not already available, create the initial auth accounts using the approved backend/admin path, then create all ERP employee/persona records through `/app/people`.
 
@@ -545,6 +545,7 @@ Current implementation assessment:
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slice: Inbox exposes required Owner/Admin/Manager approval role and the API enforces the same policy, including approve-with-edits re-evaluation | Tenant-configurable policy UI and deeper role taxonomy remain future enterprise controls | #280 |
 | Enterprise decision audit | Implemented first slice: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history | Browser E2E automation and broader business-record timeline surfacing remain future depth | #281 |
+| Enterprise RBAC permission proof | Implemented first slice: current enterprise personas are mapped to owner/admin/manager/member/viewer/employee, API tests prove viewer read-only boundaries, and Bills/AP disables restricted viewer actions | Dedicated finance-role enum expansion and browser E2E proof remain future depth | #282 |
 
 ## Scenario 11 - AI Finance Department Command Center
 

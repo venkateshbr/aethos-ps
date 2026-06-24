@@ -11,6 +11,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { userMessageForError } from '../../core/utils/error-message';
+import { AuthService } from '../../core/services/auth.service';
 
 export interface VendorOption {
   id: string;
@@ -80,7 +81,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           <button
             type="button"
             (click)="openNewOrderForm()"
+            [disabled]="!canCreateApDocument()"
+            [matTooltip]="canCreateApDocument() ? 'Create a purchase request, purchase order, or service order' : 'Requires manager role'"
             class="inline-flex items-center gap-2 border border-border-strong hover:border-accent text-text-secondary hover:text-text-primary font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [class.opacity-50]="!canCreateApDocument()"
+            [class.cursor-not-allowed]="!canCreateApDocument()"
             aria-label="Create new purchase order or service order"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">assignment</mat-icon>
@@ -89,7 +94,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           <button
             type="button"
             (click)="openNewBillForm()"
+            [disabled]="!canCreateApDocument()"
+            [matTooltip]="canCreateApDocument() ? 'Create a draft vendor bill' : 'Requires manager role'"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [class.opacity-50]="!canCreateApDocument()"
+            [class.cursor-not-allowed]="!canCreateApDocument()"
             aria-label="Create new bill"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
@@ -97,8 +106,12 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           </button>
           <button
             type="button"
-            routerLink="/app/billing-runs"
+            (click)="goToPayBills()"
+            [disabled]="!canApproveApAction()"
+            [matTooltip]="canApproveApAction() ? 'Prepare and approve bill payment batches' : 'Requires admin role'"
             class="inline-flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            [class.opacity-50]="!canApproveApAction()"
+            [class.cursor-not-allowed]="!canApproveApAction()"
             aria-label="Go to Pay Bills wizard"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">payments</mat-icon>
@@ -170,7 +183,8 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                     <button
                       type="button"
                       class="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
-                      [disabled]="orderActionLoading() === order.id"
+                      [disabled]="orderActionLoading() === order.id || !canApproveApAction()"
+                      [matTooltip]="canApproveApAction() ? 'Approve this procurement document' : 'Requires admin role'"
                       (click)="approveOrder(order)"
                     >
                       <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">verified</mat-icon>
@@ -180,7 +194,8 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                     <button
                       type="button"
                       class="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
-                      [disabled]="orderActionLoading() === order.id"
+                      [disabled]="orderActionLoading() === order.id || !canCreateApDocument()"
+                      [matTooltip]="canCreateApDocument() ? 'Convert this request to an order' : 'Requires manager role'"
                       (click)="convertRequest(order)"
                     >
                       <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">call_split</mat-icon>
@@ -952,6 +967,7 @@ export class BillsListComponent implements OnInit {
   private http   = inject(HttpClient);
   private router = inject(Router);
   private fb     = inject(FormBuilder);
+  private auth   = inject(AuthService);
 
   loading     = signal(true);
   error       = signal<string | null>(null);
@@ -1011,6 +1027,8 @@ export class BillsListComponent implements OnInit {
     { label: 'Paid',     value: 'paid' },
     { label: 'Overdue',  value: 'overdue' },
   ];
+  canCreateApDocument = () => this.roleRank(this.auth.role()) >= this.roleRank('manager');
+  canApproveApAction = () => this.roleRank(this.auth.role()) >= this.roleRank('admin');
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -1103,6 +1121,7 @@ export class BillsListComponent implements OnInit {
   }
 
   openNewBillForm(): void {
+    if (!this.canCreateApDocument()) return;
     // Reset form to defaults
     while (this.lines.length > 1) this.lines.removeAt(1);
     this.newBillForm.reset({
@@ -1204,6 +1223,7 @@ export class BillsListComponent implements OnInit {
   }
 
   openNewOrderForm(): void {
+    if (!this.canCreateApDocument()) return;
     if (this.vendors().length === 0) {
       this.loadVendors();
     }
@@ -1321,6 +1341,7 @@ export class BillsListComponent implements OnInit {
   }
 
   submitNewBill(): void {
+    if (!this.canCreateApDocument()) return;
     if (this.newBillForm.invalid || this.creating() || this.lines.length === 0) {
       this.newBillForm.markAllAsTouched();
       return;
@@ -1386,6 +1407,7 @@ export class BillsListComponent implements OnInit {
   }
 
   submitNewOrder(): void {
+    if (!this.canCreateApDocument()) return;
     if (this.newOrderForm.invalid || this.orderCreating() || this.orderLines.length === 0) {
       this.newOrderForm.markAllAsTouched();
       return;
@@ -1434,6 +1456,7 @@ export class BillsListComponent implements OnInit {
   }
 
   approveOrder(order: ProcurementDocumentSummary): void {
+    if (!this.canApproveApAction()) return;
     this.orderActionLoading.set(order.id);
     this.orderActionMessage.set(null);
     this.http.post<ProcurementDocumentSummary>(`/api/v1/procurement/documents/${order.id}/approve`, {}).subscribe({
@@ -1453,6 +1476,7 @@ export class BillsListComponent implements OnInit {
   }
 
   convertRequest(order: ProcurementDocumentSummary): void {
+    if (!this.canCreateApDocument()) return;
     this.orderActionLoading.set(order.id);
     this.orderActionMessage.set(null);
     this.http.post<ProcurementDocumentSummary>(
@@ -1565,5 +1589,22 @@ export class BillsListComponent implements OnInit {
       void:     'Voided',
     };
     return labels[status] ?? status;
+  }
+
+  goToPayBills(): void {
+    if (!this.canApproveApAction()) return;
+    this.router.navigate(['/app/billing-runs']);
+  }
+
+  private roleRank(role: string | null | undefined): number {
+    const ranks: Record<string, number> = {
+      owner: 5,
+      admin: 4,
+      manager: 3,
+      member: 2,
+      viewer: 1,
+      employee: 0,
+    };
+    return ranks[role ?? 'viewer'] ?? 1;
   }
 }
