@@ -19,6 +19,7 @@ VENDOR_KINDS: tuple[str, ...] = ("vendor", "both")
 
 _OPTIONAL_VENDOR_CONTROL_FIELDS = frozenset(
     {
+        "vendor_onboarding_status",
         "vendor_bank_account_status",
         "vendor_tax_validation_status",
         "vendor_sanctions_status",

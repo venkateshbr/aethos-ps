@@ -43,6 +43,7 @@ from app.api.v1.endpoints import (
     tenants,
     time_entries,
     timesheet,
+    webhook_events,
     webhooks,
 )
 
@@ -78,6 +79,7 @@ api_router.include_router(payments.router, prefix="/payments", tags=["payments"]
 api_router.include_router(procurement.router, prefix="/procurement", tags=["procurement"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(financial_events.router, prefix="/financial-events", tags=["financial-events"])
+api_router.include_router(webhook_events.router, prefix="/webhook-events", tags=["webhook-events"])
 api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["billing-runs"])
 api_router.include_router(fx_rates.router, prefix="/fx-rates", tags=["fx-rates"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])

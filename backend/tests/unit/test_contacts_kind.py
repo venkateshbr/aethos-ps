@@ -201,7 +201,7 @@ def test_create_retries_without_optional_vendor_control_columns_when_schema_lags
     retry_insert.insert.assert_called_once()
     retry_payload = retry_insert.insert.call_args.args[0]
     assert retry_payload["tenant_id"] == "tenant-123"
-    assert retry_payload["vendor_onboarding_status"] == "pending"
+    assert "vendor_onboarding_status" not in retry_payload
     assert "vendor_bank_account_status" not in retry_payload
     assert "vendor_tax_validation_status" not in retry_payload
     assert "vendor_sanctions_status" not in retry_payload

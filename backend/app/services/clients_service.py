@@ -26,6 +26,9 @@ _VENDOR_UPDATE_FIELDS = (
 
 
 def _to_response(row: dict) -> ClientResponse:
+    default_vendor_onboarding_status = (
+        "pending" if row.get("kind") in _VENDOR_KINDS else "not_required"
+    )
     return ClientResponse(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -33,7 +36,8 @@ def _to_response(row: dict) -> ClientResponse:
         kind=row["kind"],
         payment_terms_days=int(row["payment_terms_days"]),
         created_at=str(row["created_at"]),
-        vendor_onboarding_status=row.get("vendor_onboarding_status") or "not_required",
+        vendor_onboarding_status=row.get("vendor_onboarding_status")
+        or default_vendor_onboarding_status,
         vendor_bank_account_status=row.get("vendor_bank_account_status") or "not_provided",
         vendor_tax_validation_status=row.get("vendor_tax_validation_status") or "not_checked",
         vendor_sanctions_status=row.get("vendor_sanctions_status") or "not_checked",

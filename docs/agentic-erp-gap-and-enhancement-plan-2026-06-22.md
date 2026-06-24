@@ -4,9 +4,9 @@ Review date: 2026-06-22
 Repo: `aethos-ps`  
 Mode: living implementation tracker; update dated implementation status as code and issue state change.
 
-Last implementation revalidation: 2026-06-23.
+Last implementation revalidation: 2026-06-24.
 
-## 2026-06-23 Implementation Status Update
+## 2026-06-24 Implementation Status Update
 
 This plan was revalidated against the current codebase, migrations, Angular routes/services, tests, and PR #256. Items below are now implemented and should not be reopened as generic gaps without a new regression or a sharper product requirement.
 
@@ -21,7 +21,7 @@ Done:
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
 - Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
 - Local frontend runtime is pinned to supported Node 20 via root `.nvmrc` and frontend package `engines`; CI and Docker already use Node 20.
-- Backend quality gates were restored on PR #256: full backend pytest passed (`861 passed, 57 xfailed, 1 xpassed`), ruff passed, frontend production build passed, and full Chromium Playwright passed (`110 passed, 11 skipped`).
+- Current local quality gates passed on 2026-06-24: full backend pytest (`790 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
 - Agent controls are surfaced through `/api/v1/agents/*` and Settings UI: run dashboard, eval candidates, L3 policy, kill switches, and per-agent/tool circuit breaker controls.
@@ -45,7 +45,11 @@ Done:
 - Public invoice token rotation now degrades when `invoice_public_token_revocations` is absent by recording retired tokens in the running API process, preserving old-token `410 Gone` behavior for tokens rotated during that process until migration `0081` is applied durably.
 - Delayed Stripe payment reconciliation now records the same payment row, paid-invoice state, time-entry backlink, DR Bank / CR AR journal, and FX-gain/loss hook as the signed webhook path. Invoice send stamps `sent_at`, an admin-only `/api/v1/payments/reconcile-stripe` operation triggers tenant reconciliation, and Chromium E2E covers hosted Stripe Checkout followed by reconciliation.
 - FX settlement browser coverage now verifies a cross-currency paid invoice and a one-cent roundtrip residual both create `fx_gain_loss` journal entries through the signed Stripe webhook path; the FX service now uses the seeded `7900 Realized FX Gain/Loss` account instead of nonexistent `7100`/`7200` accounts.
-- Full Chromium engagement-to-cash E2E was rerun against local backend/frontend and passed (`55 passed, 2 skipped`). The remaining planned browser gaps are viewer UI mutation guard and full audit/event-suggestion evidence.
+- Viewer-role engagement-to-cash browser coverage is implemented. The E2E suite now creates a real tenant viewer user through Supabase auth plus `tenant_users`, logs in through the UI, verifies invoice money actions are disabled, and verifies create/approve/send/pay API calls return `403`.
+- Full audit/event-suggestion engagement-to-cash evidence is implemented. The E2E suite now verifies signed Stripe payment evidence in `webhook_events` through `/api/v1/webhook-events`, journal-posting evidence through `/api/v1/financial-events`, and agent-suggestion evidence through the Inbox task created by the bill-pay proposal flow.
+- Webhook event audit is now queryable by tenant admins through `/api/v1/webhook-events`, with focused API/service tests. Stripe checkout webhooks also derive tenant context from nested Stripe object metadata before falling back to Stripe customer mapping.
+- Vendor and bill writes now tolerate `PGRST204` stale-schema errors for optional rollout columns covering vendor controls, PO matching, and prepaid bill-line metadata, preserving core E2E setup while migrations catch up.
+- Full Chromium engagement-to-cash E2E was rerun against local backend/frontend and passed (`57 passed`).
 - `make demo-ready` was executed against demo tenant `30733766-c54e-40fd-b0c1-49670d0190b6` on local backend/frontend. It reset and seeded the tenant, passed API smoke, and passed the selected Meridian demo Playwright run (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`) with evidence under `frontend/test-results/demo-v2-meridian/`.
 
 Still open:
@@ -53,7 +57,6 @@ Still open:
 - Recorded agent replay and read-only current-code validation are implemented; full mutating re-execution and external-provider replay remain open.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
 - Role-based action queues are implemented from report evidence; deeper personalized ownership/assignment queues remain open.
-- Remaining engagement-to-cash browser gaps are viewer-role UI mutation guards and full audit/event-suggestion evidence coverage.
 
 ## Executive Verdict
 
@@ -61,11 +64,11 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, and FX settlement browser coverage are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, viewer/audit E2E hardening, and mutating/external-provider agent replay re-execution.
+2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, and audit/event-suggestion evidence are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope and mutating/external-provider agent replay re-execution.
 
 ## Original Evidence Gathered On 2026-06-22
 
-The evidence below is retained for audit history. Several failures in this original review have since been fixed; use the 2026-06-23 implementation status update above as the current source of truth.
+The evidence below is retained for audit history. Several failures in this original review have since been fixed; use the 2026-06-24 implementation status update above as the current source of truth.
 
 Repository and context reviewed:
 - `CLAUDE.md`
@@ -250,9 +253,10 @@ Work items:
 - Done 2026-06-23: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
 
 Acceptance:
-- Done 2026-06-23: backend pytest passed on PR #256 (`861 passed, 57 xfailed, 1 xpassed`).
-- Done 2026-06-23: `ruff check backend/app backend/tests` passes.
-- Done 2026-06-23: full Chromium Playwright passed (`110 passed, 11 skipped`).
+- Done 2026-06-24: full backend pytest passed (`790 passed, 214 skipped, 56 xfailed`).
+- Done 2026-06-24: `uv run ruff check app tests` passes.
+- Done 2026-06-24: frontend spec TypeScript and production build pass; the production build still reports existing Angular optional-chain, Sass deprecation, and bundle-budget warnings.
+- Done 2026-06-24: full Chromium engagement-to-cash Playwright passed (`57 passed`).
 - Done 2026-06-23: `make demo-ready` executed against tenant `30733766-c54e-40fd-b0c1-49670d0190b6`; seed reset, API smoke, and selected demo Playwright run passed (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`).
 - Pending: demo report regeneration with current date and evidence.
 
@@ -272,7 +276,7 @@ Work items:
 - Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
 
 Acceptance:
-- Partial 2026-06-24: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, multi-currency, signed Stripe payment webhooks, delayed Stripe reconciliation through hosted Checkout, realised FX gain/loss and one-cent residual FX journals, payment replay idempotency, AR-aging removal after payment, invalid Stripe webhook signatures, public invoice token rotation with revoked-token 410 handling, and locked-period manual-journal rejection through API plus UI. Remaining `test.fixme` gaps in `frontend/e2e/engagement-to-cash.spec.ts` are viewer-role UI coverage and full audit/event-suggestion evidence coverage.
+- Done 2026-06-24: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, multi-currency, signed Stripe payment webhooks, delayed Stripe reconciliation through hosted Checkout, realised FX gain/loss and one-cent residual FX journals, payment replay idempotency, AR-aging removal after payment, invalid Stripe webhook signatures, public invoice token rotation with revoked-token `410`, locked-period manual-journal rejection through API plus UI, viewer-role UI mutation guards plus API `403` checks, and full audit/event-suggestion evidence via `financial_events`, `webhook_events`, and Inbox-backed agent suggestions.
 - Done 2026-06-23: locked-period manual-journal UI submission now shows the structured `period_locked` response with the target period, and the journal-line account picker correctly preserves the selected line when choosing accounts from nested suggestions.
 - Partial 2026-06-23: reports show revenue, labor cost, expense/vendor cost, margin, WIP, utilization, project health, and capacity by several dimensions. Remaining work is launch-grade role workflow and tax/FX presentation depth.
 
@@ -426,5 +430,5 @@ Priority 3:
 
 Phase 0 is materially complete; the demo-readiness target has passed against the available launch/demo tenant, and docs evidence refresh remains intentionally separate from this code pass. The fastest path to launch is now:
 - refresh the docs evidence report only when screenshot/report updates are explicitly in scope;
-- close the remaining viewer/audit E2E and mutating/external-provider replay re-execution gaps;
+- close the remaining mutating/external-provider replay re-execution gap;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

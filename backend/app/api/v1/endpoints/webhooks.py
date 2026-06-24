@@ -121,7 +121,7 @@ async def stripe_webhook(
     # 5. Record processed event (idempotency log)
     # ------------------------------------------------------------------
     stripe_customer_id: str | None = _extract_customer_id(event)
-    tenant_id: str | None = None
+    tenant_id: str | None = _extract_tenant_id(event)
     if stripe_customer_id:
         tenant = await tenant_repo.get_by_stripe_customer(stripe_customer_id)
         if tenant:
@@ -246,6 +246,17 @@ def _extract_customer_id(event: stripe.Event) -> str | None:
         obj = event.data.object
         customer = _stripe_value(obj, "customer")
         return str(customer) if customer else None
+    except Exception:
+        return None
+
+
+def _extract_tenant_id(event: stripe.Event) -> str | None:
+    """Extract tenant_id from Stripe object metadata when present."""
+    try:
+        obj = event.data.object
+        metadata = _stripe_value(obj, "metadata") or {}
+        tenant_id = _stripe_value(metadata, "tenant_id")
+        return str(tenant_id) if tenant_id else None
     except Exception:
         return None
 

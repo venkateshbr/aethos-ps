@@ -5,9 +5,8 @@
  * Every test corresponds to a section ID in the spec. Drift between this file
  * and the spec is a QA gate failure.
  *
- * Tests marked `test.fixme()` are blocked on a feature that hasn't shipped yet.
- * When a feature lands, replace `test.fixme(...)` with `test(...)` and the test
- * must pass against the real product for the right reason.
+ * Each scenario should pass against the real product for the right reason; do
+ * not leave placeholder assertions in this launch-readiness suite.
  *
  * Pattern follows agent-harness/core/e2e-workflow-standard.md:
  *   - Single browser instance per run, storage state reused.
@@ -26,6 +25,10 @@ const API = process.env.AETHOS_PS_API_URL ?? 'https://aethos-api.ishirock.com';
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const API_REQUEST_TIMEOUT = 90_000;
+
+type LoginCredentials = { email: string; password: string };
+type AuthContext = { token: string; tenantId: string };
+type SupabaseAdminConfig = { url: string; serviceRoleKey: string };
 
 function envValue(name: string): string {
   if (process.env[name]) return process.env[name]!;
@@ -52,7 +55,7 @@ function stripeSignature(payload: string, secret: string, timestamp = Math.floor
   return `t=${timestamp},v1=${signature}`;
 }
 
-function loadLoginMeta(): { email: string; password: string } | null {
+function loadLoginMeta(): LoginCredentials | null {
   if (!fs.existsSync(META_PATH)) return null;
   try {
     const meta = JSON.parse(fs.readFileSync(META_PATH, 'utf-8'));
@@ -61,8 +64,12 @@ function loadLoginMeta(): { email: string; password: string } | null {
   return null;
 }
 
-async function loginViaUi(page: Page): Promise<void> {
-  const meta = loadLoginMeta();
+async function loginViaUi(
+  page: Page,
+  credentials: LoginCredentials | null = loadLoginMeta(),
+  storagePath = STORAGE_PATH,
+): Promise<void> {
+  const meta = credentials;
   if (!meta) throw new Error('No login meta found for refreshed UI session');
 
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
@@ -71,7 +78,8 @@ async function loginViaUi(page: Page): Promise<void> {
   await page.locator('#password').fill(meta.password);
   await page.getByRole('button', { name: /^sign in$/i }).click();
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
-  await page.context().storageState({ path: STORAGE_PATH });
+  fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+  await page.context().storageState({ path: storagePath });
 }
 
 async function ensureAppRoute(page: Page, route: string): Promise<void> {
@@ -89,7 +97,7 @@ async function ensureAppRoute(page: Page, route: string): Promise<void> {
   await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
 }
 
-function getAuthFromStorage(): { token: string; tenantId: string } | null {
+function getAuthFromStorage(): AuthContext | null {
   if (!fs.existsSync(STORAGE_PATH)) return null;
   try {
     const state = JSON.parse(fs.readFileSync(STORAGE_PATH, 'utf-8'));
@@ -115,6 +123,74 @@ function apiHeaders(auth: { token: string; tenantId: string }) {
     'X-Tenant-ID': auth.tenantId,
     'Content-Type': 'application/json',
   };
+}
+
+function supabaseAdminConfig(): SupabaseAdminConfig | null {
+  const url = envValue('SUPABASE_URL');
+  const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !serviceRoleKey) return null;
+  return { url, serviceRoleKey };
+}
+
+function supabaseAdminHeaders(config: SupabaseAdminConfig, extra: Record<string, string> = {}) {
+  return {
+    apikey: config.serviceRoleKey,
+    Authorization: `Bearer ${config.serviceRoleKey}`,
+    'Content-Type': 'application/json',
+    ...extra,
+  };
+}
+
+async function createTenantRoleUser(
+  request: APIRequestContext,
+  config: SupabaseAdminConfig,
+  tenantId: string,
+  role: 'viewer' | 'member' | 'manager' | 'admin',
+): Promise<LoginCredentials & { userId: string }> {
+  const suffix = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  const email = `aethos-${role}-${suffix}@aethos-qa.dev`;
+  const password = `Aethos-${role}-2026!`;
+
+  const userResp = await request.post(`${config.url}/auth/v1/admin/users`, {
+    headers: supabaseAdminHeaders(config),
+    data: {
+      email,
+      password,
+      email_confirm: true,
+      app_metadata: { role },
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(userResp, `create ${role} auth user`);
+  const userBody = await userResp.json();
+  const userId = String(userBody.id ?? userBody.user?.id ?? '');
+  expect(userId).toBeTruthy();
+
+  const membershipResp = await request.post(`${config.url}/rest/v1/tenant_users`, {
+    headers: supabaseAdminHeaders(config, { Prefer: 'return=representation' }),
+    data: {
+      tenant_id: tenantId,
+      user_id: userId,
+      role,
+      joined_at: new Date().toISOString(),
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(membershipResp, `create ${role} tenant membership`);
+
+  return { email, password, userId };
+}
+
+async function authFromPage(page: Page): Promise<AuthContext> {
+  const auth = await page.evaluate(() => ({
+    token: localStorage.getItem('aethos_token') ?? '',
+    tenantId: localStorage.getItem('aethos_tenant_id') ?? '',
+    role: localStorage.getItem('aethos_role') ?? '',
+  }));
+  expect(auth.token).toBeTruthy();
+  expect(auth.tenantId).toBeTruthy();
+  expect(auth.role).toBe('viewer');
+  return { token: auth.token, tenantId: auth.tenantId };
 }
 
 async function expectOk(resp: APIResponse, label: string): Promise<void> {
@@ -685,7 +761,7 @@ async function postSignedCheckoutCompleted(
 
 async function createApprovedInvoice(
   request: APIRequestContext,
-  auth: { token: string; tenantId: string },
+  auth: AuthContext,
   line: { description: string; quantity: string; unit_price: string },
   options: { issue_date?: string; due_date?: string; currency?: string } = {},
 ): Promise<Record<string, unknown>> {
@@ -708,9 +784,93 @@ async function createApprovedInvoice(
   return invoice;
 }
 
+async function findJournalForReference(
+  request: APIRequestContext,
+  auth: AuthContext,
+  referenceType: string,
+  referenceId: string,
+): Promise<{ id: string; reference?: string | null; description?: string }> {
+  const journalResp = await request.get(
+    `${API}/api/v1/accounting/journal-entries?reference_type=${encodeURIComponent(referenceType)}&limit=100`,
+    { headers: apiHeaders(auth), timeout: API_REQUEST_TIMEOUT },
+  );
+  await expectOk(journalResp, `list ${referenceType} journal entries`);
+  const journals = await journalResp.json();
+  const match = (journals as Array<{ id: string; reference?: string | null; description?: string }>)
+    .find((journal) => journal.reference === referenceId);
+  expect(match, `${referenceType} journal for reference ${referenceId}`).toBeTruthy();
+  return match!;
+}
+
+async function createBillPaySuggestion(
+  request: APIRequestContext,
+  auth: AuthContext,
+): Promise<{ billId: string; suggestionId: string; taskId: string }> {
+  const suffix = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  const vendorResp = await request.post(`${API}/api/v1/clients`, {
+    headers: apiHeaders(auth),
+    data: { name: `E2E Audit Vendor ${suffix}`, kind: 'vendor' },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(vendorResp, 'create audit vendor');
+  const vendor = await vendorResp.json();
+
+  const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const billResp = await request.post(`${API}/api/v1/bills`, {
+    headers: apiHeaders(auth),
+    data: {
+      client_id: vendor.id,
+      vendor_invoice_number: `E2E-AUDIT-${suffix}`,
+      issue_date: new Date().toISOString().slice(0, 10),
+      due_date: dueDate,
+      currency: 'USD',
+      lines: [
+        {
+          description: 'Audit evidence subscription',
+          quantity: '1',
+          unit_price: '185.00',
+          amount: '185.00',
+        },
+      ],
+    },
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(billResp, 'create audit bill');
+  const bill = await billResp.json();
+
+  const approveResp = await request.patch(`${API}/api/v1/bills/${bill.id}/approve`, {
+    headers: apiHeaders(auth),
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(approveResp, 'approve audit bill');
+
+  const proposeResp = await request.post(`${API}/api/v1/bill-payments/propose?due_within_days=90`, {
+    headers: apiHeaders(auth),
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(proposeResp, 'propose bill payment batch');
+  const proposal = await proposeResp.json();
+  const suggestionId = String(proposal.suggestion_id ?? '');
+  expect(suggestionId).toBeTruthy();
+
+  const inboxResp = await request.get(
+    `${API}/api/v1/inbox/tasks?status=all&kind=create_bill_payment_batch&limit=100`,
+    { headers: apiHeaders(auth), timeout: API_REQUEST_TIMEOUT },
+  );
+  await expectOk(inboxResp, 'list inbox tasks for bill-pay suggestion');
+  const inbox = await inboxResp.json();
+  const task = (inbox.items ?? []).find((item: any) =>
+    item.agent_name === 'bill_pay_agent'
+    && item.suggestion_payload?.proposed_bill_ids?.includes(bill.id),
+  );
+  expect(task, `HITL task for bill-pay suggestion ${suggestionId}`).toBeTruthy();
+
+  return { billId: String(bill.id), suggestionId, taskId: String(task.id) };
+}
+
 async function expectFxGainLossJournal(
   request: APIRequestContext,
-  auth: { token: string; tenantId: string },
+  auth: AuthContext,
   invoiceId: string,
 ): Promise<void> {
   const journalResp = await request.get(
@@ -1870,8 +2030,101 @@ test.describe('engagement-to-cash — §5 RBAC matrix', () => {
     expect([200, 402, 500]).toContain(sendResp.status()); // Stripe may not be configured
   });
 
-  test.fixme('viewer sees data but cannot mutate (UI disabled + API 403)', async () => {
-    // Blocked: requires a second viewer-role user account in the test tenant
+  test('viewer sees data but cannot mutate (UI disabled + API 403)', async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const ownerAuth = getAuthFromStorage();
+    const supabase = supabaseAdminConfig();
+    test.skip(!ownerAuth, 'no auth token');
+    test.skip(!supabase, 'Supabase admin config missing');
+
+    const { clientId, engagementId } = await createClientAndEngagement(
+      request,
+      ownerAuth!,
+      'time_and_materials',
+    );
+    const draftInvoice = await createInvoiceWithLines(request, ownerAuth!, engagementId, clientId, [
+      { description: 'Viewer RBAC draft invoice', quantity: '1', unit_price: '110.00' },
+    ]);
+    const approvedInvoice = await createInvoiceWithLines(request, ownerAuth!, engagementId, clientId, [
+      { description: 'Viewer RBAC approved invoice', quantity: '1', unit_price: '125.00' },
+    ]);
+    const approveResp = await request.patch(`${API}/api/v1/invoices/${approvedInvoice.id}/approve`, {
+      headers: apiHeaders(ownerAuth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(approveResp, 'approve invoice for viewer RBAC test setup');
+
+    const viewerLogin = await createTenantRoleUser(
+      request,
+      supabase!,
+      ownerAuth!.tenantId,
+      'viewer',
+    );
+    await loginViaUi(
+      page,
+      viewerLogin,
+      path.join(__dirname, '.auth', `o2c-viewer-${viewerLogin.userId}.json`),
+    );
+    const viewerAuth = await authFromPage(page);
+    expect(viewerAuth.tenantId).toBe(ownerAuth!.tenantId);
+
+    const readResp = await request.get(`${API}/api/v1/invoices`, {
+      headers: apiHeaders(viewerAuth),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(readResp, 'viewer list invoices');
+    const invoices = await readResp.json();
+    expect((invoices as Array<{ id: string }>).some((invoice) => invoice.id === draftInvoice.id)).toBeTruthy();
+    expect((invoices as Array<{ id: string }>).some((invoice) => invoice.id === approvedInvoice.id)).toBeTruthy();
+
+    await page.goto(`${BASE}/app/invoices`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('navigation', { name: /main navigation/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /^invoices$/i })).toBeVisible();
+    await expect(page.getByText(String(draftInvoice.invoice_number))).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(String(approvedInvoice.invoice_number))).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: /create new invoice/i })).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: `Approve invoice ${draftInvoice.invoice_number}` }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: `Send invoice ${approvedInvoice.invoice_number}` }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: `Mark invoice ${approvedInvoice.invoice_number} paid` }),
+    ).toBeDisabled();
+
+    const deniedApprove = await request.patch(`${API}/api/v1/invoices/${draftInvoice.id}/approve`, {
+      headers: apiHeaders(viewerAuth),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    expect(deniedApprove.status()).toBe(403);
+
+    const deniedCreate = await request.post(`${API}/api/v1/invoices`, {
+      headers: apiHeaders(viewerAuth),
+      data: {
+        engagement_id: engagementId,
+        client_id: clientId,
+        currency: 'USD',
+        lines: [
+          { description: 'Viewer denied invoice create', quantity: '1', unit_price: '99.00' },
+        ],
+      },
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    expect(deniedCreate.status()).toBe(403);
+
+    const deniedSend = await request.post(`${API}/api/v1/invoices/${approvedInvoice.id}/send`, {
+      headers: apiHeaders(viewerAuth),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    expect(deniedSend.status()).toBe(403);
+
+    const deniedPayment = await request.post(`${API}/api/v1/invoices/${approvedInvoice.id}/payments`, {
+      headers: apiHeaders(viewerAuth),
+      data: { amount: approvedInvoice.total, currency: approvedInvoice.currency },
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    expect(deniedPayment.status()).toBe(403);
   });
 
   test('other-tenant user gets 404 on direct URL', async ({ request }) => {
@@ -1909,8 +2162,61 @@ test.describe('engagement-to-cash — §6 Audit Trail', () => {
     }
   });
 
-  test.fixme('after happy path: all expected events + agent_suggestions + webhook_events present', async () => {
-    // Blocked: event store query API (#196) not yet exposed — deferred
+  test('after happy path: all expected events + agent_suggestions + webhook_events present', async ({ request }) => {
+    test.setTimeout(180_000);
+    const auth = getAuthFromStorage();
+    const secret = stripeWebhookSecret();
+    test.skip(!auth, 'no auth token');
+    test.skip(!secret, 'STRIPE_WEBHOOK_SECRET not configured');
+
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'Audit evidence paid invoice', quantity: '1', unit_price: '146.00' },
+    );
+    const invoiceId = String(invoice.id);
+    const { eventId, response } = await postSignedCheckoutCompleted(request, {
+      secret,
+      tenantId: auth!.tenantId,
+      invoiceId,
+      amountCents: moneyToCents(invoice.total),
+      currency: String(invoice.currency),
+    });
+    await expectOk(response, 'signed checkout webhook for audit evidence');
+
+    const webhookResp = await request.get(
+      `${API}/api/v1/webhook-events?provider_event_id=${encodeURIComponent(eventId)}`,
+      { headers: apiHeaders(auth!), timeout: API_REQUEST_TIMEOUT },
+    );
+    await expectOk(webhookResp, 'list webhook audit event');
+    const webhookEvents = await webhookResp.json();
+    expect(webhookEvents.total).toBe(1);
+    expect(webhookEvents.items[0].event_type).toBe('checkout.session.completed');
+    expect(webhookEvents.items[0].tenant_id).toBe(auth!.tenantId);
+
+    const paymentJournal = await findJournalForReference(request, auth!, 'payment', invoiceId);
+    const eventResp = await request.get(
+      `${API}/api/v1/financial-events?event_type=journal_entry.posted`
+      + `&entity_type=journal_entry&entity_id=${encodeURIComponent(paymentJournal.id)}`,
+      { headers: apiHeaders(auth!), timeout: API_REQUEST_TIMEOUT },
+    );
+    await expectOk(eventResp, 'list financial event for payment journal');
+    const financialEvents = await eventResp.json();
+    expect(financialEvents.total).toBeGreaterThanOrEqual(1);
+    expect(financialEvents.items[0].source_type).toBe('payment');
+    expect(financialEvents.items[0].source_id).toBe(invoiceId);
+    expect(financialEvents.items[0].event_hash).toBeTruthy();
+
+    const suggestionEvidence = await createBillPaySuggestion(request, auth!);
+    const taskResp = await request.get(`${API}/api/v1/inbox/tasks/${suggestionEvidence.taskId}`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(taskResp, 'fetch bill-pay HITL task with agent suggestion');
+    const task = await taskResp.json();
+    expect(task.agent_name).toBe('bill_pay_agent');
+    expect(task.suggestion_payload.proposed_bill_ids).toContain(suggestionEvidence.billId);
+    expect(task.id).toBe(suggestionEvidence.taskId);
   });
 });
 

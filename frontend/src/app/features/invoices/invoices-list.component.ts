@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { AuthService } from '../../core/services/auth.service';
 import { userMessageForError } from '../../core/utils/error-message';
 
 export interface InvoiceSummary {
@@ -48,6 +49,11 @@ type InvoiceListResponse = InvoiceSummary[];
           type="button"
           class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           aria-label="Create new invoice — go to Engagements to draft"
+          [disabled]="!canDraftInvoice()"
+          [attr.aria-disabled]="!canDraftInvoice()"
+          [class.opacity-50]="!canDraftInvoice()"
+          [class.cursor-not-allowed]="!canDraftInvoice()"
+          [matTooltip]="canDraftInvoice() ? 'Draft an invoice from an engagement' : 'Requires manager role'"
           (click)="goToNewInvoice()"
         >
           <mat-icon class="text-base leading-none">add</mat-icon>
@@ -180,10 +186,10 @@ type InvoiceListResponse = InvoiceSummary[];
                   @if (row.status === 'draft') {
                     <button
                       (click)="approveInvoice(row)"
-                      [disabled]="actioningId() === row.id"
+                      [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-accent-light border-accent/40 hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      matTooltip="Approve — posts AR journal"
+                      [matTooltip]="canPostInvoiceAction() ? 'Approve — posts AR journal' : 'Requires admin role'"
                       [attr.aria-label]="'Approve invoice ' + (row.invoice_number)"
                     >
                       <mat-icon class="text-sm">task_alt</mat-icon>
@@ -193,10 +199,10 @@ type InvoiceListResponse = InvoiceSummary[];
                   @if (row.status === 'approved') {
                     <button
                       (click)="sendInvoice(row)"
-                      [disabled]="actioningId() === row.id"
+                      [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      matTooltip="Send this invoice to the client"
+                      [matTooltip]="canPostInvoiceAction() ? 'Send this invoice to the client' : 'Requires admin role'"
                       [attr.aria-label]="'Send invoice ' + (row.invoice_number)"
                     >
                       <mat-icon class="text-sm">send</mat-icon>
@@ -218,10 +224,10 @@ type InvoiceListResponse = InvoiceSummary[];
                   @if (row.status === 'approved' || row.status === 'sent') {
                     <button
                       (click)="openMarkPaid(row)"
-                      [disabled]="actioningId() === row.id"
+                      [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      matTooltip="Record a payment received outside Stripe"
+                      [matTooltip]="canPostInvoiceAction() ? 'Record a payment received outside Stripe' : 'Requires admin role'"
                       [attr.aria-label]="'Mark invoice ' + (row.invoice_number) + ' paid'"
                     >
                       <mat-icon class="text-sm">payments</mat-icon>
@@ -315,6 +321,7 @@ type InvoiceListResponse = InvoiceSummary[];
 export class InvoicesListComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private auth = inject(AuthService);
 
   loading     = signal(true);
   error       = signal<string | null>(null);
@@ -331,6 +338,8 @@ export class InvoicesListComponent implements OnInit {
   payError = signal<string | null>(null);
 
   displayedColumns = ['invoice_number', 'client_name', 'status', 'total_amount', 'due_date', 'actions'];
+  canDraftInvoice = computed(() => this.roleRank(this.auth.role()) >= this.roleRank('manager'));
+  canPostInvoiceAction = computed(() => this.roleRank(this.auth.role()) >= this.roleRank('admin'));
 
   ngOnInit(): void {
     this.http.get<InvoiceListResponse>('/api/v1/invoices').subscribe({
@@ -347,6 +356,7 @@ export class InvoicesListComponent implements OnInit {
   }
 
   approveInvoice(invoice: InvoiceSummary): void {
+    if (!this.canPostInvoiceAction()) return;
     this.actioningId.set(invoice.id);
     this.sentMessage.set(null);
     this.http.patch<{ status: string }>(`/api/v1/invoices/${invoice.id}/approve`, {}).subscribe({
@@ -368,6 +378,7 @@ export class InvoicesListComponent implements OnInit {
   }
 
   sendInvoice(invoice: InvoiceSummary): void {
+    if (!this.canPostInvoiceAction()) return;
     this.actioningId.set(invoice.id);
     this.sentMessage.set(null);
 
@@ -400,6 +411,7 @@ export class InvoicesListComponent implements OnInit {
   }
 
   openMarkPaid(invoice: InvoiceSummary): void {
+    if (!this.canPostInvoiceAction()) return;
     this.payingInvoice.set(invoice);
     this.payAmount = invoice.total_amount ?? '';
     this.payDate = new Date().toISOString().split('T')[0];
@@ -475,6 +487,18 @@ export class InvoicesListComponent implements OnInit {
     return labels[status] ?? status;
   }
 
+  private roleRank(role: string | null): number {
+    const ranks: Record<string, number> = {
+      owner: 5,
+      admin: 4,
+      manager: 3,
+      member: 2,
+      viewer: 1,
+      employee: 0,
+    };
+    return ranks[role ?? 'viewer'] ?? 1;
+  }
+
   /**
    * Invoices are generated from engagements — navigate there to start the
    * draft-invoice flow rather than opening a standalone create form.
@@ -484,6 +508,7 @@ export class InvoicesListComponent implements OnInit {
   }
 
   goToNewInvoice(): void {
+    if (!this.canDraftInvoice()) return;
     this.router.navigate(['/app/engagements']);
   }
 }
