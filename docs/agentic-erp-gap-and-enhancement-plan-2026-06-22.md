@@ -21,13 +21,14 @@ Done:
 - Manual invoice creation now calculates per-line tax from active system or tenant tax rates, and invoice approval splits tax to `2300 Sales Tax Payable`.
 - Bill approval now keeps net line amounts on expense accounts and posts bill tax to `1300 Input Tax Recoverable` before crediting AP for the gross bill total.
 - Local frontend runtime is pinned to supported Node 20 via root `.nvmrc` and frontend package `engines`; CI and Docker already use Node 20.
-- Current local quality gates passed on 2026-06-24: full backend pytest (`795 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
+- Current local quality gates passed on 2026-06-24: full backend pytest (`797 passed, 214 skipped, 56 xfailed`), `uv run ruff check app tests`, frontend spec TypeScript, frontend production build with existing warnings, and full Chromium engagement-to-cash Playwright (`57 passed`).
 - Agent operating-model tables exist via migrations `0034` to `0037`: `agent_runs`, `agent_tool_invocations`, `agent_workflow_runs`, `agent_memory_items`, kill/circuit state, eval candidates, and L3 promotion gates.
 - Central agent tool-risk registry exists in `backend/app/agents/tool_registry.py`, with risk classes for Copilot, reporting, invoice, billing, collections, bill pay, accrual, revenue, accounting, project health, and intelligence actions.
 - Agent controls are surfaced through `/api/v1/agents/*` and Settings UI: run dashboard, eval candidates, L3 policy, kill switches, and per-agent/tool circuit breaker controls.
 - Deterministic recorded replay is available through `POST /api/v1/agents/runs/{run_id}/replay` and the Settings agent-run panel; it reconstructs stored tool-call snapshots without executing tools. Current-code replay validation is also available through `POST /api/v1/agents/runs/{run_id}/replay/validate` and the Settings Validate action, executing supported read-only Copilot/reporting tools and producing human-approved re-execution plans for mutating or external-provider steps without firing side effects.
 - Mutating/external-provider replay now has an explicit launch-safe control plane: validation returns planned step counts, approval role, action type, risk class, idempotency key, external-side-effect marker, preconditions, and operator action in both API and Settings UI. Direct live provider re-fire remains intentionally outside automatic replay.
 - Durable agent workflow runs are now visible through `/api/v1/agents/workflow-runs` and the Settings Agent Run Ledger, including workflow status, owner agent, current step, goal/state snapshots, trace, replay pointer, and error state.
+- `/health/ready` now reports queue configured/required status and only returns `ready` when required dependencies are green. Queue remains optional for pilot sync-mode deployments, but setting `QUEUE_REQUIRED=true` or `EXTRACTION_MODE=async` makes the Procrastinate connector a readiness gate for scheduled-worker demos.
 - Services-business intelligence endpoints and Angular typings now cover project health, capacity planning, client profitability, client-group profitability, segment profitability, practice dashboards, pricing/staffing recommendations, and scope-change advisor.
 - Role-based operating action queues are available through `/api/v1/reports/action-queue` and the Reports Action Queue tab for partner, finance, project manager, and AP clerk personas.
 - Personalized action queues are implemented through `/api/v1/reports/action-queue?assignee=me` and the Reports Action Queue tab. Queue items now expose assignee, assignment source, due date, and SLA status; capacity actions use employee manager/user ownership when available, and open/in-progress `hitl_tasks.assigned_to` records feed concrete Inbox-backed personal work.
@@ -57,7 +58,7 @@ Done:
 
 Still open:
 - Demo report/screenshots were intentionally not regenerated in this pass.
-- Phase 3 long-running workflow state now has API/UI visibility; remaining depth is queue deployment evidence and future provider-backed workflow integrations such as email/calendar/bank feeds.
+- Future provider-backed workflow integrations such as email/calendar/bank feeds remain product depth, not a launch-readiness blocker.
 
 ## Executive Verdict
 
@@ -65,7 +66,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, launch-safe mutating/external-provider replay planning, workflow-run visibility, and personalized assignment queues are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope and queue deployment evidence when scheduled workers are required for demo.
+2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, launch-safe mutating/external-provider replay planning, workflow-run visibility, queue readiness gating, and personalized assignment queues are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -193,7 +194,7 @@ Gaps / status:
 - Done/partial 2026-06-24: `agent_runs` and `agent_tool_invocations` now capture input/output hashes, model/prompt versions, usage/cost fields, status, trace IDs, replay pointers, a recorded replay manifest, current-code validation for supported read-only Copilot/reporting tools, and launch-safe human-approved replay plans for mutating/external-provider steps. Coverage across every agent-created mutation and direct write path still needs hardening.
 - Done 2026-06-23: central tool registry with per-agent tool/action risk classes exists.
 - Done/monitor 2026-06-24: `agent_workflow_runs` exists as the durable workflow container and is visible through `/api/v1/agents/workflow-runs` plus the Settings Agent Run Ledger. The monthly retainer billing-run worker, weekly time-entry reminder worker, monthly financial close-preparation worker, nightly collections worker, and daily project-health worker now record running/skipped/waiting-on-human/failed workflow states. Remaining monitoring is for newly added workers and non-scheduled direct write paths.
-- Queue is `not_configured` in the live readiness check, so scheduled autonomy is not operational in this local/live run.
+- Done 2026-06-24: `/health/ready` now reports queue `configured` and `required` flags. Queue remains optional in sync-mode local/demo runs and becomes a readiness gate when `QUEUE_REQUIRED=true` or `EXTRACTION_MODE=async`.
 - Done 2026-06-23: document preflight scanning masks decoded text and withholds sensitive/adversarial PDF/image content from external LLM calls when detected.
 - Partial 2026-06-23: human corrections become eval candidates and L3 policy fields exist. Runnable eval gate and drift dashboard are still not mature.
 - Done/verification open 2026-06-23: Copilot UI/E2E resilience was hardened in PR #256; live LLM tool execution still needs issue #253 verification.
@@ -236,7 +237,7 @@ Contract status:
    - Done: `ruff` passes.
    - Done: backend dev dependencies include Hypothesis and the full backend suite passed.
    - Done 2026-06-23: pin a supported Node 20 runtime for Angular 19 local development.
-   - Pending: make `/health/ready` queue status green when workers are required for the demo.
+   - Done 2026-06-24: `/health/ready` makes queue readiness explicit and gates overall readiness when workers are required for the demo.
 
 ## Enhancement Plan
 
@@ -254,7 +255,7 @@ Work items:
 - Done 2026-06-23: add a "demo readiness" command that starts backend/frontend, seeds tenant, runs smoke API, then runs selected E2E specs.
 
 Acceptance:
-- Done 2026-06-24: full backend pytest passed (`795 passed, 214 skipped, 56 xfailed`).
+- Done 2026-06-24: full backend pytest passed (`797 passed, 214 skipped, 56 xfailed`).
 - Done 2026-06-24: `uv run ruff check app tests` passes.
 - Done 2026-06-24: frontend spec TypeScript and production build pass; the production build still reports existing Angular optional-chain, Sass deprecation, and bundle-budget warnings.
 - Done 2026-06-24: full Chromium engagement-to-cash Playwright passed (`57 passed`).
@@ -425,11 +426,10 @@ Priority 2:
 Priority 3:
 - P2P workflow depth: vendor onboarding controls, purchase requests, PO/service-order approval, cost-center approval policy snapshots, bill matching, payment-run ranking, and risk flags are implemented; remaining depth is org-chart-driven procurement routing, bank-native payment validation, provider-backed tax/sanctions/bank verification, and bank-specific cash/discount optimization.
 - R2R close management: close calendar/tasks, recurring-journal templates/proposals, retained-earnings roll-forward, scheduled close preparation, bank/suspense close blockers, and statutory reporting packs are implemented; jurisdiction-specific filing exports remain future compliance depth.
-- Advanced services intelligence: personalized assignment queues are implemented; remaining depth is demo-ready recommendation workflow deployment evidence.
+- Advanced services intelligence: personalized assignment queues and recommendation workflow readiness gating are implemented; remaining depth is provider-backed integrations and richer demo evidence when screenshots/report refresh is in scope.
 
 ## Approval Recommendation
 
 Phase 0 is materially complete; the demo-readiness target has passed against the available launch/demo tenant, and docs evidence refresh remains intentionally separate from this code pass. The fastest path to launch is now:
 - refresh the docs evidence report only when screenshot/report updates are explicitly in scope;
-- close the remaining queue deployment evidence gap when scheduled workers are required for demo;
 - use the updated GitHub issue state to avoid duplicating completed Phase 0, Phase 2, and Phase 4 work.

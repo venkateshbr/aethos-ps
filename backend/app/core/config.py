@@ -147,6 +147,10 @@ class Settings(BaseSettings):
     # Use the SESSION pooler (5432) not transaction pooler (6543) — Procrastinate
     # needs LISTEN/NOTIFY which transaction pooling doesn't support.
     database_url: str = ""
+    # When true, /health/ready treats the Procrastinate queue as a required
+    # dependency. Keep false for the pilot sync-mode default; set true in
+    # deployments where scheduled workers are part of the serving contract.
+    queue_required: bool = False
 
     # Legacy — kept so older test configs don't fail to load. Unused since the
     # ARQ → Procrastinate migration moved the queue into Supabase Postgres.

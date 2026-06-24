@@ -112,35 +112,54 @@ async def health_ready() -> dict[str, object]:
     the queue connector is not configured.
     """
     checks: dict = {}
+    from app.core.config import settings as runtime_settings
 
     try:
-        from app.core.config import settings
         from supabase import create_client
 
         t0 = _time.monotonic()
-        db = create_client(settings.supabase_url, settings.supabase_anon_key)
+        db = create_client(runtime_settings.supabase_url, runtime_settings.supabase_anon_key)
         db.table("tenants").select("id").limit(1).execute()
         checks["db"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000)}
     except Exception as e:
         checks["db"] = {"status": "error", "error": str(e)[:80]}
 
     # Queue: Procrastinate-on-Postgres. Same DB but a separate connector.
+    queue_required = _queue_required(runtime_settings)
     try:
-        from app.core.config import settings
-
-        if settings.database_url:
+        if runtime_settings.database_url:
             from app.workers.procrastinate_app import app as queue_app
 
             t0 = _time.monotonic()
             await queue_app.check_connection_async()
             checks["queue"] = {
                 "status": "ok",
+                "configured": True,
+                "required": queue_required,
                 "latency_ms": round((_time.monotonic() - t0) * 1000),
             }
         else:
-            checks["queue"] = {"status": "not_configured"}
+            checks["queue"] = {
+                "status": "not_configured",
+                "configured": False,
+                "required": queue_required,
+            }
     except Exception as e:
-        checks["queue"] = {"status": "error", "error": str(e)[:80]}
+        checks["queue"] = {
+            "status": "error",
+            "configured": bool(runtime_settings.database_url),
+            "required": queue_required,
+            "error": str(e)[:80],
+        }
 
-    overall = "ready" if checks.get("db", {}).get("status") == "ok" else "degraded"
+    db_ready = checks.get("db", {}).get("status") == "ok"
+    queue_ready = checks.get("queue", {}).get("status") == "ok"
+    overall = "ready" if db_ready and (queue_ready or not queue_required) else "degraded"
     return {"status": overall, "checks": checks}
+
+
+def _queue_required(runtime_settings: object) -> bool:
+    if getattr(runtime_settings, "queue_required", False) is True:
+        return True
+    extraction_mode = str(getattr(runtime_settings, "extraction_mode", "sync") or "sync").lower()
+    return extraction_mode == "async"
