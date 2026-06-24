@@ -13,6 +13,7 @@ All mutation methods guard against double-processing (status==done → 409).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal
@@ -154,8 +155,6 @@ class InboxService:
         return RejectResponse(rejected=True, task_id=task_id)
 
     async def escalate(self, task_id: str, user_id: str) -> EscalateResponse:
-        import asyncio
-
         row = await self._repo.get_task(task_id)
         if row is None:
             raise HTTPException(
@@ -260,6 +259,7 @@ class InboxService:
             "copilot_draft_invoice",
             "copilot_prepare_month_end_close",
             "copilot_create_finance_ops_action_plan",
+            "finance_ops_action_item",
         ):
             return await self._materialise_copilot_tool(payload)
         elif kind == "approve_billing_run":
@@ -288,6 +288,9 @@ class InboxService:
 
     async def _materialise_copilot_tool(self, payload: dict) -> dict:
         tool_name = payload.get("tool_name")
+        if payload.get("finance_ops_action_item") is True:
+            return self._materialise_finance_ops_action_item(payload)
+
         if tool_name not in (
             "log_time_entry",
             "update_rate_card",
@@ -307,6 +310,9 @@ class InboxService:
                 detail="Copilot tool payload must include a tool_input object",
             )
 
+        if tool_name == "create_finance_ops_action_plan":
+            return await self._materialise_finance_ops_action_plan(payload)
+
         from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 
         agent = CopilotAgent(
@@ -318,13 +324,6 @@ class InboxService:
         )
         if tool_name == "draft_invoice" and isinstance(payload.get("invoice_draft"), dict):
             result = await agent._persist_invoice_draft_payload(payload["invoice_draft"])
-        elif tool_name == "create_finance_ops_action_plan":
-            return {
-                "entity_type": "finance_ops_action_plan",
-                "entity_id": str(payload.get("plan_id") or ""),
-                "action_count": payload.get("action_count", 0),
-                "approval_effect": payload.get("approval_effect"),
-            }
         else:
             result = await agent._execute_tool(tool_name, tool_input)
         if result.get("error"):
@@ -340,6 +339,146 @@ class InboxService:
         if tool_name == "prepare_month_end_close":
             return {"entity_type": "month_end_close", "entity_id": result.get("period")}
         return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
+
+    async def _materialise_finance_ops_action_plan(self, payload: dict) -> dict:
+        child_tasks_created = await self._create_finance_ops_action_item_tasks(payload)
+        return {
+            "entity_type": "finance_ops_action_plan",
+            "entity_id": str(payload.get("plan_id") or ""),
+            "action_count": payload.get("action_count", 0),
+            "child_tasks_created": child_tasks_created,
+            "approval_effect": (
+                "Approval queued child Inbox work items only; downstream invoices, "
+                "payments, journals, statements, and external sends still require "
+                "their own specialist approvals."
+            ),
+        }
+
+    @staticmethod
+    def _materialise_finance_ops_action_item(payload: dict) -> dict:
+        return {
+            "entity_type": "finance_ops_action_item",
+            "entity_id": str(payload.get("action_item_id") or ""),
+            "parent_plan_id": payload.get("parent_plan_id"),
+            "approval_effect": (
+                "Approval records follow-up review only; downstream execution must "
+                "run through the specialist agent flow."
+            ),
+        }
+
+    async def _create_finance_ops_action_item_tasks(self, payload: dict) -> int:
+        action_items = payload.get("action_items")
+        if not isinstance(action_items, list):
+            return 0
+
+        plan_id = str(payload.get("plan_id") or "")
+        period = str(payload.get("period") or "")
+        created = 0
+        for index, item in enumerate(action_items, start=1):
+            if not isinstance(item, dict):
+                continue
+            if item.get("requires_inbox_approval") is False:
+                continue
+
+            child_payload = self._finance_ops_child_task_payload(
+                item,
+                plan_id=plan_id,
+                period=period,
+                index=index,
+            )
+            suggestion = await asyncio.to_thread(
+                lambda child_payload=child_payload: self._db.table("agent_suggestions")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "agent_name": str(
+                            child_payload.get("suggested_agent") or "finance_ops_manager"
+                        ),
+                        "action_type": "finance_ops_action_item",
+                        "input_snapshot": {
+                            "parent_plan_id": plan_id,
+                            "period": period,
+                            "source_tool": "create_finance_ops_action_plan",
+                        },
+                        "output_snapshot": child_payload,
+                        "confidence": "0.00",
+                        "status": "pending",
+                        "hitl_required": True,
+                    }
+                )
+                .execute()
+            )
+            rows = getattr(suggestion, "data", None) or []
+            suggestion_id = rows[0].get("id") if rows else None
+            await asyncio.to_thread(
+                lambda child_payload=child_payload, suggestion_id=suggestion_id: self._db.table(
+                    "hitl_tasks"
+                )
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "agent_suggestion_id": suggestion_id,
+                        "kind": "finance_ops_action_item",
+                        "priority": self._finance_ops_action_item_priority(child_payload),
+                        "title": self._finance_ops_action_item_title(child_payload),
+                        "description": (
+                            "Plan-derived finance ops work item. Review this follow-up "
+                            "before requesting the specialist action."
+                        ),
+                        "payload": child_payload,
+                        "status": "open",
+                    }
+                )
+                .execute()
+            )
+            created += 1
+        return created
+
+    @staticmethod
+    def _finance_ops_child_task_payload(
+        item: dict,
+        *,
+        plan_id: str,
+        period: str,
+        index: int,
+    ) -> dict:
+        action_item_id = str(
+            item.get("action_id")
+            or item.get("id")
+            or f"{plan_id or 'finance-ops-plan'}-{index}"
+        )
+        return {
+            "finance_ops_action_item": True,
+            "parent_plan_id": plan_id,
+            "period": period,
+            "action_item_id": action_item_id,
+            "domain": item.get("domain"),
+            "recommendation": item.get("recommendation"),
+            "suggested_agent": item.get("suggested_agent"),
+            "suggested_tool": item.get("suggested_tool"),
+            "risk_class": item.get("risk_class"),
+            "requires_inbox_approval": True,
+            "rationale": item.get("rationale"),
+            "review_path": item.get("review_path"),
+            "source_plan_action": item,
+            "approval_effect": (
+                "Approving this item records follow-up review only. It does not "
+                "create invoices, payments, journals, statements, or external sends."
+            ),
+        }
+
+    @staticmethod
+    def _finance_ops_action_item_priority(payload: dict) -> str:
+        risk_class = str(payload.get("risk_class") or "")
+        if risk_class in {"write_money_out", "write_money_in", "accounting"}:
+            return "high"
+        return "med"
+
+    @staticmethod
+    def _finance_ops_action_item_title(payload: dict) -> str:
+        domain = _non_empty(payload.get("domain")) or "Finance"
+        recommendation = _non_empty(payload.get("recommendation")) or "Review action"
+        return f"Review finance ops action: {domain} - {recommendation[:80]}"
 
     async def _materialise_billing_run(self, payload: dict) -> dict:
         billing_run_id = payload.get("billing_run_id")

@@ -24,6 +24,38 @@ class _FailingPolicy:
         raise AssertionError("policy should not run for unknown tool names")
 
 
+class _InsertResult:
+    def __init__(self, data: list[dict]) -> None:
+        self.data = data
+
+
+class _InsertQuery:
+    def __init__(self, db: _InsertOnlyDb, table: str) -> None:
+        self._db = db
+        self._table = table
+        self._rows: list[dict] = []
+
+    def insert(self, payload: dict) -> _InsertQuery:
+        row = {"id": f"{self._table}-{len(self._db.tables[self._table]) + 1}", **payload}
+        self._db.tables[self._table].append(row)
+        self._rows = [row]
+        return self
+
+    def execute(self) -> _InsertResult:
+        return _InsertResult(self._rows)
+
+
+class _InsertOnlyDb:
+    def __init__(self) -> None:
+        self.tables: dict[str, list[dict]] = {
+            "agent_suggestions": [],
+            "hitl_tasks": [],
+        }
+
+    def table(self, name: str) -> _InsertQuery:
+        return _InsertQuery(self, name)
+
+
 def _make_agent():
     from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 
@@ -601,15 +633,45 @@ async def test_inbox_materialises_copilot_finance_ops_action_plan(
     execute_tool = AsyncMock(return_value={"should_not_execute": True})
     monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
 
-    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    db = _InsertOnlyDb()
+    svc = InboxService(db, tenant_id="tenant-abc")  # type: ignore[arg-type]
     result = await svc._materialise_copilot_tool(
         {
             "tool_name": "create_finance_ops_action_plan",
             "tool_input": {"period": "2026-06"},
             "requested_by_user_id": "user-1",
             "plan_id": "finance-ops-plan-1",
+            "period": "2026-06",
             "action_count": 3,
             "approval_effect": "Approval records manager review only.",
+            "action_items": [
+                {
+                    "action_id": "finance-ops-01-ar",
+                    "domain": "AR",
+                    "recommendation": "Draft collections reminders.",
+                    "suggested_agent": "collections_agent",
+                    "suggested_tool": "send_email",
+                    "risk_class": "write_money_in",
+                    "requires_inbox_approval": True,
+                    "rationale": "Two invoices are overdue.",
+                    "review_path": "Inbox > Collections",
+                },
+                {
+                    "domain": "AP",
+                    "recommendation": "Prepare the bill-pay run.",
+                    "suggested_agent": "bill_pay_agent",
+                    "suggested_tool": "propose_bill_payment_batch",
+                    "risk_class": "write_money_out",
+                    "requires_inbox_approval": True,
+                    "rationale": "Approved bills are due.",
+                    "review_path": "Inbox > Payments",
+                },
+                {
+                    "domain": "Reporting",
+                    "recommendation": "Read the dashboard.",
+                    "requires_inbox_approval": False,
+                },
+            ],
         }
     )
 
@@ -617,9 +679,64 @@ async def test_inbox_materialises_copilot_finance_ops_action_plan(
         "entity_type": "finance_ops_action_plan",
         "entity_id": "finance-ops-plan-1",
         "action_count": 3,
-        "approval_effect": "Approval records manager review only.",
+        "child_tasks_created": 2,
+        "approval_effect": (
+            "Approval queued child Inbox work items only; downstream invoices, "
+            "payments, journals, statements, and external sends still require "
+            "their own specialist approvals."
+        ),
     }
+    assert len(db.tables["agent_suggestions"]) == 2
+    assert len(db.tables["hitl_tasks"]) == 2
+
+    first_suggestion = db.tables["agent_suggestions"][0]
+    assert first_suggestion["agent_name"] == "collections_agent"
+    assert first_suggestion["action_type"] == "finance_ops_action_item"
+    assert first_suggestion["status"] == "pending"
+    assert first_suggestion["hitl_required"] is True
+    assert first_suggestion["input_snapshot"] == {
+        "parent_plan_id": "finance-ops-plan-1",
+        "period": "2026-06",
+        "source_tool": "create_finance_ops_action_plan",
+    }
+    assert first_suggestion["output_snapshot"]["finance_ops_action_item"] is True
+    assert first_suggestion["output_snapshot"]["parent_plan_id"] == "finance-ops-plan-1"
+    assert first_suggestion["output_snapshot"]["action_item_id"] == "finance-ops-01-ar"
+    assert first_suggestion["output_snapshot"]["suggested_tool"] == "send_email"
+
+    first_task = db.tables["hitl_tasks"][0]
+    assert first_task["agent_suggestion_id"] == first_suggestion["id"]
+    assert first_task["kind"] == "finance_ops_action_item"
+    assert first_task["priority"] == "high"
+    assert first_task["status"] == "open"
+    assert first_task["payload"]["review_path"] == "Inbox > Collections"
+    assert "AR" in first_task["title"]
     execute_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_finance_ops_action_item_as_ack_only() -> None:
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "finance_ops_action_item": True,
+            "parent_plan_id": "finance-ops-plan-1",
+            "action_item_id": "finance-ops-plan-1-1",
+            "suggested_tool": "send_email",
+        }
+    )
+
+    assert result == {
+        "entity_type": "finance_ops_action_item",
+        "entity_id": "finance-ops-plan-1-1",
+        "parent_plan_id": "finance-ops-plan-1",
+        "approval_effect": (
+            "Approval records follow-up review only; downstream execution must "
+            "run through the specialist agent flow."
+        ),
+    }
 
 
 @pytest.mark.asyncio
