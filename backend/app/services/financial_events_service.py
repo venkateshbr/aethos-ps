@@ -43,6 +43,51 @@ class FinancialEventsService:
         items = [FinancialEventResponse.from_db(row) for row in rows]
         return FinancialEventListResponse(items=items, total=len(items))
 
+    def list_business_record_decisions(
+        self,
+        *,
+        entity_type: str,
+        entity_id: str,
+        limit: int = 25,
+    ) -> FinancialEventListResponse:
+        capped_limit = min(limit, 50)
+        direct = self.list_events(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            limit=capped_limit,
+            offset=0,
+        ).items
+        events = list(direct)
+        seen_event_ids = {event.id for event in events}
+        seen_task_ids = {
+            task_id
+            for event in direct
+            if (task_id := _source_hitl_task_id(event))
+        }
+
+        if len(events) < capped_limit:
+            candidates = self.list_events(
+                entity_type="hitl_task",
+                limit=250,
+                offset=0,
+            ).items
+            for event in candidates:
+                if event.id in seen_event_ids:
+                    continue
+                if event.entity_id in seen_task_ids:
+                    continue
+                if not _materialises_record(event, entity_type=entity_type, entity_id=entity_id):
+                    continue
+                events.append(event)
+                seen_event_ids.add(event.id)
+                seen_task_ids.add(event.entity_id)
+                if len(events) >= capped_limit:
+                    break
+
+        events.sort(key=lambda event: event.created_at, reverse=True)
+        items = events[:capped_limit]
+        return FinancialEventListResponse(items=items, total=len(items))
+
     def export_events_csv(
         self,
         *,
@@ -102,3 +147,29 @@ class FinancialEventsService:
 
 def _stable_json(value: dict) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _source_hitl_task_id(event: FinancialEventResponse) -> str | None:
+    value = event.metadata.get("source_hitl_task_id")
+    if value:
+        return str(value)
+    if event.source_type == "hitl_task" and event.source_id:
+        return event.source_id
+    if event.entity_type == "hitl_task":
+        return event.entity_id
+    return None
+
+
+def _materialises_record(
+    event: FinancialEventResponse,
+    *,
+    entity_type: str,
+    entity_id: str,
+) -> bool:
+    materialisation = event.after_state.get("materialisation")
+    if not isinstance(materialisation, dict):
+        return False
+    return (
+        str(materialisation.get("entity_type") or "") == entity_type
+        and str(materialisation.get("entity_id") or "") == entity_id
+    )

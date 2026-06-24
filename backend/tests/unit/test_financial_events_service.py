@@ -98,6 +98,13 @@ def _event(
     entity_id: str,
     created_at: str,
     previous_event_hash: str | None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    actor_role: str | None = None,
+    action: str | None = None,
+    before_state: dict[str, Any] | None = None,
+    after_state: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": event_id,
@@ -105,14 +112,14 @@ def _event(
         "event_type": event_type,
         "entity_type": entity_type,
         "entity_id": entity_id,
-        "source_type": entity_type,
-        "source_id": entity_id,
+        "source_type": source_type if source_type is not None else entity_type,
+        "source_id": source_id if source_id is not None else entity_id,
         "actor_user_id": "user-1",
-        "actor_role": None,
-        "action": event_type.split(".")[-1],
-        "before_state": {},
-        "after_state": {"id": entity_id},
-        "metadata": {},
+        "actor_role": actor_role,
+        "action": action or event_type.split(".")[-1],
+        "before_state": before_state or {},
+        "after_state": after_state or {"id": entity_id},
+        "metadata": metadata or {},
         "idempotency_key": f"{event_type}:{entity_id}",
         "previous_event_hash": previous_event_hash,
         "event_hash": f"hash-{event_id}",
@@ -153,6 +160,70 @@ def test_export_events_csv_includes_hash_chain_columns() -> None:
     assert row["previous_event_hash"] == "hash-older"
     assert row["event_hash"] == "hash-event-newer"
     assert row["after_state_json"] == '{"id":"lock-1"}'
+
+
+def test_list_business_record_decisions_returns_direct_projection() -> None:
+    db = _Db()
+    db.rows.append(
+        _event(
+            "event-bill-projection",
+            event_type="hitl_task.approved_with_edits",
+            entity_type="bill",
+            entity_id="bill-1",
+            source_type="hitl_task",
+            source_id="task-1",
+            actor_role="manager",
+            action="approved_with_edits",
+            created_at="2026-06-23T10:00:00+00:00",
+            previous_event_hash="hash-event-newer",
+            after_state={
+                "materialisation": {"entity_type": "bill", "entity_id": "bill-1"},
+                "payload_hash": "hash-after",
+            },
+            metadata={"source_hitl_task_id": "task-1"},
+        )
+    )
+
+    result = FinancialEventsService(db, TENANT_ID).list_business_record_decisions(  # type: ignore[arg-type]
+        entity_type="bill",
+        entity_id="bill-1",
+    )
+
+    assert result.total == 1
+    assert result.items[0].id == "event-bill-projection"
+    assert result.items[0].source_type == "hitl_task"
+    assert result.items[0].actor_role == "manager"
+
+
+def test_list_business_record_decisions_falls_back_to_task_materialisation() -> None:
+    db = _Db()
+    db.rows.append(
+        _event(
+            "event-task-materialised",
+            event_type="hitl_task.approved",
+            entity_type="hitl_task",
+            entity_id="task-2",
+            source_type="agent_suggestion",
+            source_id="suggestion-2",
+            action="approved",
+            created_at="2026-06-23T11:00:00+00:00",
+            previous_event_hash="hash-event-newer",
+            after_state={
+                "materialisation": {"entity_type": "invoice", "entity_id": "invoice-1"},
+                "payload_hash": "hash-after",
+            },
+            metadata={"kind": "copilot_draft_invoice"},
+        )
+    )
+
+    result = FinancialEventsService(db, TENANT_ID).list_business_record_decisions(  # type: ignore[arg-type]
+        entity_type="invoice",
+        entity_id="invoice-1",
+    )
+
+    assert result.total == 1
+    assert result.items[0].entity_type == "hitl_task"
+    assert result.items[0].entity_id == "task-2"
 
 
 def test_financial_events_migration_defends_immutability() -> None:

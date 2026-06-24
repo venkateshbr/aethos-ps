@@ -64,6 +64,54 @@ def test_admin_can_export_financial_events_csv(admin_client: TestClient) -> None
     assert "period.locked" not in body
 
 
+def test_viewer_can_list_business_record_decisions(fake_db: _Db) -> None:
+    fake_db.rows.append(
+        {
+            "id": "event-bill-projection",
+            "tenant_id": TENANT_ID,
+            "event_type": "hitl_task.approved",
+            "entity_type": "bill",
+            "entity_id": "bill-1",
+            "source_type": "hitl_task",
+            "source_id": "task-1",
+            "actor_user_id": "user-1",
+            "actor_role": "manager",
+            "action": "approved",
+            "before_state": {"payload_hash": "hash-before"},
+            "after_state": {
+                "payload_hash": "hash-after",
+                "materialisation": {"entity_type": "bill", "entity_id": "bill-1"},
+            },
+            "metadata": {"source_hitl_task_id": "task-1"},
+            "idempotency_key": "hitl_task.approved:task-1:record:bill:bill-1",
+            "previous_event_hash": None,
+            "event_hash": "hash-event-bill-projection",
+            "created_at": "2026-06-23T10:00:00+00:00",
+        }
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get(
+                "/api/v1/financial-events/business-records/bill/bill-1/decisions"
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["entity_type"] == "bill"
+    assert body["items"][0]["source_type"] == "hitl_task"
+
+
 def test_viewer_cannot_list_financial_events() -> None:
     app.dependency_overrides[get_current_user] = lambda: CurrentUser(
         user_id="user-1",

@@ -9,6 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
 
 interface BillLine {
@@ -66,6 +67,7 @@ interface BillDetail {
     MoneyPipe,
     ConfidenceChipComponent,
     SourceDocumentLinkComponent,
+    DecisionTimelineComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -237,6 +239,8 @@ interface BillDetail {
             }
           </section>
         }
+
+        <app-decision-timeline entityType="bill" [entityId]="bill()!.id" />
 
         <!-- ── Meta cards ─────────────────────────────────────────────── -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

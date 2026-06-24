@@ -11,6 +11,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { BillingRunsService, Bill } from '../../core/services/billing-runs.service';
 import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { HttpClient } from '@angular/common/http';
 
 @Component({
@@ -27,6 +28,7 @@ import { HttpClient } from '@angular/common/http';
     MatSnackBarModule,
     MoneyPipe,
     SourceDocumentLinkComponent,
+    DecisionTimelineComponent,
   ],
   template: `
     <div class="min-h-full bg-surface-base p-6">
@@ -233,6 +235,10 @@ import { HttpClient } from '@angular/common/http';
                 <p class="text-sm text-text-secondary mb-1">Batch <span class="font-mono text-text-primary">{{ batchId() }}</span> created.</p>
                 <p class="text-xs text-text-disabled mb-6">Download your payment file before marking as sent.</p>
 
+                @if (batchId()) {
+                  <app-decision-timeline entityType="bill_payment_batch" [entityId]="batchId()!" title="Payment approval timeline" />
+                }
+
                 <div class="flex flex-col sm:flex-row gap-3 mb-8">
                   <button
                     [disabled]="downloading()"
@@ -280,6 +286,9 @@ import { HttpClient } from '@angular/common/http';
                 >check_circle</mat-icon>
                 <h2 class="text-xl font-semibold text-text-primary mb-2">Batch sent to bank</h2>
                 <p class="text-sm text-text-muted mb-6">Payment batch <span class="font-mono text-text-primary">{{ batchId() }}</span> has been marked as sent.</p>
+                @if (batchId()) {
+                  <app-decision-timeline entityType="bill_payment_batch" [entityId]="batchId()!" title="Payment approval timeline" />
+                }
                 <a
                   routerLink="/app/expenses"
                   class="text-sm text-indigo-400 hover:text-indigo-300 underline transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 rounded"

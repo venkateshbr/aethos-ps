@@ -7,6 +7,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
 
 interface InvoiceLine {
@@ -42,7 +43,7 @@ interface InvoiceDetail {
 @Component({
   selector: 'app-invoice-detail',
   standalone: true,
-  imports: [MatButtonModule, MatIconModule, MatTableModule, MatTooltipModule, MoneyPipe],
+  imports: [MatButtonModule, MatIconModule, MatTableModule, MatTooltipModule, MoneyPipe, DecisionTimelineComponent],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <button
@@ -165,6 +166,8 @@ interface InvoiceDetail {
             <p class="text-text-secondary text-sm">{{ invoice()!.notes }}</p>
           </div>
         }
+
+        <app-decision-timeline entityType="invoice" [entityId]="invoice()!.id" />
 
         <!-- Line items -->
         @if (invoice()!.lines.length > 0) {

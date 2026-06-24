@@ -12,6 +12,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
+import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 
 export interface DocumentSummary {
   id: string;
@@ -39,7 +40,7 @@ const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'expense'];
 @Component({
   selector: 'app-documents-list',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, RouterLink],
+  imports: [CommonModule, MatIconModule, MatButtonModule, MatTooltipModule, RouterLink, DecisionTimelineComponent],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <!-- Header -->
@@ -122,39 +123,57 @@ const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'expense'];
               </h2>
               <div class="space-y-2">
                 @for (doc of group.docs; track doc.id) {
-                  <div class="flex items-center gap-4 bg-surface border border-border-default rounded-lg px-4 py-3 hover:border-border-strong transition-colors">
+                  <div class="bg-surface border border-border-default rounded-lg px-4 py-3 hover:border-border-strong transition-colors">
+                    <div class="flex items-center gap-4">
 
-                    <!-- Icon by status -->
-                    <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-none"
-                      [class]="statusIconClass(doc.status)"
-                      [attr.aria-label]="'Status: ' + doc.status"
-                    >
-                      <mat-icon class="text-base leading-none">{{ statusIcon(doc.status) }}</mat-icon>
+                      <!-- Icon by status -->
+                      <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-none"
+                        [class]="statusIconClass(doc.status)"
+                        [attr.aria-label]="'Status: ' + doc.status"
+                      >
+                        <mat-icon class="text-base leading-none">{{ statusIcon(doc.status) }}</mat-icon>
+                      </div>
+
+                      <!-- Name + meta -->
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-text-primary truncate">{{ doc.filename }}</p>
+                        <p class="text-xs text-text-muted mt-0.5">
+                          {{ doc.mime_type }} &middot; {{ doc.created_at | date:'medium' }}
+                        </p>
+                      </div>
+
+                      <!-- Status badge -->
+                      <span class="flex-none text-xs px-2.5 py-1 rounded-full font-medium"
+                        [class]="statusBadgeClass(doc.status)"
+                      >{{ statusLabel(doc.status) }}</span>
+
+                      <!-- Audit timeline -->
+                      <button
+                        (click)="toggleAudit(doc.id)"
+                        class="flex-none p-1.5 rounded-md text-text-muted hover:text-accent-light hover:bg-accent/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        [attr.aria-label]="'Show decision timeline for ' + doc.filename"
+                        matTooltip="Decision timeline"
+                      >
+                        <mat-icon class="text-base leading-none">{{ auditDocId() === doc.id ? 'history_toggle_off' : 'history' }}</mat-icon>
+                      </button>
+
+                      <!-- Delete -->
+                      <button
+                        (click)="confirmDelete(doc)"
+                        [disabled]="deleting() === doc.id"
+                        class="flex-none p-1.5 rounded-md text-text-muted hover:text-confidence-low hover:bg-confidence-low/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low"
+                        [attr.aria-label]="'Delete ' + doc.filename"
+                        matTooltip="Delete document"
+                      >
+                        <mat-icon class="text-base leading-none">{{ deleting() === doc.id ? 'hourglass_top' : 'delete_outline' }}</mat-icon>
+                      </button>
                     </div>
 
-                    <!-- Name + meta -->
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-text-primary truncate">{{ doc.filename }}</p>
-                      <p class="text-xs text-text-muted mt-0.5">
-                        {{ doc.mime_type }} &middot; {{ doc.created_at | date:'medium' }}
-                      </p>
-                    </div>
-
-                    <!-- Status badge -->
-                    <span class="flex-none text-xs px-2.5 py-1 rounded-full font-medium"
-                      [class]="statusBadgeClass(doc.status)"
-                    >{{ statusLabel(doc.status) }}</span>
-
-                    <!-- Delete -->
-                    <button
-                      (click)="confirmDelete(doc)"
-                      [disabled]="deleting() === doc.id"
-                      class="flex-none p-1.5 rounded-md text-text-muted hover:text-confidence-low hover:bg-confidence-low/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low"
-                      [attr.aria-label]="'Delete ' + doc.filename"
-                      matTooltip="Delete document"
-                    >
-                      <mat-icon class="text-base leading-none">{{ deleting() === doc.id ? 'hourglass_top' : 'delete_outline' }}</mat-icon>
-                    </button>
+                    @if (auditDocId() === doc.id) {
+                      <div class="mt-3 border-t border-border-subtle pt-3">
+                        <app-decision-timeline entityType="document" [entityId]="doc.id" title="Document decision timeline" />
+                      </div>
+                    }
                   </div>
                 }
               </div>
@@ -196,6 +215,7 @@ export class DocumentsListComponent implements OnInit {
   typeFilter = signal<string>('all');
   pendingDelete = signal<DocumentSummary | null>(null);
   deleting = signal<string | null>(null);
+  auditDocId = signal<string | null>(null);
 
   /** Filter tabs with live counts, in canonical type order. */
   filterTabs = computed(() => {
@@ -248,6 +268,10 @@ export class DocumentsListComponent implements OnInit {
 
   confirmDelete(doc: DocumentSummary): void {
     this.pendingDelete.set(doc);
+  }
+
+  toggleAudit(docId: string): void {
+    this.auditDocId.set(this.auditDocId() === docId ? null : docId);
   }
 
   deleteDoc(doc: DocumentSummary): void {

@@ -53,7 +53,7 @@ agent ledger.
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
 | ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Implemented first slice; Playwright automation pending | #296 |
-| ENT-AUD-003 | Business record exposes immutable decision timeline | Planned | #297 |
+| ENT-AUD-003 | Business record exposes immutable decision timeline | Implemented first slice; Playwright automation pending | #297 |
 | ENT-RBAC-002 | Finance-role personas are browser-proven | Planned | #298 |
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
@@ -232,7 +232,11 @@ Evidence:
 
 Persona: Controller reviewing an invoice, bill, journal, payment, or close record.
 
-Status: Planned under #297.
+Status: First slice implemented. HITL decision events are now projected onto
+materialized business records and exposed through a viewer-accessible
+record-scoped API. Bill, invoice, engagement, bill-payment batch, journal,
+month-end close, and source-document surfaces render a reusable decision
+timeline when events exist. Playwright automation is still pending.
 
 Steps:
 
@@ -248,6 +252,18 @@ Expected result:
 - Timeline entries include actor role, decision type, timestamp, related Inbox
   task, and before/after summary when available.
 - Read-only users can inspect permitted audit metadata but cannot mutate.
+
+Automation target:
+
+- API: approve an Inbox task that materializes a bill or invoice, then assert
+  `/financial-events/business-records/<entity>/<id>/decisions` is accessible to
+  a viewer and includes the related Inbox task id, actor role, action, safe
+  before/after hashes, and event hash.
+- Browser: approve and approve-with-edits from Inbox, navigate to Bill or
+  Invoice detail, and verify the decision timeline appears after leaving Inbox.
+- Browser: reject a document-driven proposal, navigate to Documents, open the
+  document decision timeline, and verify the rejected event is still visible
+  after leaving Inbox.
 
 ## ENT-RBAC-001 - Auditor Read-Only Persona
 
