@@ -107,8 +107,19 @@ Common Inbox actions:
 | Reject | Stop the recommendation and record feedback |
 | Filter by task type | Focus on invoices, payments, emails, documents, close, or Plan Items |
 | Filter by required role | Focus on tasks needing Owner, Admin, or Manager approval |
+| Filter by status | Review Open work or inspect Done/All tasks with decision history |
 
-Enterprise roadmap item #281 will deepen immutable decision history.
+Inbox decision history now uses the immutable `financial_events` ledger for
+approval, approve-with-edits, rejection, and approval-denial events. Done and
+All status views show the recent decision timeline on task cards, including the
+actor role, action, timestamp, source suggestion link, policy metadata, safe
+before/after payload summaries, payload hashes, and materialized entity
+references where available.
+
+Admins can also inspect or export the full financial event ledger through the
+`/api/v1/financial-events` API. This is useful for audit sampling and for
+cross-checking task decisions against posted journal, period-lock, and
+bill-payment lifecycle events that are already database-triggered.
 
 ## 5. Order To Cash
 
@@ -232,7 +243,7 @@ The following work is tracked under parent issue #278:
 | --- | --- | --- |
 | #279 | Docs and QA | Platform user guide and enterprise E2E scenario library |
 | #280 | Controls | Approval policy matrix and role-aware Inbox routing, first slice implemented |
-| #281 | Controls | Immutable decision audit trail |
+| #281 | Controls | Immutable Inbox decision audit trail, first slice implemented |
 | #282 | RBAC | Finance roles and permission proof |
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations |
 | #284 | P2P | Vendor invoice matching and coding exceptions |

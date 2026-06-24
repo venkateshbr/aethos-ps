@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { HitlService, HitlTask } from '../../core/services/hitl.service';
+import { HitlDecisionEvent, HitlService, HitlTask } from '../../core/services/hitl.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ConfidenceChipComponent } from '../../shared/components/confidence-chip.component';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
@@ -133,6 +133,19 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
         }
       </div>
 
+      <div class="px-6 pt-3 flex flex-wrap items-center gap-2 flex-none" role="group" aria-label="Filter by task status">
+        @for (s of statusFilters; track s.value) {
+          <button
+            (click)="setStatusFilter(s.value)"
+            class="px-3 py-1.5 text-xs rounded border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [class]="statusFilter() === s.value
+              ? 'bg-surface-raised border-border-strong text-text-primary font-medium'
+              : 'border-border-default text-text-muted hover:text-text-primary hover:bg-surface'"
+            [attr.aria-pressed]="statusFilter() === s.value"
+          >{{ s.label }}</button>
+        }
+      </div>
+
       <!-- Keyboard shortcut hint -->
       <div class="px-6 pt-2 pb-0 flex-none">
         <p class="text-xs text-text-muted">
@@ -147,7 +160,7 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
       }
 
       <!-- Bulk approve bar -->
-      @if (kindFilter() !== 'all' && tasks().length > 1) {
+      @if (kindFilter() !== 'all' && tasks().length > 1 && hasOpenApprovableTasks()) {
         <div class="mx-6 mt-3 px-4 py-2 bg-surface border border-border-default rounded-lg flex items-center justify-between flex-none">
           <span class="text-sm text-text-secondary">
             {{ tasks().length }} {{ kindFilter().replace('_', ' ') }} items
@@ -355,46 +368,77 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
                   </div>
                 }
 
-                <!-- Action buttons -->
-                <div class="flex items-center gap-2">
-                  <button
-                    (click)="approve(task, $event)"
-                    [disabled]="actioning() === task.id || !canApproveTask(task)"
-                    class="px-3 py-1.5 text-xs font-medium rounded bg-accent hover:bg-accent-hover text-accent-on transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                    [attr.aria-label]="canApproveTask(task) ? 'Approve ' + (task.title) : 'Approval requires ' + roleLabel(task.required_approval_role)"
-                  >
-                    @if (actioning() === task.id) { Processing... } @else if (!canApproveTask(task)) { Requires {{ roleLabel(task.required_approval_role) }} } @else { Approve }
-                  </button>
+                @if (decisionHistory(task).length > 0) {
+                  <div class="mb-4 rounded border border-border-default bg-surface-raised/40 px-3 py-2">
+                    <p class="mb-2 text-xs font-medium text-text-secondary">Decision history</p>
+                    <div class="space-y-2">
+                      @for (event of decisionHistory(task); track event.id) {
+                        <div class="flex items-start justify-between gap-3 text-xs">
+                          <div>
+                            <p class="text-text-primary">{{ eventLabel(event.action) }}</p>
+                            <p class="text-text-muted">
+                              {{ roleLabel(event.actor_role) }}
+                              @if (event.actor_user_id) { · {{ event.actor_user_id }} }
+                            </p>
+                          </div>
+                          <div class="text-right">
+                            <p class="text-text-muted">{{ event.created_at | date:'short' }}</p>
+                            @if (auditEntityLabel(event); as entityLabel) {
+                              <p class="text-text-disabled">{{ entityLabel }}</p>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
 
-                  @if (canEditTask(task)) {
+                @if (task.status === 'open') {
+                  <!-- Action buttons -->
+                  <div class="flex items-center gap-2">
                     <button
-                      (click)="startEdit(task, $event)"
-                      [disabled]="actioning() === task.id"
-                      class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-secondary hover:border-border-default hover:text-text-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                      [attr.aria-label]="'Edit ' + (task.title)"
+                      (click)="approve(task, $event)"
+                      [disabled]="actioning() === task.id || !canApproveTask(task)"
+                      class="px-3 py-1.5 text-xs font-medium rounded bg-accent hover:bg-accent-hover text-accent-on transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      [attr.aria-label]="canApproveTask(task) ? 'Approve ' + (task.title) : 'Approval requires ' + roleLabel(task.required_approval_role)"
                     >
-                      Edit
+                      @if (actioning() === task.id) { Processing... } @else if (!canApproveTask(task)) { Requires {{ roleLabel(task.required_approval_role) }} } @else { Approve }
                     </button>
-                  }
 
-                  <button
-                    (click)="reject(task, $event)"
-                    [disabled]="actioning() === task.id"
-                    class="px-3 py-1.5 text-xs font-medium rounded text-confidence-low hover:text-confidence-low hover:bg-confidence-low/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low"
-                    [attr.aria-label]="'Reject ' + (task.title)"
-                  >
-                    Reject
-                  </button>
+                    @if (canEditTask(task)) {
+                      <button
+                        (click)="startEdit(task, $event)"
+                        [disabled]="actioning() === task.id"
+                        class="px-3 py-1.5 text-xs font-medium rounded border border-border-strong text-text-secondary hover:border-border-default hover:text-text-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        [attr.aria-label]="'Edit ' + (task.title)"
+                      >
+                        Edit
+                      </button>
+                    }
 
-                  <button
-                    (click)="escalate(task, $event)"
-                    [disabled]="actioning() === task.id"
-                    class="ml-auto px-3 py-1.5 text-xs font-medium rounded text-text-muted hover:text-text-secondary hover:bg-surface-raised transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
-                    [attr.aria-label]="'Escalate ' + (task.title)"
-                  >
-                    Escalate
-                  </button>
-                </div>
+                    <button
+                      (click)="reject(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="px-3 py-1.5 text-xs font-medium rounded text-confidence-low hover:text-confidence-low hover:bg-confidence-low/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low"
+                      [attr.aria-label]="'Reject ' + (task.title)"
+                    >
+                      Reject
+                    </button>
+
+                    <button
+                      (click)="escalate(task, $event)"
+                      [disabled]="actioning() === task.id"
+                      class="ml-auto px-3 py-1.5 text-xs font-medium rounded text-text-muted hover:text-text-secondary hover:bg-surface-raised transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong"
+                      [attr.aria-label]="'Escalate ' + (task.title)"
+                    >
+                      Escalate
+                    </button>
+                  </div>
+                } @else {
+                  <span class="inline-flex rounded border border-border-default bg-surface-raised px-2 py-1 text-xs text-text-muted">
+                    {{ task.status | titlecase }}
+                  </span>
+                }
               </div>
             }
           }
@@ -522,6 +566,7 @@ export class InboxComponent implements OnInit {
   allTasks = signal<HitlTask[]>([]);
   kindFilter = signal<string>('all');
   roleFilter = signal<string>('all');
+  statusFilter = signal<string>('open');
   focusedIdx = signal(0);
   actioning = signal<string | null>(null);
   actionError = signal<string | null>(null);
@@ -548,6 +593,11 @@ export class InboxComponent implements OnInit {
     { value: 'admin', label: 'Admin' },
     { value: 'manager', label: 'Manager' },
   ] as const;
+  readonly statusFilters = [
+    { value: 'open', label: 'Open' },
+    { value: 'done', label: 'Done' },
+    { value: 'all', label: 'All status' },
+  ] as const;
 
   tasks = computed(() => {
     const f = this.kindFilter();
@@ -567,7 +617,7 @@ export class InboxComponent implements OnInit {
   loadTasks(): void {
     this.loading.set(true);
     this.hasError.set(false);
-    this.hitlSvc.getTasks().subscribe({
+    this.hitlSvc.getTasks(this.statusFilter()).subscribe({
       next: tasks => {
         this.allTasks.set(tasks);
         this.loading.set(false);
@@ -595,6 +645,12 @@ export class InboxComponent implements OnInit {
   setRoleFilter(role: string): void {
     this.roleFilter.set(role);
     this.focusedIdx.set(0);
+  }
+
+  setStatusFilter(status: string): void {
+    this.statusFilter.set(status);
+    this.focusedIdx.set(0);
+    this.loadTasks();
   }
 
   focusCard(idx: number): void {
@@ -637,6 +693,28 @@ export class InboxComponent implements OnInit {
     const p = task.suggestion_payload ?? {};
     const id = p['original_document_id'];
     return typeof id === 'string' && id.length > 0 ? id : null;
+  }
+
+  decisionHistory(task: HitlTask): HitlDecisionEvent[] {
+    return task.decision_history ?? [];
+  }
+
+  eventLabel(action: string): string {
+    return action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  auditEntityLabel(event: HitlDecisionEvent): string | null {
+    const materialisation = event.after_state?.['materialisation'];
+    if (typeof materialisation !== 'object' || materialisation === null) return null;
+    const entity = materialisation as Record<string, unknown>;
+    const entityType = entity['entity_type'];
+    const entityId = entity['entity_id'];
+    if (!entityType) return null;
+    return entityId ? `${entityType}: ${entityId}` : String(entityType);
+  }
+
+  hasOpenApprovableTasks(): boolean {
+    return this.tasks().some(t => t.status === 'open' && this.canApproveTask(t));
   }
 
   payloadSummary(task: HitlTask): { key: string; value: string }[] {
@@ -840,6 +918,10 @@ export class InboxComponent implements OnInit {
   approve(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
     if (this.actioning() === task.id) return;
+    if (task.status !== 'open') {
+      this.actionError.set('Only open Inbox tasks can be approved.');
+      return;
+    }
     if (!this.canApproveTask(task)) {
       this.actionError.set(`Approval requires ${this.roleLabel(task.required_approval_role)} role or higher.`);
       return;
@@ -863,6 +945,7 @@ export class InboxComponent implements OnInit {
   reject(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
     if (this.actioning() === task.id) return;
+    if (task.status !== 'open') return;
     this.hitlSvc.reject(task.id).subscribe({
       next: () => this.removeTask(task.id),
       error: () => {
@@ -873,6 +956,7 @@ export class InboxComponent implements OnInit {
 
   escalate(task: HitlTask, e?: Event): void {
     e?.stopPropagation();
+    if (task.status !== 'open') return;
     this.hitlSvc.escalate(task.id).subscribe({
       error: () => {
         console.error(`Failed to escalate task ${task.id}`);
@@ -968,7 +1052,7 @@ export class InboxComponent implements OnInit {
 
   approveAll(): void {
     this.actionError.set(null);
-    const tasks = this.tasks().filter(t => this.canApproveTask(t));
+    const tasks = this.tasks().filter(t => t.status === 'open' && this.canApproveTask(t));
     if (!tasks.length) {
       this.actionError.set('No visible tasks can be approved by your current role.');
       return;
@@ -984,6 +1068,7 @@ export class InboxComponent implements OnInit {
   }
 
   canApproveTask(task: HitlTask): boolean {
+    if (task.status !== 'open') return false;
     const required = task.required_approval_role ?? 'manager';
     return this.roleRank(this.auth.role()) >= this.roleRank(required);
   }
