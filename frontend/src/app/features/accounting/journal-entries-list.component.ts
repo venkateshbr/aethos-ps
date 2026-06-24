@@ -97,7 +97,16 @@ interface ClosePackage {
   gl_summary: Record<string, string | number | null>;
   previous_gl_summary: Record<string, string | number | null>;
   working_capital: Record<string, string | number | null>;
+  readiness_evidence?: Record<string, Record<string, unknown>>;
+  close_overrides?: Record<string, unknown>[];
   variance_commentary: CloseVarianceComment[];
+}
+
+interface CloseReadinessArea {
+  key: string;
+  label: string;
+  status: string;
+  metric: string;
 }
 
 interface RecurringJournalTemplateLine {
@@ -244,6 +253,21 @@ type FilterChip = 'all' | 'manual' | 'auto';
                 <p class="text-xs text-text-disabled">Generated {{ closePackage()!.generated_at.slice(0, 10) }}</p>
               </div>
             </div>
+            @if (closeReadinessAreas().length) {
+              <div class="grid gap-2 md:grid-cols-3 xl:grid-cols-6 mb-3">
+                @for (area of closeReadinessAreas(); track area.key) {
+                  <div class="border-l-2 border-border-subtle bg-surface px-3 py-2">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="text-xs uppercase tracking-wide text-text-muted">{{ area.label }}</p>
+                      <span class="rounded px-1.5 py-0.5 text-[11px]" [class]="readinessStatusClass(area.status)">
+                        {{ area.status }}
+                      </span>
+                    </div>
+                    <p class="text-xs text-text-primary mt-1 truncate">{{ area.metric }}</p>
+                  </div>
+                }
+              </div>
+            }
             <div class="divide-y divide-border-subtle border border-border-subtle rounded bg-surface">
               @for (comment of closePackage()!.variance_commentary; track comment.code) {
                 <div class="px-3 py-2">
@@ -1478,6 +1502,54 @@ export class JournalEntriesListComponent implements OnInit {
     return total.toFixed(2);
   }
 
+  closeReadinessAreas(): CloseReadinessArea[] {
+    const evidence = this.closePackage()?.readiness_evidence;
+    if (!evidence) return [];
+    return [
+      this.readinessArea('ar', 'AR', 'open_total', 'blocker_count'),
+      this.readinessArea('ap', 'AP', 'open_total', 'blocker_count'),
+      this.readinessArea('wip', 'WIP', 'open_total', 'project_count'),
+      this.readinessArea('gl', 'GL', 'unposted_journal_count', 'trial_balance_balanced'),
+      this.readinessArea('approvals', 'Approvals', 'pending_review_count', 'incomplete_task_count'),
+      this.readinessArea('overrides', 'Overrides', 'count', 'review_path'),
+    ].filter((area): area is CloseReadinessArea => area !== null);
+  }
+
+  readinessArea(
+    key: string,
+    label: string,
+    primaryMetric: string,
+    secondaryMetric: string,
+  ): CloseReadinessArea | null {
+    const area = this.closePackage()?.readiness_evidence?.[key];
+    if (!area) return null;
+    const status = String(area['status'] ?? (key === 'overrides' ? 'info' : 'ready'));
+    const primary = area[primaryMetric];
+    const secondary = area[secondaryMetric];
+    return {
+      key,
+      label,
+      status,
+      metric: this.readinessMetric(primaryMetric, primary, secondaryMetric, secondary),
+    };
+  }
+
+  readinessMetric(
+    primaryLabel: string,
+    primary: unknown,
+    secondaryLabel: string,
+    secondary: unknown,
+  ): string {
+    const primaryText = primary === null || primary === undefined ? '0' : String(primary);
+    if (typeof secondary === 'boolean') {
+      return `${primaryLabel.replace(/_/g, ' ')} ${primaryText} · ${secondary ? 'balanced' : 'unbalanced'}`;
+    }
+    if (secondary === null || secondary === undefined || secondaryLabel === 'review_path') {
+      return `${primaryLabel.replace(/_/g, ' ')} ${primaryText}`;
+    }
+    return `${primaryLabel.replace(/_/g, ' ')} ${primaryText} · ${secondaryLabel.replace(/_/g, ' ')} ${String(secondary)}`;
+  }
+
   closePackageValue(
     section: 'gl_summary' | 'previous_gl_summary' | 'working_capital',
     key: string,
@@ -1493,6 +1565,16 @@ export class JournalEntriesListComponent implements OnInit {
       case 'blocker': return 'bg-red-500/15 text-red-300';
       case 'high': return 'bg-amber-500/15 text-amber-300';
       case 'medium': return 'bg-blue-500/15 text-blue-300';
+      default: return 'bg-slate-500/15 text-slate-300';
+    }
+  }
+
+  readinessStatusClass(status: string): string {
+    switch (status) {
+      case 'blocked': return 'bg-red-500/15 text-red-300';
+      case 'attention': return 'bg-amber-500/15 text-amber-300';
+      case 'overridden': return 'bg-blue-500/15 text-blue-300';
+      case 'ready': return 'bg-emerald-500/15 text-emerald-300';
       default: return 'bg-slate-500/15 text-slate-300';
     }
   }

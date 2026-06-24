@@ -47,6 +47,7 @@ written in user language and intentionally avoid internal tool names.
 | --- | --- |
 | Month-end close prep | `Prepare month-end close for June 2026. Summarize readiness blockers, missing approvals, unposted journals, open AR/AP, and proposed close tasks. Route the close preparation to Inbox before creating close tasks.` |
 | Remaining close blockers | `What is still blocking June 2026 close? Show missing approvals, unposted journals, unreconciled balances, and the next owner for each item.` |
+| Close override review | `Review the June 2026 close blockers and draft an override only for the blockers I name. Include the business reason, supporting evidence, and warn me if the override would hide unresolved AR, AP, WIP, GL, or approval issues.` |
 | Financial statements | `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, and management commentary. Flag missing close prerequisites.` |
 | Variance explanation | `Explain material variances in June 2026 financial statements and recommend next actions. Do not post journals or lock the period without approval.` |
 

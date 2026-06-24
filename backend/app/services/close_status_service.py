@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from app.services.close_override_service import CloseOverrideService
 from app.services.close_reconciliation_service import CloseReconciliationService
+from app.services.close_tasks_service import CloseTasksService
 from supabase import Client
 
-CloseItemStatus = Literal["complete", "pending", "blocked"]
+CloseItemStatus = Literal["complete", "pending", "blocked", "overridden"]
 ClosePeriodStatus = Literal["ready", "blocked", "locked"]
 
 _CLOSE_REVIEW_AGENTS = (
@@ -52,6 +54,7 @@ class CloseChecklistItem:
     blocking: bool
     summary: str
     count: int = 0
+    overridden: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -61,6 +64,7 @@ class CloseChecklistItem:
             "blocking": self.blocking,
             "summary": self.summary,
             "count": self.count,
+            "overridden": self.overridden,
         }
 
 
@@ -77,6 +81,9 @@ class CloseStatusResult:
     checklist: list[CloseChecklistItem]
     findings: list[dict[str, str | None]]
     pending_reviews: list[PendingCloseReview]
+    unposted_journals: list[dict[str, str | None]]
+    incomplete_tasks: list[dict[str, str | None]]
+    overrides: list[dict[str, object]]
     lock_blockers: list[str]
 
     def as_dict(self) -> dict[str, object]:
@@ -90,6 +97,9 @@ class CloseStatusResult:
             "checklist": [item.as_dict() for item in self.checklist],
             "findings": self.findings,
             "pending_reviews": [review.as_dict() for review in self.pending_reviews],
+            "unposted_journals": self.unposted_journals,
+            "incomplete_tasks": self.incomplete_tasks,
+            "overrides": self.overrides,
             "lock_blockers": self.lock_blockers,
         }
 
@@ -106,19 +116,29 @@ class CloseStatusService:
         lock = self._lock_row(period)
         reconciliation = CloseReconciliationService(self.db, self.tenant_id).check_period(period)
         pending_reviews = self.pending_close_reviews(period)
+        unposted_journals = self._unposted_journals(period)
+        incomplete_tasks = self._incomplete_tasks(period)
+        overrides = CloseOverrideService(self.db, self.tenant_id).list_overrides(period)
+        override_codes = {override.blocker_code for override in overrides}
 
         subledger_findings = [
             finding
             for finding in reconciliation.findings
             if finding.code != "trial_balance_unbalanced"
         ]
-        blockers: list[str] = []
+        raw_blockers: list[str] = []
         if subledger_findings:
-            blockers.append("subledger_reconciliation")
+            raw_blockers.append("subledger_reconciliation")
         if not reconciliation.trial_balance_balanced:
-            blockers.append("trial_balance")
+            raw_blockers.append("trial_balance")
+        if unposted_journals:
+            raw_blockers.append("unposted_journals")
         if pending_reviews:
-            blockers.append("close_reviews")
+            raw_blockers.append("close_reviews")
+        if incomplete_tasks:
+            raw_blockers.append("close_tasks")
+
+        blockers = [code for code in raw_blockers if code not in override_codes]
 
         locked = lock is not None
         ready_to_lock = not locked and not blockers
@@ -131,9 +151,26 @@ class CloseStatusService:
             status = "blocked"
 
         checklist = [
-            self._subledger_item(subledger_findings),
-            self._trial_balance_item(reconciliation.trial_balance_balanced),
-            self._close_reviews_item(pending_reviews),
+            self._subledger_item(
+                subledger_findings,
+                overridden="subledger_reconciliation" in override_codes,
+            ),
+            self._trial_balance_item(
+                reconciliation.trial_balance_balanced,
+                overridden="trial_balance" in override_codes,
+            ),
+            self._unposted_journals_item(
+                unposted_journals,
+                overridden="unposted_journals" in override_codes,
+            ),
+            self._close_reviews_item(
+                pending_reviews,
+                overridden="close_reviews" in override_codes,
+            ),
+            self._close_tasks_item(
+                incomplete_tasks,
+                overridden="close_tasks" in override_codes,
+            ),
             self._period_lock_item(locked=locked, ready_to_lock=ready_to_lock),
         ]
 
@@ -147,6 +184,9 @@ class CloseStatusService:
             checklist=checklist,
             findings=[finding.as_dict() for finding in reconciliation.findings],
             pending_reviews=pending_reviews,
+            unposted_journals=unposted_journals,
+            incomplete_tasks=incomplete_tasks,
+            overrides=[override.as_dict() for override in overrides],
             lock_blockers=blockers,
         )
 
@@ -191,8 +231,66 @@ class CloseStatusService:
         return rows[0] if rows else None
 
     @staticmethod
-    def _subledger_item(findings: list[object]) -> CloseChecklistItem:
+    def _task_summary(row: dict) -> dict[str, str | None]:
+        return {
+            "id": str(row["id"]),
+            "code": str(row["code"]),
+            "title": str(row["title"]),
+            "status": str(row.get("status") or "open"),
+        }
+
+    def _incomplete_tasks(self, period: str) -> list[dict[str, str | None]]:
+        return [
+            self._task_summary(row)
+            for row in CloseTasksService(
+                self.db,
+                self.tenant_id,
+            ).incomplete_blocking_tasks(period)
+        ]
+
+    def _unposted_journals(self, period: str) -> list[dict[str, str | None]]:
+        rows = (
+            self.db.table("journal_entries")
+            .select("id, entry_number, description, entry_date, reference_type, reference")
+            .eq("tenant_id", self.tenant_id)
+            .eq("period", period)
+            .is_("posted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        return [
+            {
+                "id": str(row["id"]),
+                "entry_number": str(row.get("entry_number") or row["id"]),
+                "description": row.get("description"),
+                "entry_date": str(row.get("entry_date") or ""),
+                "reference_type": str(row.get("reference_type") or "manual"),
+                "reference": str(row["reference"]) if row.get("reference") else None,
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _subledger_item(
+        findings: list[object],
+        *,
+        overridden: bool = False,
+    ) -> CloseChecklistItem:
         if findings:
+            if overridden:
+                return CloseChecklistItem(
+                    code="subledger_reconciliation",
+                    label="Sub-ledger reconciliation",
+                    status="overridden",
+                    blocking=False,
+                    summary=(
+                        f"{len(findings)} sub-ledger item(s) remain, but a close "
+                        "override is recorded."
+                    ),
+                    count=len(findings),
+                    overridden=True,
+                )
             return CloseChecklistItem(
                 code="subledger_reconciliation",
                 label="Sub-ledger reconciliation",
@@ -210,8 +308,22 @@ class CloseStatusService:
         )
 
     @staticmethod
-    def _trial_balance_item(balanced: bool) -> CloseChecklistItem:
+    def _trial_balance_item(
+        balanced: bool,
+        *,
+        overridden: bool = False,
+    ) -> CloseChecklistItem:
         if not balanced:
+            if overridden:
+                return CloseChecklistItem(
+                    code="trial_balance",
+                    label="Trial balance",
+                    status="overridden",
+                    blocking=False,
+                    summary="Trial balance is unbalanced, but a close override is recorded.",
+                    count=1,
+                    overridden=True,
+                )
             return CloseChecklistItem(
                 code="trial_balance",
                 label="Trial balance",
@@ -229,8 +341,61 @@ class CloseStatusService:
         )
 
     @staticmethod
-    def _close_reviews_item(reviews: list[PendingCloseReview]) -> CloseChecklistItem:
+    def _unposted_journals_item(
+        journals: list[dict[str, str | None]],
+        *,
+        overridden: bool = False,
+    ) -> CloseChecklistItem:
+        if journals:
+            if overridden:
+                return CloseChecklistItem(
+                    code="unposted_journals",
+                    label="Unposted journals",
+                    status="overridden",
+                    blocking=False,
+                    summary=(
+                        f"{len(journals)} unposted journal(s) remain, but a close "
+                        "override is recorded."
+                    ),
+                    count=len(journals),
+                    overridden=True,
+                )
+            return CloseChecklistItem(
+                code="unposted_journals",
+                label="Unposted journals",
+                status="blocked",
+                blocking=True,
+                summary=f"{len(journals)} journal(s) in the period are not posted.",
+                count=len(journals),
+            )
+        return CloseChecklistItem(
+            code="unposted_journals",
+            label="Unposted journals",
+            status="complete",
+            blocking=False,
+            summary="No unposted journals remain for the period.",
+        )
+
+    @staticmethod
+    def _close_reviews_item(
+        reviews: list[PendingCloseReview],
+        *,
+        overridden: bool = False,
+    ) -> CloseChecklistItem:
         if reviews:
+            if overridden:
+                return CloseChecklistItem(
+                    code="close_reviews",
+                    label="Close review queue",
+                    status="overridden",
+                    blocking=False,
+                    summary=(
+                        f"{len(reviews)} close review(s) remain in HITL, but a "
+                        "close override is recorded."
+                    ),
+                    count=len(reviews),
+                    overridden=True,
+                )
             return CloseChecklistItem(
                 code="close_reviews",
                 label="Close review queue",
@@ -245,6 +410,42 @@ class CloseStatusService:
             status="complete",
             blocking=False,
             summary="No pending close-related HITL reviews.",
+        )
+
+    @staticmethod
+    def _close_tasks_item(
+        tasks: list[dict[str, str | None]],
+        *,
+        overridden: bool = False,
+    ) -> CloseChecklistItem:
+        if tasks:
+            if overridden:
+                return CloseChecklistItem(
+                    code="close_tasks",
+                    label="Close tasks",
+                    status="overridden",
+                    blocking=False,
+                    summary=(
+                        f"{len(tasks)} close task(s) remain incomplete, but a "
+                        "close override is recorded."
+                    ),
+                    count=len(tasks),
+                    overridden=True,
+                )
+            return CloseChecklistItem(
+                code="close_tasks",
+                label="Close tasks",
+                status="pending",
+                blocking=True,
+                summary=f"{len(tasks)} close task(s) must be completed or waived.",
+                count=len(tasks),
+            )
+        return CloseChecklistItem(
+            code="close_tasks",
+            label="Close tasks",
+            status="complete",
+            blocking=False,
+            summary="No incomplete blocking close tasks.",
         )
 
     @staticmethod

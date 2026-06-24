@@ -176,6 +176,13 @@ def test_close_package_composes_reports_and_variance_commentary() -> None:
         "ap_open_total": "100.00",
         "wip_total": "350.00",
     }
+    evidence = package["readiness_evidence"]
+    assert evidence["ar"]["open_total"] == "250.00"
+    assert evidence["ap"]["open_total"] == "100.00"
+    assert evidence["wip"]["project_count"] == 1
+    assert evidence["gl"]["trial_balance_balanced"] is True
+    assert evidence["approvals"]["pending_review_count"] == 0
+    assert package["close_overrides"] == []
 
     commentary = {row["code"]: row for row in package["variance_commentary"]}
     assert commentary["revenue_variance"]["delta_pct"] == 25.0
@@ -198,3 +205,30 @@ def test_close_package_surfaces_close_blockers_first() -> None:
     assert first["code"] == "close_blockers"
     assert first["severity"] == "blocker"
     assert first["metric"] == "trial_balance, close_reviews"
+
+
+def test_close_package_surfaces_recorded_overrides() -> None:
+    package = _service(
+        {
+            "status": "ready",
+            "ready_to_lock": True,
+            "lock_blockers": [],
+            "overrides": [
+                {
+                    "id": "override-001",
+                    "period": "2026-06",
+                    "blocker_code": "unposted_journals",
+                    "reason": "Controller approved excluding a draft reversal.",
+                    "created_by": "controller-1",
+                    "created_at": "2026-06-30T23:00:00+00:00",
+                    "blocker_ref": {"journal_entry_id": "journal-draft-001"},
+                }
+            ],
+        }
+    ).build_package("2026-06")
+
+    assert package["close_overrides"][0]["blocker_code"] == "unposted_journals"
+    assert package["readiness_evidence"]["overrides"]["count"] == 1
+    first = package["variance_commentary"][0]
+    assert first["code"] == "close_overrides"
+    assert first["severity"] == "watch"

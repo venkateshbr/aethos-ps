@@ -38,36 +38,37 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 6 | Owner | `/settings/accounting/periods` → "Close April 2026" | All sub-ledgers must be reconciled (AR aging matches invoice rows; AP aging matches bill rows); if not, close is rejected with the reconciliation diff |
-| 7 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
+| 6 | Controller | `/copilot` → "Prepare month-end close for April 2026" | Copilot routes a close package to Inbox. The package includes AR, AP, WIP, GL, approvals, unposted journals, incomplete close tasks, close blockers, and recorded override evidence. |
+| 7 | Owner/Admin | Reviews close package and resolves blockers | Sub-ledger, trial-balance, unposted-journal, close-review, and close-task blockers must be resolved or explicitly overridden with a reason and actor. |
+| 8 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
 
 ### §1.3 Reports
 
 | # | Report | Expected behavior |
 | --- | --- | --- |
-| 8 | P&L by engagement | Revenue, direct cost, gross margin per engagement; multi-currency toggle |
-| 9 | AR aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `invoices` table |
-| 10 | AP aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `bills` table |
-| 11 | Utilization | Billable hours / available hours per employee |
-| 12 | WIP | Unbilled effort × rate per project |
-| 13 | Trial balance | DR total = CR total for the period; if not, raise alarm |
+| 9 | P&L by engagement | Revenue, direct cost, gross margin per engagement; multi-currency toggle |
+| 10 | AR aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `invoices` table |
+| 11 | AP aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `bills` table |
+| 12 | Utilization | Billable hours / available hours per employee |
+| 13 | WIP | Unbilled effort × rate per project |
+| 14 | Trial balance | DR total = CR total for the period; if not, raise alarm |
 
 ### §1.4 AI Finance Ops Manager command center
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 14 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
-| 15 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
-| 16 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
-| 17 | Finance ops manager | Approves the action-plan task, then approves a Plan Item in `/inbox` | Action-plan approval creates one `finance_ops_action_item` child Inbox task per review-required recommendation. Plan Item approval dispatches the mapped specialist workflow, creating the next specialist review task where applicable; invoices, payments, journals, statements, and emails remain behind specialist approval flows |
+| 15 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
+| 16 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
+| 17 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
+| 18 | Finance ops manager | Approves the action-plan task, then approves a Plan Item in `/inbox` | Action-plan approval creates one `finance_ops_action_item` child Inbox task per review-required recommendation. Plan Item approval dispatches the mapped specialist workflow, creating the next specialist review task where applicable; invoices, payments, journals, statements, and emails remain behind specialist approval flows |
 
 ### §1.5 AI collections reminders through Inbox
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 18 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
-| 19 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
-| 20 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
+| 19 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
+| 20 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
+| 21 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
 
 ---
 
@@ -91,6 +92,8 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | §3.6 | Reporting agent (LLM) hallucinates a number | Eval case: numbers in report response must reconcile with API totals. LLM cannot make up money totals; numbers are tool-call outputs only |
 | §3.7 | Concurrent close + post | Race: post-loser gets 422 `period_locked`; period_locks insertion is atomic |
 | §3.8 | Account deleted that has historical entries | Block delete; allow "deactivate" only |
+| §3.9 | Close blocker overridden without reason | 422 `close_override_reason_required`; period remains unlocked |
+| §3.10 | Lock attempted with unposted journal and no override | 409 `unposted_journals_pending`; response lists affected draft journals |
 
 ---
 
@@ -124,6 +127,8 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 - `events`: `period.closed`, `period.reopened`, `journal.posted`, `journal.reversed`
 - `audit_log`: every period close logs reconciliation snapshot
 - `agent_suggestions`: `reporting_agent` rows for natural-language Q&A
+- `accounting_close_overrides`: close blocker code, reason, actor, timestamp, and blocker evidence for explicit overrides
+- `close_package.readiness_evidence`: AR/AP/WIP/GL/approval evidence and recorded overrides shown to the reviewer
 
 ## §7 Performance Budget
 

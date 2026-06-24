@@ -219,11 +219,22 @@ Current workflows:
 - Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.
 - Copilot can generate a financial statement package summary from report data.
 
-Enterprise R2R depth is planned under #285:
+Close evidence now includes:
 
-- Close evidence package.
-- AR/AP/WIP/subledger reconciliation gates.
-- Override reason capture.
+- AR, AP, WIP, GL, and approval readiness evidence from real records.
+- Subledger, trial-balance, unposted-journal, close-review, and close-task lock blockers.
+- Supporting record references where the system can identify the source row.
+- Recorded close overrides with blocker code, reason, actor, timestamp, and blocker evidence.
+
+Period lock remains blocked while required gates fail unless the matching close
+override has been recorded. Overrides require a reason of at least 10 characters
+and are included in the close package for controller/CPA review. Copilot close
+preparation surfaces blocker counts, override counts, and readiness evidence
+before creating close tasks through Inbox.
+
+Remaining enterprise R2R depth is planned after the #285 first slice:
+
+- Richer browser close wizard for reviewing and recording overrides.
 - Year-end close and retained earnings depth.
 - Manual journal audit enhancements.
 
@@ -292,7 +303,7 @@ The following work is tracked under parent issue #278:
 | #282 | RBAC | Finance role mapping and read-only permission proof, first slice implemented |
 | #283 | AI Ops | Scheduled Finance Ops Manager runs and escalations, first slice implemented |
 | #284 | P2P | Vendor invoice matching and coding exceptions, first slice implemented |
-| #285 | R2R | Close evidence package and reconciliation gates |
+| #285 | R2R | Close evidence package and reconciliation gates, first slice implemented |
 | #286 | Ops/Security | Rate limiting, telemetry, and tenant health |
 
 ## 12. Documentation And Test Definition Of Done

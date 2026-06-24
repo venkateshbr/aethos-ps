@@ -769,6 +769,7 @@ export class InboxComponent implements OnInit {
               'workflow',
               'lock_blocker_count',
               'pending_review_count',
+              'override_count',
               'net_income',
               'variance_comment_count',
             ];

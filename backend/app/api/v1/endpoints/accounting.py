@@ -5,6 +5,8 @@ Endpoints:
   GET    /api/v1/accounting/periods/{period}/close-status — close checklist/status
   GET    /api/v1/accounting/periods/{period}/close-package — close review package
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
+  GET    /api/v1/accounting/periods/{period}/close-overrides — list close overrides
+  POST   /api/v1/accounting/periods/{period}/close-overrides — record close override reason
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
   POST   /api/v1/accounting/periods/{period}/propose-expense-accrual — HITL expense accrual
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
@@ -34,8 +36,8 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
@@ -47,6 +49,11 @@ from app.models.accounting import (
     ManualJournalEntryResponse,
     RecurringJournalTemplateCreate,
     RecurringJournalTemplateResponse,
+)
+from app.services.close_override_service import (
+    ALLOWED_CLOSE_OVERRIDE_CODES,
+    CloseOverride,
+    CloseOverrideService,
 )
 from app.services.close_package_service import ClosePackageService
 from app.services.close_reconciliation_service import CloseReconciliationService
@@ -88,6 +95,31 @@ class PeriodLockResponse(BaseModel):
     period: str
     action: str  # "locked" | "unlocked"
     message: str
+    override_count: int = 0
+
+
+class PeriodCloseOverrideIn(BaseModel):
+    blocker_code: str
+    reason: str = Field(..., min_length=10, max_length=2000)
+    blocker_ref: dict[str, Any] = Field(default_factory=dict)
+
+
+class PeriodLockRequest(BaseModel):
+    overrides: list[PeriodCloseOverrideIn] = Field(default_factory=list)
+
+
+class PeriodCloseOverrideResponse(BaseModel):
+    id: str
+    period: str
+    blocker_code: str
+    reason: str
+    created_by: str
+    created_at: str
+    blocker_ref: dict[str, Any]
+
+
+class PeriodCloseOverrideListResponse(BaseModel):
+    overrides: list[PeriodCloseOverrideResponse]
 
 
 class PeriodCloseFinding(BaseModel):
@@ -113,6 +145,7 @@ class PeriodCloseChecklistItem(BaseModel):
     blocking: bool
     summary: str
     count: int
+    overridden: bool = False
 
 
 class PeriodClosePendingReview(BaseModel):
@@ -133,6 +166,9 @@ class PeriodCloseStatusResponse(BaseModel):
     checklist: list[PeriodCloseChecklistItem]
     findings: list[PeriodCloseFinding]
     pending_reviews: list[PeriodClosePendingReview]
+    unposted_journals: list[dict[str, Any]] = Field(default_factory=list)
+    incomplete_tasks: list[dict[str, Any]] = Field(default_factory=list)
+    overrides: list[dict[str, Any]] = Field(default_factory=list)
     lock_blockers: list[str]
 
 
@@ -146,6 +182,8 @@ class PeriodClosePackageResponse(BaseModel):
     gl_summary: dict[str, Any]
     previous_gl_summary: dict[str, Any]
     working_capital: dict[str, Any]
+    readiness_evidence: dict[str, Any]
+    close_overrides: list[dict[str, Any]]
     trial_balance: dict[str, Any]
     ar_aging: dict[str, str]
     ap_aging: dict[str, str]
@@ -232,6 +270,37 @@ def _task_response(row: dict[str, Any]) -> CloseTaskResponse:
         completed_by=str(row["completed_by"]) if row.get("completed_by") else None,
         evidence=row.get("evidence") or {},
         order_index=int(row.get("order_index") or 0),
+    )
+
+
+def _override_response(override: CloseOverride) -> PeriodCloseOverrideResponse:
+    return PeriodCloseOverrideResponse(**override.as_dict())
+
+
+def _reconciliation_blocker_codes(result: Any) -> set[str]:
+    codes: set[str] = set()
+    subledger_findings = [
+        finding
+        for finding in result.findings
+        if getattr(finding, "code", None) != "trial_balance_unbalanced"
+    ]
+    if subledger_findings:
+        codes.add("subledger_reconciliation")
+    if not result.trial_balance_balanced:
+        codes.add("trial_balance")
+    return codes
+
+
+def _unposted_journals(db: Client, tenant_id: str, period: str) -> list[dict[str, Any]]:
+    return (
+        db.table("journal_entries")
+        .select("id, entry_number, description, entry_date, reference_type, reference")
+        .eq("tenant_id", tenant_id)
+        .eq("period", period)
+        .is_("posted_at", "null")
+        .execute()
+        .data
+        or []
     )
 
 
@@ -349,6 +418,46 @@ async def close_readiness(
         findings=[PeriodCloseFinding(**finding.as_dict()) for finding in result.findings],
         trial_balance_balanced=result.trial_balance_balanced,
     )
+
+
+@router.get(
+    "/periods/{period}/close-overrides",
+    response_model=PeriodCloseOverrideListResponse,
+)
+async def list_close_overrides(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> PeriodCloseOverrideListResponse:
+    _validate_period(period)
+    overrides = CloseOverrideService(db, tenant_id).list_overrides(period)
+    return PeriodCloseOverrideListResponse(
+        overrides=[_override_response(override) for override in overrides]
+    )
+
+
+@router.post(
+    "/periods/{period}/close-overrides",
+    response_model=PeriodCloseOverrideResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_close_override(
+    period: str,
+    payload: PeriodCloseOverrideIn,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> PeriodCloseOverrideResponse:
+    _validate_period(period)
+    override = CloseOverrideService(db, tenant_id).create_override(
+        period=period,
+        blocker_code=payload.blocker_code,
+        reason=payload.reason,
+        blocker_ref=payload.blocker_ref,
+        created_by=current_user.user_id,
+    )
+    return _override_response(override)
 
 
 @router.get("/periods/{period}/close-tasks", response_model=CloseTaskListResponse)
@@ -695,6 +804,7 @@ async def propose_recurring_journals(
 @router.post("/periods/{period}/lock", response_model=PeriodLockResponse)
 async def lock_period(
     period: str,
+    payload: PeriodLockRequest | None = Body(default=None),  # noqa: B008
     current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
@@ -727,6 +837,20 @@ async def lock_period(
             detail=f"Period {period} is already locked",
         )
 
+    override_service = CloseOverrideService(db, tenant_id)
+    created_overrides: list[CloseOverride] = []
+    for override in (payload.overrides if payload else []):
+        created_overrides.append(
+            override_service.create_override(
+                period=period,
+                blocker_code=override.blocker_code,
+                reason=override.reason,
+                blocker_ref=override.blocker_ref,
+                created_by=current_user.user_id,
+            )
+        )
+    override_codes = override_service.override_codes(period)
+
     try:
         reconciliation = CloseReconciliationService(db, tenant_id).check_period(period)
     except Exception as exc:
@@ -736,21 +860,43 @@ async def lock_period(
             detail="An internal error occurred",
         ) from exc
 
-    if not reconciliation.ready:
+    reconciliation_blockers = _reconciliation_blocker_codes(reconciliation)
+    if reconciliation_blockers - override_codes:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=reconciliation.as_error_detail(),
         )
 
+    unposted_journals = _unposted_journals(db, tenant_id, period)
+    if unposted_journals and "unposted_journals" not in override_codes:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "unposted_journals_pending",
+                "period": period,
+                "message": "Post or override unposted journals before locking the period.",
+                "allowed_override_codes": sorted(ALLOWED_CLOSE_OVERRIDE_CODES),
+                "journals": [
+                    {
+                        "id": str(row["id"]),
+                        "entry_number": str(row.get("entry_number") or row["id"]),
+                        "description": row.get("description"),
+                        "entry_date": str(row.get("entry_date") or ""),
+                    }
+                    for row in unposted_journals
+                ],
+            },
+        )
+
     pending_reviews = CloseStatusService(db, tenant_id).pending_close_reviews(period)
-    if pending_reviews:
+    if pending_reviews and "close_reviews" not in override_codes:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=close_review_blocker_detail(period, pending_reviews),
         )
 
     incomplete_tasks = CloseTasksService(db, tenant_id).incomplete_blocking_tasks(period)
-    if incomplete_tasks:
+    if incomplete_tasks and "close_tasks" not in override_codes:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -796,6 +942,7 @@ async def lock_period(
         period=period,
         action="locked",
         message=f"Period {period} is now locked. New journal entries are blocked for this period.",
+        override_count=len(created_overrides),
     )
 
 

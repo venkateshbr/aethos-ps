@@ -56,6 +56,9 @@ class _Query:
         self._filters.append(("is", field, value))
         return self
 
+    def order(self, _field: str, desc: bool = False) -> _Query:
+        return self
+
     def execute(self) -> _Result:
         return _Result([row for row in self._rows if self._matches(row)])
 
@@ -118,6 +121,8 @@ def _base_tables() -> dict[str, list[dict]]:
         ],
         "period_locks": [],
         "agent_suggestions": [],
+        "accounting_close_tasks": [],
+        "accounting_close_overrides": [],
     }
 
 
@@ -130,8 +135,74 @@ def test_close_status_ready_when_reconciled_and_no_pending_reviews() -> None:
     checklist = {item.code: item for item in result.checklist}
     assert checklist["subledger_reconciliation"].status == "complete"
     assert checklist["trial_balance"].status == "complete"
+    assert checklist["unposted_journals"].status == "complete"
     assert checklist["close_reviews"].status == "complete"
+    assert checklist["close_tasks"].status == "complete"
     assert checklist["period_lock"].status == "pending"
+
+
+def test_close_status_blocks_for_unposted_journal() -> None:
+    tables = _base_tables()
+    tables["journal_entries"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "journal-draft-001",
+            "entry_number": "JE-DRAFT",
+            "description": "Draft accrual",
+            "entry_date": "2026-06-30",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference": "close-accrual",
+            "posted_at": None,
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "blocked"
+    assert result.lock_blockers == ["unposted_journals"]
+    checklist = {item.code: item for item in result.checklist}
+    assert checklist["unposted_journals"].status == "blocked"
+    assert result.unposted_journals[0]["entry_number"] == "JE-DRAFT"
+
+
+def test_close_status_allows_recorded_unposted_journal_override() -> None:
+    tables = _base_tables()
+    tables["journal_entries"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "journal-draft-001",
+            "entry_number": "JE-DRAFT",
+            "description": "Draft accrual",
+            "entry_date": "2026-06-30",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference": "close-accrual",
+            "posted_at": None,
+        }
+    ]
+    tables["accounting_close_overrides"] = [
+        {
+            "tenant_id": TENANT_ID,
+            "id": "override-001",
+            "period": "2026-06",
+            "blocker_code": "unposted_journals",
+            "reason": "Controller confirmed the draft is not required for this close.",
+            "created_by": "controller-1",
+            "created_at": "2026-06-30T23:00:00+00:00",
+            "blocker_ref": {"journal_entry_id": "journal-draft-001"},
+            "deleted_at": None,
+        }
+    ]
+
+    result = CloseStatusService(_Db(tables), TENANT_ID).get_status("2026-06")  # type: ignore[arg-type]
+
+    assert result.status == "ready"
+    assert result.lock_blockers == []
+    checklist = {item.code: item for item in result.checklist}
+    assert checklist["unposted_journals"].status == "overridden"
+    assert checklist["unposted_journals"].overridden is True
+    assert result.overrides[0]["blocker_code"] == "unposted_journals"
 
 
 def test_close_status_blocks_for_pending_close_review() -> None:

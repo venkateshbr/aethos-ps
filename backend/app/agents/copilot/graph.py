@@ -1160,6 +1160,7 @@ class CopilotAgent:
             status_payload = close_status.as_dict()
             gl_summary = close_package.get("gl_summary") or {}
             working_capital = close_package.get("working_capital") or {}
+            readiness_evidence = close_package.get("readiness_evidence") or {}
 
             return {
                 "period": period,
@@ -1168,6 +1169,7 @@ class CopilotAgent:
                     "workflow": "month_end_close",
                     "lock_blocker_count": len(status_payload.get("lock_blockers") or []),
                     "pending_review_count": len(status_payload.get("pending_reviews") or []),
+                    "override_count": len(status_payload.get("overrides") or []),
                     "net_income": gl_summary.get("net_income"),
                     "ar_open_total": working_capital.get("ar_open_total"),
                     "ap_open_total": working_capital.get("ap_open_total"),
@@ -1183,6 +1185,8 @@ class CopilotAgent:
                     "period_end": close_package.get("period_end"),
                     "gl_summary": gl_summary,
                     "working_capital": working_capital,
+                    "readiness_evidence": readiness_evidence,
+                    "close_overrides": close_package.get("close_overrides", []),
                     "variance_commentary": close_package.get(
                         "variance_commentary",
                         [],

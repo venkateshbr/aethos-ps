@@ -71,6 +71,7 @@ class ClosePackageService:
         ap_aging = self.reports.ap_aging()
         wip = self.reports.wip()
         service_line_margins = self.reports.margin_by_service_line(period)
+        close_status_payload = close_status.as_dict()
 
         ar_total = _money_from_mapping(ar_aging, "total")
         ap_total = _money_from_mapping(ap_aging, "total")
@@ -82,7 +83,7 @@ class ClosePackageService:
             "period_end": bounds.end,
             "previous_period": previous_period,
             "generated_at": datetime.now(tz=UTC).isoformat(),
-            "close_status": close_status.as_dict(),
+            "close_status": close_status_payload,
             "gl_summary": current_gl.as_dict(),
             "previous_gl_summary": previous_gl.as_dict(),
             "working_capital": {
@@ -90,6 +91,15 @@ class ClosePackageService:
                 "ap_open_total": serialise_money(ap_total),
                 "wip_total": serialise_money(wip_total),
             },
+            "readiness_evidence": build_readiness_evidence(
+                ar_total=ar_total,
+                ap_total=ap_total,
+                wip=wip,
+                wip_total=wip_total,
+                trial_balance=trial_balance.model_dump(mode="json"),
+                close_status=close_status_payload,
+            ),
+            "close_overrides": close_status_payload.get("overrides") or [],
             "trial_balance": trial_balance.model_dump(mode="json"),
             "ar_aging": ar_aging,
             "ap_aging": ap_aging,
@@ -100,7 +110,7 @@ class ClosePackageService:
                 previous_period=previous_period,
                 current=current_gl,
                 previous=previous_gl,
-                close_status=close_status.as_dict(),
+                close_status=close_status_payload,
                 ar_total=ar_total,
                 ap_total=ap_total,
                 wip_total=wip_total,
@@ -218,12 +228,127 @@ def build_variance_commentary(
                 "metric": blockers,
             },
         )
+    overrides = close_status.get("overrides") if isinstance(close_status.get("overrides"), list) else []
+    if overrides:
+        commentary.insert(
+            0,
+            {
+                "code": "close_overrides",
+                "severity": "watch",
+                "summary": (
+                    f"{len(overrides)} close override(s) are recorded for this period; "
+                    "review reasons before lock."
+                ),
+                "metric": str(len(overrides)),
+            },
+        )
 
     service_line_comment = _service_line_comment(service_line_margins)
     if service_line_comment is not None:
         commentary.append(service_line_comment)
 
     return commentary
+
+
+def build_readiness_evidence(
+    *,
+    ar_total: Decimal,
+    ap_total: Decimal,
+    wip: list[dict],
+    wip_total: Decimal,
+    trial_balance: dict[str, Any],
+    close_status: dict[str, Any],
+) -> dict[str, object]:
+    """Build controller-facing readiness evidence from close status and reports."""
+    findings = close_status.get("findings") if isinstance(close_status.get("findings"), list) else []
+    ar_findings = [
+        finding
+        for finding in findings
+        if isinstance(finding, dict)
+        and (
+            finding.get("source_table") == "invoices"
+            or str(finding.get("code") or "").startswith("missing_ar")
+            or str(finding.get("code") or "").startswith("missing_invoice")
+        )
+    ]
+    ap_findings = [
+        finding
+        for finding in findings
+        if isinstance(finding, dict)
+        and (
+            finding.get("source_table") == "bills"
+            or str(finding.get("code") or "").startswith("missing_ap")
+            or str(finding.get("code") or "").startswith("missing_bill")
+        )
+    ]
+    unposted_journals = (
+        close_status.get("unposted_journals")
+        if isinstance(close_status.get("unposted_journals"), list)
+        else []
+    )
+    pending_reviews = (
+        close_status.get("pending_reviews")
+        if isinstance(close_status.get("pending_reviews"), list)
+        else []
+    )
+    incomplete_tasks = (
+        close_status.get("incomplete_tasks")
+        if isinstance(close_status.get("incomplete_tasks"), list)
+        else []
+    )
+    overrides = (
+        close_status.get("overrides")
+        if isinstance(close_status.get("overrides"), list)
+        else []
+    )
+
+    return {
+        "ar": {
+            "status": "blocked" if ar_findings else "ready",
+            "open_total": serialise_money(ar_total),
+            "blocker_count": len(ar_findings),
+            "supporting_records": _supporting_records(ar_findings),
+            "review_path": "/app/reports",
+        },
+        "ap": {
+            "status": "blocked" if ap_findings else "ready",
+            "open_total": serialise_money(ap_total),
+            "blocker_count": len(ap_findings),
+            "supporting_records": _supporting_records(ap_findings),
+            "review_path": "/app/reports",
+        },
+        "wip": {
+            "status": "attention" if wip_total else "ready",
+            "open_total": serialise_money(wip_total),
+            "project_count": len(wip),
+            "top_projects": _top_wip_projects(wip),
+            "review_path": "/app/reports",
+        },
+        "gl": {
+            "status": (
+                "blocked"
+                if unposted_journals or not bool(trial_balance.get("is_balanced", True))
+                else "ready"
+            ),
+            "trial_balance_balanced": bool(trial_balance.get("is_balanced", True)),
+            "unposted_journal_count": len(unposted_journals),
+            "unposted_journals": _supporting_journals(unposted_journals),
+            "review_path": "/app/accounting/journals",
+        },
+        "approvals": {
+            "status": "blocked" if pending_reviews or incomplete_tasks else "ready",
+            "pending_review_count": len(pending_reviews),
+            "incomplete_task_count": len(incomplete_tasks),
+            "pending_reviews": pending_reviews[:10],
+            "incomplete_tasks": incomplete_tasks[:10],
+            "review_path": "/app/inbox",
+        },
+        "overrides": {
+            "count": len(overrides),
+            "items": overrides[:10],
+            "review_path": "/app/accounting/journals",
+        },
+    }
 
 
 def period_bounds(period: str) -> PeriodBounds:
@@ -357,6 +482,51 @@ def _variance_severity(delta_pct: float | None) -> str:
     if delta_pct is None:
         return "info"
     return "watch" if abs(delta_pct) >= 20 else "info"
+
+
+def _supporting_records(findings: list[dict]) -> list[dict[str, object]]:
+    return [
+        {
+            "code": finding.get("code"),
+            "source_table": finding.get("source_table"),
+            "source_id": finding.get("source_id"),
+            "source_number": finding.get("source_number"),
+            "reason": finding.get("reason"),
+        }
+        for finding in findings[:10]
+    ]
+
+
+def _supporting_journals(journals: list[Any]) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for journal in journals[:10]:
+        if not isinstance(journal, dict):
+            continue
+        result.append(
+            {
+                "id": journal.get("id"),
+                "entry_number": journal.get("entry_number"),
+                "description": journal.get("description"),
+                "entry_date": journal.get("entry_date"),
+            }
+        )
+    return result
+
+
+def _top_wip_projects(rows: list[dict]) -> list[dict[str, object]]:
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: Decimal(str(row.get("wip_value") or "0")),
+        reverse=True,
+    )
+    return [
+        {
+            "project_id": row.get("project_id"),
+            "project_name": row.get("project_name"),
+            "wip_value": row.get("wip_value"),
+        }
+        for row in sorted_rows[:5]
+    ]
 
 
 def _money_from_mapping(values: dict, key: str) -> Decimal:
