@@ -122,6 +122,10 @@ def test_reconciles_paid_invoice() -> None:
         patch("app.workers.stripe_reconcile_worker.settings") as mock_settings,
         patch("app.workers.stripe_reconcile_worker.get_service_role_client", return_value=db),
         patch("app.workers.stripe_reconcile_worker.stripe") as mock_stripe,
+        patch(
+            "app.workers.stripe_reconcile_worker.record_checkout_session_payment",
+            return_value={"status": "recorded"},
+        ) as mock_record,
     ):
         mock_settings.stripe_secret_key = "sk_test_placeholder"
         mock_stripe.checkout.Session.list.return_value = sessions_mock
@@ -130,6 +134,7 @@ def test_reconciles_paid_invoice() -> None:
     assert result["reconciled"] == 1
     assert result["skipped"] == 0
     assert result["errors"] == 0
+    mock_record.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -161,3 +166,38 @@ def test_handles_stripe_error_gracefully() -> None:
 
     assert result["errors"] == 1
     assert result["reconciled"] == 0
+
+
+def test_skips_duplicate_reconciled_payment() -> None:
+    from app.workers.stripe_reconcile_worker import reconcile_sent_invoices
+
+    invoice = {
+        "id": "inv-dup",
+        "invoice_number": "INV-004",
+        "stripe_payment_link_id": "plink_dup",
+    }
+    db = _make_db_mock([invoice])
+
+    paid_session = MagicMock()
+    paid_session.payment_status = "paid"
+    paid_session.id = "cs_test_dup"
+
+    sessions_mock = MagicMock()
+    sessions_mock.auto_paging_iter.return_value = iter([paid_session])
+
+    with (
+        patch("app.workers.stripe_reconcile_worker.settings") as mock_settings,
+        patch("app.workers.stripe_reconcile_worker.get_service_role_client", return_value=db),
+        patch("app.workers.stripe_reconcile_worker.stripe") as mock_stripe,
+        patch(
+            "app.workers.stripe_reconcile_worker.record_checkout_session_payment",
+            return_value={"status": "duplicate"},
+        ),
+    ):
+        mock_settings.stripe_secret_key = "sk_test_placeholder"
+        mock_stripe.checkout.Session.list.return_value = sessions_mock
+        result = reconcile_sent_invoices("tenant-001")
+
+    assert result["reconciled"] == 0
+    assert result["skipped"] == 1
+    assert result["errors"] == 0

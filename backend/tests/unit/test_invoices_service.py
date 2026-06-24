@@ -176,6 +176,9 @@ def test_send_invoice_returns_payment_link_url(
 
     assert result.payment_link_url == "https://buy.stripe.com/test_001"
     assert result.stripe_payment_link_url == "https://buy.stripe.com/test_001"
+    update_payload = svc._repo.update.await_args.args[1]
+    assert update_payload["status"] == "sent"
+    assert update_payload["sent_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +493,16 @@ def test_send_invoice_routes_through_connect_when_enabled(
 
     assert captured_kwargs.get("on_behalf_of") == "acct_connect_001"
     assert captured_kwargs.get("transfer_data") == {"destination": "acct_connect_001"}
+    assert captured_kwargs.get("metadata") == {
+        "invoice_id": invoice_id,
+        "tenant_id": tenant_id,
+    }
+    assert captured_kwargs.get("payment_intent_data") == {
+        "metadata": {
+            "invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

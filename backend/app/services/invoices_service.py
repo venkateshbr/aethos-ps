@@ -546,7 +546,10 @@ class InvoicesService:
                 "Invoice sent via PDF-only path (Stripe not configured)",
                 extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
             )
-            updated = await self._repo.update(invoice_id, {"status": "sent"})
+            updated = await self._repo.update(
+                invoice_id,
+                {"status": "sent", "sent_at": _dt.now(tz=UTC).isoformat()},
+            )
             if updated is None:
                 raise HTTPException(status_code=404, detail="Invoice not found after update")
             invoice_lines = await self._repo.list_lines(invoice_id)
@@ -577,6 +580,12 @@ class InvoicesService:
                 "metadata": {
                     "invoice_id": invoice_id,
                     "tenant_id": self.tenant_id,
+                },
+                "payment_intent_data": {
+                    "metadata": {
+                        "invoice_id": invoice_id,
+                        "tenant_id": self.tenant_id,
+                    },
                 },
                 "after_completion": {
                     "type": "redirect",
@@ -614,6 +623,7 @@ class InvoicesService:
             invoice_id,
             {
                 "status": "sent",
+                "sent_at": _dt.now(tz=UTC).isoformat(),
                 "stripe_payment_link_id": payment_link.id,
                 "stripe_payment_link_url": payment_link.url,
             },

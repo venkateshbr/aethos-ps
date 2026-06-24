@@ -1,7 +1,8 @@
 """Procrastinate task: nightly Stripe webhook reconciliation.
 
 For invoices stuck in 'sent' state older than 24 hours, checks Stripe for
-paid checkout sessions and marks them paid — catching any dropped webhooks.
+paid checkout sessions and records the missed payment — catching dropped
+webhooks.
 
 Scheduled nightly at 02:00 UTC. Can be triggered manually:
     uv run python -m procrastinate --app=app.workers.procrastinate_app.app \
@@ -11,6 +12,7 @@ Scheduled nightly at 02:00 UTC. Can be triggered manually:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -18,18 +20,19 @@ import stripe
 
 from app.core.config import settings
 from app.core.db import get_service_role_client
+from app.services.stripe_checkout_payments import record_checkout_session_payment
 from app.workers.procrastinate_app import app
 
 logger = logging.getLogger(__name__)
 
 
 @app.task(name="stripe_reconcile.reconcile_sent_invoices")
-def reconcile_sent_invoices(tenant_id: str) -> dict:
+def reconcile_sent_invoices(tenant_id: str, min_age_hours: float = 24) -> dict:
     """Check Stripe for paid sessions on sent invoices older than 24 h.
 
-    For each match, marks the invoice paid and logs the reconciliation.
-    Full payment + journal posting is left to the webhook handler to avoid
-    duplication — this task only updates the invoice status as a safety net.
+    For each match, records the same payment row and accounting journal as the
+    webhook handler. Duplicate payment intents are skipped by the shared
+    payment recorder.
 
     Returns:
         {"reconciled": int, "skipped": int, "errors": int}
@@ -41,7 +44,7 @@ def reconcile_sent_invoices(tenant_id: str) -> dict:
     stripe.api_key = settings.stripe_secret_key
     db = get_service_role_client()
 
-    cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=min_age_hours)).isoformat()
     invoices = (
         db.table("invoices")
         .select("id, invoice_number, stripe_payment_link_id")
@@ -76,18 +79,27 @@ def reconcile_sent_invoices(tenant_id: str) -> dict:
                 skipped += 1
                 continue
 
-            db.table("invoices").update(
-                {
-                    "status": "paid",
-                    "paid_at": datetime.now(UTC).isoformat(),
-                }
-            ).eq("id", invoice["id"]).eq("tenant_id", tenant_id).execute()
-
-            reconciled += 1
+            result = asyncio.run(
+                record_checkout_session_payment(
+                    db=db,
+                    session=paid_session,
+                    event_id=getattr(paid_session, "id", None),
+                    fallback_invoice_id=invoice["id"],
+                    fallback_tenant_id=tenant_id,
+                    source="stripe_reconciliation",
+                )
+            )
+            if result["status"] == "recorded":
+                reconciled += 1
+            elif result["status"] == "duplicate":
+                skipped += 1
+            else:
+                errors += 1
             logger.info(
-                "stripe_reconcile_worker: reconciled invoice %s (session %s)",
+                "stripe_reconcile_worker: invoice %s session %s result=%s",
                 invoice.get("invoice_number", invoice["id"]),
                 paid_session.id,
+                result["status"],
                 extra={"tenant_id": tenant_id, "invoice_id": invoice["id"]},
             )
 
@@ -95,6 +107,14 @@ def reconcile_sent_invoices(tenant_id: str) -> dict:
             errors += 1
             logger.error(
                 "stripe_reconcile_worker: Stripe error for invoice %s: %s",
+                invoice.get("id"),
+                exc,
+                extra={"tenant_id": tenant_id},
+            )
+        except Exception as exc:
+            errors += 1
+            logger.error(
+                "stripe_reconcile_worker: reconciliation error for invoice %s: %s",
                 invoice.get("id"),
                 exc,
                 extra={"tenant_id": tenant_id},

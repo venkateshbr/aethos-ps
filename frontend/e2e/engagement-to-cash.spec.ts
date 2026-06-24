@@ -609,6 +609,12 @@ function stripeWebhookSecret(): string {
   return secret;
 }
 
+function stripeSecretKey(): string {
+  const secret = envValue('STRIPE_SECRET_KEY');
+  if (!secret || secret === 'sk_test_REPLACE_ME' || secret === 'sk_live_REPLACE_ME') return '';
+  return secret;
+}
+
 function moneyToCents(value: unknown): number {
   return Math.round(Number(value ?? 0) * 100);
 }
@@ -700,6 +706,48 @@ async function createApprovedInvoice(
   });
   await expectOk(approveResp, 'approve invoice for webhook test');
   return invoice;
+}
+
+async function sendInvoiceForPaymentLink(
+  request: APIRequestContext,
+  auth: { token: string; tenantId: string },
+  invoiceId: string,
+): Promise<Record<string, unknown>> {
+  const sendResp = await request.post(`${API}/api/v1/invoices/${invoiceId}/send`, {
+    headers: apiHeaders(auth),
+    timeout: API_REQUEST_TIMEOUT,
+  });
+  await expectOk(sendResp, 'send invoice for Stripe payment link');
+  return sendResp.json();
+}
+
+async function completeStripeCheckout(page: Page, paymentLinkUrl: string): Promise<void> {
+  await page.goto(paymentLinkUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.getByRole('textbox', { name: /^email$/i }).fill(`stripe-e2e-${Date.now()}@aethosps.dev`);
+
+  const cardNumber = page.getByRole('textbox', { name: /card number/i });
+  await cardNumber.fill('4242424242424242');
+
+  const expiry = page.getByRole('textbox', { name: /expiration/i });
+  await expiry.fill('1234');
+
+  const cvc = page.getByRole('textbox', { name: /^cvc$/i });
+  await cvc.fill('123');
+
+  const name = page.getByRole('textbox', { name: /cardholder name|name on card/i });
+  if (await name.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await name.fill('Aethos E2E');
+  }
+
+  const submit = page
+    .getByTestId('hosted-payment-submit-button')
+    .or(page.getByRole('button', { name: /pay|subscribe|complete/i }))
+    .first();
+  await submit.click();
+  await page.waitForLoadState('domcontentloaded', { timeout: 60_000 }).catch(() => undefined);
+  await page.waitForURL(/\/thanks|checkout\.stripe\.com\/c\/.*success|success/i, {
+    timeout: 90_000,
+  }).catch(() => undefined);
 }
 
 // Parse SSE body into typed events
@@ -987,8 +1035,55 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
     }
   });
 
-  test.fixme('§3.3 webhook delayed → nightly reconciliation', async () => {
-    // Blocked: requires Stripe test-mode webhook forwarding in CI
+  test('§3.3 webhook delayed → nightly reconciliation', async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const auth = getAuthFromStorage();
+    test.skip(!auth, 'no auth token');
+    test.skip(!stripeSecretKey(), 'STRIPE_SECRET_KEY not configured');
+
+    const invoice = await createApprovedInvoice(
+      request,
+      auth!,
+      { description: 'E2E delayed Stripe reconciliation', quantity: '1', unit_price: '2.00' },
+    );
+    const sent = await sendInvoiceForPaymentLink(request, auth!, String(invoice.id));
+    const paymentLinkUrl = String(sent.payment_link_url || sent.stripe_payment_link_url || '');
+    test.skip(!paymentLinkUrl, 'Stripe Payment Link was not generated');
+
+    const beforePayments = await listPaymentsForInvoice(request, auth!, String(invoice.id));
+    await completeStripeCheckout(page, paymentLinkUrl);
+
+    const reconcileResp = await request.post(
+      `${API}/api/v1/payments/reconcile-stripe?min_age_hours=0`,
+      { headers: apiHeaders(auth!), timeout: API_REQUEST_TIMEOUT },
+    );
+    await expectOk(reconcileResp, 'run Stripe reconciliation');
+    const reconciliation = await reconcileResp.json();
+    expect(
+      Number(reconciliation.reconciled ?? 0) + Number(reconciliation.skipped ?? 0),
+    ).toBeGreaterThanOrEqual(1);
+    expect(Number(reconciliation.errors ?? 0)).toBe(0);
+
+    const afterPayments = await listPaymentsForInvoice(request, auth!, String(invoice.id));
+    expect(afterPayments.length).toBeGreaterThanOrEqual(beforePayments.length + 1);
+
+    const invoiceResp = await request.get(`${API}/api/v1/invoices/${invoice.id}`, {
+      headers: apiHeaders(auth!),
+      timeout: API_REQUEST_TIMEOUT,
+    });
+    await expectOk(invoiceResp, 'fetch invoice after reconciliation');
+    const paidInvoice = await invoiceResp.json();
+    expect(paidInvoice.status).toBe('paid');
+
+    const journalResp = await request.get(
+      `${API}/api/v1/accounting/journal-entries?reference_type=payment&limit=50`,
+      { headers: apiHeaders(auth!), timeout: API_REQUEST_TIMEOUT },
+    );
+    await expectOk(journalResp, 'list reconciled payment journals');
+    const journals = await journalResp.json();
+    expect(
+      (journals as Array<{ reference?: string | null }>).some((journal) => journal.reference === invoice.id),
+    ).toBeTruthy();
   });
 
   test('§3.4 invalid webhook signature → 400', async ({ request }) => {

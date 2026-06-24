@@ -43,7 +43,8 @@ Done:
 - Customer contact creation no longer writes vendor-control defaults, and client writes tolerate `PGRST204` stale-schema errors for optional vendor-control columns by retrying without only those optional fields.
 - Employee writes tolerate `PGRST204` stale-schema errors for optional resource-profile columns, keeping core time-entry setup independent from the utilization-target/profile rollout columns.
 - Public invoice token rotation now degrades when `invoice_public_token_revocations` is absent by recording retired tokens in the running API process, preserving old-token `410 Gone` behavior for tokens rotated during that process until migration `0081` is applied durably.
-- Full Chromium engagement-to-cash E2E was rerun against local backend/frontend and passed (`51 passed, 5 skipped`). The skipped tests are the remaining planned gaps: delayed webhook reconciliation, FX settlement/gain-loss, viewer UI mutation guard, and full audit/event-suggestion evidence.
+- Delayed Stripe payment reconciliation now records the same payment row, paid-invoice state, time-entry backlink, DR Bank / CR AR journal, and FX-gain/loss hook as the signed webhook path. Invoice send stamps `sent_at`, an admin-only `/api/v1/payments/reconcile-stripe` operation triggers tenant reconciliation, and Chromium E2E covers hosted Stripe Checkout followed by reconciliation.
+- Full Chromium engagement-to-cash E2E was rerun against local backend/frontend and passed (`53 passed, 4 skipped`). The remaining planned browser gaps are FX settlement/gain-loss, viewer UI mutation guard, and full audit/event-suggestion evidence.
 - `make demo-ready` was executed against demo tenant `30733766-c54e-40fd-b0c1-49670d0190b6` on local backend/frontend. It reset and seeded the tenant, passed API smoke, and passed the selected Meridian demo Playwright run (`2 passed`, scenario verdict `PASS`, `23 PASS / 0 FAIL / 24 SKIP`) with evidence under `frontend/test-results/demo-v2-meridian/`.
 
 Still open:
@@ -51,7 +52,7 @@ Still open:
 - Recorded agent replay and read-only current-code validation are implemented; full mutating re-execution and external-provider replay remain open.
 - `agent_workflow_runs` exists, but Phase 3 long-running autonomous workflow orchestration is still partial.
 - Role-based action queues are implemented from report evidence; deeper personalized ownership/assignment queues remain open.
-- Remaining engagement-to-cash browser gaps are delayed-webhook reconciliation, FX gain/loss settlement scenarios, viewer-role UI mutation guards, and full audit/event-suggestion evidence coverage.
+- Remaining engagement-to-cash browser gaps are FX gain/loss settlement scenarios, viewer-role UI mutation guards, and full audit/event-suggestion evidence coverage.
 
 ## Executive Verdict
 
@@ -59,7 +60,7 @@ Aethos PS already has the shape of a professional-services ERP: tenant auth, con
 
 The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
 
-2026-06-23 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook browser coverage is implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, FX settlement browser coverage, viewer/audit E2E hardening, and mutating/external-provider agent replay re-execution.
+2026-06-23 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook and delayed Stripe reconciliation browser coverage are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope, FX settlement browser coverage, viewer/audit E2E hardening, and mutating/external-provider agent replay re-execution.
 
 ## Original Evidence Gathered On 2026-06-22
 
@@ -270,7 +271,7 @@ Work items:
 - Done 2026-06-23: Resource profile includes cost rate, skills, availability, practice area, seniority, utilization target, and capacity reporting.
 
 Acceptance:
-- Partial 2026-06-23: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, multi-currency, signed Stripe payment webhooks, payment replay idempotency, AR-aging removal after payment, invalid Stripe webhook signatures, public invoice token rotation with revoked-token 410 handling, and locked-period manual-journal rejection through API plus UI. Remaining `test.fixme` gaps in `frontend/e2e/engagement-to-cash.spec.ts` are delayed-webhook reconciliation, FX settlement/gain-loss scenarios, viewer-role UI coverage, and full audit/event-suggestion evidence coverage.
+- Partial 2026-06-23: engagement-to-cash coverage spans fixed, T&M, retainer, milestone, capped T&M, multi-currency, signed Stripe payment webhooks, delayed Stripe reconciliation through hosted Checkout, payment replay idempotency, AR-aging removal after payment, invalid Stripe webhook signatures, public invoice token rotation with revoked-token 410 handling, and locked-period manual-journal rejection through API plus UI. Remaining `test.fixme` gaps in `frontend/e2e/engagement-to-cash.spec.ts` are FX settlement/gain-loss scenarios, viewer-role UI coverage, and full audit/event-suggestion evidence coverage.
 - Done 2026-06-23: locked-period manual-journal UI submission now shows the structured `period_locked` response with the target period, and the journal-line account picker correctly preserves the selected line when choosing accounts from nested suggestions.
 - Partial 2026-06-23: reports show revenue, labor cost, expense/vendor cost, margin, WIP, utilization, project health, and capacity by several dimensions. Remaining work is launch-grade role workflow and tax/FX presentation depth.
 

@@ -129,3 +129,49 @@ def test_payment_list_uses_rls_client() -> None:
         ],
         "total": 1,
     }
+
+
+def test_reconcile_stripe_runs_worker_for_current_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, float]] = []
+
+    def fake_reconcile(tenant_id: str, min_age_hours: float = 24) -> dict:
+        calls.append((tenant_id, min_age_hours))
+        return {"reconciled": 1, "skipped": 0, "errors": 0}
+
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="admin-1",
+        email="admin@example.com",
+        role="admin",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+    monkeypatch.setattr("app.api.v1.endpoints.payments.reconcile_sent_invoices", fake_reconcile)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/payments/reconcile-stripe?min_age_hours=0")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"reconciled": 1, "skipped": 0, "errors": 0}
+    assert calls == [(TENANT_ID, 0.0)]
+
+
+def test_reconcile_stripe_requires_admin_role() -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="viewer-1",
+        email="viewer@example.com",
+        role="viewer",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/payments/reconcile-stripe")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403

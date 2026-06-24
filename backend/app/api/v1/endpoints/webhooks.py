@@ -28,17 +28,20 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
-from decimal import Decimal
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
-from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService
-from app.services.fx_gain_loss_service import post_fx_gain_loss_if_needed
+from app.services.stripe_checkout_payments import (
+    record_checkout_session_payment,
+)
+from app.services.stripe_checkout_payments import (
+    stripe_value as _stripe_value,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -247,281 +250,16 @@ def _extract_customer_id(event: stripe.Event) -> str | None:
         return None
 
 
-def _stripe_value(obj: object, key: str, default: object | None = None) -> object | None:
-    """Read a field from dicts and StripeObject instances.
-
-    StripeObject exposes webhook payload fields through attribute and index
-    access, but nested objects such as ``metadata`` do not implement ``get``.
-    """
-    if obj is None:
-        return default
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    getter = getattr(obj, "get", None)
-    if callable(getter):
-        try:
-            return getter(key, default)
-        except TypeError:
-            try:
-                return getter(key)
-            except Exception:
-                pass
-    try:
-        return obj[key]  # type: ignore[index]
-    except Exception:
-        return getattr(obj, key, default)
-
-
 async def _handle_checkout_session_completed(
     event: stripe.Event,
     db: Client,
 ) -> None:
-    """Handle checkout.session.completed — record payment and post AR journal.
-
-    Flow:
-      1. Extract invoice_id + tenant_id from session metadata (set on Payment Link creation).
-      2. Idempotency check on stripe_payment_intent_id in payments table.
-      3. Record payment row.
-      4. Update invoice status → paid.
-      5. Post GL journal: DR 1100 Bank / CR 1200 Accounts Receivable.
-
-    Uses service-role client — no user session in webhook context.
-    """
-    session = event.data.object
-    meta = _stripe_value(session, "metadata", {}) or {}
-
-    invoice_id_raw = _stripe_value(meta, "invoice_id")
-    tenant_id_raw = _stripe_value(meta, "tenant_id")
-    invoice_id = str(invoice_id_raw) if invoice_id_raw else None
-    tenant_id = str(tenant_id_raw) if tenant_id_raw else None
-
-    if not invoice_id or not tenant_id:
-        logger.warning(
-            "checkout.session.completed missing metadata — skipping",
-            extra={"event_id": event.id},
-        )
-        return
-
-    payment_intent_raw = _stripe_value(session, "payment_intent")
-    payment_intent_id = str(payment_intent_raw) if payment_intent_raw else None
-
-    # ------------------------------------------------------------------
-    # Idempotency: skip if this payment_intent was already recorded
-    # ------------------------------------------------------------------
-    def _check_existing() -> bool:
-        if not payment_intent_id:
-            return False
-        result = (
-            db.table("payments")
-            .select("id")
-            .eq("stripe_payment_intent_id", payment_intent_id)
-            .execute()
-        )
-        return bool(result.data)
-
-    already_recorded = await asyncio.to_thread(_check_existing)
-    if already_recorded:
-        logger.info(
-            "Duplicate checkout.session.completed — skipping",
-            extra={"payment_intent_id": payment_intent_id, "event_id": event.id},
-        )
-        return
-
-    # ------------------------------------------------------------------
-    # Fetch invoice
-    # ------------------------------------------------------------------
-    def _get_invoice() -> dict | None:
-        result = (
-            db.table("invoices")
-            .select("*")
-            .eq("id", invoice_id)
-            .eq("tenant_id", tenant_id)
-            .execute()
-        )
-        return result.data[0] if result.data else None
-
-    invoice = await asyncio.to_thread(_get_invoice)
-    if invoice is None:
-        logger.error(
-            "Invoice not found for checkout.session.completed",
-            extra={"invoice_id": invoice_id, "tenant_id": tenant_id, "event_id": event.id},
-        )
-        return
-
-    # Amount from Stripe is in the smallest currency unit (cents)
-    amount_total_cents = int(_stripe_value(session, "amount_total", 0) or 0)
-    currency = str(_stripe_value(session, "currency", "usd") or "usd").upper()
-    amount_received = Decimal(str(amount_total_cents)) / Decimal("100")
-
-    # ------------------------------------------------------------------
-    # Record payment
-    # ------------------------------------------------------------------
-    payment_data: dict = {
-        "tenant_id": tenant_id,
-        "invoice_id": invoice_id,
-        "amount": str(amount_received),
-        "currency": currency,
-        "base_amount": str(amount_received),  # FX conversion deferred to fx_refresh_worker
-    }
-    if payment_intent_id:
-        payment_data["stripe_payment_intent_id"] = payment_intent_id
-
-    def _insert_payment() -> None:
-        db.table("payments").insert(payment_data).execute()
-
-    await asyncio.to_thread(_insert_payment)
-
-    # ------------------------------------------------------------------
-    # Mark invoice as paid + back-link the invoiced time entries.
-    # The invoice-create path already stamps invoice_line.time_entry_id, but
-    # time_entries.invoice_id / billing_status were never updated — the
-    # "what's still unbilled?" view kept returning already-billed rows.
-    # ------------------------------------------------------------------
-    paid_at_iso = datetime.datetime.now(datetime.UTC).isoformat()
-
-    def _mark_paid() -> None:
-        db.table("invoices").update(
-            {"status": "paid", "paid_at": paid_at_iso}
-        ).eq("id", invoice_id).execute()
-
-    await asyncio.to_thread(_mark_paid)
-
-    def _backlink_time_entries() -> None:
-        line_rows = (
-            db.table("invoice_lines")
-            .select("time_entry_id")
-            .eq("invoice_id", invoice_id)
-            .execute()
-            .data
-            or []
-        )
-        te_ids = [r["time_entry_id"] for r in line_rows if r.get("time_entry_id")]
-        if te_ids:
-            (
-                db.table("time_entries")
-                .update({"invoice_id": invoice_id, "billing_status": "billed"})
-                .in_("id", te_ids)
-                .eq("tenant_id", tenant_id)
-                .execute()
-            )
-
-    await asyncio.to_thread(_backlink_time_entries)
-
-    # ------------------------------------------------------------------
-    # Post journal: DR 1100 Bank / CR 1200 AR
-    # ------------------------------------------------------------------
-    def _get_accounts() -> dict[str, str]:
-        result = (
-            db.table("accounts")
-            .select("id, code")
-            .eq("tenant_id", tenant_id)
-            .in_("code", ["1100", "1200"])
-            .execute()
-        )
-        return {r["code"]: r["id"] for r in (result.data or [])}
-
-    acct_map = await asyncio.to_thread(_get_accounts)
-
-    invoice_number = invoice.get("invoice_number", invoice_id[:8])
-    journal_lines = [
-        JournalLineSpec(
-            direction="DR",
-            account_code="1100",
-            amount=amount_received,
-            description=f"Payment received for invoice {invoice_number}",
-            account_id=acct_map.get("1100"),
-            currency=currency,
-        ),
-        JournalLineSpec(
-            direction="CR",
-            account_code="1200",
-            amount=amount_received,
-            description=f"Payment received for invoice {invoice_number}",
-            account_id=acct_map.get("1200"),
-            currency=currency,
-        ),
-    ]
-
-    # journal_entries.created_by is a UUID NOT NULL — the previous literal
-    # "system" string raised `invalid input syntax for type uuid: "system"` at
-    # insert time, the webhook caught it, and silently dropped the offsetting
-    # journal. Payments came in, AR never cleared, Bank never grew. Fall back
-    # to a tenant_user UUID so the post lands. (Future: dedicated system actor.)
-    def _system_actor() -> str | None:
-        result = (
-            db.table("tenant_users")
-            .select("user_id")
-            .eq("tenant_id", tenant_id)
-            .order("created_at")
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            return result.data[0]["user_id"]
-        return None
-
-    actor_uuid = await asyncio.to_thread(_system_actor)
-    if actor_uuid is None:
-        logger.error(
-            "No tenant_users actor found — cannot post payment journal; payment row exists",
-            extra={"invoice_id": invoice_id, "tenant_id": tenant_id},
-        )
-        return
-
-    try:
-        post_journal(
-            db=db,
-            tenant_id=tenant_id,
-            created_by=actor_uuid,
-            description=f"Payment received for invoice {invoice_number}",
-            entry_date=datetime.date.today().isoformat(),
-            reference_type="payment",
-            # reference_id is a UUID column. payment_intent_id is a Stripe id
-            # (pi_xxx) — would raise "invalid input syntax for type uuid" and
-            # silently drop the offsetting journal again. Always use the
-            # invoice UUID; the link to the Stripe payment_intent is preserved
-            # on the payments.stripe_payment_intent_id column.
-            reference_id=invoice_id,
-            lines=journal_lines,
-        )
-    except Exception:
-        # Log but do not fail the webhook — the payment is already recorded.
-        # The accounting team can post a correcting entry manually.
-        logger.error(
-            "Failed to post payment journal — payment recorded, journal skipped",
-            exc_info=True,
-            extra={
-                "invoice_id": invoice_id,
-                "tenant_id": tenant_id,
-                "payment_intent_id": payment_intent_id,
-            },
-        )
-
-    # Post FX gain/loss journal if this was a cross-currency payment (#191)
-    try:
-        await post_fx_gain_loss_if_needed(
-            db=db,
-            tenant_id=tenant_id,
-            invoice=invoice,
-            payment_amount=amount_received,
-            payment_currency=currency,
-        )
-    except Exception:
-        logger.error(
-            "Failed to post FX gain/loss journal — payment journal already posted",
-            exc_info=True,
-            extra={"invoice_id": invoice_id, "tenant_id": tenant_id},
-        )
-
-    logger.info(
-        "Payment recorded from checkout.session.completed",
-        extra={
-            "invoice_id": invoice_id,
-            "tenant_id": tenant_id,
-            "amount": str(amount_received),
-            "currency": currency,
-            "event_id": event.id,
-        },
+    """Handle checkout.session.completed — record payment and post AR journal."""
+    await record_checkout_session_payment(
+        db=db,
+        session=event.data.object,
+        event_id=event.id,
+        source="stripe_webhook",
     )
 
 
