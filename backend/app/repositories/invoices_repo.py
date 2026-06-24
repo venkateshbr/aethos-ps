@@ -9,10 +9,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
+from uuid import UUID
 
+from app.services.postgrest_errors import is_missing_table_error
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+_PUBLIC_TOKEN_REVOCATIONS_TABLE = "invoice_public_token_revocations"
+_FALLBACK_REVOKED_PUBLIC_TOKENS: dict[str, dict] = {}
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 class InvoicesRepository:
@@ -49,6 +63,9 @@ class InvoicesRepository:
         return await asyncio.to_thread(_list)
 
     async def get_by_id(self, invoice_id: str) -> dict | None:
+        if not _is_uuid(invoice_id):
+            return None
+
         def _get() -> dict | None:
             result = (
                 self.db.table("invoices")
@@ -77,6 +94,76 @@ class InvoicesRepository:
 
         return await asyncio.to_thread(_get)
 
+    async def get_revoked_public_token(self, token: str) -> dict | None:
+        """Return a revoked public invoice token row, if the token was retired."""
+
+        def _get() -> dict | None:
+            try:
+                result = (
+                    self.db.table(_PUBLIC_TOKEN_REVOCATIONS_TABLE)
+                    .select("*")
+                    .eq("public_token", token)
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as exc:
+                if not is_missing_table_error(exc, _PUBLIC_TOKEN_REVOCATIONS_TABLE):
+                    raise
+                logger.warning(
+                    "invoice public token revocation table missing; "
+                    "checking in-process fallback"
+                )
+                return _FALLBACK_REVOKED_PUBLIC_TOKENS.get(token)
+            return result.data[0] if result.data else None
+
+        return await asyncio.to_thread(_get)
+
+    async def revoke_public_token(
+        self,
+        *,
+        invoice: dict,
+        public_token: str,
+        revoked_by: str,
+        reason: str = "rotated",
+    ) -> dict:
+        """Persist a retired public token before the invoice token is rotated."""
+
+        def _insert() -> dict:
+            row = {
+                "tenant_id": invoice["tenant_id"],
+                "invoice_id": invoice["id"],
+                "public_token": public_token,
+                "revoked_by": revoked_by,
+                "reason": reason,
+            }
+            try:
+                result = (
+                    self.db.table(_PUBLIC_TOKEN_REVOCATIONS_TABLE)
+                    .insert(row)
+                    .execute()
+                )
+            except Exception as exc:
+                if not is_missing_table_error(exc, _PUBLIC_TOKEN_REVOCATIONS_TABLE):
+                    raise
+                now = datetime.now(UTC).isoformat()
+                fallback = {
+                    "id": f"fallback:{public_token}",
+                    "created_at": now,
+                    "revoked_at": now,
+                    **row,
+                }
+                _FALLBACK_REVOKED_PUBLIC_TOKENS[public_token] = fallback
+                logger.warning(
+                    "invoice public token revocation table missing; "
+                    "recorded retired token in process memory"
+                )
+                return fallback
+            if not result.data:
+                raise RuntimeError("Invoice public token revocation insert returned no data")
+            return result.data[0]
+
+        return await asyncio.to_thread(_insert)
+
     async def create(self, data: dict) -> dict:
         def _create() -> dict:
             result = self.db.table("invoices").insert(data).execute()
@@ -87,6 +174,9 @@ class InvoicesRepository:
         return await asyncio.to_thread(_create)
 
     async def update(self, invoice_id: str, data: dict) -> dict | None:
+        if not _is_uuid(invoice_id):
+            return None
+
         def _update() -> dict | None:
             result = (
                 self.db.table("invoices")
@@ -104,6 +194,9 @@ class InvoicesRepository:
     # ------------------------------------------------------------------
 
     async def list_lines(self, invoice_id: str) -> list[dict]:
+        if not _is_uuid(invoice_id):
+            return []
+
         def _list() -> list[dict]:
             return (
                 self.db.table("invoice_lines")
@@ -126,6 +219,33 @@ class InvoicesRepository:
             return result.data[0]
 
         return await asyncio.to_thread(_create)
+
+    async def get_tax_rate(self, tax_rate_id: str) -> dict | None:
+        """Return an active system or tenant tax rate visible to this tenant."""
+        if not _is_uuid(tax_rate_id):
+            return None
+
+        def _get() -> dict | None:
+            result = (
+                self.db.table("tax_rates")
+                .select("id, tenant_id, rate, is_active")
+                .eq("id", tax_rate_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            if not rows:
+                return None
+            row = rows[0]
+            row_tenant = row.get("tenant_id")
+            if row_tenant is not None and str(row_tenant) != self.tenant_id:
+                return None
+            if not bool(row.get("is_active", True)):
+                return None
+            return row
+
+        return await asyncio.to_thread(_get)
 
     # ------------------------------------------------------------------
     # Account lookup (for journal posting)

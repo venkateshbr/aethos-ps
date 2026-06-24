@@ -52,7 +52,11 @@ class RateCardService:
             "effective_date": data.effective_date.isoformat(),
         }
         line_data = [
-            {"role": ln.role, "rate": serialise_money(ln.rate)}
+            {
+                "role": ln.role,
+                "rate": serialise_money(ln.rate),
+                "service_line": ln.service_line,
+            }
             for ln in data.lines
         ]
         card = await self._repo.create(card_data, line_data)

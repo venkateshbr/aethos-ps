@@ -205,7 +205,33 @@ interface EmployeeMeta {
               <dd class="text-text-primary text-sm">{{ engagement()!.rate_card_name }}</dd>
             </div>
           }
+          @if (engagement()!.rate_card_id && !engagement()!.rate_card_name) {
+            <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+              <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Rate Card</dt>
+              <dd class="text-text-primary text-sm font-mono">{{ engagement()!.rate_card_id }}</dd>
+            </div>
+          }
+          @if (engagement()!.service_line) {
+            <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+              <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Service Line</dt>
+              <dd class="text-text-primary text-sm">{{ serviceLineLabel(engagement()!.service_line!) }}</dd>
+            </div>
+          }
         </div>
+
+        @if (billingTermRows().length > 0) {
+          <div class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Billing Terms</dt>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              @for (term of billingTermRows(); track term.label) {
+                <div>
+                  <div class="text-xs text-text-muted">{{ term.label }}</div>
+                  <div class="text-sm text-text-primary font-mono">{{ term.value }}</div>
+                </div>
+              }
+            </div>
+          </div>
+        }
 
         @if (engagement()?.description) {
           <div class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4">
@@ -466,10 +492,38 @@ export class EngagementDetailComponent implements OnInit {
       time_and_materials: 'T&M',
       fixed_fee: 'Fixed',
       retainer: 'Retainer',
+      retainer_draw: 'Retainer Draw',
       milestone: 'Milestone',
       capped_tm: 'Capped T&M',
+      mixed: 'Mixed',
     };
     return map[arrangement] ?? arrangement;
+  }
+
+  serviceLineLabel(line: string): string {
+    const map: Record<string, string> = {
+      accounting: 'Accounting',
+      tax: 'Tax',
+      cosec: 'Company Secretarial',
+      payroll: 'Payroll',
+      advisory: 'Advisory',
+      other: 'Other',
+    };
+    return map[line] ?? line;
+  }
+
+  billingTermRows(): Array<{ label: string; value: string }> {
+    const terms = this.engagement()?.billing_terms;
+    if (!terms) return [];
+
+    const rows: Array<{ label: string; value: string }> = [];
+    if (terms.fixed_fee_amount) rows.push({ label: 'Fixed fee', value: terms.fixed_fee_amount });
+    if (terms.milestone_total) rows.push({ label: 'Milestone total', value: terms.milestone_total });
+    if (terms.retainer_monthly_amount) rows.push({ label: 'Monthly retainer', value: terms.retainer_monthly_amount });
+    if (terms.retainer_floor) rows.push({ label: 'Retainer floor', value: terms.retainer_floor });
+    if (terms.retainer_rollover) rows.push({ label: 'Rollover', value: 'Yes' });
+    if (terms.cap_amount) rows.push({ label: 'Cap amount', value: terms.cap_amount });
+    return rows;
   }
 
   statusClass(status: string): string {
@@ -625,6 +679,7 @@ export class EngagementDetailComponent implements OnInit {
         quantity: String(entry.hours),
         unit_price: this.rateFor(entry),
         time_entry_id: entry.id,
+        service_catalogue_id: eng.service_catalogue_id ?? null,
       });
     }
     if (this.includeExtra()) {
@@ -632,6 +687,7 @@ export class EngagementDetailComponent implements OnInit {
         description: String(this.extraDescription() ?? '').trim(),
         quantity: String(this.extraQty() ?? '0'),
         unit_price: String(this.extraUnitPrice() ?? '0'),
+        service_catalogue_id: eng.service_catalogue_id ?? null,
       });
     }
 

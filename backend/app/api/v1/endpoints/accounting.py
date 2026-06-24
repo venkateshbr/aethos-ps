@@ -2,8 +2,20 @@
 
 Endpoints:
   GET    /api/v1/accounting/periods                — list all periods with lock status
+  GET    /api/v1/accounting/periods/{period}/close-status — close checklist/status
+  GET    /api/v1/accounting/periods/{period}/close-package — close review package
+  GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
+  POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
+  POST   /api/v1/accounting/periods/{period}/propose-expense-accrual — HITL expense accrual
+  POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
+  POST   /api/v1/accounting/periods/{period}/propose-milestone-recognition — HITL milestone recognition
+  POST   /api/v1/accounting/periods/{period}/propose-percentage-completion-recognition — HITL POC recognition
+  POST   /api/v1/accounting/periods/{period}/propose-prepaid-amortization — HITL prepaid amortization
+  POST   /api/v1/accounting/periods/{period}/propose-recurring-journals — HITL recurring journals
   POST   /api/v1/accounting/periods/{period}/lock  — lock a period (admin+)
   DELETE /api/v1/accounting/periods/{period}/lock  — unlock a period (owner only)
+  GET    /api/v1/accounting/recurring-journal-templates — list recurring journal templates
+  POST   /api/v1/accounting/recurring-journal-templates — create recurring journal template
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
   GET    /api/v1/accounting/journal-entries        — list journal entries (viewer+)
 
@@ -11,11 +23,8 @@ Period format: "YYYY-MM" (e.g. "2026-05").
 
 Locking a period prevents any new journal entries from being posted with an
 entry_date that falls within that period. The accounting_guardian enforces
-this at journal-post time.
-
-Reconciliation check before locking: a full sub-ledger reconciliation
-(AR aging vs invoice totals, AP vs bill totals) is deferred to Week 6.
-For now, the lock is applied immediately with a TODO comment.
+this at journal-post time. Before the lock row is inserted, finalized AR/AP
+sub-ledger rows are reconciled against posted GL references.
 """
 
 from __future__ import annotations
@@ -23,20 +32,33 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, date, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.accounting import (
     JournalEntryListItem,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
+    RecurringJournalTemplateCreate,
+    RecurringJournalTemplateResponse,
 )
+from app.services.close_package_service import ClosePackageService
+from app.services.close_reconciliation_service import CloseReconciliationService
+from app.services.close_status_service import (
+    CloseStatusService,
+    close_review_blocker_detail,
+)
+from app.services.close_tasks_service import CloseTasksService
 from app.services.manual_journal_service import ManualJournalService
+from app.services.recurring_journal_templates_service import (
+    RecurringJournalTemplateService,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -66,6 +88,98 @@ class PeriodLockResponse(BaseModel):
     period: str
     action: str  # "locked" | "unlocked"
     message: str
+
+
+class PeriodCloseFinding(BaseModel):
+    code: str
+    source_table: str
+    source_id: str
+    source_number: str | None
+    reason: str
+    expected_reference_type: str
+
+
+class PeriodCloseReadinessResponse(BaseModel):
+    period: str
+    ready: bool
+    findings: list[PeriodCloseFinding]
+    trial_balance_balanced: bool
+
+
+class PeriodCloseChecklistItem(BaseModel):
+    code: str
+    label: str
+    status: str
+    blocking: bool
+    summary: str
+    count: int
+
+
+class PeriodClosePendingReview(BaseModel):
+    id: str
+    agent_name: str
+    action_type: str
+    status: str
+    summary: str
+
+
+class PeriodCloseStatusResponse(BaseModel):
+    period: str
+    status: str
+    locked: bool
+    locked_at: str | None
+    locked_by: str | None
+    ready_to_lock: bool
+    checklist: list[PeriodCloseChecklistItem]
+    findings: list[PeriodCloseFinding]
+    pending_reviews: list[PeriodClosePendingReview]
+    lock_blockers: list[str]
+
+
+class PeriodClosePackageResponse(BaseModel):
+    period: str
+    period_start: str
+    period_end: str
+    previous_period: str
+    generated_at: str
+    close_status: dict[str, Any]
+    gl_summary: dict[str, Any]
+    previous_gl_summary: dict[str, Any]
+    working_capital: dict[str, Any]
+    trial_balance: dict[str, Any]
+    ar_aging: dict[str, str]
+    ap_aging: dict[str, str]
+    wip: list[dict[str, Any]]
+    service_line_margins: list[dict[str, Any]]
+    variance_commentary: list[dict[str, Any]]
+
+
+class CloseTaskResponse(BaseModel):
+    id: str
+    period: str
+    code: str
+    title: str
+    description: str | None
+    owner_role: str
+    status: str
+    due_date: str | None
+    completed_at: str | None
+    completed_by: str | None
+    evidence: dict[str, Any]
+    order_index: int
+
+
+class CloseTaskListResponse(BaseModel):
+    tasks: list[CloseTaskResponse]
+
+
+class CloseTaskUpdate(BaseModel):
+    status: str | None = None
+    evidence: dict[str, Any] | None = None
+
+
+class RecurringJournalTemplateListResponse(BaseModel):
+    templates: list[RecurringJournalTemplateResponse]
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +218,23 @@ def _generate_periods(months_back: int = 12, months_forward: int = 3) -> list[st
     return periods
 
 
+def _task_response(row: dict[str, Any]) -> CloseTaskResponse:
+    return CloseTaskResponse(
+        id=str(row["id"]),
+        period=str(row["period"]),
+        code=str(row["code"]),
+        title=str(row["title"]),
+        description=row.get("description"),
+        owner_role=str(row.get("owner_role") or "finance_manager"),
+        status=str(row.get("status") or "open"),
+        due_date=str(row["due_date"]) if row.get("due_date") else None,
+        completed_at=str(row["completed_at"]) if row.get("completed_at") else None,
+        completed_by=str(row["completed_by"]) if row.get("completed_by") else None,
+        evidence=row.get("evidence") or {},
+        order_index=int(row.get("order_index") or 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -113,7 +244,7 @@ def _generate_periods(months_back: int = 12, months_forward: int = 3) -> list[st
 async def list_periods(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> PeriodListResponse:
     """Return periods (last 12 months + next 3) with their lock status."""
     try:
@@ -130,9 +261,7 @@ async def list_periods(
             detail="An internal error occurred",
         ) from exc
 
-    locked_periods: dict[str, dict] = {
-        row["period"]: row for row in (lock_rows.data or [])
-    }
+    locked_periods: dict[str, dict] = {row["period"]: row for row in (lock_rows.data or [])}
 
     periods = _generate_periods()
     result = []
@@ -150,6 +279,419 @@ async def list_periods(
     return PeriodListResponse(periods=result)
 
 
+@router.get("/periods/{period}/close-status", response_model=PeriodCloseStatusResponse)
+async def close_status(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> PeriodCloseStatusResponse:
+    """Return the derived close checklist and lock blockers for a period."""
+    _validate_period(period)
+    try:
+        result = CloseStatusService(db, tenant_id).get_status(period)
+    except Exception as exc:
+        logger.exception("Failed to build close status for period %s tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodCloseStatusResponse(**result.as_dict())
+
+
+@router.get("/periods/{period}/close-package", response_model=PeriodClosePackageResponse)
+async def close_package(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> PeriodClosePackageResponse:
+    """Return a review-ready close package with deterministic commentary."""
+    _validate_period(period)
+    try:
+        result = ClosePackageService(db, tenant_id).build_package(period)
+    except Exception as exc:
+        logger.exception(
+            "Failed to build close package for tenant %s period %s",
+            tenant_id,
+            period,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodClosePackageResponse(**result)
+
+
+@router.get("/periods/{period}/close-readiness", response_model=PeriodCloseReadinessResponse)
+async def close_readiness(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> PeriodCloseReadinessResponse:
+    """Return reconciliation status for a period before attempting to lock it."""
+    _validate_period(period)
+    try:
+        result = CloseReconciliationService(db, tenant_id).check_period(period)
+    except Exception as exc:
+        logger.exception("Failed to reconcile period %s for tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return PeriodCloseReadinessResponse(
+        period=result.period,
+        ready=result.ready,
+        findings=[PeriodCloseFinding(**finding.as_dict()) for finding in result.findings],
+        trial_balance_balanced=result.trial_balance_balanced,
+    )
+
+
+@router.get("/periods/{period}/close-tasks", response_model=CloseTaskListResponse)
+async def list_close_tasks(
+    period: str,
+    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> CloseTaskListResponse:
+    _validate_period(period)
+    tasks = CloseTasksService(db, tenant_id).list_tasks(period)
+    return CloseTaskListResponse(tasks=[_task_response(row) for row in tasks])
+
+
+@router.post("/periods/{period}/close-tasks/bootstrap", response_model=CloseTaskListResponse)
+async def bootstrap_close_tasks(
+    period: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> CloseTaskListResponse:
+    _validate_period(period)
+    tasks = await CloseTasksService(db, tenant_id).bootstrap_tasks(
+        period,
+        current_user.user_id,
+    )
+    return CloseTaskListResponse(tasks=[_task_response(row) for row in tasks])
+
+
+@router.patch("/periods/{period}/close-tasks/{task_id}", response_model=CloseTaskResponse)
+async def update_close_task(
+    period: str,
+    task_id: str,
+    payload: CloseTaskUpdate,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> CloseTaskResponse:
+    _validate_period(period)
+    patch = payload.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No close task fields supplied",
+        )
+    if "status" in patch and patch["status"] not in {
+        "open",
+        "in_progress",
+        "done",
+        "waived",
+        "blocked",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid close task status",
+        )
+    row = await CloseTasksService(db, tenant_id).update_task(
+        period=period,
+        task_id=task_id,
+        patch=patch,
+        actor_id=current_user.user_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Close task not found")
+    return _task_response(row)
+
+
+@router.get(
+    "/recurring-journal-templates",
+    response_model=RecurringJournalTemplateListResponse,
+)
+async def list_recurring_journal_templates(
+    _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> RecurringJournalTemplateListResponse:
+    """List recurring journal templates visible to this tenant."""
+    try:
+        templates = await RecurringJournalTemplateService(db, tenant_id).list_templates()
+    except Exception as exc:
+        logger.exception(
+            "Failed to list recurring journal templates for tenant %s",
+            tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+    return RecurringJournalTemplateListResponse(templates=templates)
+
+
+@router.post(
+    "/recurring-journal-templates",
+    response_model=RecurringJournalTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_recurring_journal_template(
+    payload: RecurringJournalTemplateCreate,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> RecurringJournalTemplateResponse:
+    """Create a balanced recurring journal template for month-end close."""
+    try:
+        return await RecurringJournalTemplateService(db, tenant_id).create_template(
+            payload,
+            created_by=current_user.user_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to create recurring journal template for tenant %s",
+            tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-wip-accrual")
+async def propose_wip_accrual(
+    period: str,
+    debit_account_code: str = Query("1200", min_length=1, max_length=20),
+    credit_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for unbilled WIP accruals."""
+    _validate_period(period)
+
+    from app.agents.accrual_agent import (
+        AccrualProposalError,
+        write_wip_accrual_suggestions,
+    )
+    from app.agents.base import AgentDeps
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_wip_accrual_suggestions(
+            deps,
+            period,
+            debit_account_code=debit_account_code,
+            credit_account_code=credit_account_code,
+        )
+    except AccrualProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-expense-accrual")
+async def propose_expense_accrual(
+    period: str,
+    debit_account_code: str = Query("5100", min_length=1, max_length=20),
+    credit_account_code: str = Query("2100", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for unreimbursed employee expenses."""
+    _validate_period(period)
+
+    from app.agents.accrual_agent import (
+        AccrualProposalError,
+        write_employee_reimbursement_accrual_suggestions,
+    )
+    from app.agents.base import AgentDeps
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_employee_reimbursement_accrual_suggestions(
+            deps,
+            period,
+            debit_account_code=debit_account_code,
+            credit_account_code=credit_account_code,
+        )
+    except AccrualProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-deferred-revenue-release")
+async def propose_deferred_revenue_release(
+    period: str,
+    deferred_account_code: str = Query("2200", min_length=1, max_length=20),
+    revenue_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for deferred revenue releases."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.revenue_recognition_agent import (
+        RevenueRecognitionProposalError,
+        write_deferred_revenue_release_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_deferred_revenue_release_suggestions(
+            deps,
+            period,
+            deferred_account_code=deferred_account_code,
+            revenue_account_code=revenue_account_code,
+        )
+    except RevenueRecognitionProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-milestone-recognition")
+async def propose_milestone_recognition(
+    period: str,
+    deferred_account_code: str = Query("2200", min_length=1, max_length=20),
+    revenue_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for completed milestone phases."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.revenue_recognition_agent import (
+        RevenueRecognitionProposalError,
+        write_milestone_revenue_recognition_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_milestone_revenue_recognition_suggestions(
+            deps,
+            period,
+            deferred_account_code=deferred_account_code,
+            revenue_account_code=revenue_account_code,
+        )
+    except RevenueRecognitionProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-percentage-completion-recognition")
+async def propose_percentage_completion_recognition(
+    period: str,
+    asset_account_code: str = Query("1200", min_length=1, max_length=20),
+    revenue_account_code: str = Query("4000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for percentage-complete phases."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.revenue_recognition_agent import (
+        RevenueRecognitionProposalError,
+        write_percentage_completion_revenue_recognition_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_percentage_completion_revenue_recognition_suggestions(
+            deps,
+            period,
+            asset_account_code=asset_account_code,
+            revenue_account_code=revenue_account_code,
+        )
+    except RevenueRecognitionProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-prepaid-amortization")
+async def propose_prepaid_amortization(
+    period: str,
+    prepaid_account_code: str = Query("1500", min_length=1, max_length=20),
+    expense_account_code: str = Query("5000", min_length=1, max_length=20),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for prepaid expense amortization."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.prepaid_amortization_agent import (
+        PrepaidAmortizationProposalError,
+        write_prepaid_amortization_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_prepaid_amortization_suggestions(
+            deps,
+            period,
+            prepaid_account_code=prepaid_account_code,
+            expense_account_code=expense_account_code,
+        )
+    except PrepaidAmortizationProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/periods/{period}/propose-recurring-journals")
+async def propose_recurring_journals(
+    period: str,
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> dict:
+    """Create HITL draft-journal suggestions for active recurring templates."""
+    _validate_period(period)
+
+    from app.agents.base import AgentDeps
+    from app.agents.recurring_journal_agent import (
+        RecurringJournalProposalError,
+        write_recurring_journal_suggestions,
+    )
+
+    deps = AgentDeps(tenant_id=tenant_id, user_id=current_user.user_id, db=db)
+    try:
+        return await write_recurring_journal_suggestions(deps, period)
+    except RecurringJournalProposalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
 @router.post("/periods/{period}/lock", response_model=PeriodLockResponse)
 async def lock_period(
     period: str,
@@ -160,10 +702,6 @@ async def lock_period(
     """Lock a period, preventing new journal entries.
 
     Requires admin role or higher.
-
-    TODO (Week 6): Before locking, verify all sub-ledger entries in the period
-    reconcile — AR aging must match invoice totals, AP must match bill totals.
-    For now, the lock is applied immediately without the reconciliation check.
     """
     _validate_period(period)
 
@@ -187,6 +725,48 @@ async def lock_period(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Period {period} is already locked",
+        )
+
+    try:
+        reconciliation = CloseReconciliationService(db, tenant_id).check_period(period)
+    except Exception as exc:
+        logger.exception("Failed to reconcile period %s for tenant %s", period, tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    if not reconciliation.ready:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reconciliation.as_error_detail(),
+        )
+
+    pending_reviews = CloseStatusService(db, tenant_id).pending_close_reviews(period)
+    if pending_reviews:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=close_review_blocker_detail(period, pending_reviews),
+        )
+
+    incomplete_tasks = CloseTasksService(db, tenant_id).incomplete_blocking_tasks(period)
+    if incomplete_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "close_tasks_incomplete",
+                "period": period,
+                "message": "Complete or waive close tasks before locking the period.",
+                "tasks": [
+                    {
+                        "id": str(row["id"]),
+                        "code": str(row["code"]),
+                        "title": str(row["title"]),
+                        "status": str(row.get("status") or "open"),
+                    }
+                    for row in incomplete_tasks
+                ],
+            },
         )
 
     # Insert the lock
@@ -234,6 +814,13 @@ async def unlock_period(
     _validate_period(period)
 
     try:
+        (
+            db.table("period_locks")
+            .update({"unlock_requested_by": current_user.user_id})
+            .eq("tenant_id", tenant_id)
+            .eq("period", period)
+            .execute()
+        )
         result = (
             db.table("period_locks")
             .delete()
@@ -297,12 +884,14 @@ async def create_manual_journal(
 
 @router.get("/journal-entries", response_model=list[JournalEntryListItem])
 async def list_journal_entries(
-    reference_type: str | None = Query(None, description="Filter by reference_type (e.g. 'manual', 'invoice')"),
+    reference_type: str | None = Query(
+        None, description="Filter by reference_type (e.g. 'manual', 'invoice')"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Maximum rows to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[JournalEntryListItem]:
     """List journal entries for the tenant, newest first.
 

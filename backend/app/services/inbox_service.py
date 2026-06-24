@@ -14,6 +14,7 @@ All mutation methods guard against double-processing (status==done → 409).
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -73,7 +74,7 @@ class InboxService:
         # that lived under the plain-approve path — removed in #126 because the
         # agent_corrections table only accepts edit/reject correction_type.
 
-        entity = await self._materialise(kind, payload)
+        entity = await self._materialise(kind, payload, user_id=user_id)
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "approved", user_id)
@@ -104,7 +105,7 @@ class InboxService:
         kind = task.get("kind", "")
         agent_name = task.get("agent_name", "unknown")
 
-        entity = await self._materialise(kind, corrected_payload)
+        entity = await self._materialise(kind, corrected_payload, user_id=user_id)
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "approved", user_id)
@@ -201,7 +202,13 @@ class InboxService:
             )
         return task
 
-    async def _materialise(self, kind: str, payload: dict) -> dict:
+    async def _materialise(
+        self,
+        kind: str,
+        payload: dict,
+        *,
+        user_id: str | None = None,
+    ) -> dict:
         """Route materialisation by kind.  Returns entity_type + entity_id.
 
         The extraction worker emits the ``*_draft`` kinds; earlier kinds without
@@ -215,6 +222,18 @@ class InboxService:
             return await self._materialise_expense(payload)
         elif kind in ("create_bill", "create_bill_draft", "vendor_invoice"):
             return await self._materialise_bill(payload)
+        elif kind in ("copilot_log_time_entry", "copilot_update_rate_card"):
+            return await self._materialise_copilot_tool(payload)
+        elif kind == "approve_billing_run":
+            return await self._materialise_billing_run(payload)
+        elif kind == "send_email":
+            return await self._materialise_collections_email(payload)
+        elif kind == "send_time_entry_reminder":
+            return await self._materialise_time_entry_reminder(payload)
+        elif kind == "create_bill_payment_batch":
+            return await self._materialise_bill_payment_batch(payload)
+        elif kind in ("draft_journal", "create_journal", "create_manual_journal"):
+            return await self._materialise_journal(payload, user_id=user_id)
         else:
             logger.warning("Unknown materialisation kind %r — skipping", kind)
             return {"entity_type": kind, "entity_id": None}
@@ -228,6 +247,221 @@ class InboxService:
         back into the materialised row without an extra DB lookup.
         """
         return payload.get("original_document_id")
+
+    async def _materialise_copilot_tool(self, payload: dict) -> dict:
+        tool_name = payload.get("tool_name")
+        if tool_name not in ("log_time_entry", "update_rate_card"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported Copilot tool approval: {tool_name!r}",
+            )
+
+        tool_input = payload.get("tool_input") or {}
+        if not isinstance(tool_input, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Copilot tool payload must include a tool_input object",
+            )
+
+        from app.agents.copilot.graph import CopilotAgent, CopilotDeps
+
+        agent = CopilotAgent(
+            CopilotDeps(
+                tenant_id=self._tenant_id,
+                user_id=str(payload.get("requested_by_user_id") or ""),
+                db_client=self._db,
+            )
+        )
+        result = await agent._execute_tool(tool_name, tool_input)
+        if result.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Approved Copilot tool failed: {result['error']}",
+            )
+
+        if tool_name == "log_time_entry":
+            return {"entity_type": "time_entry", "entity_id": result.get("entry_id")}
+        return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
+
+    async def _materialise_billing_run(self, payload: dict) -> dict:
+        billing_run_id = payload.get("billing_run_id")
+        if not billing_run_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Billing run approval payload must include billing_run_id",
+            )
+
+        from app.agents.base import AgentDeps
+        from app.api.v1.endpoints.billing_runs import _draft_invoices_for_run
+        from app.repositories.billing_runs_repo import BillingRunsRepository
+
+        repo = BillingRunsRepository(self._db, self._tenant_id)
+        row = await repo.get_by_id(str(billing_run_id))
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Billing run not found",
+            )
+        if row["status"] not in ("draft", "reviewed"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot approve billing run with status={row['status']!r}",
+            )
+
+        updated = await repo.update(str(billing_run_id), {"status": "approved"})
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Billing run not found after update",
+            )
+
+        deps = AgentDeps(
+            tenant_id=self._tenant_id,
+            user_id="billing_run_agent",
+            db=self._db,
+        )
+        await _draft_invoices_for_run(updated, deps)
+        return {"entity_type": "billing_run", "entity_id": str(billing_run_id)}
+
+    async def _materialise_collections_email(self, payload: dict) -> dict:
+        client_email = str(payload.get("client_email") or "").strip()
+        subject = str(payload.get("subject") or "").strip()
+        body_html = str(payload.get("body_html") or "").strip()
+        invoice_id = str(payload.get("invoice_id") or "").strip() or None
+
+        missing = [
+            name
+            for name, value in (
+                ("client_email", client_email),
+                ("subject", subject),
+                ("body_html", body_html),
+            )
+            if not value
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Collections email payload missing: {', '.join(missing)}",
+            )
+
+        from app.services.resend_service import ResendService
+
+        result = ResendService().send_email(client_email, subject, body_html)
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Collections email failed: {result.get('error', 'unknown error')}",
+            )
+
+        return {
+            "entity_type": "collections_email",
+            "entity_id": invoice_id,
+            "send_status": result.get("status", "sent"),
+        }
+
+    async def _materialise_time_entry_reminder(self, payload: dict) -> dict:
+        employee_email = str(payload.get("employee_email") or "").strip()
+        subject = str(payload.get("subject") or "").strip()
+        body_html = str(payload.get("body_html") or "").strip()
+        employee_id = str(payload.get("employee_id") or "").strip() or None
+
+        missing = [
+            name
+            for name, value in (
+                ("employee_email", employee_email),
+                ("subject", subject),
+                ("body_html", body_html),
+            )
+            if not value
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Time entry reminder payload missing: {', '.join(missing)}",
+            )
+
+        from app.services.resend_service import ResendService
+
+        result = ResendService().send_email(employee_email, subject, body_html)
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Time entry reminder failed: {result.get('error', 'unknown error')}",
+            )
+
+        return {
+            "entity_type": "time_entry_reminder",
+            "entity_id": employee_id,
+            "send_status": result.get("status", "sent"),
+        }
+
+    async def _materialise_bill_payment_batch(self, payload: dict) -> dict:
+        bill_ids = payload.get("proposed_bill_ids") or payload.get("bill_ids") or []
+        if not isinstance(bill_ids, list) or not all(isinstance(v, str) for v in bill_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Bill payment proposal must include proposed_bill_ids",
+            )
+
+        pay_date = None
+        if payload.get("proposed_pay_date"):
+            try:
+                pay_date = date.fromisoformat(str(payload["proposed_pay_date"]))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Invalid proposed_pay_date",
+                ) from exc
+
+        from app.services.bill_payments_service import BillPaymentsService
+
+        batch = BillPaymentsService(self._db, self._tenant_id).create_batch(
+            bill_ids,
+            pay_date,
+            str(payload.get("bank_account_label") or ""),
+            created_by="bill_pay_agent",
+        )
+        return {"entity_type": "bill_payment_batch", "entity_id": str(batch["id"])}
+
+    async def _materialise_journal(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None,
+    ) -> dict:
+        """Post a HITL-approved journal proposal through the manual journal service."""
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Journal approval requires a deciding user id",
+            )
+
+        journal_payload = payload.get("journal_entry") or payload.get("journal") or payload
+        if not isinstance(journal_payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Journal proposal payload must be an object",
+            )
+
+        from pydantic import ValidationError
+
+        from app.models.accounting import ManualJournalEntryIn
+        from app.services.manual_journal_service import ManualJournalService
+
+        try:
+            journal = ManualJournalEntryIn.model_validate(journal_payload)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=exc.errors(),
+            ) from exc
+
+        posted = await ManualJournalService(
+            db=self._db,
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+        ).post_manual_journal(journal)
+        return {"entity_type": "journal_entry", "entity_id": posted.id}
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio
@@ -408,6 +642,7 @@ class InboxService:
 def _row_to_summary(row: dict) -> HitlTaskSummary:
     return HitlTaskSummary(
         id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
         kind=row.get("kind", ""),
         priority=row.get("priority", "normal"),
         title=row.get("title", ""),
@@ -422,6 +657,7 @@ def _row_to_summary(row: dict) -> HitlTaskSummary:
 def _row_to_detail(row: dict) -> HitlTaskDetail:
     return HitlTaskDetail(
         id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
         kind=row.get("kind", ""),
         priority=row.get("priority", "normal"),
         title=row.get("title", ""),

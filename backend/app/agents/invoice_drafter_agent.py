@@ -29,6 +29,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.agents.base import AgentDeps
+from app.services.retainer_ledger_service import retainer_balance_for_engagement
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class InvoiceLineItem(BaseModel):
     tax_amount: Decimal = Decimal("0")
     time_entry_id: str | None = None
     expense_id: str | None = None
+    service_catalogue_id: str | None = None
 
 
 class InvoiceDraft(BaseModel):
@@ -165,14 +167,7 @@ def _draft_invoice_inner(
         lines = _draft_tm_lines(eng, deps, period_start, period_end)
 
     elif arrangement == "fixed_fee":
-        amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
-        lines = [
-            InvoiceLineItem(
-                description=f"Fixed Fee: {eng['name']}",
-                unit_price=amount,
-                amount=amount,
-            )
-        ]
+        lines = [_draft_fixed_fee_line(eng, billing)]
 
     elif arrangement == "retainer":
         amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
@@ -187,7 +182,20 @@ def _draft_invoice_inner(
 
     elif arrangement == "retainer_draw":
         lines = _draft_tm_lines(eng, deps, period_start, period_end)
-        draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        tm_subtotal = sum(line.amount for line in lines)
+        configured_draw = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        ledger_balance, has_ledger = retainer_balance_for_engagement(
+            deps.db,
+            deps.tenant_id,
+            engagement_id,
+        )
+        if has_ledger:
+            draw_amount = min(tm_subtotal, ledger_balance)
+            if configured_draw > Decimal("0"):
+                draw_amount = min(draw_amount, configured_draw)
+        else:
+            draw_amount = configured_draw
+        draw_amount = min(draw_amount, max(tm_subtotal, Decimal("0")))
         if draw_amount > Decimal("0"):
             lines.append(
                 InvoiceLineItem(
@@ -228,13 +236,7 @@ def _draft_invoice_inner(
         # unbilled time entries/expenses above the base are added as T&M lines.
         fixed_amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
         if fixed_amount > Decimal("0"):
-            lines = [
-                InvoiceLineItem(
-                    description=f"Fixed fee — {eng.get('name', 'engagement')}",
-                    unit_price=fixed_amount,
-                    amount=fixed_amount,
-                )
-            ]
+            lines = [_draft_fixed_fee_line(eng, billing, label="Fixed fee")]
         else:
             lines = []
         # Append T&M lines for any unbilled work in the period
@@ -247,6 +249,15 @@ def _draft_invoice_inner(
             engagement_id,
         )
         lines = []
+
+    service_catalogue_id = str(eng["service_catalogue_id"]) if eng.get("service_catalogue_id") else None
+    if service_catalogue_id:
+        lines = [
+            line
+            if line.service_catalogue_id
+            else line.model_copy(update={"service_catalogue_id": service_catalogue_id})
+            for line in lines
+        ]
 
     # Apply tax to each positive line
     lines = _apply_tax(lines, deps, currency)
@@ -263,9 +274,18 @@ def _draft_invoice_inner(
     if arrangement == "retainer_draw":
         retainer_floor = Decimal(str(billing.get("retainer_floor") or "0"))
         if retainer_floor > Decimal("0"):
-            draw_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
-            current_balance = Decimal(
-                str(billing.get("retainer_current_balance") or draw_amount)
+            ledger_balance, has_ledger = retainer_balance_for_engagement(
+                deps.db,
+                deps.tenant_id,
+                engagement_id,
+            )
+            applied_draw = _retainer_draw_amount(lines)
+            configured_draw = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+            draw_amount = applied_draw if applied_draw > 0 else configured_draw
+            current_balance = (
+                ledger_balance
+                if has_ledger
+                else Decimal(str(billing.get("retainer_current_balance") or draw_amount))
             )
             balance_after_draw = current_balance - draw_amount
             if balance_after_draw < retainer_floor:
@@ -293,6 +313,15 @@ def _draft_invoice_inner(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _retainer_draw_amount(lines: list[InvoiceLineItem]) -> Decimal:
+    """Return the positive draw represented by retainer adjustment lines."""
+    draw = Decimal("0")
+    for line in lines:
+        if line.amount < 0 and "retainer applied" in line.description.lower():
+            draw += -line.amount
+    return draw
 
 
 def _draft_tm_lines(
@@ -339,49 +368,40 @@ def _draft_tm_lines(
 
     entries = q.execute().data or []
 
-    # Resolve rate card for the engagement
-    rate_card_id = eng.get("rate_card_id")
-    rates: dict[str, Decimal] = {}
-    if rate_card_id:
-        rc_lines = (
-            db.table("rate_card_lines")
-            .select("role, rate")
-            .eq("rate_card_id", rate_card_id)
-            .execute()
-            .data or []
-        )
-        rates = {r["role"]: Decimal(str(r["rate"])) for r in rc_lines}
+    rates = _rate_card_rates(eng, deps)
 
     # Aggregate by role (from project_assignments or a default role field on entry)
     # time_entries don't store role directly; resolve via project_assignments
     if entries:
-        employee_ids = list({e["employee_id"] for e in entries})
-        assignments = (
-            db.table("project_assignments")
-            .select("employee_id, project_id, role")
-            .eq("tenant_id", tenant_id)
-            .in_("project_id", project_ids)
-            .in_("employee_id", employee_ids)
-            .execute()
-            .data or []
+        role_map, override_rate_map = _assignment_rate_context(
+            db,
+            tenant_id,
+            project_ids,
+            entries,
         )
-        # Build (project_id, employee_id) → role map
-        role_map: dict[tuple[str, str], str] = {
-            (a["project_id"], a["employee_id"]): (a["role"] or "Consultant")
-            for a in assignments
-        }
     else:
         role_map = {}
+        override_rate_map = {}
 
-    by_role: dict[str, dict] = defaultdict(lambda: {"hours": Decimal("0"), "ids": []})
+    by_rate: dict[tuple[str, Decimal], dict] = defaultdict(
+        lambda: {"hours": Decimal("0"), "ids": []}
+    )
     for entry in entries:
-        role = role_map.get((entry["project_id"], entry["employee_id"]), "Consultant")
-        by_role[role]["hours"] += Decimal(str(entry["hours"]))
-        by_role[role]["ids"].append(entry["id"])
+        key = (entry["project_id"], entry["employee_id"])
+        role = role_map.get(key, "Consultant")
+        rate = override_rate_map.get(
+            key,
+            _rate_for_role(
+                rates,
+                role,
+                service_line=eng.get("service_line"),
+            ),
+        )
+        by_rate[(role, rate)]["hours"] += Decimal(str(entry["hours"]))
+        by_rate[(role, rate)]["ids"].append(entry["id"])
 
     lines: list[InvoiceLineItem] = []
-    for role, data in by_role.items():
-        rate = rates.get(role, Decimal("0"))
+    for (role, rate), data in by_rate.items():
         hours = data["hours"]
         amount = (hours * rate).quantize(Decimal("0.01"))
         if amount > Decimal("0"):
@@ -417,6 +437,125 @@ def _draft_tm_lines(
         )
 
     return lines
+
+
+def _rate_card_rates(eng: dict, deps: AgentDeps) -> dict[tuple[str, str | None], Decimal]:
+    rate_card_id = eng.get("rate_card_id")
+    if not rate_card_id:
+        return {}
+
+    rates = {
+        (str(row["role"]), _normalise_service_line(row.get("service_line"))): Decimal(
+            str(row["rate"])
+        )
+        for row in (
+            deps.db.table("rate_card_lines")
+            .select("role, rate, service_line")
+            .eq("rate_card_id", rate_card_id)
+            .execute()
+            .data
+            or []
+        )
+    }
+
+    client_id = eng.get("client_id")
+    if client_id:
+        override_rows = (
+            deps.db.table("rate_card_client_overrides")
+            .select("role, rate, service_line")
+            .eq("tenant_id", deps.tenant_id)
+            .eq("rate_card_id", rate_card_id)
+            .eq("client_id", client_id)
+            .execute()
+            .data
+            or []
+        )
+        rates.update(
+            {
+                (str(row["role"]), _normalise_service_line(row.get("service_line"))): Decimal(
+                    str(row["rate"])
+                )
+                for row in override_rows
+            }
+        )
+
+    return rates
+
+
+def _normalise_service_line(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _rate_for_role(
+    rates: dict[tuple[str, str | None], Decimal],
+    role: str,
+    *,
+    service_line: object,
+) -> Decimal:
+    normalised_service_line = _normalise_service_line(service_line)
+    if normalised_service_line:
+        exact = rates.get((role, normalised_service_line))
+        if exact is not None:
+            return exact
+    return rates.get((role, None), Decimal("0"))
+
+
+def _assignment_rate_context(
+    db: object,
+    tenant_id: str,
+    project_ids: list[str],
+    entries: list[dict],
+) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], Decimal]]:
+    employee_ids = list({entry["employee_id"] for entry in entries})
+    assignments = (
+        db.table("project_assignments")
+        .select("employee_id, project_id, role, override_rate")
+        .eq("tenant_id", tenant_id)
+        .in_("project_id", project_ids)
+        .in_("employee_id", employee_ids)
+        .execute()
+        .data
+        or []
+    )
+    role_map: dict[tuple[str, str], str] = {}
+    override_rate_map: dict[tuple[str, str], Decimal] = {}
+    for assignment in assignments:
+        key = (assignment["project_id"], assignment["employee_id"])
+        role_map[key] = assignment.get("role") or "Consultant"
+        if assignment.get("override_rate") is not None:
+            override_rate_map[key] = Decimal(str(assignment["override_rate"]))
+    return role_map, override_rate_map
+
+
+def _draft_fixed_fee_line(
+    eng: dict,
+    billing: dict,
+    *,
+    label: str = "Fixed Fee",
+) -> InvoiceLineItem:
+    unit_quantity = billing.get("unit_quantity")
+    unit_price = billing.get("unit_price")
+    if unit_quantity is not None and unit_price is not None:
+        quantity = Decimal(str(unit_quantity))
+        price = Decimal(str(unit_price))
+        amount = (quantity * price).quantize(Decimal("0.01"))
+        unit_label = billing.get("unit_label") or "Units"
+        return InvoiceLineItem(
+            description=f"{unit_label}: {eng['name']}",
+            quantity=quantity,
+            unit_price=price,
+            amount=amount,
+        )
+
+    amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
+    return InvoiceLineItem(
+        description=f"{label}: {eng['name']}",
+        unit_price=amount,
+        amount=amount,
+    )
 
 
 def _mark_capped_overflow_non_billable(
@@ -468,35 +607,16 @@ def _mark_capped_overflow_non_billable(
 
     entries = q.execute().data or []
 
-    # Resolve rate card
-    rate_card_id = eng.get("rate_card_id")
-    rates: dict[str, Decimal] = {}
-    if rate_card_id:
-        rc_lines = (
-            db.table("rate_card_lines")
-            .select("role, rate")
-            .eq("rate_card_id", rate_card_id)
-            .execute()
-            .data or []
-        )
-        rates = {r["role"]: Decimal(str(r["rate"])) for r in rc_lines}
+    rates = _rate_card_rates(eng, deps)
 
     # Build role map
     if entries:
-        employee_ids = list({e["employee_id"] for e in entries})
-        assignments = (
-            db.table("project_assignments")
-            .select("employee_id, project_id, role")
-            .eq("tenant_id", tenant_id)
-            .in_("project_id", project_ids)
-            .in_("employee_id", employee_ids)
-            .execute()
-            .data or []
+        role_map, override_rate_map = _assignment_rate_context(
+            db,
+            tenant_id,
+            project_ids,
+            entries,
         )
-        role_map: dict[tuple[str, str], str] = {
-            (a["project_id"], a["employee_id"]): (a["role"] or "Consultant")
-            for a in assignments
-        }
     else:
         return
 
@@ -504,8 +624,16 @@ def _mark_capped_overflow_non_billable(
     overflow_ids: list[str] = []
 
     for entry in entries:
-        role = role_map.get((entry["project_id"], entry["employee_id"]), "Consultant")
-        rate = rates.get(role, Decimal("0"))
+        key = (entry["project_id"], entry["employee_id"])
+        role = role_map.get(key, "Consultant")
+        rate = override_rate_map.get(
+            key,
+            _rate_for_role(
+                rates,
+                role,
+                service_line=eng.get("service_line"),
+            ),
+        )
         entry_amount = (Decimal(str(entry["hours"])) * rate).quantize(Decimal("0.01"))
         if cumulative >= cap:
             overflow_ids.append(entry["id"])

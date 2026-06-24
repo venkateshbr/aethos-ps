@@ -22,10 +22,14 @@ from app.agents.project_health_agent import check_project_health
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.db import get_service_role_client
 from app.workers.procrastinate_app import app
+from app.workers.workflow_runs import finish_workflow_run, start_workflow_run
 
 logger = logging.getLogger(__name__)
 
 DEDUP_DAYS = 7
+ACTIVE_PROJECT_SELECT = (
+    "id, name, engagement_id, budget_hours, budget, currency, status"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +64,24 @@ def _is_duplicate_alert(
         .data
     )
     return bool(rows)
+
+
+def _fetch_active_projects(db, tenant_id: str) -> list[dict]:
+    """Fetch active projects using columns that exist on the projects table.
+
+    Billing arrangement, cap, and retainer terms live on engagements and
+    engagement_billing_terms.  The agent derives those in context per project.
+    """
+    return (
+        db.table("projects")
+        .select(ACTIVE_PROJECT_SELECT)
+        .eq("tenant_id", tenant_id)
+        .eq("status", "active")
+        .is_("deleted_at", "null")
+        .execute()
+        .data
+        or []
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +125,8 @@ async def _process_project(project: dict, deps: AgentDeps) -> int:
                     },
                     alert.confidence,
                     autonomy_level=2,  # L2 always — suggest only, never auto-apply
+                    related_entity_type="project",
+                    related_entity_id=project_id_str,
                 )
                 written += 1
                 logger.info(
@@ -164,31 +188,44 @@ def run_project_health_checks(timestamp: int) -> dict:
 
     for tenant_row in tenants:
         tenant_id: str = tenant_row["id"]
+        workflow_id = start_workflow_run(
+            db,
+            tenant_id=tenant_id,
+            workflow_name="daily_project_health_checks",
+            owner_agent_name="project_health_agent",
+            current_step="discover_active_projects",
+            goal_snapshot={"dedup_days": DEDUP_DAYS},
+        )
         try:
             deps = AgentDeps(tenant_id=tenant_id, user_id=None, db=db)
 
-            # Fetch active projects for this tenant
-            projects = (
-                db.table("projects")
-                .select(
-                    "id, name, engagement_id, budget_hours, status, "
-                    "billing_arrangement, cap_amount, billed_amount, "
-                    "retainer_floor_hours, hours_this_period"
-                )
-                .eq("tenant_id", tenant_id)
-                .eq("status", "active")
-                .execute()
-                .data
-                or []
-            )
+            projects = _fetch_active_projects(db, tenant_id)
 
             alerts_for_tenant = asyncio.run(
                 _run_tenant_checks(projects, deps)
             )
             total_alerts += alerts_for_tenant
             tenants_checked += 1
+            finish_workflow_run(
+                db,
+                workflow_id,
+                status="waiting_on_human" if alerts_for_tenant else "succeeded",
+                current_step="hitl_review" if alerts_for_tenant else "completed",
+                state_snapshot={
+                    "project_count": len(projects),
+                    "alerts_created": alerts_for_tenant,
+                },
+            )
 
         except Exception as exc:
+            finish_workflow_run(
+                db,
+                workflow_id,
+                status="failed",
+                current_step="failed",
+                state_snapshot={"result": "tenant_sweep_failed"},
+                error_message=str(exc),
+            )
             logger.warning(
                 "project_health_worker: tenant %s sweep failed: %s",
                 tenant_id,

@@ -9,6 +9,7 @@ Flow:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal
@@ -28,14 +29,18 @@ from app.models.bills import (
 )
 from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
+from app.repositories.procurement_repo import ProcurementRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 # COA codes used for AP journal posting
-_EXPENSE_ACCOUNT_CODE = "5000"   # Expenses (DR)
-_AP_ACCOUNT_CODE = "2000"        # Accounts Payable (CR)
+_EXPENSE_ACCOUNT_CODE = "5000"  # Expenses (DR)
+_AP_ACCOUNT_CODE = "2000"  # Accounts Payable (CR)
+_INPUT_TAX_ACCOUNT_CODE = "1300"  # Input Tax Recoverable (DR)
+_PREPAID_ACCOUNT_CODE = "1500"  # Prepaid Expenses (DR on approval, CR on amortization)
+_PO_MATCH_TOLERANCE = Decimal("0.01")
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
@@ -50,6 +55,11 @@ def _line_to_response(row: dict) -> BillLineResponse:
         amount=serialise_money(row["amount"]) or "0.00",
         tax_amount=serialise_money(row.get("tax_amount") or "0") or "0.00",
         account_id=str(row["account_id"]) if row.get("account_id") else None,
+        is_prepaid=bool(row.get("is_prepaid")),
+        service_start_date=(
+            str(row["service_start_date"]) if row.get("service_start_date") else None
+        ),
+        service_end_date=(str(row["service_end_date"]) if row.get("service_end_date") else None),
         created_at=str(row["created_at"]),
     )
 
@@ -59,6 +69,7 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         client_id=str(row["client_id"]),
+        purchase_order_id=str(row["purchase_order_id"]) if row.get("purchase_order_id") else None,
         bill_number=row["bill_number"],
         currency=row["currency"],
         subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
@@ -68,16 +79,99 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
         due_date=str(row["due_date"]) if row.get("due_date") else None,
         vendor_invoice_number=row.get("vendor_invoice_number"),
+        po_match_status=row.get("po_match_status") or "not_linked",
+        po_match_summary=dict(row.get("po_match_summary") or {}),
         notes=row.get("notes"),
         created_at=str(row["created_at"]),
         lines=[_line_to_response(ln) for ln in (lines or [])],
     )
 
 
+def _build_ap_journal_lines(
+    *,
+    bill_lines: list[dict],
+    expense_account_id: str,
+    ap_account_id: str,
+    input_tax_account_id: str | None = None,
+    prepaid_account_id: str | None = None,
+    bill_total: Decimal,
+    bill_number: str,
+    currency: str,
+) -> list[JournalLineSpec]:
+    """Build AP approval journal lines, preserving net expense and recoverable tax."""
+    debit_amounts: dict[str, Decimal] = {}
+    debit_account_codes: dict[str, str] = {}
+    input_tax_total = Decimal("0")
+    for line in bill_lines:
+        is_prepaid = bool(line.get("is_prepaid"))
+        if is_prepaid:
+            if not prepaid_account_id:
+                raise ValueError(
+                    "Prepaid expenses account is not configured; cannot post AP journal"
+                )
+            account_id = prepaid_account_id
+            debit_account_codes[account_id] = _PREPAID_ACCOUNT_CODE
+        else:
+            account_id = str(line.get("account_id") or expense_account_id)
+            debit_account_codes[account_id] = (
+                _EXPENSE_ACCOUNT_CODE if account_id == expense_account_id else ""
+            )
+        line_amount = Decimal(str(line.get("amount") or "0"))
+        tax_amount = Decimal(str(line.get("tax_amount") or "0"))
+        input_tax_total += tax_amount
+        debit_amounts[account_id] = debit_amounts.get(account_id, Decimal("0")) + line_amount
+
+    debit_total = sum(debit_amounts.values(), Decimal("0")) + input_tax_total
+    if abs(debit_total - bill_total) > Decimal("0.01"):
+        raise ValueError("Bill line totals do not match bill total; cannot post AP journal")
+    if input_tax_total > Decimal("0") and not input_tax_account_id:
+        raise ValueError("Input tax recoverable account is not configured; cannot post AP journal")
+
+    journal_lines = [
+        JournalLineSpec(
+            direction="DR",
+            account_code=debit_account_codes.get(account_id, ""),
+            account_id=account_id,
+            amount=amount,
+            description=(
+                f"Prepaid expenses - {bill_number}"
+                if debit_account_codes.get(account_id) == _PREPAID_ACCOUNT_CODE
+                else f"Expenses - {bill_number}"
+            ),
+            currency=currency,
+        )
+        for account_id, amount in sorted(debit_amounts.items())
+        if amount > Decimal("0")
+    ]
+    if input_tax_total > Decimal("0"):
+        journal_lines.append(
+            JournalLineSpec(
+                direction="DR",
+                account_code=_INPUT_TAX_ACCOUNT_CODE,
+                account_id=input_tax_account_id,
+                amount=input_tax_total,
+                description=f"Input tax recoverable - {bill_number}",
+                currency=currency,
+            )
+        )
+    journal_lines.append(
+        JournalLineSpec(
+            direction="CR",
+            account_code=_AP_ACCOUNT_CODE,
+            account_id=ap_account_id,
+            amount=bill_total,
+            description=f"AP - {bill_number}",
+            currency=currency,
+        )
+    )
+    return journal_lines
+
+
 class BillsService:
     def __init__(self, db: Client, tenant_id: str) -> None:
         self._repo = BillsRepository(db, tenant_id)
         self._clients_repo = ClientRepository(db, tenant_id)
+        self._procurement_repo = ProcurementRepository(db, tenant_id)
         self._db = db
         self._tenant_id = tenant_id
 
@@ -127,12 +221,43 @@ class BillsService:
                 ),
             )
 
+        subtotal = sum((line.amount for line in data.lines), Decimal("0"))
+        tax_total = sum((line.tax_amount for line in data.lines), Decimal("0"))
+        total = subtotal + tax_total
+        po_match_summary: dict[str, object] = {}
+        po_match_status = "not_linked"
+        if data.purchase_order_id is not None:
+            po_match_summary = await self._match_purchase_order(
+                purchase_order_id=data.purchase_order_id,
+                client_id=data.client_id,
+                currency=data.currency,
+                bill_total=total,
+            )
+            po_match_status = str(po_match_summary["status"])
+            if po_match_status == "order_not_found":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Purchase order {data.purchase_order_id!r} not found",
+                )
+            if po_match_status in {"vendor_mismatch", "currency_mismatch", "order_not_approved"}:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": "Bill cannot be linked to this purchase order",
+                        "po_match": po_match_summary,
+                    },
+                )
+
         # 2. INSERT bill (bill_number set by DB trigger)
         bill_data: dict = {
             "client_id": data.client_id,
             "currency": data.currency,
             "status": "draft",
+            "po_match_status": po_match_status,
+            "po_match_summary": po_match_summary,
         }
+        if data.purchase_order_id is not None:
+            bill_data["purchase_order_id"] = data.purchase_order_id
         if data.issue_date is not None:
             bill_data["issue_date"] = data.issue_date.isoformat()
         if data.due_date is not None:
@@ -146,8 +271,6 @@ class BillsService:
         bill_id = str(bill_row["id"])
 
         # 3. INSERT bill lines
-        subtotal = Decimal("0")
-        tax_total = Decimal("0")
         lines_rows: list[dict] = []
 
         for line in data.lines:
@@ -168,12 +291,12 @@ class BillsService:
                     not_found_detail="Account not found",
                 )
                 line_payload["account_id"] = line.account_id
+            line_payload["is_prepaid"] = line.is_prepaid
+            if line.is_prepaid:
+                line_payload["service_start_date"] = line.service_start_date.isoformat()
+                line_payload["service_end_date"] = line.service_end_date.isoformat()
             line_row = await self._repo.create_line(bill_id, line_payload)
             lines_rows.append(line_row)
-            subtotal += line.amount
-            tax_total += line.tax_amount
-
-        total = subtotal + tax_total
 
         # 4. Update totals on the bill
         if data.lines:
@@ -218,15 +341,56 @@ class BillsService:
                 detail="Bill total must be greater than zero",
             )
 
+        if bill.get("purchase_order_id"):
+            po_match_summary = await self._match_purchase_order(
+                purchase_order_id=str(bill["purchase_order_id"]),
+                client_id=str(bill["client_id"]),
+                currency=str(bill.get("currency") or "USD"),
+                bill_total=total,
+                bill_id=bill_id,
+            )
+            await self._repo.update(
+                bill_id,
+                {
+                    "po_match_status": po_match_summary["status"],
+                    "po_match_summary": po_match_summary,
+                },
+            )
+            if po_match_summary["status"] != "matched":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": "Bill does not match the linked purchase order",
+                        "po_match": po_match_summary,
+                    },
+                )
+
         # 3. Resolve account IDs from COA
         expense_account_id = await self._repo.get_account_id_by_code(_EXPENSE_ACCOUNT_CODE)
         ap_account_id = await self._repo.get_account_id_by_code(_AP_ACCOUNT_CODE)
-        if not expense_account_id or not ap_account_id:
+        has_prepaid_lines = any(bool(line.get("is_prepaid")) for line in lines)
+        prepaid_account_id: str | None = None
+        if has_prepaid_lines:
+            prepaid_account_id = await self._repo.get_account_id_by_code(_PREPAID_ACCOUNT_CODE)
+        input_tax_total = sum(Decimal(str(line.get("tax_amount") or "0")) for line in lines)
+        input_tax_account_id: str | None = None
+        if input_tax_total > Decimal("0"):
+            input_tax_account_id = await self._repo.get_account_id_by_code(_INPUT_TAX_ACCOUNT_CODE)
+        if (
+            not expense_account_id
+            or not ap_account_id
+            or (has_prepaid_lines and not prepaid_account_id)
+            or (input_tax_total > Decimal("0") and not input_tax_account_id)
+        ):
+            expected_codes = [_EXPENSE_ACCOUNT_CODE, _AP_ACCOUNT_CODE]
+            if has_prepaid_lines:
+                expected_codes.append(_PREPAID_ACCOUNT_CODE)
+            if input_tax_total > Decimal("0"):
+                expected_codes.append(_INPUT_TAX_ACCOUNT_CODE)
             logger.error(
-                "COA accounts missing for tenant %s — expected codes %s and %s",
+                "COA accounts missing for tenant %s — expected codes %s",
                 self._tenant_id,
-                _EXPENSE_ACCOUNT_CODE,
-                _AP_ACCOUNT_CODE,
+                ", ".join(expected_codes),
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -237,32 +401,28 @@ class BillsService:
         #    and account existence inside post_journal.  Never bypass with direct INSERT.
         bill_number = bill.get("bill_number", "")
         currency = bill.get("currency", "USD")
-        journal_lines = [
-            JournalLineSpec(
-                direction="DR",
-                account_code=_EXPENSE_ACCOUNT_CODE,
-                account_id=expense_account_id,
-                amount=total,
-                description=f"Expenses — {bill_number}",
+        try:
+            journal_lines = _build_ap_journal_lines(
+                bill_lines=lines,
+                expense_account_id=expense_account_id,
+                ap_account_id=ap_account_id,
+                input_tax_account_id=input_tax_account_id,
+                prepaid_account_id=prepaid_account_id,
+                bill_total=total,
+                bill_number=bill_number,
                 currency=currency,
-            ),
-            JournalLineSpec(
-                direction="CR",
-                account_code=_AP_ACCOUNT_CODE,
-                account_id=ap_account_id,
-                amount=total,
-                description=f"AP — {bill_number}",
-                currency=currency,
-            ),
-        ]
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
         # 5. Post via canonical post_journal — runs accounting_guardian L3 always.
         #    This replaces the old _post_journal that bypassed the guardian entirely.
         entry_date = bill.get("issue_date") or date.today().isoformat()
-        import asyncio as _asyncio
-
         try:
-            je = await _asyncio.to_thread(
+            je = await asyncio.to_thread(
                 post_journal,
                 self._db,
                 self._tenant_id,
@@ -296,6 +456,8 @@ class BillsService:
 
         # 6. Update bill status to 'approved'
         await self._repo.update(bill_id, {"status": "approved"})
+        if bill.get("purchase_order_id"):
+            await self._refresh_purchase_order_consumption(str(bill["purchase_order_id"]))
 
         return BillApproveResponse(
             id=bill_id,
@@ -303,6 +465,182 @@ class BillsService:
             journal_entry_id=journal_entry_id,
             message=f"Bill {bill_number} approved and GL journal posted",
         )
+
+    async def _match_purchase_order(
+        self,
+        *,
+        purchase_order_id: str,
+        client_id: str,
+        currency: str,
+        bill_total: Decimal,
+        bill_id: str | None = None,
+    ) -> dict[str, object]:
+        order = await self._procurement_repo.get(purchase_order_id)
+        if order is None:
+            return {
+                "status": "order_not_found",
+                "purchase_order_id": purchase_order_id,
+                "bill_total": serialise_money(bill_total),
+            }
+
+        matched_total = await self._procurement_repo.sum_linked_bill_total(
+            purchase_order_id,
+            exclude_bill_id=bill_id,
+        )
+        order_total = Decimal(str(order.get("total") or "0"))
+        remaining_before_bill = max(order_total - matched_total, Decimal("0"))
+        summary: dict[str, object] = {
+            "status": "matched",
+            "purchase_order_id": str(order["id"]),
+            "purchase_order_number": order.get("document_number"),
+            "purchase_order_type": order.get("document_type"),
+            "order_status": order.get("status"),
+            "order_total": serialise_money(order_total),
+            "matched_bill_total": serialise_money(matched_total),
+            "remaining_before_bill": serialise_money(remaining_before_bill),
+            "bill_total": serialise_money(bill_total),
+            "tolerance": serialise_money(_PO_MATCH_TOLERANCE),
+        }
+
+        if order.get("status") != "approved":
+            summary["status"] = "order_not_approved"
+        elif str(order.get("client_id")) != client_id:
+            summary["status"] = "vendor_mismatch"
+        elif str(order.get("currency") or "").upper() != currency.upper():
+            summary["status"] = "currency_mismatch"
+        elif bill_total > remaining_before_bill + _PO_MATCH_TOLERANCE:
+            summary["status"] = "over_tolerance"
+
+        return summary
+
+    async def _refresh_purchase_order_consumption(self, purchase_order_id: str) -> None:
+        order = await self._procurement_repo.get(purchase_order_id)
+        if order is None:
+            return
+        matched_total = await self._procurement_repo.sum_linked_bill_total(purchase_order_id)
+        order_total = Decimal(str(order.get("total") or "0"))
+        patch: dict[str, object] = {"matched_bill_total": serialise_money(matched_total)}
+        if matched_total >= order_total and order.get("status") == "approved":
+            patch["status"] = "closed"
+        await self._procurement_repo.update(purchase_order_id, patch)
+
+    # ------------------------------------------------------------------
+    # Void — reverses approved AP journals
+    # ------------------------------------------------------------------
+
+    async def void_bill(self, bill_id: str, voided_by: str) -> BillResponse:
+        """Void a bill.
+
+        Draft bills can be voided with a status change. Approved bills have
+        already posted DR Expense / CR AP, so they require a reversing journal
+        before status changes. Paid bills cannot be voided here; payment
+        reversal/settlement needs its own lifecycle.
+        """
+        bill = await self._repo.get(bill_id)
+        if bill is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bill {bill_id!r} not found",
+            )
+
+        current_status = str(bill["status"])
+        if current_status == "voided":
+            lines = await self._repo.get_lines(bill_id)
+            return _bill_to_response(bill, lines)
+        if current_status in {"paid", "partially_paid"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Bill is {current_status}; reverse the payment before voiding",
+            )
+        if current_status not in {"draft", "approved"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Bill is {current_status!r} and cannot be voided",
+            )
+
+        if current_status == "approved":
+            await self._post_void_reversal(bill, voided_by)
+
+        updated = await self._repo.update(bill_id, {"status": "voided"})
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bill {bill_id!r} not found",
+            )
+        lines = await self._repo.get_lines(bill_id)
+        return _bill_to_response(updated, lines)
+
+    async def _post_void_reversal(self, bill: dict, voided_by: str) -> None:
+        bill_id = str(bill["id"])
+
+        def _fetch_original_journal() -> dict | None:
+            result = (
+                self._db.table("journal_entries")
+                .select("id")
+                .eq("tenant_id", self._tenant_id)
+                .eq("reference_type", "bill")
+                .eq("reference_id", bill_id)
+                .order("posted_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            return rows[0] if rows else None
+
+        original = await asyncio.to_thread(_fetch_original_journal)
+        if original is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot void approved bill because its original AP journal was not found",
+            )
+
+        def _fetch_original_lines() -> list[dict]:
+            result = (
+                self._db.table("journal_lines")
+                .select("direction, account_id, amount, currency, base_amount, description")
+                .eq("tenant_id", self._tenant_id)
+                .eq("journal_entry_id", original["id"])
+                .execute()
+            )
+            return result.data or []
+
+        original_lines = await asyncio.to_thread(_fetch_original_lines)
+        if not original_lines:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot void approved bill because its original AP journal has no lines",
+            )
+
+        reversal_lines = [
+            JournalLineSpec(
+                direction="CR" if line["direction"] == "DR" else "DR",
+                account_code="",
+                account_id=str(line["account_id"]),
+                amount=Decimal(str(line["amount"])),
+                currency=str(line.get("currency") or bill.get("currency") or "USD"),
+                base_amount=Decimal(str(line.get("base_amount") or line["amount"])),
+                description=f"Void {line.get('description') or bill.get('bill_number') or bill_id}",
+            )
+            for line in original_lines
+        ]
+
+        try:
+            await asyncio.to_thread(
+                post_journal,
+                self._db,
+                self._tenant_id,
+                voided_by,
+                f"Void AP bill {bill.get('bill_number') or bill_id}",
+                date.today().isoformat(),
+                "bill_void",
+                bill_id,
+                reversal_lines,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
     # ------------------------------------------------------------------
     # AP Aging

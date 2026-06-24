@@ -4,11 +4,25 @@ import { ChangePasswordComponent } from './change-password.component';
 import { TaxRatesComponent } from './tax-rates.component';
 import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
+import { AgentRunsComponent } from './agent-runs.component';
+import { AgentWorkflowRunsComponent } from './agent-workflow-runs.component';
+import { IntegrationsComponent } from './integrations.component';
+import { CollectionsPolicyComponent } from './collections-policy.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [StripeConnectComponent, ChangePasswordComponent, TaxRatesComponent, AutonomyComponent, ServicesComponent],
+  imports: [
+    StripeConnectComponent,
+    ChangePasswordComponent,
+    TaxRatesComponent,
+    AutonomyComponent,
+    ServicesComponent,
+    AgentRunsComponent,
+    AgentWorkflowRunsComponent,
+    IntegrationsComponent,
+    CollectionsPolicyComponent,
+  ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
       <!-- Page header -->
@@ -18,7 +32,7 @@ import { ServicesComponent } from './services.component';
       </div>
 
       <!-- Sections -->
-      <div class="max-w-3xl space-y-8">
+      <div class="max-w-5xl space-y-8">
 
         <!-- Services & Products section (#237) -->
         <section aria-labelledby="services-heading">
@@ -41,7 +55,10 @@ import { ServicesComponent } from './services.component';
           <h2 id="integrations-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Integrations
           </h2>
-          <app-stripe-connect />
+          <div class="space-y-4">
+            <app-stripe-connect />
+            <app-integrations />
+          </div>
         </section>
 
         <!-- Tax Rates section -->
@@ -52,12 +69,29 @@ import { ServicesComponent } from './services.component';
           <app-tax-rates />
         </section>
 
+        <section aria-labelledby="collections-heading">
+          <h2 id="collections-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Accounts Receivable
+          </h2>
+          <app-collections-policy />
+        </section>
+
         <!-- Autonomy section (#209) -->
         <section aria-labelledby="autonomy-heading">
           <h2 id="autonomy-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Agent Autonomy
           </h2>
           <app-autonomy />
+        </section>
+
+        <section aria-labelledby="agent-runs-heading">
+          <h2 id="agent-runs-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Agent Run Ledger
+          </h2>
+          <div class="space-y-4">
+            <app-agent-runs />
+            <app-agent-workflow-runs />
+          </div>
         </section>
 
       </div>

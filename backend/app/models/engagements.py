@@ -18,11 +18,26 @@ from app.domain.money import serialise_money
 
 class BillingTerms(BaseModel):
     fixed_fee_amount: Decimal | None = None
+    milestone_total: Decimal | None = None
     retainer_monthly_amount: Decimal | None = None
     retainer_floor: Decimal | None = None
+    retainer_rollover: bool | None = None
     cap_amount: Decimal | None = None
+    billing_unit: str | None = Field(default=None, max_length=50)
+    unit_label: str | None = Field(default=None, max_length=100)
+    unit_quantity: Decimal | None = None
+    unit_price: Decimal | None = None
 
-    @field_validator("fixed_fee_amount", "retainer_monthly_amount", "retainer_floor", "cap_amount", mode="before")
+    @field_validator(
+        "fixed_fee_amount",
+        "milestone_total",
+        "retainer_monthly_amount",
+        "retainer_floor",
+        "cap_amount",
+        "unit_quantity",
+        "unit_price",
+        mode="before",
+    )
     @classmethod
     def coerce_decimal(cls, v: object) -> Decimal | None:
         if v is None:
@@ -49,6 +64,7 @@ class EngagementCreate(BaseModel):
     ]
     currency: str = Field(default="USD", min_length=3, max_length=3)
     total_value: Decimal | None = None
+    description: str | None = None
     start_date: date | None = None
     end_date: date | None = None
     rate_card_id: str | None = None
@@ -81,17 +97,33 @@ class EngagementStatusUpdate(BaseModel):
 
 class EngagementBillingTermsResponse(BaseModel):
     fixed_fee_amount: str | None
+    milestone_total: str | None
     retainer_monthly_amount: str | None
     retainer_floor: str | None
+    retainer_rollover: bool
     cap_amount: str | None
+    billing_unit: str | None = None
+    unit_label: str | None = None
+    unit_quantity: str | None = None
+    unit_price: str | None = None
 
     @classmethod
     def from_db(cls, row: dict) -> EngagementBillingTermsResponse:
         return cls(
             fixed_fee_amount=serialise_money(row.get("fixed_fee_amount")),
+            milestone_total=serialise_money(row.get("milestone_total")),
             retainer_monthly_amount=serialise_money(row.get("retainer_monthly_amount")),
             retainer_floor=serialise_money(row.get("retainer_floor")),
+            retainer_rollover=bool(row.get("retainer_rollover")),
             cap_amount=serialise_money(row.get("cap_amount")),
+            billing_unit=row.get("billing_unit"),
+            unit_label=row.get("unit_label"),
+            unit_quantity=(
+                str(row["unit_quantity"])
+                if row.get("unit_quantity") is not None
+                else None
+            ),
+            unit_price=serialise_money(row.get("unit_price")),
         )
 
 
@@ -105,11 +137,13 @@ class EngagementResponse(BaseModel):
     currency: str
     total_value: str | None  # Decimal serialised as string
     status: str
+    description: str | None = None
     start_date: str | None
     end_date: str | None
     created_at: str
     billing_terms: EngagementBillingTermsResponse | None = None
     service_line: str | None = None
+    rate_card_id: str | None = None
     service_catalogue_id: str | None = None  # migration 0033
 
     @field_validator("total_value", mode="before")
@@ -134,6 +168,7 @@ class EngagementResponse(BaseModel):
             currency=row["currency"],
             total_value=serialise_money(row.get("total_value")),
             status=row["status"],
+            description=row.get("description"),
             start_date=str(row["start_date"]) if row.get("start_date") else None,
             end_date=str(row["end_date"]) if row.get("end_date") else None,
             created_at=str(row["created_at"]),
@@ -143,6 +178,7 @@ class EngagementResponse(BaseModel):
                 else None
             ),
             service_line=row.get("service_line"),
+            rate_card_id=str(row["rate_card_id"]) if row.get("rate_card_id") else None,
             service_catalogue_id=str(row["service_catalogue_id"]) if row.get("service_catalogue_id") else None,
         )
 

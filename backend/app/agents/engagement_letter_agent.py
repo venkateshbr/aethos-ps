@@ -37,6 +37,26 @@ def _empty_engagement_draft(*, suspected_injection: bool = False) -> EngagementD
         suspected_injection=suspected_injection,
     )
 
+
+def _document_suspected_injection(document_bytes: bytes) -> bool:
+    """Best-effort prompt-injection heuristic for fallback paths.
+
+    If the model returns no usable JSON, we no longer know whether it detected
+    injection. Treat explicit instruction-hijacking phrases in the source text
+    as suspicious, but do not mark ordinary provider failures as injection.
+    """
+    text = document_bytes.decode("utf-8", errors="ignore").lower()
+    indicators = (
+        "ignore previous instructions",
+        "ignore all previous instructions",
+        "disregard previous instructions",
+        "override previous instructions",
+        "approve specific actions",
+        "approve this action",
+    )
+    return any(indicator in text for indicator in indicators)
+
+
 ENGAGEMENT_LETTER_PROMPT = """You are parsing a professional services engagement letter.
 Extract the following information and return it as JSON matching this schema exactly:
 {schema}
@@ -131,7 +151,9 @@ async def run_engagement_letter_agent(
             "engagement_letter_agent: LLM returned no/empty JSON — degrading to low-confidence draft",
             extra={"document_id": document_id, "tenant_id": deps.tenant_id},
         )
-        return _empty_engagement_draft(suspected_injection=True)
+        return _empty_engagement_draft(
+            suspected_injection=_document_suspected_injection(document_bytes),
+        )
 
     try:
         return EngagementDraft(**raw)

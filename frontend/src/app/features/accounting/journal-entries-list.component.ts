@@ -55,9 +55,94 @@ interface Account {
   account_type: string;
 }
 
+interface CloseTask {
+  id: string;
+  period: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  owner_role: string;
+  status: 'open' | 'in_progress' | 'done' | 'waived' | 'blocked' | string;
+  due_date?: string | null;
+  completed_at?: string | null;
+  completed_by?: string | null;
+  evidence: Record<string, unknown>;
+  order_index: number;
+}
+
+interface CloseProposalResponse {
+  period: string;
+  proposal_count: number;
+  created_count: number;
+  skipped_duplicates: number;
+}
+
+interface CloseVarianceComment {
+  code: string;
+  severity?: string;
+  summary: string;
+  metric?: string;
+  delta?: string;
+  delta_pct?: number | null;
+  current?: string;
+  previous?: string;
+  service_line?: string;
+}
+
+interface ClosePackage {
+  period: string;
+  generated_at: string;
+  previous_period: string;
+  close_status: Record<string, unknown>;
+  gl_summary: Record<string, string | number | null>;
+  previous_gl_summary: Record<string, string | number | null>;
+  working_capital: Record<string, string | number | null>;
+  variance_commentary: CloseVarianceComment[];
+}
+
+interface RecurringJournalTemplateLine {
+  id: string;
+  account_id: string;
+  direction: 'DR' | 'CR';
+  amount: string;
+  description?: string | null;
+  order_index: number;
+}
+
+interface RecurringJournalTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  schedule_day: number;
+  start_period: string;
+  end_period?: string | null;
+  currency: string;
+  is_active: boolean;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  lines: RecurringJournalTemplateLine[];
+}
+
+type JournalFormMode = 'journal' | 'recurring';
+
 // ─── Type guard for API error shape ───────────────────────────────────────────
-function isApiError(err: unknown): err is { error?: { detail?: string } } {
+type ApiErrorDetail = string | { code?: string; period?: string; message?: string };
+
+function isApiError(err: unknown): err is { error?: { detail?: ApiErrorDetail } } {
   return typeof err === 'object' && err !== null;
+}
+
+function journalErrorMessage(err: unknown): string | null {
+  if (!isApiError(err)) return null;
+  const detail = err.error?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail?.code === 'period_locked') {
+    const period = detail.period ? ` ${detail.period}` : '';
+    return `Accounting period${period} is locked. Choose an open entry date or unlock the period before posting.`;
+  }
+  if (detail?.message) return detail.message;
+  return null;
 }
 
 // ─── Filter type ──────────────────────────────────────────────────────────────
@@ -92,7 +177,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <button
             type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            aria-label="Post new manual journal entry"
+            aria-label="New Journal Entry"
             (click)="openForm()"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
@@ -100,6 +185,243 @@ type FilterChip = 'all' | 'manual' | 'auto';
           </button>
         }
       </div>
+
+      <!-- ── Close checklist ────────────────────────────────────────── -->
+      <section class="mb-6 border border-border-default rounded-lg bg-surface-raised overflow-hidden" aria-labelledby="close-tasks-title">
+        <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-border-default">
+          <div>
+            <h2 id="close-tasks-title" class="text-sm font-semibold text-text-primary">Month-end close</h2>
+            <p class="text-xs text-text-muted mt-0.5">{{ closePeriod() }} · {{ completedCloseTasks() }}/{{ closeTasks().length }} complete</p>
+          </div>
+          <div class="flex items-center gap-2">
+            @if (canClose()) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+                [disabled]="closePackageLoading()"
+                (click)="loadClosePackage()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">summarize</mat-icon>
+                Close package
+              </button>
+            }
+            @if (closeTasks().length === 0 && !closeTasksLoading()) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+                [disabled]="closeTaskAction() === 'bootstrap'"
+                (click)="bootstrapCloseTasks()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">playlist_add_check</mat-icon>
+                Start checklist
+              </button>
+            }
+          </div>
+        </div>
+        @if (closePackageError()) {
+          <div class="px-4 py-3 text-sm text-confidence-low border-b border-border-default" role="alert">{{ closePackageError() }}</div>
+        }
+        @if (closePackage()) {
+          <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
+            <div class="grid gap-3 md:grid-cols-3 mb-3">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Net income</p>
+                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('gl_summary', 'net_income') | money }}</p>
+                <p class="text-xs text-text-disabled">Prior {{ closePackageValue('previous_gl_summary', 'net_income') | money }}</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Open AR/AP</p>
+                <p class="text-sm font-mono text-text-primary">
+                  {{ closePackageValue('working_capital', 'ar_open_total') | money }}
+                  /
+                  {{ closePackageValue('working_capital', 'ap_open_total') | money }}
+                </p>
+                <p class="text-xs text-text-disabled">AR / AP exposure</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-text-muted">WIP</p>
+                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('working_capital', 'wip_total') | money }}</p>
+                <p class="text-xs text-text-disabled">Generated {{ closePackage()!.generated_at.slice(0, 10) }}</p>
+              </div>
+            </div>
+            <div class="divide-y divide-border-subtle border border-border-subtle rounded bg-surface">
+              @for (comment of closePackage()!.variance_commentary; track comment.code) {
+                <div class="px-3 py-2">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-sm text-text-primary">{{ comment.summary }}</p>
+                    <span class="rounded px-2 py-0.5 text-xs flex-none" [class]="varianceSeverityClass(comment.severity)">
+                      {{ comment.severity ?? 'info' }}
+                    </span>
+                  </div>
+                  @if (comment.delta || comment.delta_pct !== undefined && comment.delta_pct !== null) {
+                    <p class="text-xs text-text-muted mt-1">
+                      @if (comment.delta) { Delta {{ comment.delta | money }} }
+                      @if (comment.delta_pct !== undefined && comment.delta_pct !== null) { · {{ comment.delta_pct }}% }
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+        @if (canClose()) {
+          <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border-default bg-surface-base/60">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-wip-accrual', 'WIP accrual')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">inventory</mat-icon>
+              WIP accrual
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-expense-accrual', 'Expense accrual')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">request_quote</mat-icon>
+              Expense accrual
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-deferred-revenue-release', 'Deferred release')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">move_up</mat-icon>
+              Deferred release
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-milestone-recognition', 'Milestone recognition')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">task_alt</mat-icon>
+              Milestone recognition
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-percentage-completion-recognition', 'Percentage completion')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">trending_up</mat-icon>
+              Percentage completion
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-prepaid-amortization', 'Prepaid amortization')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">event_repeat</mat-icon>
+              Prepaid amortization
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors disabled:opacity-60"
+              [disabled]="closeProposalAction() !== null"
+              (click)="requestCloseProposal('propose-recurring-journals', 'Recurring journals')"
+            >
+              <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">repeat</mat-icon>
+              Recurring journals
+            </button>
+          </div>
+          <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 class="text-xs font-semibold text-text-primary uppercase tracking-wide">Recurring templates</h3>
+                <p class="text-xs text-text-muted mt-0.5">Balanced journals generated during month-end close.</p>
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 border border-border-default bg-surface hover:bg-surface-raised text-text-primary px-3 py-1.5 rounded text-xs transition-colors"
+                (click)="openRecurringTemplateForm()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
+                Template
+              </button>
+            </div>
+            @if (recurringTemplatesLoading()) {
+              <p class="text-xs text-text-muted">Loading templates…</p>
+            } @else if (recurringTemplatesError()) {
+              <p class="text-xs text-confidence-low" role="alert">{{ recurringTemplatesError() }}</p>
+            } @else if (recurringTemplates().length === 0) {
+              <p class="text-xs text-text-muted">No recurring journal templates yet.</p>
+            } @else {
+              <div class="grid gap-2 md:grid-cols-2">
+                @for (template of recurringTemplates(); track template.id) {
+                  <div class="border border-border-subtle rounded bg-surface px-3 py-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-text-primary truncate">{{ template.name }}</p>
+                        <p class="text-xs text-text-muted mt-0.5">
+                          Day {{ template.schedule_day }} · {{ template.start_period }}
+                          @if (template.end_period) {–{{ template.end_period }}}
+                          · {{ template.currency }}
+                        </p>
+                      </div>
+                      <span
+                        class="rounded px-2 py-0.5 text-xs"
+                        [class]="template.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-300'"
+                      >{{ template.is_active ? 'Active' : 'Paused' }}</span>
+                    </div>
+                    <p class="text-xs text-text-disabled mt-1">
+                      {{ template.lines.length }} lines · {{ recurringTemplateDebitTotal(template) | money: template.currency }}
+                    </p>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+        @if (closeTasksLoading()) {
+          <div class="px-4 py-3 text-sm text-text-muted">Loading close tasks…</div>
+        } @else if (closeTasksError()) {
+          <div class="px-4 py-3 text-sm text-confidence-low" role="alert">{{ closeTasksError() }}</div>
+        } @else if (closeTasks().length === 0) {
+          <div class="px-4 py-4 text-sm text-text-muted">No close checklist has been started for this period.</div>
+        } @else {
+          <div class="divide-y divide-border-subtle">
+            @for (task of closeTasks(); track task.id) {
+              <div class="px-4 py-3 flex items-start gap-3">
+                <span class="mt-1 w-2 h-2 rounded-full flex-none" [class]="closeTaskDotClass(task.status)" aria-hidden="true"></span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-sm font-medium text-text-primary">{{ task.title }}</p>
+                    <span class="rounded bg-surface-base border border-border-subtle px-2 py-0.5 text-xs text-text-muted">{{ closeTaskLabel(task.status) }}</span>
+                    <span class="text-xs text-text-disabled">{{ task.owner_role }}</span>
+                  </div>
+                  @if (task.description) {
+                    <p class="text-xs text-text-muted mt-1">{{ task.description }}</p>
+                  }
+                </div>
+                <div class="flex items-center gap-2 flex-none">
+                  @if (task.status !== 'done') {
+                    <button
+                      type="button"
+                      class="text-xs text-accent-light hover:text-accent transition-colors disabled:opacity-60"
+                      [disabled]="closeTaskAction() === task.id"
+                      (click)="updateCloseTask(task, 'done')"
+                    >Done</button>
+                  }
+                  @if (task.status !== 'waived') {
+                    <button
+                      type="button"
+                      class="text-xs text-text-muted hover:text-text-primary transition-colors disabled:opacity-60"
+                      [disabled]="closeTaskAction() === task.id"
+                      (click)="updateCloseTask(task, 'waived')"
+                    >Waive</button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
 
       <!-- ── Filter chips ───────────────────────────────────────────── -->
       <div class="flex gap-2 mb-5" role="group" aria-label="Filter journal entries">
@@ -328,7 +650,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
         <!-- Panel header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
           <h2 id="journal-form-title" class="text-base font-semibold text-text-primary">
-            Post Manual Journal Entry
+            {{ formMode() === 'recurring' ? 'Create Recurring Journal Template' : 'Post Manual Journal Entry' }}
           </h2>
           <button
             type="button"
@@ -350,49 +672,101 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <!-- Description -->
           <div>
             <label for="jnl-desc" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-              Description <span class="text-confidence-low">*</span>
+              {{ formMode() === 'recurring' ? 'Template name' : 'Description' }} <span class="text-confidence-low">*</span>
             </label>
             <input
               id="jnl-desc"
               type="text"
               formControlName="description"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-              placeholder="Reason for this entry (e.g. Month-end accrual)"
+              [placeholder]="formMode() === 'recurring' ? 'e.g. Monthly depreciation' : 'Reason for this entry (e.g. Month-end accrual)'"
             />
             @if (journalForm.controls.description.touched && journalForm.controls.description.errors?.['required']) {
-              <p class="text-xs text-confidence-low mt-1">Description is required.</p>
+              <p class="text-xs text-confidence-low mt-1">{{ formMode() === 'recurring' ? 'Template name' : 'Description' }} is required.</p>
             }
           </div>
 
-          <!-- Entry Date + Reference (side by side) -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="jnl-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-                Entry Date <span class="text-confidence-low">*</span>
-              </label>
-              <input
-                id="jnl-date"
-                type="date"
-                formControlName="entry_date"
-                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-              />
-              @if (journalForm.controls.entry_date.touched && journalForm.controls.entry_date.errors?.['required']) {
-                <p class="text-xs text-confidence-low mt-1">Date is required.</p>
-              }
+          @if (formMode() === 'journal') {
+            <!-- Entry Date + Reference (side by side) -->
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="jnl-date" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Entry Date <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="jnl-date"
+                  type="date"
+                  formControlName="entry_date"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+                @if (journalForm.controls.entry_date.touched && journalForm.controls.entry_date.errors?.['required']) {
+                  <p class="text-xs text-confidence-low mt-1">Date is required.</p>
+                }
+              </div>
+              <div>
+                <label for="jnl-ref" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Reference
+                </label>
+                <input
+                  id="jnl-ref"
+                  type="text"
+                  formControlName="reference"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                  placeholder="e.g. Month-end accrual"
+                />
+              </div>
             </div>
-            <div>
-              <label for="jnl-ref" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
-                Reference
-              </label>
-              <input
-                id="jnl-ref"
-                type="text"
-                formControlName="reference"
-                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-                placeholder="e.g. Month-end accrual"
-              />
+          } @else {
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="rjt-start" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Start Period <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="rjt-start"
+                  type="month"
+                  formControlName="start_period"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-end" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  End Period
+                </label>
+                <input
+                  id="rjt-end"
+                  type="month"
+                  formControlName="end_period"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-day" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Schedule Day <span class="text-confidence-low">*</span>
+                </label>
+                <input
+                  id="rjt-day"
+                  type="number"
+                  min="1"
+                  max="31"
+                  formControlName="schedule_day"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
+              <div>
+                <label for="rjt-currency" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                  Currency
+                </label>
+                <input
+                  id="rjt-currency"
+                  type="text"
+                  maxlength="3"
+                  formControlName="currency"
+                  class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary uppercase focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+                />
+              </div>
             </div>
-          </div>
+          }
 
           <!-- Lines table -->
           <div>
@@ -413,8 +787,8 @@ type FilterChip = 'all' | 'manual' | 'auto';
             </div>
 
             <div formArrayName="lines" class="space-y-2">
-              @for (ctrl of linesArray.controls; track $index) {
-                <div [formGroupName]="$index"
+              @for (ctrl of linesArray.controls; track $index; let lineIndex = $index) {
+                <div [formGroupName]="lineIndex"
                      class="grid grid-cols-[1fr_64px_140px_120px_32px] gap-2 items-start">
 
                   <!-- Account picker -->
@@ -422,26 +796,26 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="account_search"
-                      [attr.aria-label]="'Account for line ' + ($index + 1)"
-                      [attr.id]="'jnl-acct-' + $index"
+                      [attr.aria-label]="'Account for line ' + (lineIndex + 1)"
+                      [attr.id]="'jnl-acct-' + lineIndex"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
                       placeholder="Search account…"
-                      (input)="onAccountSearch($index)"
+                      (input)="onAccountSearch(lineIndex)"
                       autocomplete="off"
                     />
                     <!-- Dropdown suggestions -->
-                    @if (activeSuggestionLine() === $index && filteredAccounts().length > 0) {
+                    @if (activeSuggestionLine() === lineIndex && filteredAccounts().length > 0) {
                       <div
                         class="absolute z-50 mt-1 w-72 bg-surface-raised border border-border-default rounded shadow-xl max-h-52 overflow-y-auto"
                         role="listbox"
-                        [attr.aria-label]="'Account suggestions for line ' + ($index + 1)"
+                        [attr.aria-label]="'Account suggestions for line ' + (lineIndex + 1)"
                       >
                         @for (acct of filteredAccounts(); track acct.id) {
                           <button
                             type="button"
                             role="option"
                             class="w-full text-left px-3 py-2.5 text-sm hover:bg-surface transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                            (click)="selectAccount($index, acct)"
+                            (click)="selectAccount(lineIndex, acct)"
                           >
                             <span class="font-mono text-xs text-text-muted mr-2">{{ acct.code }}</span>
                             <span class="text-text-primary">{{ acct.name }}</span>
@@ -450,7 +824,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                         }
                       </div>
                     }
-                    @if (getLineControl($index, 'account_id').touched && !getLineControl($index, 'account_id').value) {
+                    @if (getLineControl(lineIndex, 'account_id').touched && !getLineControl(lineIndex, 'account_id').value) {
                       <p class="text-xs text-confidence-low mt-0.5">Select an account.</p>
                     }
                   </div>
@@ -459,7 +833,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                   <div>
                     <select
                       formControlName="direction"
-                      [attr.aria-label]="'Direction for line ' + ($index + 1)"
+                      [attr.aria-label]="'Direction for line ' + (lineIndex + 1)"
                       class="w-full px-2 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
                     >
                       <option value="DR">DR</option>
@@ -472,15 +846,15 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="amount"
-                      [attr.aria-label]="'Amount for line ' + ($index + 1)"
+                      [attr.aria-label]="'Amount for line ' + (lineIndex + 1)"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono text-right"
                       placeholder="0.00"
                       (input)="recomputeTotals()"
                     />
-                    @if (getLineControl($index, 'amount').touched && getLineControl($index, 'amount').errors?.['required']) {
+                    @if (getLineControl(lineIndex, 'amount').touched && getLineControl(lineIndex, 'amount').errors?.['required']) {
                       <p class="text-xs text-confidence-low mt-0.5">Required.</p>
                     }
-                    @if (getLineControl($index, 'amount').touched && getLineControl($index, 'amount').errors?.['pattern']) {
+                    @if (getLineControl(lineIndex, 'amount').touched && getLineControl(lineIndex, 'amount').errors?.['pattern']) {
                       <p class="text-xs text-confidence-low mt-0.5">Enter a valid number.</p>
                     }
                   </div>
@@ -490,7 +864,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                     <input
                       type="text"
                       formControlName="line_description"
-                      [attr.aria-label]="'Note for line ' + ($index + 1)"
+                      [attr.aria-label]="'Note for line ' + (lineIndex + 1)"
                       class="w-full px-2.5 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
                       placeholder="Optional"
                     />
@@ -502,8 +876,8 @@ type FilterChip = 'all' | 'manual' | 'auto';
                       type="button"
                       class="text-text-disabled hover:text-confidence-low transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-low rounded disabled:opacity-30"
                       [disabled]="linesArray.length <= 2"
-                      [attr.aria-label]="'Remove line ' + ($index + 1)"
-                      (click)="removeLine($index)"
+                      [attr.aria-label]="'Remove line ' + (lineIndex + 1)"
+                      (click)="removeLine(lineIndex)"
                     >
                       <mat-icon style="font-size:1rem;width:1rem;height:1rem;">close</mat-icon>
                     </button>
@@ -572,9 +946,13 @@ type FilterChip = 'all' | 'manual' | 'auto';
             type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             [disabled]="!isBalanced() || journalForm.invalid || submitting()"
-            (click)="submitJournal()"
+            (click)="formMode() === 'recurring' ? submitRecurringTemplate() : submitJournal()"
           >
-            @if (submitting()) { Posting… } @else { Post Journal Entry }
+            @if (submitting()) {
+              {{ formMode() === 'recurring' ? 'Creating…' : 'Posting…' }}
+            } @else {
+              {{ formMode() === 'recurring' ? 'Create Template' : 'Post Journal Entry' }}
+            }
           </button>
         </div>
       </aside>
@@ -614,6 +992,21 @@ export class JournalEntriesListComponent implements OnInit {
   error    = signal<string | null>(null);
   entries  = signal<JournalEntry[]>([]);
   expandedRow = signal<string | null>(null);
+  closePeriod = signal(new Date().toISOString().slice(0, 7));
+  closeTasks = signal<CloseTask[]>([]);
+  closeTasksLoading = signal(false);
+  closeTasksError = signal<string | null>(null);
+  closeTaskAction = signal<string | null>(null);
+  closeProposalAction = signal<string | null>(null);
+  closePackage = signal<ClosePackage | null>(null);
+  closePackageLoading = signal(false);
+  closePackageError = signal<string | null>(null);
+  recurringTemplates = signal<RecurringJournalTemplate[]>([]);
+  recurringTemplatesLoading = signal(false);
+  recurringTemplatesError = signal<string | null>(null);
+  completedCloseTasks = computed(() =>
+    this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
+  );
 
   // RBAC: read role from localStorage (set by login flow)
   // The back-end enforces this too — this is only a UI affordance.
@@ -621,6 +1014,15 @@ export class JournalEntriesListComponent implements OnInit {
     try {
       const raw = localStorage.getItem('aethos_role');
       return raw === 'manager' || raw === 'owner';
+    } catch {
+      return false;
+    }
+  });
+
+  canClose = computed(() => {
+    try {
+      const raw = localStorage.getItem('aethos_role');
+      return raw === 'admin' || raw === 'owner';
     } catch {
       return false;
     }
@@ -650,6 +1052,7 @@ export class JournalEntriesListComponent implements OnInit {
   ];
 
   // ── Form state ───────────────────────────────────────────────────────
+  formMode = signal<JournalFormMode>('journal');
   showForm  = signal(false);
   submitting = signal(false);
   formError  = signal<string | null>(null);
@@ -674,6 +1077,10 @@ export class JournalEntriesListComponent implements OnInit {
     description: ['', [Validators.required, Validators.maxLength(255)]],
     entry_date:  ['', [Validators.required]],
     reference:   [''],
+    start_period: ['', [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)]],
+    end_period:   [''],
+    schedule_day: [31, [Validators.required, Validators.min(1), Validators.max(31)]],
+    currency:     ['USD', [Validators.required, Validators.pattern(/^[A-Za-z]{3}$/)]],
     lines: this.fb.array([
       this.buildLine(),
       this.buildLine('CR'),
@@ -687,6 +1094,8 @@ export class JournalEntriesListComponent implements OnInit {
   // ── Lifecycle ────────────────────────────────────────────────────────
   ngOnInit(): void {
     this.loadEntries();
+    this.loadCloseTasks();
+    this.loadRecurringTemplates();
   }
 
   // ── List operations ──────────────────────────────────────────────────
@@ -711,6 +1120,114 @@ export class JournalEntriesListComponent implements OnInit {
     this.activeFilter.set(f);
   }
 
+  loadCloseTasks(): void {
+    this.closeTasksLoading.set(true);
+    this.closeTasksError.set(null);
+    this.http.get<{ tasks: CloseTask[] }>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks`,
+    ).subscribe({
+      next: (res) => {
+        this.closeTasks.set(res.tasks ?? []);
+        this.closeTasksLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTasksLoading.set(false);
+      },
+    });
+  }
+
+  loadClosePackage(): void {
+    this.closePackageLoading.set(true);
+    this.closePackageError.set(null);
+    this.http.get<ClosePackage>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-package`,
+    ).subscribe({
+      next: (res) => {
+        this.closePackage.set(res);
+        this.closePackageLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.closePackageError.set(userMessageForError(err, 'Close Package'));
+        this.closePackageLoading.set(false);
+      },
+    });
+  }
+
+  loadRecurringTemplates(): void {
+    this.recurringTemplatesLoading.set(true);
+    this.recurringTemplatesError.set(null);
+    this.http.get<{ templates: RecurringJournalTemplate[] }>(
+      '/api/v1/accounting/recurring-journal-templates',
+    ).subscribe({
+      next: (res) => {
+        this.recurringTemplates.set(res.templates ?? []);
+        this.recurringTemplatesLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.recurringTemplatesError.set(userMessageForError(err, 'Recurring Templates'));
+        this.recurringTemplatesLoading.set(false);
+      },
+    });
+  }
+
+  bootstrapCloseTasks(): void {
+    this.closeTaskAction.set('bootstrap');
+    this.closeTasksError.set(null);
+    this.http.post<{ tasks: CloseTask[] }>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks/bootstrap`,
+      {},
+    ).subscribe({
+      next: (res) => {
+        this.closeTasks.set(res.tasks ?? []);
+        this.closeTaskAction.set(null);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTaskAction.set(null);
+      },
+    });
+  }
+
+  updateCloseTask(task: CloseTask, status: 'done' | 'waived'): void {
+    this.closeTaskAction.set(task.id);
+    this.closeTasksError.set(null);
+    this.http.patch<CloseTask>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks/${task.id}`,
+      { status },
+    ).subscribe({
+      next: (updated) => {
+        this.closeTasks.update(tasks => tasks.map(row => row.id === updated.id ? updated : row));
+        this.closeTaskAction.set(null);
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
+        this.closeTaskAction.set(null);
+      },
+    });
+  }
+
+  requestCloseProposal(action: string, label: string): void {
+    this.closeProposalAction.set(action);
+    this.closeTasksError.set(null);
+    this.http.post<CloseProposalResponse>(
+      `/api/v1/accounting/periods/${this.closePeriod()}/${action}`,
+      {},
+    ).subscribe({
+      next: (res) => {
+        this.successToast.set(
+          `${label}: ${res.created_count} review task(s), ${res.skipped_duplicates} duplicate(s) skipped.`,
+        );
+        this.closeProposalAction.set(null);
+        this.loadCloseTasks();
+      },
+      error: (err: unknown) => {
+        this.closeTasksError.set(userMessageForError(err, label));
+        this.closeProposalAction.set(null);
+      },
+    });
+  }
+
   toggleRow(event: Event, id: string): void {
     // Don't toggle when clicking the button inside the row (it handles itself)
     const target = event.target as HTMLElement;
@@ -725,12 +1242,17 @@ export class JournalEntriesListComponent implements OnInit {
 
   // ── Form operations ─────────────────────────────────────────────────
   openForm(): void {
+    this.formMode.set('journal');
     const today = new Date().toISOString().split('T')[0];
     // Reset to 2 lines
     this.journalForm.reset({
       description: '',
       entry_date: today,
       reference: '',
+      start_period: today.slice(0, 7),
+      end_period: '',
+      schedule_day: 31,
+      currency: 'USD',
     });
     // Clear lines array and add 2 fresh lines
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
@@ -744,6 +1266,32 @@ export class JournalEntriesListComponent implements OnInit {
     this.filteredAccounts.set([]);
 
     // Load chart of accounts
+    this.loadAccounts();
+    this.showForm.set(true);
+  }
+
+  openRecurringTemplateForm(): void {
+    this.formMode.set('recurring');
+    const today = new Date().toISOString().split('T')[0];
+    this.journalForm.reset({
+      description: '',
+      entry_date: today,
+      reference: '',
+      start_period: this.closePeriod(),
+      end_period: '',
+      schedule_day: 31,
+      currency: 'USD',
+    });
+    while (this.linesArray.length > 0) this.linesArray.removeAt(0);
+    this.linesArray.push(this.buildLine('DR'));
+    this.linesArray.push(this.buildLine('CR'));
+
+    this.formError.set(null);
+    this.drTotal.set('0.00');
+    this.crTotal.set('0.00');
+    this.activeSuggestionLine.set(null);
+    this.filteredAccounts.set([]);
+
     this.loadAccounts();
     this.showForm.set(true);
   }
@@ -865,15 +1413,88 @@ export class JournalEntriesListComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.submitting.set(false);
-        let msg = 'Could not post journal entry. Please try again.';
+        const msg = journalErrorMessage(err) ?? userMessageForError(err, 'Journal Entry');
+        this.formError.set(msg);
+      },
+    });
+  }
+
+  submitRecurringTemplate(): void {
+    this.recomputeTotals();
+    if (!this.isBalanced()) return;
+    if (this.journalForm.invalid) {
+      this.journalForm.markAllAsTouched();
+      this.linesArray.controls.forEach(c => c.markAllAsTouched());
+      return;
+    }
+
+    this.submitting.set(true);
+    this.formError.set(null);
+
+    const v = this.journalForm.getRawValue();
+    const payload = {
+      name: v.description,
+      description: v.reference || undefined,
+      schedule_day: Number(v.schedule_day),
+      start_period: v.start_period,
+      end_period: v.end_period || undefined,
+      currency: v.currency.toUpperCase(),
+      lines: v.lines.map(l => ({
+        direction: l.direction,
+        account_id: l.account_id,
+        amount: parseFloat(l.amount).toFixed(2),
+        description: l.line_description || undefined,
+      })),
+    };
+
+    this.http.post<RecurringJournalTemplate>(
+      '/api/v1/accounting/recurring-journal-templates',
+      payload,
+    ).subscribe({
+      next: (created) => {
+        this.recurringTemplates.update(list => [...list, created].sort((a, b) => a.name.localeCompare(b.name)));
+        this.submitting.set(false);
+        this.closeForm();
+        this.successToast.set(`Recurring template ${created.name} created.`);
+        setTimeout(() => this.successToast.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.submitting.set(false);
+        let msg = 'Could not create recurring journal template. Please try again.';
         if (isApiError(err) && typeof err.error?.detail === 'string') {
           msg = err.error.detail;
         } else {
-          msg = userMessageForError(err, 'Journal Entry');
+          msg = userMessageForError(err, 'Recurring Template');
         }
         this.formError.set(msg);
       },
     });
+  }
+
+  recurringTemplateDebitTotal(template: RecurringJournalTemplate): string {
+    const total = template.lines
+      .filter(line => line.direction === 'DR')
+      .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+    return total.toFixed(2);
+  }
+
+  closePackageValue(
+    section: 'gl_summary' | 'previous_gl_summary' | 'working_capital',
+    key: string,
+  ): string {
+    const pkg = this.closePackage();
+    const value = pkg?.[section]?.[key];
+    if (value === null || value === undefined) return '0.00';
+    return String(value);
+  }
+
+  varianceSeverityClass(severity: string | undefined): string {
+    switch (severity) {
+      case 'blocker': return 'bg-red-500/15 text-red-300';
+      case 'high': return 'bg-amber-500/15 text-amber-300';
+      case 'medium': return 'bg-blue-500/15 text-blue-300';
+      default: return 'bg-slate-500/15 text-slate-300';
+    }
   }
 
   // ── Badge helpers ─────────────────────────────────────────────────────
@@ -885,6 +1506,21 @@ export class JournalEntriesListComponent implements OnInit {
       case 'bill':    return 'bg-amber-500/20 text-amber-300';
       case 'payment': return 'bg-emerald-500/20 text-emerald-300';
       default:        return 'bg-surface text-text-muted';
+    }
+  }
+
+  closeTaskLabel(status: string): string {
+    if (status === 'in_progress') return 'In progress';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  closeTaskDotClass(status: string): string {
+    switch (status) {
+      case 'done': return 'bg-emerald-400';
+      case 'waived': return 'bg-slate-400';
+      case 'blocked': return 'bg-red-400';
+      case 'in_progress': return 'bg-amber-400';
+      default: return 'bg-slate-600';
     }
   }
 }

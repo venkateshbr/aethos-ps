@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from decimal import Decimal
 
@@ -14,6 +13,7 @@ from app.models.engagements import (
     EngagementSummary,
 )
 from app.repositories.engagements_repo import EngagementRepository
+from app.repositories.projects_repo import ProjectRepository
 from app.services._validation import assert_belongs_to_tenant
 from supabase import Client
 
@@ -25,13 +25,21 @@ class EngagementService:
         self._db = db
         self._tenant_id = tenant_id
         self._repo = EngagementRepository(db, tenant_id)
+        self._projects_repo = ProjectRepository(db, tenant_id)
 
     async def list_engagements(
         self,
         status: str | None = None,
         client_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[EngagementResponse]:
-        rows = await self._repo.list(status=status, client_id=client_id)
+        rows = await self._repo.list(
+            status=status,
+            client_id=client_id,
+            limit=limit,
+            offset=offset,
+        )
         return [EngagementResponse.from_db(r) for r in rows]
 
     async def get_engagement(self, id: str) -> EngagementResponse | None:
@@ -75,6 +83,8 @@ class EngagementService:
             # downstream readers don't have to worry about "100000.0" coming
             # back as a stale value.
             eng_data["total_value"] = serialise_money(data.total_value)
+        if data.description is not None:
+            eng_data["description"] = data.description
         if data.start_date is not None:
             eng_data["start_date"] = data.start_date.isoformat()
         if data.end_date is not None:
@@ -94,6 +104,7 @@ class EngagementService:
 
         row = await self._repo.create(eng_data)
         engagement_id = str(row["id"])
+        await self._ensure_default_project(engagement_id, data.currency)
 
         terms_row: dict | None = None
         if data.billing_terms is not None:
@@ -170,15 +181,47 @@ class EngagementService:
             last_invoice_date=last_invoice_date,
         )
 
+    async def _ensure_default_project(self, engagement_id: str, currency: str) -> None:
+        existing = await self._projects_repo.list(engagement_id=engagement_id, limit=100)
+        if any(row.get("name") == "General" for row in existing):
+            return
+
+        await self._projects_repo.create(
+            {
+                "engagement_id": engagement_id,
+                "name": "General",
+                "currency": currency,
+                "status": "planning",
+            }
+        )
+
 
 def _billing_terms_to_dict(terms: BillingTerms) -> dict:
     result: dict = {}
+    if (
+        terms.fixed_fee_amount is None
+        and terms.unit_quantity is not None
+        and terms.unit_price is not None
+    ):
+        terms.fixed_fee_amount = terms.unit_quantity * terms.unit_price
     if terms.fixed_fee_amount is not None:
         result["fixed_fee_amount"] = serialise_money(terms.fixed_fee_amount)
+    if terms.milestone_total is not None:
+        result["milestone_total"] = serialise_money(terms.milestone_total)
     if terms.retainer_monthly_amount is not None:
         result["retainer_monthly_amount"] = serialise_money(terms.retainer_monthly_amount)
     if terms.retainer_floor is not None:
         result["retainer_floor"] = serialise_money(terms.retainer_floor)
+    if terms.retainer_rollover is not None:
+        result["retainer_rollover"] = terms.retainer_rollover
     if terms.cap_amount is not None:
         result["cap_amount"] = serialise_money(terms.cap_amount)
+    if terms.billing_unit:
+        result["billing_unit"] = terms.billing_unit
+    if terms.unit_label:
+        result["unit_label"] = terms.unit_label
+    if terms.unit_quantity is not None:
+        result["unit_quantity"] = str(terms.unit_quantity)
+    if terms.unit_price is not None:
+        result["unit_price"] = serialise_money(terms.unit_price)
     return result

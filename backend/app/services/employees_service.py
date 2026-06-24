@@ -68,6 +68,11 @@ class EmployeesService:
                 if data.available_hours_per_week is not None
                 else None
             ),
+            "target_billable_utilization_pct": (
+                str(data.target_billable_utilization_pct)
+                if data.target_billable_utilization_pct is not None
+                else None
+            ),
             "manager_id": data.manager_id,
             "skills": data.skills,
             "status": "active",
@@ -128,6 +133,10 @@ class EmployeesService:
             patch["cost_rate"] = str(data.cost_rate)
         if data.available_hours_per_week is not None:
             patch["available_hours_per_week"] = str(data.available_hours_per_week)
+        if data.target_billable_utilization_pct is not None:
+            patch["target_billable_utilization_pct"] = str(
+                data.target_billable_utilization_pct
+            )
         if data.skills is not None:
             patch["skills"] = data.skills
         if data.practice_area is not None:
@@ -262,6 +271,7 @@ def _row_to_response(row: dict) -> EmployeeResponse:
         default_bill_rate_currency=row.get("default_bill_rate_currency"),
         cost_rate=row.get("cost_rate"),
         available_hours_per_week=row.get("available_hours_per_week"),
+        target_billable_utilization_pct=row.get("target_billable_utilization_pct"),
         manager_id=str(row["manager_id"]) if row.get("manager_id") else None,
         skills=row.get("skills") or [],
         user_id=str(row["user_id"]) if row.get("user_id") else None,

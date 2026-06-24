@@ -69,9 +69,10 @@ def test_send_invoice_pdf_only_when_stripe_not_configured() -> None:
     assert result.status == "sent"
     # No payment link on the response
     assert result.payment_link_url is None
-    # update was called with just status, no stripe fields
+    # update stamps sent_at for reconciliation eligibility, but no Stripe fields.
     update_payload = svc._repo.update.call_args[0][1]
-    assert update_payload == {"status": "sent"}
+    assert update_payload["status"] == "sent"
+    assert update_payload["sent_at"]
     assert "stripe_payment_link_id" not in update_payload
 
 

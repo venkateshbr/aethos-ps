@@ -20,7 +20,7 @@ import logging
 from fastapi import Depends, HTTPException, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_user_rls_client
 from app.core.tenant import get_tenant_id
 from supabase import Client
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def get_current_employee(
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> dict:
     """Return the ``employees`` row for the authenticated portal user."""
     result = (

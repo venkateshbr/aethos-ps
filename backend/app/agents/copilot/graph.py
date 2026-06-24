@@ -19,6 +19,7 @@ import datetime
 import difflib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
@@ -26,8 +27,13 @@ from typing import TYPE_CHECKING, ClassVar
 
 import openai
 
-from app.agents.base import make_async_llm_client, mask_pii
+from app.agents.base import AgentDeps, make_async_llm_client, mask_pii
+from app.agents.suggestion_writer import write_agent_suggestion
+from app.agents.tool_registry import action_type_for_tool, risk_class_for_tool
 from app.core.config import settings
+from app.core.logging import trace_id_var
+from app.services.agent_run_ledger import AgentRunLedger
+from app.services.agent_tool_policy import AgentToolPolicy, AgentToolPolicyDecision
 
 if TYPE_CHECKING:
     pass
@@ -237,6 +243,7 @@ class CopilotAgent:
     def __init__(self, deps: CopilotDeps) -> None:
         self.deps = deps
         self.client = make_async_llm_client()
+        self.tool_policy = AgentToolPolicy(deps.db_client, deps.tenant_id)
 
     @classmethod
     def _openai_tools(cls) -> list[dict]:
@@ -270,7 +277,10 @@ class CopilotAgent:
         - ``{"error": "<msg>"}``           — graceful degradation on LLM failure
         """
         try:
-            async for frame in self._run_agentic_loop(user_message):
+            async for frame in self._run_agentic_loop(
+                user_message,
+                thread_id=thread_id,
+            ):
                 yield frame
         except openai.APIConnectionError:
             logger.warning(
@@ -297,7 +307,11 @@ class CopilotAgent:
             )
             yield f"data: {json.dumps({'error': 'An unexpected error occurred — try again'})}\n\n"
 
-    async def _run_agentic_loop(self, user_message: str) -> AsyncIterator[str]:
+    async def _run_agentic_loop(
+        self,
+        user_message: str,
+        thread_id: str | None = None,
+    ) -> AsyncIterator[str]:
         """Inner agentic loop — may call tools before yielding a final response."""
         # Mask PII before sending user input to the external LLM API.
         safe_message = mask_pii(user_message)
@@ -305,75 +319,139 @@ class CopilotAgent:
             date=datetime.date.today().isoformat(),
             tenant_id=self.deps.tenant_id,
         )
+        ledger = AgentRunLedger(self.deps.db_client, self.deps.tenant_id)
+        run_id = await ledger.start_run(
+            agent_name="copilot_agent",
+            trigger_type="chat",
+            user_id=str(self.deps.user_id),
+            input_payload={"message": safe_message},
+            prompt_version="cop-v1",
+            trace_id=trace_id_var.get("") or None,
+            replay_pointer=f"chat_threads/{thread_id}" if thread_id else None,
+        )
+        last_model: str | None = None
         messages: list[dict] = [
             {"role": "system", "content": system},
             {"role": "user", "content": safe_message},
         ]
 
-        for iteration in range(_MAX_ITERATIONS):
-            turn = await self._stream_one_turn(messages)
+        try:
+            for iteration in range(_MAX_ITERATIONS):
+                turn = await self._stream_one_turn(messages)
+                last_model = turn["model"]
 
-            for frame in turn["frames"]:
-                yield frame
+                for frame in turn["frames"]:
+                    yield frame
 
-            logger.info(
-                "LLM call complete",
-                extra={
-                    "tenant_id": self.deps.tenant_id,
-                    "model": turn["model"],
-                    "finish_reason": turn["finish_reason"],
-                    "iteration": iteration,
-                },
-            )
-
-            finish_reason = turn["finish_reason"]
-            tool_calls = turn["tool_calls"]
-            assistant_text = turn["text"]
-
-            if finish_reason == "tool_calls" and tool_calls:
-                # Append assistant message with the tool_calls it produced.
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": assistant_text or None,
-                        "tool_calls": [
-                            {
-                                "id": tc["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": tc["name"],
-                                    "arguments": tc["arguments"],
-                                },
-                            }
-                            for tc in tool_calls
-                        ],
-                    }
+                logger.info(
+                    "LLM call complete",
+                    extra={
+                        "tenant_id": self.deps.tenant_id,
+                        "model": turn["model"],
+                        "finish_reason": turn["finish_reason"],
+                        "iteration": iteration,
+                    },
                 )
-                # Execute each tool and append a tool-role message for each.
-                for tc in tool_calls:
-                    try:
-                        tool_input = json.loads(tc["arguments"] or "{}")
-                    except json.JSONDecodeError:
-                        tool_input = {}
-                    tool_result = await self._execute_tool(tc["name"], tool_input)
+
+                finish_reason = turn["finish_reason"]
+                tool_calls = turn["tool_calls"]
+                assistant_text = turn["text"]
+
+                if finish_reason == "tool_calls" and tool_calls:
+                    # Append assistant message with the tool_calls it produced.
                     messages.append(
                         {
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "content": json.dumps(tool_result),
+                            "role": "assistant",
+                            "content": assistant_text or None,
+                            "tool_calls": [
+                                {
+                                    "id": tc["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": tc["arguments"],
+                                    },
+                                }
+                                for tc in tool_calls
+                            ],
                         }
                     )
-                    yield f"data: {json.dumps({'tool_result': tc['name']})}\n\n"
-                continue
+                    # Execute each tool and append a tool-role message for each.
+                    for tc in tool_calls:
+                        try:
+                            tool_input = json.loads(tc["arguments"] or "{}")
+                        except json.JSONDecodeError:
+                            tool_input = {}
+                        started_at = time.perf_counter()
+                        tool_result = await self._execute_tool_with_policy(
+                            tc["name"],
+                            tool_input,
+                        )
+                        duration_ms = int((time.perf_counter() - started_at) * 1000)
+                        error_message = (
+                            str(tool_result.get("error"))
+                            if isinstance(tool_result, dict) and tool_result.get("error")
+                            else None
+                        )
+                        invocation_status = "skipped" if tool_result.get("requires_review") else "succeeded"
+                        if error_message:
+                            invocation_status = "failed"
+                        await ledger.record_tool_invocation(
+                            run_id,
+                            agent_name="copilot_agent",
+                            action_type=action_type_for_tool("copilot_agent", tc["name"]),
+                            tool_name=tc["name"],
+                            risk_class=risk_class_for_tool("copilot_agent", tc["name"]),
+                            input_payload=tool_input,
+                            output_payload=tool_result,
+                            status=invocation_status,
+                            duration_ms=duration_ms,
+                            error_message=error_message,
+                            external_tool_call_id=tc["id"],
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": json.dumps(tool_result),
+                            }
+                        )
+                        yield f"data: {json.dumps({'tool_result': tc['name']})}\n\n"
+                    continue
 
-            # No tool calls — we're done.
-            yield (
-                f"data: {json.dumps({'done': True, 'finish_reason': finish_reason or 'stop'})}\n\n"
+                # No tool calls — we're done.
+                done_payload = {
+                    "finish_reason": finish_reason or "stop",
+                    "assistant_text": assistant_text,
+                }
+                await ledger.complete_run(
+                    run_id,
+                    status="succeeded",
+                    output_payload=done_payload,
+                    model_version=last_model,
+                )
+                yield (
+                    f"data: {json.dumps({'done': True, 'finish_reason': finish_reason or 'stop'})}\n\n"
+                )
+                return
+
+            # Hit max iterations without a natural stop.
+            await ledger.complete_run(
+                run_id,
+                status="failed",
+                output_payload={"finish_reason": "max_iterations"},
+                error_message="max_iterations",
+                model_version=last_model,
             )
-            return
-
-        # Hit max iterations without a natural stop.
-        yield f"data: {json.dumps({'done': True, 'finish_reason': 'max_iterations'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'max_iterations'})}\n\n"
+        except Exception as exc:
+            await ledger.complete_run(
+                run_id,
+                status="failed",
+                error_message=str(exc),
+                model_version=last_model,
+            )
+            raise
 
     async def _stream_one_turn(self, messages: list[dict]) -> dict:
         """Run a single streaming LLM turn.
@@ -490,6 +568,90 @@ class CopilotAgent:
             extra={"tool_name": tool_name, "tenant_id": self.deps.tenant_id},
         )
         return {"error": f"Unknown tool: {tool_name}"}
+
+    async def _execute_tool_with_policy(self, tool_name: str, tool_input: dict) -> dict:
+        """Apply tool policy before dispatching a Copilot tool call."""
+        if tool_name not in {tool["name"] for tool in self.TOOLS}:
+            return await self._execute_tool(tool_name, tool_input)
+
+        risk_class = risk_class_for_tool("copilot_agent", tool_name)
+        action_type = action_type_for_tool("copilot_agent", tool_name)
+        decision = await self.tool_policy.decide(
+            agent_name="copilot_agent",
+            action_type=action_type,
+            tool_name=tool_name,
+            risk_class=risk_class,
+            user_id=str(self.deps.user_id),
+        )
+        if not decision.allowed:
+            return {
+                "error": decision.reason,
+                "policy_denied": True,
+                "tool_name": tool_name,
+                "risk_class": risk_class,
+                "minimum_role": decision.minimum_role.value,
+                "user_role": decision.user_role.value,
+            }
+        if decision.route_to_hitl:
+            return await self._route_tool_to_hitl(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                risk_class=risk_class,
+                action_type=action_type,
+                decision=decision,
+            )
+        return await self._execute_tool(tool_name, tool_input)
+
+    async def _route_tool_to_hitl(
+        self,
+        *,
+        tool_name: str,
+        tool_input: dict,
+        risk_class: str,
+        action_type: str,
+        decision: AgentToolPolicyDecision,
+    ) -> dict:
+        """Create a HITL suggestion/task for a write-capable Copilot tool."""
+        try:
+            suggestion = await write_agent_suggestion(
+                deps=AgentDeps(
+                    tenant_id=self.deps.tenant_id,
+                    user_id=str(self.deps.user_id),
+                    db=self.deps.db_client,  # type: ignore[arg-type]
+                ),
+                agent_name="copilot_agent",
+                action_type=action_type,
+                document_id=None,
+                output={
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "risk_class": risk_class,
+                    "policy_reason": decision.reason,
+                    "requested_by_user_id": str(self.deps.user_id),
+                },
+                confidence=0.0,
+                autonomy_level=decision.autonomy_level,
+                confidence_threshold=1.0,
+            )
+            return {
+                "requires_review": True,
+                "suggestion_id": suggestion.get("id"),
+                "action_type": action_type,
+                "tool_name": tool_name,
+                "risk_class": risk_class,
+                "message": "Created an Inbox review task before applying this change.",
+            }
+        except Exception as exc:
+            logger.error(
+                "Copilot HITL routing failed",
+                exc_info=True,
+                extra={
+                    "tenant_id": self.deps.tenant_id,
+                    "tool_name": tool_name,
+                    "risk_class": risk_class,
+                },
+            )
+            return {"error": str(exc), "tool_name": tool_name, "hitl_routing_failed": True}
 
     async def _query_engagements(self, status: str, limit: int) -> dict:
         """Fetch engagements from DB for the current tenant.

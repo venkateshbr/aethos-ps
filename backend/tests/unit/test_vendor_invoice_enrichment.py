@@ -14,7 +14,9 @@ All tests are pure-Python unit tests; no I/O, no LLM calls, no Supabase.
 from __future__ import annotations
 
 import asyncio
+import json
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -351,6 +353,89 @@ def test_suggest_gl_account_no_accounts_returns_none() -> None:
         suggest_gl_account("Cloud compute costs", [], deps)
     )
     assert result is None
+
+
+def test_fetch_coa_accounts_uses_account_type_column() -> None:
+    from app.agents.base import AgentDeps
+    from app.agents.vendor_invoice_agent import _fetch_coa_accounts_sync
+
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.is_.return_value = chain
+    chain.order.return_value = chain
+    chain.execute.return_value.data = [
+        {
+            "id": "00000000-0000-0000-0000-000000000010",
+            "code": "5000",
+            "name": "General Expenses",
+            "account_type": "expense",
+        }
+    ]
+    mock_db = MagicMock()
+    mock_db.table.return_value = chain
+    deps = AgentDeps(tenant_id="tenant-1", user_id=None, db=mock_db)
+
+    result = _fetch_coa_accounts_sync(deps)
+
+    chain.select.assert_called_once_with("id, code, name, account_type")
+    assert result[0]["account_type"] == "expense"
+
+
+def test_suggest_gl_account_filters_by_account_type() -> None:
+    from app.agents.base import AgentDeps
+    from app.agents.vendor_invoice_agent import suggest_gl_account
+
+    expense_id = "00000000-0000-0000-0000-000000000010"
+    revenue_id = "00000000-0000-0000-0000-000000000020"
+    accounts = [
+        {
+            "id": expense_id,
+            "code": "5000",
+            "name": "General Expenses",
+            "account_type": "expense",
+        },
+        {
+            "id": revenue_id,
+            "code": "4000",
+            "name": "Revenue",
+            "account_type": "revenue",
+        },
+    ]
+    mock_db = MagicMock()
+    deps = AgentDeps(tenant_id="tenant-1", user_id=None, db=mock_db)
+
+    async def _fake_create(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        assert "5000" in prompt
+        assert "4000" not in prompt
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=json.dumps(
+                            {
+                                "account_id": expense_id,
+                                "account_code": "5000",
+                                "account_name": "General Expenses",
+                                "confidence": 0.91,
+                            }
+                        )
+                    )
+                )
+            ]
+        )
+
+    with patch("app.agents.vendor_invoice_agent.make_async_llm_client") as mock_client:
+        mock_client.return_value.chat.completions.create = AsyncMock(
+            side_effect=_fake_create
+        )
+
+        result = asyncio.run(suggest_gl_account("Software license", accounts, deps))
+
+    assert result is not None
+    assert str(result.account_id) == expense_id
+    assert result.account_code == "5000"
 
 
 def test_suggest_gl_account_llm_failure_returns_none() -> None:

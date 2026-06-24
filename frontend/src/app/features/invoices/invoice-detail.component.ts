@@ -16,6 +16,7 @@ interface InvoiceLine {
   unit_price: string;
   amount: string;
   tax_amount: string;
+  service_catalogue_id?: string | null;
 }
 
 interface InvoiceDetail {

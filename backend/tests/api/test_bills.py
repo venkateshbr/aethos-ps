@@ -5,10 +5,13 @@ Covers POST/GET /api/v1/bills, approve, and the cross-tenant/aging filters.
 
 from __future__ import annotations
 
+import uuid
+from decimal import Decimal
+
 import httpx
 import pytest
 
-from tests.fixtures.scenarios import SeedWorld, mint_jwt
+from tests.fixtures.scenarios import SeedWorld, make_service_client, mint_jwt
 
 pytestmark = [
     pytest.mark.api,
@@ -65,9 +68,22 @@ def _bill_payload(world: SeedWorld) -> dict:
     }
 
 
-def test_create_bill_with_lines_sums_correctly(manager_a: httpx.Client, world: SeedWorld) -> None:
-    from decimal import Decimal
+def _expense_accounts_by_code(tenant_id: str) -> dict[str, str]:
+    db = make_service_client()
+    rows = (
+        db.table("accounts")
+        .select("id, code")
+        .eq("tenant_id", tenant_id)
+        .eq("account_type", "expense")
+        .is_("deleted_at", "null")
+        .execute()
+        .data
+        or []
+    )
+    return {str(row["code"]): str(row["id"]) for row in rows}
 
+
+def test_create_bill_with_lines_sums_correctly(manager_a: httpx.Client, world: SeedWorld) -> None:
     r = manager_a.post("/api/v1/bills", json=_bill_payload(world))
     assert r.status_code in (200, 201), r.text
     body = r.json()
@@ -125,3 +141,72 @@ def test_manager_cannot_approve_bill_admin_can(
 
     ra = admin_a.patch(f"/api/v1/bills/{bill_id}/approve")
     assert ra.status_code in (200, 409), ra.text
+
+
+def test_bill_approval_posts_line_level_expense_accounts(
+    manager_a: httpx.Client, admin_a: httpx.Client, world: SeedWorld
+) -> None:
+    """Bill approval debits line-coded expense accounts, not only generic 5000."""
+    accounts = _expense_accounts_by_code(world.tenant_a.tenant_id)
+    if "5000" not in accounts:
+        pytest.skip("Tenant A has no default 5000 expense account")
+    custom_code = next((code for code in sorted(accounts) if code != "5000"), None)
+    if custom_code is None:
+        pytest.skip("Tenant A has no non-5000 expense account for line-level coding")
+
+    payload = _bill_payload(world)
+    payload["vendor_invoice_number"] = f"VEND-GL-{uuid.uuid4().hex[:8]}"
+    payload["lines"] = [
+        {
+            "description": "Specialist contractor",
+            "quantity": "1",
+            "unit_price": "125.00",
+            "amount": "125.00",
+            "account_id": accounts[custom_code],
+        },
+        {
+            "description": "General expense fallback",
+            "quantity": "1",
+            "unit_price": "75.00",
+            "amount": "75.00",
+        },
+    ]
+
+    created = manager_a.post("/api/v1/bills", json=payload)
+    assert created.status_code in (200, 201), created.text
+    bill_id = created.json()["id"]
+
+    approved = admin_a.patch(f"/api/v1/bills/{bill_id}/approve")
+    assert approved.status_code == 200, approved.text
+
+    db = make_service_client()
+    journal_rows = (
+        db.table("journal_entries")
+        .select("id")
+        .eq("tenant_id", world.tenant_a.tenant_id)
+        .eq("reference_type", "bill")
+        .eq("reference_id", bill_id)
+        .order("posted_at", desc=True)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    assert journal_rows, "No AP journal found for approved bill"
+    line_rows = (
+        db.table("journal_lines")
+        .select("direction, account_id, amount")
+        .eq("tenant_id", world.tenant_a.tenant_id)
+        .eq("journal_entry_id", journal_rows[0]["id"])
+        .execute()
+        .data
+        or []
+    )
+    debit_by_account = {
+        str(row["account_id"]): Decimal(str(row["amount"]))
+        for row in line_rows
+        if row["direction"] == "DR"
+    }
+
+    assert debit_by_account[accounts[custom_code]] == Decimal("125.00")
+    assert debit_by_account[accounts["5000"]] == Decimal("75.00")

@@ -23,6 +23,7 @@ from app.domain.exceptions import BillingError
 from app.models.auth import SignupRequest, SignupResponse
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService, country_to_currency
+from app.services.localization_service import get_market_profile
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -222,7 +223,13 @@ async def signup(
     SetupIntent instead of failing.
     """
     tenant_repo = TenantRepository(db)
-    base_currency = country_to_currency(payload.country)
+    market_profile = get_market_profile(payload.country)
+    base_currency = (
+        market_profile.base_currency if market_profile else country_to_currency(payload.country)
+    )
+    tenant_country = market_profile.country if market_profile else payload.country
+    tenant_timezone = market_profile.timezone if market_profile else "UTC"
+    tenant_locale = market_profile.locale if market_profile else "en-US"
 
     # ------------------------------------------------------------------
     # 1. Create Supabase Auth user (or detect existing)
@@ -304,7 +311,9 @@ async def signup(
                     "name": payload.tenant_name,
                     "slug": slug,
                     "base_currency": base_currency,
-                    "country": payload.country,
+                    "country": tenant_country,
+                    "timezone": tenant_timezone,
+                    "locale": tenant_locale,
                     "plan_tier": payload.plan_tier,
                     "status": "provisioning",
                     "stripe_subscription_status": "incomplete",

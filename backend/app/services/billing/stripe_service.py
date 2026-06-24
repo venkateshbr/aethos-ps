@@ -24,28 +24,16 @@ import stripe
 
 from app.core.config import Settings
 from app.domain.exceptions import BillingError
+from app.services.localization_service import country_to_currency as _country_to_currency
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Country → base currency mapping (PLAN §8.5)
-# ---------------------------------------------------------------------------
-
-_COUNTRY_CURRENCY: dict[str, str] = {
-    "US": "USD",
-    "GB": "GBP",
-    "SG": "SGD",
-    "IN": "INR",
-    "AU": "AUD",
-}
-
 
 def country_to_currency(country: str) -> str:
     """Return the ISO 4217 currency code for a 2-letter country code.
 
     Defaults to USD for any country not in the 5 launch markets.
     """
-    return _COUNTRY_CURRENCY.get(country.upper(), "USD")
+    return _country_to_currency(country)
 
 
 # ---------------------------------------------------------------------------

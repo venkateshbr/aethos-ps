@@ -26,6 +26,16 @@ def test_employee_create_rejects_negative_rate() -> None:
         )
 
 
+def test_employee_create_rejects_utilization_target_above_100() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeCreate(
+            first_name="A",
+            last_name="B",
+            email="a@b.com",
+            target_billable_utilization_pct=Decimal("110"),
+        )
+
+
 def test_employee_create_defaults_full_time() -> None:
     e = EmployeeCreate(first_name="A", last_name="B", email="a@b.com")
     assert e.employment_type == EmploymentType.full_time

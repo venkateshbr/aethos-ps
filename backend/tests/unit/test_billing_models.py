@@ -16,6 +16,18 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
+def _chain(data: list[dict]) -> MagicMock:
+    result = MagicMock()
+    result.data = data
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.in_.return_value = chain
+    chain.is_.return_value = chain
+    chain.execute.return_value = result
+    return chain
+
+
 # ---------------------------------------------------------------------------
 # #174 — billing_run_worker
 # ---------------------------------------------------------------------------
@@ -54,7 +66,9 @@ def test_billing_run_worker_creates_draft_for_retainer_engagement() -> None:
     table_mock.eq.return_value = table_mock
     table_mock.in_.return_value = table_mock
     table_mock.is_.return_value = table_mock
-    table_mock.execute.return_value = eng_result
+    duplicate_result = MagicMock()
+    duplicate_result.data = []
+    table_mock.execute.side_effect = [eng_result, duplicate_result]
     table_mock.insert.return_value = insert_chain
 
     from datetime import date
@@ -64,11 +78,66 @@ def test_billing_run_worker_creates_draft_for_retainer_engagement() -> None:
     assert result is not None
     assert result["status"] == "draft"
 
-    # Verify engagement_ids were passed
-    insert_call = table_mock.insert.call_args[0][0]
-    assert "eng-001" in insert_call["engagement_filter"]["engagement_ids"]
-    assert "eng-002" in insert_call["engagement_filter"]["engagement_ids"]
-    assert insert_call["status"] == "draft"
+    # Verify workflow, billing run, suggestion, and HITL task were created.
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    workflow_insert = next(
+        payload for payload in inserts if payload.get("workflow_name")
+    )
+    billing_run_insert = next(
+        payload for payload in inserts if payload.get("engagement_filter")
+    )
+    suggestion_insert = next(
+        payload for payload in inserts if payload.get("agent_name") == "billing_run_agent"
+    )
+    task_insert = next(payload for payload in inserts if payload.get("kind"))
+
+    assert workflow_insert["workflow_name"] == "monthly_retainer_billing_run"
+    assert workflow_insert["status"] == "running"
+    assert "eng-001" in billing_run_insert["engagement_filter"]["engagement_ids"]
+    assert "eng-002" in billing_run_insert["engagement_filter"]["engagement_ids"]
+    assert billing_run_insert["status"] == "draft"
+    assert billing_run_insert["created_by_agent"] == "billing_run_agent"
+    assert suggestion_insert["agent_name"] == "billing_run_agent"
+    assert suggestion_insert["action_type"] == "approve_billing_run"
+    assert suggestion_insert["hitl_required"] is True
+    assert task_insert["kind"] == "approve_billing_run"
+    assert task_insert["status"] == "open"
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "waiting_on_human"
+    assert workflow_update["current_step"] == "hitl_review"
+    assert workflow_update["state_snapshot"]["billing_run_id"] == "run-001"
+
+
+def test_billing_run_worker_suppresses_duplicate_period_run() -> None:
+    from datetime import date
+
+    from app.workers.billing_run_worker import _create_run_for_tenant
+
+    db = MagicMock()
+    eng_result = MagicMock()
+    eng_result.data = [
+        {"id": "eng-001", "name": "Acme Retainer", "billing_arrangement": "retainer"}
+    ]
+    duplicate_result = MagicMock()
+    duplicate_result.data = [{"id": "run-existing", "status": "draft"}]
+
+    table_mock = MagicMock()
+    db.table.return_value = table_mock
+    table_mock.select.return_value = table_mock
+    table_mock.eq.return_value = table_mock
+    table_mock.in_.return_value = table_mock
+    table_mock.is_.return_value = table_mock
+    table_mock.execute.side_effect = [eng_result, duplicate_result]
+
+    result = _create_run_for_tenant(db, "tenant-001", date(2026, 6, 1))
+
+    assert result is None
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    assert any(payload.get("workflow_name") for payload in inserts)
+    assert not any(payload.get("engagement_filter") for payload in inserts)
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "succeeded"
+    assert workflow_update["state_snapshot"]["result"] == "skipped_duplicate_period"
 
 
 def test_billing_run_worker_skips_when_no_retainer_engagements() -> None:
@@ -91,7 +160,48 @@ def test_billing_run_worker_skips_when_no_retainer_engagements() -> None:
     result = _create_run_for_tenant(db, "tenant-001", date(2026, 6, 1))
 
     assert result is None
-    table_mock.insert.assert_not_called()
+    inserts = [call_args[0][0] for call_args in table_mock.insert.call_args_list]
+    assert any(payload.get("workflow_name") for payload in inserts)
+    assert not any(payload.get("engagement_filter") for payload in inserts)
+    workflow_update = table_mock.update.call_args_list[-1][0][0]
+    assert workflow_update["status"] == "succeeded"
+    assert workflow_update["state_snapshot"]["result"] == "skipped_no_retainer_engagements"
+
+
+def test_billing_run_worker_counts_created_only_for_actual_new_runs() -> None:
+    from datetime import date
+
+    from app.workers import billing_run_worker
+
+    db = MagicMock()
+    tenants_chain = _chain(
+        [
+            {"id": "tenant-created"},
+            {"id": "tenant-skipped"},
+        ]
+    )
+    db.table.return_value = tenants_chain
+
+    def _fake_create(_db: object, tenant_id: str, _period_start: date) -> dict | None:
+        if tenant_id == "tenant-created":
+            return {"id": "run-created"}
+        return None
+
+    with patch.object(
+        billing_run_worker,
+        "_create_run_for_tenant",
+        side_effect=_fake_create,
+    ):
+        result = billing_run_worker._create_monthly_billing_runs(
+            db,
+            date(2026, 6, 1),
+        )
+
+    assert result == {
+        "tenants_processed": 2,
+        "runs_created": 1,
+        "runs_skipped": 1,
+    }
 
 
 # ---------------------------------------------------------------------------

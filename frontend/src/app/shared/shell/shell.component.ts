@@ -58,28 +58,30 @@ interface SubscriptionStatus {
             <span class="text-sm font-bold tracking-wide text-text-primary hidden sm:block">Aethos</span>
           </a>
 
-          <!-- Primary nav items -->
-          @for (item of primaryNav; track item.route) {
-            <a
-              [routerLink]="item.route"
-              routerLinkActive="bg-surface-raised text-text-primary"
-              class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent whitespace-nowrap"
-              [attr.aria-label]="item.label"
-            >
-              <mat-icon class="text-sm leading-none flex-none" style="font-size:1rem;width:1rem;height:1rem;">{{ item.icon }}</mat-icon>
-              <span class="hidden md:inline">{{ item.label }}</span>
-            </a>
-          }
+          <nav aria-label="Main navigation" class="flex items-center gap-1 min-w-0">
+            <!-- Primary nav items -->
+            @for (item of primaryNav; track item.route) {
+              <a
+                [routerLink]="item.route"
+                routerLinkActive="bg-surface-raised text-text-primary"
+                class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent whitespace-nowrap"
+                [attr.aria-label]="item.label"
+              >
+                <mat-icon class="text-sm leading-none flex-none" style="font-size:1rem;width:1rem;height:1rem;">{{ item.icon }}</mat-icon>
+                <span class="hidden md:inline">{{ item.label }}</span>
+              </a>
+            }
 
-          <!-- "More ▾" overflow menu for secondary nav items -->
-          <button
-            [matMenuTriggerFor]="moreMenu"
-            class="flex items-center gap-1 px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            aria-label="More navigation items"
-          >
-            <span class="hidden sm:inline text-sm">More</span>
-            <mat-icon style="font-size:1rem;width:1rem;height:1rem;">expand_more</mat-icon>
-          </button>
+            <!-- "More ▾" overflow menu for secondary nav items -->
+            <button
+              [matMenuTriggerFor]="moreMenu"
+              class="flex items-center gap-1 px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              aria-label="More navigation items"
+            >
+              <span class="hidden sm:inline text-sm">More</span>
+              <mat-icon style="font-size:1rem;width:1rem;height:1rem;">expand_more</mat-icon>
+            </button>
+          </nav>
 
           <mat-menu #moreMenu="matMenu" class="!bg-surface-raised">
             @for (item of secondaryNav; track item.route) {

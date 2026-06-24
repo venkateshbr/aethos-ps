@@ -114,6 +114,16 @@ import { HttpClient } from '@angular/common/http';
             </td>
           </ng-container>
 
+          <!-- Budget Hours column -->
+          <ng-container matColumnDef="budget_hours">
+            <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
+              Hours
+            </th>
+            <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono px-4 py-3 border-b border-border-subtle text-right tabular-nums">
+              {{ row.budget_hours || '—' }}
+            </td>
+          </ng-container>
+
           <!-- Status column -->
           <ng-container matColumnDef="status">
             <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3">
@@ -141,6 +151,21 @@ import { HttpClient } from '@angular/common/http';
                 (click)="openTeam(row)" [attr.aria-label]="'Manage team for ' + row.name">
                 <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">group</mat-icon>
                 Manage
+              </button>
+            </td>
+          </ng-container>
+
+          <!-- Plan column -->
+          <ng-container matColumnDef="plan">
+            <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs font-medium uppercase tracking-wide bg-surface-raised border-b border-border-default px-4 py-3 text-right">
+              Plan
+            </th>
+            <td mat-cell *matCellDef="let row" class="px-4 py-3 border-b border-border-subtle text-right">
+              <button type="button"
+                class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded px-1.5 py-1"
+                (click)="openPhases(row)" [attr.aria-label]="'Manage plan for ' + row.name">
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">flag</mat-icon>
+                Milestones
               </button>
             </td>
           </ng-container>
@@ -285,6 +310,119 @@ import { HttpClient } from '@angular/common/http';
         </div>
       </aside>
     }
+
+    <!-- Milestones / deliverables slide-in panel -->
+    @if (showPhases()) {
+      <div class="fixed inset-0 bg-black/50 z-40" (click)="closePhases()" aria-hidden="true"></div>
+      <aside
+        class="fixed right-0 top-0 h-full w-full max-w-xl bg-surface border-l border-border-default z-50 flex flex-col shadow-2xl"
+        role="dialog" aria-modal="true" aria-labelledby="phases-title"
+      >
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
+          <div>
+            <h2 id="phases-title" class="text-base font-semibold text-text-primary">Milestones & deliverables</h2>
+            <p class="text-xs text-text-muted mt-0.5">{{ phaseProject()?.code }} · {{ phaseProject()?.name }}</p>
+          </div>
+          <button class="text-text-muted hover:text-text-primary transition-colors rounded" (click)="closePhases()" aria-label="Close panel">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          @if (phasesLoading()) {
+            <div class="flex items-center justify-center py-8">
+              <div class="w-5 h-5 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-label="Loading milestones"></div>
+            </div>
+          } @else if (phases().length === 0) {
+            <p class="text-sm text-text-muted">No milestones are planned yet.</p>
+          } @else {
+            <div class="space-y-3">
+              @for (phase of phases(); track phase.id) {
+                <div class="bg-surface-base border border-border-default rounded-lg px-4 py-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-text-primary truncate">{{ phase.name }}</p>
+                      @if (phase.deliverable_name) {
+                        <p class="text-xs text-text-muted mt-0.5 truncate">{{ phase.deliverable_name }}</p>
+                      }
+                    </div>
+                    <span class="text-xs text-text-muted whitespace-nowrap">{{ phase.end_date || 'No due date' }}</span>
+                  </div>
+                  <div class="mt-3 h-2 rounded-full bg-surface-raised overflow-hidden">
+                    <div class="h-full bg-accent" [style.width.%]="phasePercent(phase)"></div>
+                  </div>
+                  <div class="mt-3 grid grid-cols-3 gap-3">
+                    <select
+                      class="px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                      [value]="phase.status"
+                      [disabled]="updatingPhaseId() === phase.id"
+                      (change)="updatePhase(phase, { status: $any($event.target).value })"
+                      [attr.aria-label]="'Status for ' + phase.name"
+                    >
+                      <option value="planning">Planning</option>
+                      <option value="active">Active</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      class="px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                      [value]="phase.percent_complete"
+                      [disabled]="updatingPhaseId() === phase.id"
+                      (change)="updatePhase(phase, { percent_complete: $any($event.target).value })"
+                      [attr.aria-label]="'Percent complete for ' + phase.name"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="px-3 py-2 bg-surface border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                      [value]="phase.revenue_recognition_amount || ''"
+                      [disabled]="updatingPhaseId() === phase.id"
+                      (change)="updatePhase(phase, { revenue_recognition_amount: $any($event.target).value || null })"
+                      [attr.aria-label]="'Recognition amount for ' + phase.name"
+                      placeholder="Revenue"
+                    />
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          <form [formGroup]="phaseForm" class="border-t border-border-default pt-5 space-y-3" novalidate>
+            <p class="text-xs uppercase tracking-wide text-text-muted">Add milestone</p>
+            <input type="text" formControlName="name" placeholder="Milestone name"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+            <input type="text" formControlName="deliverable_name" placeholder="Deliverable"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+            <textarea formControlName="deliverable_acceptance_criteria" rows="3" placeholder="Acceptance criteria"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"></textarea>
+            <div class="grid grid-cols-2 gap-3">
+              <input type="date" formControlName="end_date"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              <input type="number" min="0" step="0.01" formControlName="budget" placeholder="Budget"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              <input type="number" min="0" step="0.01" formControlName="revenue_recognition_amount" placeholder="Revenue"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+              <input type="number" min="0" max="100" step="1" formControlName="percent_complete" placeholder="%"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+            </div>
+            @if (phasesError()) {
+              <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">{{ phasesError() }}</div>
+            }
+            <button type="button"
+              class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              [disabled]="phaseForm.controls.name.invalid || addingPhase()" (click)="addPhase()">
+              <mat-icon class="text-base leading-none">add_task</mat-icon>
+              @if (addingPhase()) { Adding… } @else { Add milestone }
+            </button>
+          </form>
+        </div>
+      </aside>
+    }
   `,
   styles: [`
     :host { display: block; }
@@ -316,7 +454,7 @@ export class ProjectsListComponent implements OnInit {
     estimated_hours:  [null as number | null],
   });
 
-  displayedColumns = ['code', 'name', 'currency', 'budget', 'status', 'team'];
+  displayedColumns = ['code', 'name', 'currency', 'budget', 'budget_hours', 'status', 'team', 'plan'];
 
   // Team / assignments panel state
   showTeam = signal(false);
@@ -330,6 +468,24 @@ export class ProjectsListComponent implements OnInit {
     employee_id: ['', [Validators.required]],
     role: [''],
     override_rate: [null as number | null],
+  });
+
+  // Project phases / milestones panel state
+  showPhases = signal(false);
+  phaseProject = signal<ProjectSummary | null>(null);
+  phasesLoading = signal(false);
+  phases = signal<ProjectPhase[]>([]);
+  addingPhase = signal(false);
+  updatingPhaseId = signal<string | null>(null);
+  phasesError = signal<string | null>(null);
+  phaseForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required]],
+    deliverable_name: [''],
+    deliverable_acceptance_criteria: [''],
+    end_date: [''],
+    budget: [null as number | null],
+    revenue_recognition_amount: [null as number | null],
+    percent_complete: [0],
   });
 
   ngOnInit(): void {
@@ -392,7 +548,7 @@ export class ProjectsListComponent implements OnInit {
     this.http.post<ProjectSummary>('/api/v1/projects', {
       name:             v.name,
       engagement_id:    v.engagement_id,
-      estimated_hours:  v.estimated_hours ?? null,
+      budget_hours:     v.estimated_hours ?? null,
     }).subscribe({
       next: (newProj) => {
         this.projects.update(list => [newProj, ...list]);
@@ -474,6 +630,110 @@ export class ProjectsListComponent implements OnInit {
       error: () => this.teamError.set('Could not remove team member.'),
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Project phases / milestones
+  // -------------------------------------------------------------------------
+
+  openPhases(project: ProjectSummary): void {
+    this.phaseProject.set(project);
+    this.phasesError.set(null);
+    this.phaseForm.reset({
+      name: '',
+      deliverable_name: '',
+      deliverable_acceptance_criteria: '',
+      end_date: '',
+      budget: null,
+      revenue_recognition_amount: null,
+      percent_complete: 0,
+    });
+    this.showPhases.set(true);
+    this.loadPhases(project.id);
+  }
+
+  closePhases(): void {
+    this.showPhases.set(false);
+  }
+
+  private loadPhases(projectId: string): void {
+    this.phasesLoading.set(true);
+    this.http.get<ProjectPhase[]>(`/api/v1/projects/${projectId}/phases`).subscribe({
+      next: (rows) => {
+        this.phases.set(rows);
+        this.phasesLoading.set(false);
+      },
+      error: () => {
+        this.phasesError.set('Could not load milestones.');
+        this.phasesLoading.set(false);
+      },
+    });
+  }
+
+  addPhase(): void {
+    const project = this.phaseProject();
+    if (!project || this.phaseForm.controls.name.invalid) {
+      this.phaseForm.markAllAsTouched();
+      return;
+    }
+    const v = this.phaseForm.getRawValue();
+    this.addingPhase.set(true);
+    this.phasesError.set(null);
+    this.http.post<ProjectPhase>(`/api/v1/projects/${project.id}/phases`, {
+      name: v.name,
+      deliverable_name: v.deliverable_name || null,
+      deliverable_acceptance_criteria: v.deliverable_acceptance_criteria || null,
+      end_date: v.end_date || null,
+      budget: v.budget != null ? String(v.budget) : null,
+      revenue_recognition_amount: (
+        v.revenue_recognition_amount != null
+          ? String(v.revenue_recognition_amount)
+          : null
+      ),
+      percent_complete: String(v.percent_complete ?? 0),
+      order_index: this.phases().length,
+    }).subscribe({
+      next: (created) => {
+        this.phases.update((rows) => [...rows, created]);
+        this.phaseForm.reset({
+          name: '',
+          deliverable_name: '',
+          deliverable_acceptance_criteria: '',
+          end_date: '',
+          budget: null,
+          revenue_recognition_amount: null,
+          percent_complete: 0,
+        });
+        this.addingPhase.set(false);
+      },
+      error: (err: { error?: { detail?: string } }) => {
+        this.addingPhase.set(false);
+        this.phasesError.set(err?.error?.detail || 'Could not add milestone.');
+      },
+    });
+  }
+
+  updatePhase(phase: ProjectPhase, patch: Partial<ProjectPhase>): void {
+    const project = this.phaseProject();
+    if (!project) return;
+    this.updatingPhaseId.set(phase.id);
+    this.phasesError.set(null);
+    this.http.patch<ProjectPhase>(`/api/v1/projects/${project.id}/phases/${phase.id}`, patch).subscribe({
+      next: (updated) => {
+        this.phases.update((rows) => rows.map(row => row.id === updated.id ? updated : row));
+        this.updatingPhaseId.set(null);
+      },
+      error: (err: { error?: { detail?: string } }) => {
+        this.updatingPhaseId.set(null);
+        this.phasesError.set(err?.error?.detail || 'Could not update milestone.');
+      },
+    });
+  }
+
+  phasePercent(phase: ProjectPhase): number {
+    const value = Number(phase.percent_complete);
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, value));
+  }
 }
 
 interface Assignment {
@@ -490,4 +750,20 @@ interface EmployeeOption {
   id: string;
   first_name: string;
   last_name: string;
+}
+
+interface ProjectPhase {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string | null;
+  status: 'planning' | 'active' | 'completed' | 'cancelled' | string;
+  start_date?: string | null;
+  end_date?: string | null;
+  budget?: string | null;
+  revenue_recognition_amount?: string | null;
+  order_index: number;
+  deliverable_name?: string | null;
+  deliverable_acceptance_criteria?: string | null;
+  percent_complete: string;
 }

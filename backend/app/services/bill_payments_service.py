@@ -12,6 +12,7 @@ Security notes:
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 from datetime import UTC, date, datetime
@@ -19,7 +20,9 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
+from app.domain.payment_optimization import build_payment_optimization
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -48,7 +51,7 @@ class BillPaymentsService:
         # Verify all bills are approved and belong to tenant
         bills = (
             self.db.table("bills")
-            .select("id, total, currency, status, client_id")
+            .select("id, bill_number, total, currency, status, client_id, due_date, vendor_invoice_number")
             .eq("tenant_id", self.tenant_id)
             .in_("id", bill_ids)
             .is_("deleted_at", "null")
@@ -67,7 +70,13 @@ class BillPaymentsService:
             )
 
         total = sum(Decimal(str(b["total"])) for b in bills)
+        currencies = {str(b["currency"]) for b in bills}
+        if len(currencies) > 1:
+            raise HTTPException(422, "Bill payment batches must contain a single currency")
         currency = bills[0]["currency"] if bills else "USD"
+        effective_pay_date = pay_date or date.today()
+        optimization = build_payment_optimization(bills, pay_date=effective_pay_date)
+        bills = optimization.ranked_bills
 
         batch = (
             self.db.table("bill_payment_batches")
@@ -77,8 +86,10 @@ class BillPaymentsService:
                     "total": serialise_money(total),
                     "currency": currency,
                     "bank_account_label": bank_account_label,
-                    "pay_date": pay_date.isoformat() if pay_date else date.today().isoformat(),
+                    "pay_date": effective_pay_date.isoformat(),
                     "created_by": created_by,
+                    "optimization_summary": optimization.summary,
+                    "risk_review_required": optimization.risk_review_required,
                 }
             )
             .execute()
@@ -106,7 +117,12 @@ class BillPaymentsService:
                 "bill_count": len(bills),
             },
         )
-        return {**batch, "items": items}
+        return {
+            **batch,
+            "items": items,
+            "optimization_summary": optimization.summary,
+            "risk_review_required": optimization.risk_review_required,
+        }
 
     # ------------------------------------------------------------------
     # Read
@@ -127,6 +143,7 @@ class BillPaymentsService:
             self.db.table("bill_payment_items")
             .select("*, bills(bill_number, client_id, vendor_invoice_number)")
             .eq("batch_id", batch_id)
+            .eq("tenant_id", self.tenant_id)
             .execute()
             .data
             or []
@@ -151,31 +168,155 @@ class BillPaymentsService:
         batch = self.get_batch(batch_id)
         if batch["status"] != "draft":
             raise HTTPException(409, f"Batch is already {batch['status']}")
+        approved_at = datetime.now(UTC).isoformat()
         result = (
             self.db.table("bill_payment_batches")
-            .update({"status": "approved"})
+            .update(
+                {
+                    "status": "approved",
+                    "approved_by": approved_by,
+                    "approved_at": approved_at,
+                }
+            )
             .eq("id", batch_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
         )
         return result.data[0]
 
-    def mark_sent(self, batch_id: str) -> dict:
-        self.get_batch(batch_id)  # verify exists + tenant owns it
+    def mark_sent(self, batch_id: str, sent_by: str) -> dict:
+        batch = self.get_batch(batch_id)
+        if batch["status"] != "approved":
+            raise HTTPException(409, "Batch must be approved before it can be sent to bank")
+        if not batch.get("export_file_sha256"):
+            raise HTTPException(409, "Batch must be exported before it can be sent to bank")
+        sent_at = datetime.now(UTC).isoformat()
         result = (
             self.db.table("bill_payment_batches")
-            .update({"status": "sent_to_bank", "exported_at": datetime.now(UTC).isoformat()})
+            .update(
+                {
+                    "status": "sent_to_bank",
+                    "sent_by": sent_by,
+                    "sent_at": sent_at,
+                }
+            )
             .eq("id", batch_id)
             .eq("tenant_id", self.tenant_id)
             .execute()
         )
         return result.data[0]
+
+    def settle_batch(self, batch_id: str, settled_by: str) -> dict:
+        """Confirm bank settlement and post AP clearing journals.
+
+        Money movement is never posted when a batch is merely proposed,
+        approved, exported, or marked sent. This method represents the bank
+        confirmation step: for each unsettled item it posts DR AP / CR Bank,
+        marks the bill paid, and marks the batch item settled.
+        """
+        batch = self.get_batch(batch_id)
+        if batch["status"] != "sent_to_bank":
+            raise HTTPException(409, "Batch must be sent_to_bank before settlement")
+
+        items = [item for item in batch["items"] if item.get("status") != "settled"]
+        if not items:
+            raise HTTPException(409, "Batch has no unsettled payment items")
+
+        account_ids = self._get_account_ids_by_codes(["1100", "2000"])
+        bank_account_id = account_ids.get("1100")
+        ap_account_id = account_ids.get("2000")
+        if not bank_account_id or not ap_account_id:
+            raise HTTPException(500, "Chart of accounts not configured for bill settlement")
+
+        settled_at = datetime.now(UTC).isoformat()
+        journal_entry_ids: list[str] = []
+        for item in items:
+            amount = Decimal(str(item["amount"]))
+            currency = item.get("currency") or batch.get("currency") or "USD"
+            bill_id = str(item["bill_id"])
+            bill_number = (item.get("bills") or {}).get("bill_number") or bill_id[:8]
+            lines = [
+                JournalLineSpec(
+                    direction="DR",
+                    account_code="2000",
+                    account_id=ap_account_id,
+                    amount=amount,
+                    currency=currency,
+                    description=f"AP cleared for bill {bill_number}",
+                ),
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="1100",
+                    account_id=bank_account_id,
+                    amount=amount,
+                    currency=currency,
+                    description=f"Bank payment for bill {bill_number}",
+                ),
+            ]
+            try:
+                journal = post_journal(
+                    db=self.db,
+                    tenant_id=self.tenant_id,
+                    created_by=settled_by,
+                    description=f"Bill payment settled for {bill_number}",
+                    entry_date=date.today().isoformat(),
+                    reference_type="bill_payment",
+                    reference_id=bill_id,
+                    lines=lines,
+                    entry_number=f"BP-{bill_number}",
+                )
+            except ValueError as exc:
+                raise HTTPException(422, detail=str(exc)) from exc
+
+            journal_entry_ids.append(str(journal["id"]))
+            self.db.table("bills").update(
+                {"status": "paid", "paid_at": settled_at}
+            ).eq("id", bill_id).eq("tenant_id", self.tenant_id).execute()
+            self.db.table("bill_payment_items").update({"status": "settled"}).eq(
+                "id", item["id"]
+            ).eq("tenant_id", self.tenant_id).execute()
+
+        self.db.table("bill_payment_batches").update(
+            {
+                "status": "settled",
+                "settled_by": settled_by,
+                "settled_at": settled_at,
+            }
+        ).eq("id", batch_id).eq("tenant_id", self.tenant_id).execute()
+
+        logger.info(
+            "bill_payment_batch_settled",
+            extra={
+                "batch_id": batch_id,
+                "tenant_id": self.tenant_id,
+                "settled_count": len(items),
+            },
+        )
+        return {
+            "batch_id": batch_id,
+            "status": "settled",
+            "settled_count": len(items),
+            "journal_entry_ids": journal_entry_ids,
+        }
+
+    def _get_account_ids_by_codes(self, codes: list[str]) -> dict[str, str]:
+        rows = (
+            self.db.table("accounts")
+            .select("id, code")
+            .eq("tenant_id", self.tenant_id)
+            .in_("code", codes)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        return {row["code"]: row["id"] for row in rows}
 
     # ------------------------------------------------------------------
     # Export — NACHA
     # ------------------------------------------------------------------
 
-    def export_nacha(self, batch_id: str) -> bytes:
+    def export_nacha(self, batch_id: str, exported_by: str | None = None) -> bytes:
         """Generate a minimal NACHA ACH batch file. US market only.
 
         Routing/account numbers are left as placeholder zeros — the operator
@@ -183,6 +324,7 @@ class BillPaymentsService:
         or account numbers here (Prahari gate).
         """
         batch = self.get_batch(batch_id)
+        self._assert_exportable(batch)
         items = batch["items"]
 
         today = datetime.now(UTC)
@@ -234,25 +376,22 @@ class BillPaymentsService:
         while len(lines) % 10 != 0:
             lines.append("9" * 94)
 
-        content = "\r\n".join(lines)
-
-        self.db.table("bill_payment_batches").update(
-            {"file_format": "nacha", "exported_at": datetime.now(UTC).isoformat()}
-        ).eq("id", batch_id).execute()
-
-        return content.encode("ascii")
+        content = "\r\n".join(lines).encode("ascii")
+        self._persist_export_metadata(batch_id, "nacha", content, exported_by)
+        return content
 
     # ------------------------------------------------------------------
     # Export — CSV (universal, all 5 launch markets)
     # ------------------------------------------------------------------
 
-    def export_csv(self, batch_id: str) -> bytes:
+    def export_csv(self, batch_id: str, exported_by: str | None = None) -> bytes:
         """Generate a Universal CSV for bulk bank upload.
 
         Routing/account columns are intentionally blank — filled by the
         operator before upload.  We never persist bank credentials here.
         """
         batch = self.get_batch(batch_id)
+        self._assert_exportable(batch)
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(
@@ -282,8 +421,29 @@ class BillPaymentsService:
                 ]
             )
 
-        self.db.table("bill_payment_batches").update(
-            {"file_format": "csv", "exported_at": datetime.now(UTC).isoformat()}
-        ).eq("id", batch_id).execute()
+        content = output.getvalue().encode("utf-8")
+        self._persist_export_metadata(batch_id, "csv", content, exported_by)
+        return content
 
-        return output.getvalue().encode("utf-8")
+    def _assert_exportable(self, batch: dict) -> None:
+        if batch["status"] != "approved":
+            raise HTTPException(409, "Batch must be approved before export")
+
+    def _persist_export_metadata(
+        self,
+        batch_id: str,
+        file_format: str,
+        content: bytes,
+        exported_by: str | None,
+    ) -> None:
+        patch = {
+            "file_format": file_format,
+            "exported_at": datetime.now(UTC).isoformat(),
+            "export_file_sha256": hashlib.sha256(content).hexdigest(),
+            "export_file_bytes": len(content),
+        }
+        if exported_by:
+            patch["exported_by"] = exported_by
+        self.db.table("bill_payment_batches").update(patch).eq("id", batch_id).eq(
+            "tenant_id", self.tenant_id
+        ).execute()

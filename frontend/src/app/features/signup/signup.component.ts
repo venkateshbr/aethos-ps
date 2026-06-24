@@ -16,11 +16,12 @@ import { Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { ThemeService } from '../../core/services/theme.service';
 import { ThemePickerComponent } from '../../shared/components/theme-picker.component';
-import { AuthService } from '../../core/services/auth.service';
 import {
   BillingInterval,
   LAUNCH_COUNTRIES,
   LaunchCountry,
+  launchCountriesFromProfiles,
+  LaunchCountryOption,
   PlanTier,
   PriceCatalogue,
   SignupApiResponse,
@@ -226,7 +227,7 @@ import {
                    text-text-primary
                    focus:outline-none focus:border-accent focus:shadow-accent-ring"
           >
-            @for (c of countries; track c.code) {
+            @for (c of countries(); track c.code) {
               <option [value]="c.code">{{ c.label }} · {{ c.currency }}</option>
             }
           </select>
@@ -525,7 +526,6 @@ export class SignupComponent implements AfterViewInit {
   private fb = inject(FormBuilder);
   private signupSvc = inject(SignupService);
   private router = inject(Router);
-  private auth = inject(AuthService);
 
   /** Card mount node — only present in DOM when step() === 3. */
   protected cardEl = viewChild<ElementRef<HTMLDivElement>>('cardEl');
@@ -544,6 +544,7 @@ export class SignupComponent implements AfterViewInit {
         void this.ensureStripeMounted();
       }
     });
+    void this.loadMarketProfiles();
   }
 
   ngAfterViewInit(): void {
@@ -551,7 +552,7 @@ export class SignupComponent implements AfterViewInit {
     // mounting when (if) the user reaches step 3.
   }
 
-  protected readonly countries = LAUNCH_COUNTRIES;
+  protected readonly countries = signal<LaunchCountryOption[]>(LAUNCH_COUNTRIES);
   protected readonly stepLabels = [
     { idx: 1, label: 'Account' },
     { idx: 2, label: 'Plan' },
@@ -684,6 +685,15 @@ export class SignupComponent implements AfterViewInit {
   protected shouldShowError(name: keyof typeof this.accountForm.controls): boolean {
     const ctrl = this.accountForm.controls[name];
     return ctrl.invalid && (ctrl.dirty || ctrl.touched);
+  }
+
+  private async loadMarketProfiles(): Promise<void> {
+    try {
+      const profiles = await this.signupSvc.fetchMarketProfiles();
+      this.countries.set(launchCountriesFromProfiles(profiles));
+    } catch {
+      this.countries.set(LAUNCH_COUNTRIES);
+    }
   }
 
   /** Submit page 1 → POST /auth/signup → mint JWT → advance to plan picker. */
@@ -887,12 +897,12 @@ export class SignupComponent implements AfterViewInit {
         price_id: priceId,
       });
 
-      // 3. Show the success screen. Clear the JWT so the user must sign in
-      //    explicitly — they should not be auto-logged in after signup.
+      // 3. The signup flow already minted a Supabase session in step 1 so the
+      // plan and trial calls could run with tenant context. Keep that session
+      // and land in the app.
       this.confirmedTier.set(this.selectedTier());
       this.confirmedInterval.set(this.interval());
-      this.auth.clearToken();
-      this.step.set(4);
+      await this.router.navigate(['/app/copilot']);
     } catch (err: unknown) {
       this.serverError.set(this.friendlyError(err));
     } finally {

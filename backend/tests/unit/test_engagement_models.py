@@ -73,6 +73,7 @@ def test_billing_arrangement_enum_values() -> None:
         "retainer_draw",
         "milestone",
         "capped_tm",
+        "mixed",
     ]
     for v in valid:
         eng = EngagementCreate(client_id="c1", name="x", billing_arrangement=v)  # type: ignore[arg-type]
@@ -105,6 +106,31 @@ def test_billing_terms_all_none_allowed() -> None:
     assert terms.cap_amount is None
 
 
+def test_billing_terms_supports_milestone_and_retainer_rollover() -> None:
+    terms = BillingTerms(
+        milestone_total="30000",
+        retainer_monthly_amount="5000",
+        retainer_rollover=True,
+    )
+
+    assert terms.milestone_total == Decimal("30000")
+    assert terms.retainer_monthly_amount == Decimal("5000")
+    assert terms.retainer_rollover is True
+
+
+def test_billing_terms_supports_per_unit_payroll_terms() -> None:
+    terms = BillingTerms(
+        billing_unit="per_employee",
+        unit_label="Employees",
+        unit_quantity="42",
+        unit_price="18.50",
+    )
+
+    assert terms.billing_unit == "per_employee"
+    assert terms.unit_quantity == Decimal("42")
+    assert terms.unit_price == Decimal("18.50")
+
+
 # ---------------------------------------------------------------------------
 # EngagementResponse.from_db
 # ---------------------------------------------------------------------------
@@ -120,6 +146,8 @@ def test_engagement_from_db_with_total_value() -> None:
         "currency": "USD",
         "total_value": "12000.00",
         "status": "active",
+        "description": "Monthly retained advisory",
+        "rate_card_id": "rate-card-1",
         "start_date": "2026-01-01",
         "end_date": None,
         "created_at": "2026-05-19T10:00:00+00:00",
@@ -128,6 +156,8 @@ def test_engagement_from_db_with_total_value() -> None:
     assert resp.id == "eng-123"
     assert resp.total_value == "12000.00"
     assert isinstance(resp.total_value, str)
+    assert resp.description == "Monthly retained advisory"
+    assert resp.rate_card_id == "rate-card-1"
     assert resp.billing_terms is None
 
 
@@ -239,12 +269,24 @@ def test_engagement_billing_terms_response_quantises_each_field() -> None:
     terms = EngagementBillingTermsResponse.from_db(
         {
             "fixed_fee_amount": "50000.0",
+            "milestone_total": "30000",
             "retainer_monthly_amount": "10000",
             "retainer_floor": None,
+            "retainer_rollover": True,
             "cap_amount": "75000.5",
+            "billing_unit": "per_employee",
+            "unit_label": "Employees",
+            "unit_quantity": "42",
+            "unit_price": "18.5",
         }
     )
     assert terms.fixed_fee_amount == "50000.00"
+    assert terms.milestone_total == "30000.00"
     assert terms.retainer_monthly_amount == "10000.00"
     assert terms.retainer_floor is None
+    assert terms.retainer_rollover is True
     assert terms.cap_amount == "75000.50"
+    assert terms.billing_unit == "per_employee"
+    assert terms.unit_label == "Employees"
+    assert terms.unit_quantity == "42"
+    assert terms.unit_price == "18.50"

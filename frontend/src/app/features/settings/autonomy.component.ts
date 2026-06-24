@@ -28,6 +28,12 @@ interface AgentAutonomyStatus {
   description: string;
   current_level: 1 | 2 | 3;
   is_locked: boolean;
+  is_enabled: boolean;
+  failure_count: number;
+  failure_threshold: number;
+  circuit_open_until: string | null;
+  circuit_open_reason: string | null;
+  is_circuit_open: boolean;
   is_eligible_for_promotion: boolean;
   approval_rate_30d: number | null;   // fraction 0-1, null if < 10 samples
   sample_count_30d: number;           // count of decided suggestions (30d)
@@ -178,7 +184,30 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
 
                   <!-- Eligibility status -->
                   <td class="px-6 py-4">
-                    @if (!agent.is_locked && agent.is_eligible_for_promotion) {
+                    @if (!agent.is_enabled) {
+                      <span
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-300"
+                        aria-label="Agent paused"
+                      >
+                        <mat-icon
+                          style="font-size:0.875rem;width:0.875rem;height:0.875rem;"
+                          aria-hidden="true"
+                        >pause_circle</mat-icon>
+                        Paused
+                      </span>
+                    } @else if (agent.is_circuit_open) {
+                      <span
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300"
+                        [matTooltip]="agent.circuit_open_reason || 'Circuit is cooling down after repeated failures'"
+                        aria-label="Circuit open"
+                      >
+                        <mat-icon
+                          style="font-size:0.875rem;width:0.875rem;height:0.875rem;"
+                          aria-hidden="true"
+                        >error</mat-icon>
+                        Circuit open
+                      </span>
+                    } @else if (!agent.is_locked && agent.is_eligible_for_promotion) {
                       <span
                         class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300"
                         aria-label="Ready for promotion to L3"
@@ -189,6 +218,10 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
                         >star</mat-icon>
                         Eligible
                       </span>
+                    } @else if (agent.failure_count > 0) {
+                      <span class="text-xs text-text-muted tabular-nums">
+                        Failures {{ agent.failure_count }}/{{ agent.failure_threshold }}
+                      </span>
                     }
                   </td>
 
@@ -198,6 +231,32 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
                       <span class="text-text-disabled text-xs italic">Locked — always L3</span>
                     } @else {
                       <div class="flex items-center justify-end gap-2 flex-wrap">
+
+                        @if (agent.is_enabled) {
+                          <button
+                            type="button"
+                            [disabled]="actionAgent() === agent.agent_name"
+                            (click)="setAgentEnabled(agent, false)"
+                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-text-muted hover:text-red-300 border border-border-default hover:border-red-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                            [attr.aria-label]="'Pause ' + agent.display_name"
+                            matTooltip="Pause immediately blocks this agent before any tool can run"
+                          >
+                            <mat-icon style="font-size:0.875rem;width:0.875rem;height:0.875rem;" aria-hidden="true">pause_circle</mat-icon>
+                            Pause
+                          </button>
+                        } @else {
+                          <button
+                            type="button"
+                            [disabled]="actionAgent() === agent.agent_name"
+                            (click)="setAgentEnabled(agent, true)"
+                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-700/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                            [attr.aria-label]="'Resume ' + agent.display_name"
+                            matTooltip="Resume this agent and close any open default circuit"
+                          >
+                            <mat-icon style="font-size:0.875rem;width:0.875rem;height:0.875rem;" aria-hidden="true">play_circle</mat-icon>
+                            Resume
+                          </button>
+                        }
 
                         <!-- Promote L1→L2 -->
                         @if (agent.current_level === 1) {
@@ -218,11 +277,11 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
                         @if (agent.current_level === 2) {
                           <button
                             type="button"
-                            [disabled]="actionAgent() === agent.agent_name"
+                            [disabled]="actionAgent() === agent.agent_name || !agent.is_eligible_for_promotion"
                             (click)="setLevel(agent, 3)"
                             class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-700/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                             [attr.aria-label]="'Promote ' + agent.display_name + ' to L3 (auto)'"
-                            matTooltip="Promote to L3 — agent acts automatically without HITL"
+                            matTooltip="Promote to L3 — requires approval history, eval pass, admin opt-in, and risk permission"
                           >
                             <mat-icon style="font-size:0.875rem;width:0.875rem;height:0.875rem;" aria-hidden="true">arrow_upward</mat-icon>
                             L3
@@ -301,6 +360,7 @@ function levelBadge(level: number, locked: boolean): LevelBadge {
       <div class="px-6 py-3 border-t border-border-default bg-surface-base/30">
         <p class="text-xs text-text-disabled">
           Autonomy changes take effect immediately.
+          Pause is a hard kill switch and blocks tool execution before HITL or role checks.
           Auto-promotion to L3 requires admin approval and sustained performance above threshold.
           The Accounting Guardian runs at L3 always and cannot be disabled.
         </p>
@@ -422,6 +482,39 @@ export class AutonomyComponent implements OnInit {
           this.actionAgent.set(null);
           const action = newLevel === 1 ? 'set to notify-only (L1)' : `set to L${newLevel}`;
           this.successMessage.set(`${agent.display_name} ${action}.`);
+          setTimeout(() => this.successMessage.set(null), 5000);
+          this.load();
+        },
+        error: (err: { error?: { detail?: string } }) => {
+          this.actionAgent.set(null);
+          const detail = err?.error?.detail;
+          this.actionError.set(
+            typeof detail === 'string'
+              ? detail
+              : `Could not update ${agent.display_name}. Please try again.`,
+          );
+          setTimeout(() => this.actionError.set(null), 6000);
+        },
+      });
+  }
+
+  setAgentEnabled(agent: AgentAutonomyStatus, isEnabled: boolean): void {
+    if (agent.is_locked && !isEnabled) return;
+    this.actionAgent.set(agent.agent_name);
+    this.actionError.set(null);
+    this.successMessage.set(null);
+
+    this.http
+      .post(
+        `/api/v1/agents/${agent.agent_name}/control`,
+        { is_enabled: isEnabled, reset_circuit: isEnabled },
+      )
+      .subscribe({
+        next: () => {
+          this.actionAgent.set(null);
+          this.successMessage.set(
+            `${agent.display_name} ${isEnabled ? 'resumed' : 'paused'}.`,
+          );
           setTimeout(() => this.successMessage.set(null), 5000);
           this.load();
         },

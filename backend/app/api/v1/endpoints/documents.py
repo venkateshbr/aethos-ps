@@ -19,7 +19,7 @@ from datetime import datetime as dt
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.models.documents import DocumentResponse, DocumentSummary
 from supabase import Client
@@ -257,12 +257,12 @@ async def upload_document(
 async def list_documents(
     tenant_id: str = Depends(get_tenant_id),
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> list[DocumentSummary]:
     """Return the tenant's uploaded documents, newest first (capped at 200).
 
-    Backs the Documents page. Tenant scoping is enforced here (service-role
-    client bypasses RLS, same pattern as the rest of this router).
+    Backs the Documents page. Tenant scoping is enforced by RLS and the
+    explicit tenant_id filter below.
     """
     try:
         result = (
@@ -377,7 +377,8 @@ async def get_document_url(
     expires_in: int = 3600,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    read_db: Client = Depends(get_user_rls_client),  # noqa: B008
+    storage_db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> dict:
     """Return a tenant-scoped presigned URL for the document's bucket object.
 
@@ -399,7 +400,7 @@ async def get_document_url(
     # someone else (information-hiding parity with #90/#92).
     try:
         row = (
-            db.table("documents")
+            read_db.table("documents")
             .select("id, storage_path, original_filename, mime_type")
             .eq("id", document_id)
             .eq("tenant_id", tenant_id)
@@ -429,7 +430,7 @@ async def get_document_url(
 
     try:
         # supabase-py: create_signed_url(path, expires_in_seconds)
-        signed = db.storage.from_(_STORAGE_BUCKET).create_signed_url(
+        signed = storage_db.storage.from_(_STORAGE_BUCKET).create_signed_url(
             storage_path, expires_in
         )
     except Exception as exc:

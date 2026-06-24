@@ -37,6 +37,7 @@ introduced here closes that hole.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -93,6 +94,51 @@ class TenantMiddleware(BaseHTTPMiddleware):
 # membership check is reached more than once in the same request (defensive —
 # FastAPI's Depends caching already covers the common case).
 _VERIFIED_TENANT_STATE_KEY = "_aethos_verified_tenant_id"
+_VERIFIED_TENANT_ROLE_STATE_KEY = "_aethos_verified_tenant_role"
+
+
+def _lookup_active_membership(
+    db: Client,
+    *,
+    user_id: str,
+    tenant_id: str,
+) -> dict[str, str] | None:
+    """Return active ``tenant_users`` membership details for this request.
+
+    This is intentionally only request-scoped; revocation still takes effect on
+    the next request. A short retry loop absorbs transient Supabase connection
+    resets so RBAC does not downgrade a valid owner/admin to viewer because one
+    TLS handshake failed.
+    """
+    for attempt in range(3):
+        try:
+            result = (
+                db.table("tenant_users")
+                .select("id, role")
+                .eq("user_id", user_id)
+                .eq("tenant_id", tenant_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                row = result.data[0]
+                return {"id": row["id"], "role": row["role"]}
+            return None
+        except Exception:  # pragma: no cover - exercised with fake DB in unit tests
+            if attempt < 2:
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            # Treat persistent DB/network errors as "not a member" — fail closed.
+            # We log at error level so SRE alerts pick it up rather than silently
+            # denying.
+            logger.exception(
+                "tenant_users membership lookup failed",
+                extra={"user_id": user_id, "tenant_id": tenant_id},
+            )
+            return None
+
+    return None
 
 
 def _is_active_member(
@@ -110,25 +156,7 @@ def _is_active_member(
     one row by ``(user_id, tenant_id)`` with ``deleted_at IS NULL``, backed
     by the partial index ``idx_tenant_users_user_id``.
     """
-    try:
-        result = (
-            db.table("tenant_users")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("tenant_id", tenant_id)
-            .is_("deleted_at", "null")
-            .limit(1)
-            .execute()
-        )
-    except Exception:
-        # Treat any DB error as "not a member" — fail closed.  We log at
-        # error level so SRE alerts pick it up rather than silently denying.
-        logger.exception(
-            "tenant_users membership lookup failed",
-            extra={"user_id": user_id, "tenant_id": tenant_id},
-        )
-        return False
-    return bool(result.data)
+    return _lookup_active_membership(db, user_id=user_id, tenant_id=tenant_id) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +214,12 @@ def get_tenant_id(
     # ------------------------------------------------------------------
     # JWT subject ↔ tenant membership cross-check
     # ------------------------------------------------------------------
-    if not _is_active_member(
+    membership = _lookup_active_membership(
         db,
         user_id=current_user.user_id,
         tenant_id=tenant_uuid,
-    ):
+    )
+    if membership is None:
         # Log at warning — this is either an honest typo (UI bug) or a spoof
         # attempt. Either way the SRE / Dhruva pipeline should see it.
         logger.warning(
@@ -207,6 +236,7 @@ def get_tenant_id(
 
     # Pin the verified value on request.state for any later in-request reads.
     setattr(request.state, _VERIFIED_TENANT_STATE_KEY, tenant_uuid)
+    setattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, membership["role"])
     # Also refresh the logging context var so subsequent log lines carry the
     # verified id (the middleware may have stashed an unverified header value).
     tenant_id_var.set(tenant_uuid)

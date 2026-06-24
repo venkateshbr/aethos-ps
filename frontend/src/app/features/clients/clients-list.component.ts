@@ -159,8 +159,8 @@ interface ClientSummary {
         <form [formGroup]="createForm" (ngSubmit)="submitCreate()" class="flex-1 overflow-y-auto px-6 py-5 space-y-5" novalidate>
           <!-- Name -->
           <div>
-            <label for="contact-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
-            <input id="contact-name" type="text" formControlName="name"
+            <label for="client-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
+            <input id="client-name" type="text" formControlName="name"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
               placeholder="e.g. Acme Corp" />
             @if (createForm.controls.name.touched && createForm.controls.name.errors) {
@@ -169,8 +169,8 @@ interface ClientSummary {
           </div>
           <!-- Contact Type -->
           <div>
-            <label for="contact-kind" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Contact Type *</label>
-            <select id="contact-kind" formControlName="kind"
+            <label for="client-kind" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Contact Type *</label>
+            <select id="client-kind" formControlName="kind"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm">
               <option value="customer">Customer (client you bill)</option>
               <option value="vendor">Vendor (supplier you pay)</option>

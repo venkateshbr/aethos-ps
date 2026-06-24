@@ -18,8 +18,13 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from app.core.config import settings
 from supabase import Client, create_client
+
+_rls_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @lru_cache(maxsize=1)
@@ -55,3 +60,24 @@ def get_service_role_client() -> Client:
     Use sparingly.  Document every call-site that uses this.
     """
     return create_client(settings.supabase_url, settings.supabase_service_role_key)
+
+
+def get_user_rls_client(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_rls_bearer_scheme),  # noqa: B008
+) -> Client:
+    """FastAPI dependency: return an anon-key Supabase client carrying the caller JWT.
+
+    Use this for authenticated tenant-scoped routes when the operation can rely
+    on Postgres RLS. The route should still inject ``get_tenant_id`` so the API
+    verifies membership before calling the service layer; RLS then becomes a
+    second enforcement boundary instead of being bypassed by service-role.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    client = create_client(settings.supabase_url, settings.supabase_anon_key)
+    client.postgrest.auth(credentials.credentials)
+    return client

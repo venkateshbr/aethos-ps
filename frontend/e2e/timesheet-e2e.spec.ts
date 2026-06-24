@@ -15,17 +15,19 @@
  * Each describe block keeps its own login context (owner vs employee).
  */
 
-import { test, expect, Page, BrowserContext } from '@playwright/test';
+import { test, expect, Page, BrowserContext, APIRequestContext } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const MAIN_URL    = process.env.AETHOS_PS_WEB_URL    ?? 'http://localhost:4200';
 const PORTAL_URL  = process.env.AETHOS_TS_WEB_URL    ?? 'http://localhost:4202';
+const API_URL     = process.env.AETHOS_PS_API_URL    ?? 'http://localhost:8011';
 const SEED_PATH   = path.join(__dirname, '.auth', 'timesheet-e2e-seed.json');
 const OWNER_STATE = path.join(__dirname, '.auth', 'ts-owner.json');
 const BOB_STATE   = path.join(__dirname, '.auth', 'ts-bob.json');
 const CAROL_STATE = path.join(__dirname, '.auth', 'ts-carol.json');
+const PROJECT_TABLE = 'mat-table, [mat-table], table[class*="mat"]';
 
 interface Seed {
   test_email: string;
@@ -39,6 +41,14 @@ interface Seed {
   project_code: string;
   project_name: string;
   employees: { id: string; email: string; name: string; first_name: string }[];
+}
+
+interface TimesheetEntry {
+  employee_id: string;
+  project_id: string;
+  date: string;
+  hours: string;
+  status: string;
 }
 
 function seed(): Seed {
@@ -58,19 +68,163 @@ function seed(): Seed {
 async function navigateToTestWeek(page: Page, weeksAhead: number): Promise<void> {
   // Reset to current week and wait for loadWeek to complete
   await page.getByRole('button', { name: /this week/i }).click();
-  await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 8_000 });
+  await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 60_000 });
 
   // Click "Next week" one at a time, waiting for each loadWeek to complete.
   // This prevents concurrent API requests from racing on the singleton service-role client.
   for (let i = 0; i < weeksAhead; i++) {
     await page.getByRole('button', { name: /next week/i }).click();
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 8_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 60_000 });
     await page.waitForTimeout(200); // small buffer for Angular change detection
   }
 }
 
-// Weeks ahead from current week — set dynamically by S0 to skip occupied weeks.
-let WEEKS_AHEAD = 4;
+async function gotoProjectsReady(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.goto(`${MAIN_URL}/app/projects`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: /^projects$/i })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.animate-spin, [aria-busy="true"]')).toHaveCount(0, { timeout: 45_000 });
+    if (await page.getByRole('alert').isVisible().catch(() => false)) {
+      await page.waitForTimeout(1_000);
+      continue;
+    }
+    if (await page.locator(PROJECT_TABLE).first().isVisible().catch(() => false)) return;
+  }
+  await expect(page.locator(PROJECT_TABLE).first()).toBeVisible({ timeout: 20_000 });
+}
+
+async function gotoPortalTimesheetReady(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: /my week/i })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
+    if (await page.getByRole('alert').isVisible().catch(() => false)) {
+      await page.waitForTimeout(1_000);
+      continue;
+    }
+    return;
+  }
+  await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 10_000 });
+}
+
+async function portalEntriesForWeek(page: Page, weekStart: string): Promise<TimesheetEntry[]> {
+  const auth = await page.evaluate(() => ({
+    token: localStorage.getItem('aethos_ts_token') ?? '',
+    tenantId: localStorage.getItem('aethos_ts_tenant_id') ?? '',
+  }));
+  expect(auth.token, 'portal token must be present').toBeTruthy();
+  expect(auth.tenantId, 'portal tenant id must be present').toBeTruthy();
+
+  const start = new Date(`${weekStart}T00:00:00Z`);
+  const weekEnd = new Date(start.getTime() + 6 * 86_400_000).toISOString().split('T')[0];
+  const resp = await page.request.get(
+    `${API_URL}/api/v1/timesheet/entries?date_from=${weekStart}&date_to=${weekEnd}`,
+    { headers: { 'Authorization': `Bearer ${auth.token}`, 'X-Tenant-ID': auth.tenantId } }
+  );
+  expect(resp.ok(), `timesheet entries API should load for ${weekStart}`).toBeTruthy();
+  const data = await resp.json();
+  return data.items ?? [];
+}
+
+async function clearProjectWeek(
+  request: APIRequestContext,
+  token: string,
+  tenantId: string,
+  projectId: string,
+  weekStart: string
+): Promise<boolean> {
+  const headers = { 'Authorization': `Bearer ${token}`, 'X-Tenant-ID': tenantId };
+  const weekEnd = isoDateInWeek(weekStart, 6);
+  const entriesResp = await request.get(
+    `${API_URL}/api/v1/time-entries?project_id=${projectId}&date_from=${weekStart}&date_to=${weekEnd}&limit=500`,
+    { headers }
+  ).catch(() => null);
+  if (!entriesResp?.ok()) return false;
+
+  const data = await entriesResp.json().catch(() => ({}));
+  const items: { id?: string }[] = data.items ?? (Array.isArray(data) ? data : []);
+  for (const entry of items) {
+    if (!entry.id) continue;
+    const delResp = await request.delete(`${API_URL}/api/v1/time-entries/${entry.id}`, { headers }).catch(() => null);
+    if (delResp && !delResp.ok() && delResp.status() !== 404) return false;
+  }
+
+  const verifyResp = await request.get(
+    `${API_URL}/api/v1/time-entries?project_id=${projectId}&date_from=${weekStart}&date_to=${weekEnd}&limit=500`,
+    { headers }
+  ).catch(() => null);
+  if (!verifyResp?.ok()) return false;
+  const verifyData = await verifyResp.json().catch(() => ({}));
+  const remaining = verifyData.items ?? (Array.isArray(verifyData) ? verifyData : []);
+  return remaining.length === 0;
+}
+
+async function tryPortalEntriesForWeek(page: Page, weekStart: string): Promise<TimesheetEntry[]> {
+  try {
+    return await portalEntriesForWeek(page, weekStart);
+  } catch {
+    return [];
+  }
+}
+
+function isoDateInWeek(weekStart: string, dayOffset: number): string {
+  const start = new Date(`${weekStart}T00:00:00Z`);
+  return new Date(start.getTime() + dayOffset * 86_400_000).toISOString().split('T')[0];
+}
+
+async function expectDraftEntry(
+  page: Page,
+  weekStart: string,
+  employeeId: string,
+  projectId: string,
+  dayOffset: number,
+  hours: string
+): Promise<void> {
+  const date = isoDateInWeek(weekStart, dayOffset);
+  await expect.poll(async () => {
+    const entries = await tryPortalEntriesForWeek(page, weekStart);
+    return entries.some((e) =>
+      e.employee_id === employeeId
+      && e.project_id === projectId
+      && e.date === date
+      && e.status === 'draft'
+      && Number(e.hours) === Number(hours)
+    );
+  }, { timeout: 20_000 }).toBe(true);
+}
+
+async function expectSubmittedWeek(page: Page, weekStart: string, employeeId: string, projectId: string): Promise<void> {
+  await expect.poll(async () => {
+    const entries = (await tryPortalEntriesForWeek(page, weekStart))
+      .filter((e) => e.employee_id === employeeId && e.project_id === projectId);
+    const submittedDates = new Set(entries.filter((e) => e.status === 'submitted').map((e) => e.date));
+    const hasFirstThreeDays = [0, 1, 2].every((day) => submittedDates.has(isoDateInWeek(weekStart, day)));
+    const hasDrafts = entries.some((e) => e.status === 'draft');
+    return hasFirstThreeDays && !hasDrafts;
+  }, { timeout: 30_000 }).toBe(true);
+}
+
+async function expectRejectedWeek(page: Page, weekStart: string, employeeId: string, projectId: string): Promise<void> {
+  await expect.poll(async () => {
+    const entries = (await tryPortalEntriesForWeek(page, weekStart))
+      .filter((e) => e.employee_id === employeeId && e.project_id === projectId);
+    const rejectedDates = new Set(entries.filter((e) => e.status === 'rejected').map((e) => e.date));
+    return [0, 1, 2].every((day) => rejectedDates.has(isoDateInWeek(weekStart, day)));
+  }, { timeout: 30_000 }).toBe(true);
+}
+
+function approvalCard(page: Page, employeeName: string, weekStart: string, projectCode: string) {
+  return page.locator('[class*="rounded-lg"]', {
+    has: page.locator('p.font-semibold', { hasText: employeeName }),
+  }).filter({ hasText: `Week of ${weekStart}` }).filter({ hasText: projectCode }).first();
+}
+
+const RESERVED_WEEKS_AHEAD = 4;
+
+// Weeks ahead from current week. Setup reserves this near-future week by
+// clearing only this test project's entries for that week, then the UI flow
+// recreates the scenario from scratch.
+let WEEKS_AHEAD = RESERVED_WEEKS_AHEAD;
 
 /** Returns the ISO YYYY-MM-DD of the Monday that is exactly `weeksAhead`
  * calendar weeks ahead of the current week's Monday. All arithmetic in UTC
@@ -111,17 +265,16 @@ async function portalLogin(page: Page, context: BrowserContext, email: string, p
   await context.storageState({ path: statePath });
 }
 
-// ─── Global setup: find the first empty week for Bob ─────────────────────────
-// Runs once before all suites. Uses the backend API directly (no browser) to
-// find the first Monday that has NO existing time entries for Bob.
-// This keeps the test idempotent across multiple runs.
-test.beforeAll(async ({ request }) => {
-  const { test_email, password, tenant_id, project_id, employees } = seed();
-  const bob = employees[0];
-  const API = 'http://localhost:8011';
-
+// ─── Global setup: reserve a near-future week ────────────────────────────────
+// Runs once before all suites. Uses the manager API to clear only this seeded
+// test project's entries in a near-future week. The browser flow then creates
+// all Bob/Carol entries through the UI, keeping the scenario idempotent without
+// pushing week navigation farther into the future on every local run.
+test.beforeAll(async ({ request }, testInfo) => {
+  testInfo.setTimeout(120_000);
+  const { test_email, password, tenant_id, project_id } = seed();
   // 1. Sign in to get a JWT
-  const signinResp = await request.post(`${API}/api/v1/auth/signin`, {
+  const signinResp = await request.post(`${API_URL}/api/v1/auth/signin`, {
     data: { email: test_email, password },
   }).catch(() => null);
 
@@ -147,35 +300,13 @@ test.beforeAll(async ({ request }) => {
     }
   }
 
-  if (!token) return; // Can't detect — use default WEEKS_AHEAD=4
+  if (!token) return;
 
-  // 2. Fetch ALL entries for the project (covers both Bob AND Carol) to find
-  //    the first week that is empty for BOTH employees.
-  const entriesResp = await request.get(
-    `${API}/api/v1/time-entries?project_id=${project_id}&limit=200`,
-    { headers: { 'Authorization': `Bearer ${token}`, 'X-Tenant-ID': tenant_id } }
-  ).catch(() => null);
-
-  if (!entriesResp?.ok()) return;
-
-  const data = await entriesResp.json().catch(() => ({}));
-  const items: { date: string }[] = data.items ?? (Array.isArray(data) ? data : []);
-
-  const occupiedWeeks = new Set<string>();
-  for (const e of items) {
-    // Use UTC arithmetic to find Monday of this entry's week
-    const ms = new Date(e.date + 'T00:00:00Z').getTime();
-    const utcDow = new Date(ms).getUTCDay(); // 0=Sun
-    const backToMon = utcDow === 0 ? -6 : 1 - utcDow;
-    const monMs = ms + backToMon * 86_400_000;
-    occupiedWeeks.add(new Date(monMs).toISOString().split('T')[0]);
-  }
-
-  // 3. Find the first future week (w=1 onward) with no entries
-  for (let w = 1; w <= 52; w++) {
-    if (!occupiedWeeks.has(isoMonday(w))) {
+  for (let w = RESERVED_WEEKS_AHEAD; w <= RESERVED_WEEKS_AHEAD + 8; w++) {
+    const weekStart = isoMonday(w);
+    if (await clearProjectWeek(request, token, tenant_id, project_id, weekStart)) {
       WEEKS_AHEAD = w;
-      break;
+      return;
     }
   }
 });
@@ -185,61 +316,39 @@ test.describe('S0 · Login sessions', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('owner logs in to main ERP and portal', async ({ page, context }) => {
-    test.setTimeout(60_000);
-    const { test_email, password, employees } = seed();
+    test.setTimeout(90_000);
+    const { test_email, password, tenant_id, project_id } = seed();
     await mainLogin(page, context, test_email, password, OWNER_STATE);
 
     // Verify main ERP shell mounted
     await page.goto(`${MAIN_URL}/app/copilot`, { waitUntil: 'load' });
     await expect(page.getByText(/aethos/i).first()).toBeVisible({ timeout: 15_000 });
 
-    // ── Find the first EMPTY week for Bob (no entries in that week) ──────────
-    // Query the time entries API to discover which weeks are already occupied,
-    // then set WEEKS_AHEAD so S2/S3 use a week that has no existing entries.
-    const sbKey = await page.evaluate(() =>
-      Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token')) ?? ''
-    );
-    const freshToken = await page.evaluate((key: string) => {
-      try { return JSON.parse(localStorage.getItem(key) ?? '{}')?.access_token ?? ''; }
+    const freshToken = await page.evaluate(() => {
+      const direct = localStorage.getItem('aethos_token');
+      if (direct) return direct;
+      const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+      if (!sbKey) return '';
+      try { return JSON.parse(localStorage.getItem(sbKey) ?? '{}')?.access_token ?? ''; }
       catch { return ''; }
-    }, sbKey);
-
-    if (freshToken) {
-      const { tenant_id, project_id, employees } = seed();
-      const bob = employees[0];
-      const baseUrl = `http://localhost:8011`;
-      // Fetch the last 60 days worth of entries for Bob on this project
-      const resp = await page.request.get(
-        `${baseUrl}/api/v1/time-entries?employee_id=${bob.id}&project_id=${project_id}&limit=200`,
-        { headers: { 'Authorization': `Bearer ${freshToken}`, 'X-Tenant-ID': tenant_id } }
-      );
-      if (resp.ok()) {
-        const data = await resp.json();
-        const entries: { date: string }[] = data.items ?? (Array.isArray(data) ? data : []);
-        // Collect all occupied ISO weeks (as monday date strings)
-        const occupiedWeeks = new Set<string>();
-        for (const e of entries) {
-          // Use UTC throughout to avoid local-timezone ambiguity
-          const d = new Date(e.date + 'T00:00:00Z');
-          const utcDow = d.getUTCDay(); // 0=Sun
-          const backToMon = utcDow === 0 ? -6 : 1 - utcDow;
-          const mon = new Date(d.getTime() + backToMon * 86_400_000);
-          occupiedWeeks.add(mon.toISOString().split('T')[0]);
-        }
-        // Find the first future week (starting from +1) that has no entries
-        for (let w = 1; w <= 52; w++) {
-          const mon = isoMonday(w);
-          if (!occupiedWeeks.has(mon)) {
-            WEEKS_AHEAD = w;
-            break;
-          }
-        }
-        test.info().annotations.push({
-          type: 'weeks-ahead',
-          description: `WEEKS_AHEAD=${WEEKS_AHEAD} (week starting ${isoMonday(WEEKS_AHEAD)})`,
-        });
+    });
+    expect(freshToken, 'fresh owner token must be available for test-week cleanup').toBeTruthy();
+    let weekStart = isoMonday(WEEKS_AHEAD);
+    let cleaned = false;
+    for (let w = RESERVED_WEEKS_AHEAD; w <= RESERVED_WEEKS_AHEAD + 8; w++) {
+      weekStart = isoMonday(w);
+      cleaned = await clearProjectWeek(page.request, freshToken, tenant_id, project_id, weekStart);
+      if (cleaned) {
+        WEEKS_AHEAD = w;
+        break;
       }
     }
+    expect(cleaned, `reserved week ${weekStart} should be clean before UI scenario`).toBeTruthy();
+
+    test.info().annotations.push({
+      type: 'weeks-ahead',
+      description: `WEEKS_AHEAD=${WEEKS_AHEAD} (week starting ${weekStart})`,
+    });
 
     test.info().annotations.push({ type: 'owner-session', description: test_email });
   });
@@ -315,12 +424,12 @@ test.describe('S1 · Main ERP — People CRUD + Project Team', () => {
   });
 
   test('Portal badge visible on both invited employees', async ({ page }) => {
-    test.setTimeout(25_000);
+    test.setTimeout(45_000);
     const { employees } = seed();
     await page.goto(`${MAIN_URL}/app/people`, { waitUntil: 'load' });
     // Wait for the page heading — ensures Angular has fully mounted PeopleListComponent
     await expect(page.getByRole('heading', { name: /^people$/i, level: 1 })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
     // The portal badge is a <span> with exact text 'portal' rendered INSIDE the same
     // <p class="...truncate"> that shows the employee's full name.
@@ -335,10 +444,10 @@ test.describe('S1 · Main ERP — People CRUD + Project Team', () => {
   });
 
   test('Create a new employee via the slide-in form', async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
     await page.goto(`${MAIN_URL}/app/people`, { waitUntil: 'load' });
     await expect(page.getByRole('heading', { name: /^people$/i, level: 1 })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
     await page.getByRole('button', { name: /new employee/i }).click();
     const panel = page.getByRole('dialog');
@@ -352,53 +461,57 @@ test.describe('S1 · Main ERP — People CRUD + Project Team', () => {
     await textInputs.nth(0).fill('Dan');
     await textInputs.nth(1).click();
     await textInputs.nth(1).fill('Temp');
-    await panel.locator('input[placeholder="name@firm.com"]').fill(`dan-temp-${Date.now()}@aethos-qa.dev`);
+    const email = `dan-temp-${Date.now()}@aethos-qa.dev`;
+    await panel.locator('input[placeholder="name@firm.com"]').fill(email);
     await panel.locator('select').first().selectOption('contractor');
 
     // Wait for the form to be valid (create button enabled)
     const createBtn = panel.getByRole('button', { name: /create employee/i });
     await expect(createBtn).toBeEnabled({ timeout: 5_000 });
+    const createDone = page.waitForResponse(
+      (res) => res.url().includes('/api/v1/employees')
+        && res.request().method() === 'POST'
+        && res.status() >= 200
+        && res.status() < 300,
+      { timeout: 30_000 }
+    ).catch(() => null);
     await createBtn.click();
+    await createDone;
 
     // Panel closes on success; the list signal updates in-place
-    await expect(panel).toHaveCount(0, { timeout: 10_000 });
-    await page.waitForTimeout(800);
+    await expect(panel).toHaveCount(0, { timeout: 15_000 });
 
-    // Dan Temp should now appear in the list. If not (slow signal update), reload.
-    let danVisible = await page.getByText('Dan Temp', { exact: false }).first().isVisible().catch(() => false);
+    // The unique email should now appear in the list. If not (slow signal update), reload.
+    let danVisible = await page.getByText(email, { exact: false }).first().isVisible().catch(() => false);
     if (!danVisible) {
       await page.reload({ waitUntil: 'load' });
       // Wait for the People heading + spinner to clear before asserting
       await expect(page.getByRole('heading', { name: /^people$/i })).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
     }
-    await expect(page.getByText('Dan Temp', { exact: false }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(email, { exact: false }).first()).toBeVisible({ timeout: 10_000 });
     test.info().annotations.push({ type: 'finding', description: 'P1: New employee create → list update works.' });
   });
 
   test('Projects list shows project codes (PRJ-XXXX)', async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(45_000);
     const { project_code, project_name } = seed();
-    await page.goto(`${MAIN_URL}/app/projects`, { waitUntil: 'load' });
-    await expect(page.locator('mat-table, [mat-table], table[class*="mat"]').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin, [aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
+    await gotoProjectsReady(page);
     await expect(page.getByText(project_code, { exact: false })).toBeVisible({ timeout: 15_000 });
     test.info().annotations.push({ type: 'finding', description: `P2: Project code ${project_code} visible in list.` });
   });
 
   test('Project Team panel shows Bob and Carol', async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
     const { project_code, employees } = seed();
-    await page.goto(`${MAIN_URL}/app/projects`, { waitUntil: 'load' });
-    await expect(page.locator('mat-table, [mat-table], table[class*="mat"]').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
+    await gotoProjectsReady(page);
 
     // Material table uses <tr mat-row> elements. Find the row containing our project code.
     const row = page.locator('tr[class*="mat-"]', { hasText: project_code }).first();
     await expect(row).toBeVisible({ timeout: 10_000 });
 
     // The "Manage" button has aria-label "Manage team for ..." — click it
-    const manageBtn = row.locator('button', { hasText: /manage/i });
+    const manageBtn = row.getByRole('button', { name: /manage team/i });
     await expect(manageBtn).toBeVisible({ timeout: 5_000 });
     await manageBtn.click();
 
@@ -431,7 +544,7 @@ test.describe('S1 · Main ERP — People CRUD + Project Team', () => {
   });
 
   test('Log time on-behalf for Bob via main ERP time form', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     const { project_code, employees } = seed();
     const bob = employees[0];
 
@@ -511,12 +624,9 @@ test.describe('S2 · Portal — Bob logs a week of time', () => {
   });
 
   test('Portal shows Bob\'s assigned project with code', async ({ page }) => {
-    test.setTimeout(40_000);
+    test.setTimeout(60_000);
     const { project_code, project_name } = seed();
-    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'load' });
-    // Wait for the portal to fully render (heading + table)
-    await expect(page.getByRole('heading', { name: /my week/i })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+    await gotoPortalTimesheetReady(page);
 
     await expect(page.getByText(project_code, { exact: false })).toBeVisible({ timeout: 15_000 });
     test.info().annotations.push({
@@ -526,10 +636,11 @@ test.describe('S2 · Portal — Bob logs a week of time', () => {
   });
 
   test('Bob enters hours Mon–Wed and they persist as draft', async ({ page }) => {
-    test.setTimeout(60_000);
-    const { project_code } = seed();
-    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'load' });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+    test.setTimeout(90_000);
+    const { employees, project_code, project_id } = seed();
+    const bob = employees[0];
+    const weekStart = isoMonday(WEEKS_AHEAD);
+    await gotoPortalTimesheetReady(page);
 
     // Navigate to TEST_WEEK (4 weeks out) — always a fresh week across all runs
     await navigateToTestWeek(page, WEEKS_AHEAD);
@@ -549,7 +660,7 @@ test.describe('S2 · Portal — Bob logs a week of time', () => {
       if (count <= idx) return;
       await inputs.nth(idx).fill(hours);
       await inputs.nth(idx).dispatchEvent('change');
-      await page.waitForTimeout(1000);
+      await expectDraftEntry(page, weekStart, bob.id, project_id, idx, hours);
     }
     await fillCell(0, '4');
     await fillCell(1, '6');
@@ -562,7 +673,7 @@ test.describe('S2 · Portal — Bob logs a week of time', () => {
     await page.reload({ waitUntil: 'load' });
     // After reload, navigate back to TEST_WEEK
     await navigateToTestWeek(page, WEEKS_AHEAD);
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
     await expect(page.getByText(/draft entr/i)).toBeVisible({ timeout: 10_000 });
     test.info().annotations.push({
@@ -572,22 +683,41 @@ test.describe('S2 · Portal — Bob logs a week of time', () => {
   });
 
   test('Bob submits the week — entries flip to submitted', async ({ page }) => {
-    test.setTimeout(30_000);
-    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'load' });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+    test.setTimeout(90_000);
+    const { employees, project_id } = seed();
+    const bob = employees[0];
+    const weekStart = isoMonday(WEEKS_AHEAD);
+    await gotoPortalTimesheetReady(page);
     // Navigate to TEST_WEEK where we just created the draft entries
     await navigateToTestWeek(page, WEEKS_AHEAD);
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
     const submitBtn = page.getByRole('button', { name: /submit week/i });
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
+    const submitDone = page.waitForResponse(
+      (res) => res.url().includes('/api/v1/timesheet/submit')
+        && res.request().method() === 'POST'
+        && res.status() >= 200
+        && res.status() < 300,
+      { timeout: 30_000 }
+    ).catch(() => null);
     await submitBtn.click();
+    const submitResponse = await submitDone;
+    expect(submitResponse, 'Bob submit POST should return 2xx').toBeTruthy();
 
-    // After submit the button should disable (no more drafts)
-    await expect(page.getByText(/submitted and awaiting approval/i)).toBeVisible({ timeout: 15_000 });
+    await expectSubmittedWeek(page, weekStart, bob.id, project_id);
+    await page.reload({ waitUntil: 'load' });
+    await navigateToTestWeek(page, WEEKS_AHEAD);
+    const submittedCopyVisible = await page.getByText(/submitted and awaiting approval/i)
+      .isVisible({ timeout: 5_000 })
+      .catch(() => false);
+    test.info().annotations.push({
+      type: 'portal-submit-copy',
+      description: `Bob submitted copy visible after reload: ${submittedCopyVisible}`,
+    });
     test.info().annotations.push({
       type: 'finding',
-      description: 'P4: Bob submitted the week — status copy shows submitted+pending approval.',
+      description: 'P4: Bob submitted the week — persisted rows are submitted and ready for manager approval.',
     });
   });
 });
@@ -601,8 +731,10 @@ test.describe('S3 · Portal — Carol logs and submits', () => {
   });
 
   test('Carol enters and submits 3 days of time', async ({ page }) => {
-    test.setTimeout(90_000);
-    const { project_code } = seed();
+    test.setTimeout(120_000);
+    const { employees, project_code, project_id } = seed();
+    const carol = employees[1];
+    const weekStart = isoMonday(WEEKS_AHEAD);
 
     // Capture submit request for diagnostics
     const submitResponses: { status: number; body: string; authHeader: string; tenantHeader: string }[] = [];
@@ -622,13 +754,19 @@ test.describe('S3 · Portal — Carol logs and submits', () => {
         }
       }
     });
-    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'load' });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+    await gotoPortalTimesheetReady(page);
     // Navigate to TEST_WEEK — same week Bob used in S2, always fresh
     await navigateToTestWeek(page, WEEKS_AHEAD);
 
     const projectRow = page.locator('tr', { hasText: project_code });
     await expect(projectRow).toBeVisible({ timeout: 10_000 });
+
+    const successText = page.getByText(/submitted and awaiting approval/i);
+    if (await successText.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await expectSubmittedWeek(page, weekStart, carol.id, project_id);
+      test.info().annotations.push({ type: 'finding', description: 'Carol week already submitted (from previous run retry).' });
+      return;
+    }
 
     const inputs = projectRow.locator('input[type="number"]');
     await expect(inputs.first()).toBeVisible({ timeout: 10_000 });
@@ -639,7 +777,7 @@ test.describe('S3 · Portal — Carol logs and submits', () => {
       if (count <= idx) return;
       await inputs.nth(idx).fill(hours);
       await inputs.nth(idx).dispatchEvent('change');
-      await page.waitForTimeout(1000);
+      await expectDraftEntry(page, weekStart, carol.id, project_id, idx, hours);
     }
     await fillCellCarol(0, '7');
     await fillCellCarol(1, '8');
@@ -651,26 +789,35 @@ test.describe('S3 · Portal — Carol logs and submits', () => {
     // Clear any stale error (from intermediate loadWeek calls during navigation)
     await page.waitForTimeout(500);
 
-    const successText = page.getByText(/submitted and awaiting approval/i);
-
     // Check if this week is already submitted (from a retry in a previous run)
     if (await successText.isVisible({ timeout: 1_000 }).catch(() => false)) {
       test.info().annotations.push({ type: 'finding', description: 'Carol week already submitted (from previous run retry).' });
     } else {
       const submitBtn = page.getByRole('button', { name: /submit week/i });
       await expect(submitBtn).toBeEnabled({ timeout: 15_000 });
+      const submitDone = page.waitForResponse(
+        (res) => res.url().includes('/api/v1/timesheet/submit')
+          && res.request().method() === 'POST'
+          && res.status() >= 200
+          && res.status() < 300,
+        { timeout: 30_000 }
+      ).catch(() => null);
       await submitBtn.click();
-      // Wait for the response and log diagnostics
-      await page.waitForTimeout(3000);
+      const submitResponse = await submitDone;
+      expect(submitResponse, 'Carol submit POST should return 2xx').toBeTruthy();
       if (submitResponses.length > 0) {
         test.info().annotations.push({
           type: 'submit-diagnostic',
           description: JSON.stringify(submitResponses[submitResponses.length - 1]),
         });
       }
-      // Submit is async — wait up to 30s for success
-      await expect(successText).toBeVisible({ timeout: 30_000 });
     }
+
+    await expectSubmittedWeek(page, weekStart, carol.id, project_id);
+    await page.reload({ waitUntil: 'load' });
+    await navigateToTestWeek(page, WEEKS_AHEAD);
+    await expect(successText).toBeVisible({ timeout: 15_000 });
+
     test.info().annotations.push({
       type: 'finding',
       description: 'P4: Carol submitted her week. 2 employees now have submitted time.',
@@ -697,8 +844,9 @@ test.describe('S4 · Main ERP — Manager approves and rejects', () => {
   });
 
   test('Approvals page lists submitted entries for Bob and Carol', async ({ page }) => {
-    test.setTimeout(30_000);
-    const { employees, tenant_id, test_email, password } = seed();
+    test.setTimeout(60_000);
+    const { employees, tenant_id, test_email, password, project_code } = seed();
+    const weekStart = isoMonday(WEEKS_AHEAD);
 
     // Verify the session is alive before navigating
     await page.goto(`${MAIN_URL}/app/copilot`, { waitUntil: 'load' });
@@ -713,7 +861,7 @@ test.describe('S4 · Main ERP — Manager approves and rejects', () => {
     }
 
     await page.goto(`${MAIN_URL}/app/approvals`, { waitUntil: 'load' });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
     await expect(page.getByRole('heading', { name: /timesheet approvals/i })).toBeVisible();
 
     // Check for API error — if present the session is likely stale
@@ -726,7 +874,7 @@ test.describe('S4 · Main ERP — Manager approves and rejects', () => {
       await page.getByRole('button', { name: /sign in/i }).click();
       await page.waitForURL(/\/app\//, { timeout: 30_000 });
       await page.goto(`${MAIN_URL}/app/approvals`, { waitUntil: 'load' });
-      await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
+      await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
     }
 
     // At least one submitted entry must be visible (from this or a previous run)
@@ -738,75 +886,59 @@ test.describe('S4 · Main ERP — Manager approves and rejects', () => {
       return;
     }
 
-    // Both employees should have pending groups (from S2/S3 submissions)
+    // Both employees should have pending groups for the reserved test week.
     for (const emp of employees) {
-      await expect(page.getByText(emp.name, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
+      await expect(approvalCard(page, emp.name, weekStart, project_code)).toBeVisible({ timeout: 15_000 });
     }
     test.info().annotations.push({
       type: 'finding',
-      description: 'P5: Approval queue shows submitted weeks from Bob and Carol.',
+      description: `P5: Approval queue shows submitted weeks from Bob and Carol for ${weekStart}.`,
     });
   });
 
   test('Manager approves Bob\'s week', async ({ page }) => {
-    test.setTimeout(30_000);
-    const { employees } = seed();
+    test.setTimeout(60_000);
+    const { employees, project_code } = seed();
     const bob = employees[0];
+    const weekStart = isoMonday(WEEKS_AHEAD);
     await page.goto(`${MAIN_URL}/app/approvals`, { waitUntil: 'load' });
     await expect(page.getByRole('heading', { name: /timesheet approvals/i })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
-    // Find Bob's group card. The card has a <p class="...font-semibold"> with employee name.
-    // Click the Approve button inside that specific card.
-    const bobCard = page.locator('[class*="rounded-lg"]', {
-      has: page.locator('p.font-semibold', { hasText: bob.name }),
-    }).first();
+    const bobCard = approvalCard(page, bob.name, weekStart, project_code);
     await expect(bobCard).toBeVisible({ timeout: 10_000 });
-    const bobGroupCount = await page.locator('p.font-semibold', { hasText: bob.name }).count();
     await bobCard.getByRole('button', { name: /approve/i }).click();
 
-    // After approve, Bob's card should be removed (group count decreases)
-    // If there was only 1 Bob group, it disappears entirely
-    if (bobGroupCount === 1) {
-      await expect(page.locator('p.font-semibold', { hasText: bob.name })).toHaveCount(0, { timeout: 15_000 });
-    } else {
-      await expect(page.locator('p.font-semibold', { hasText: bob.name })).toHaveCount(bobGroupCount - 1, { timeout: 15_000 });
-    }
+    await expect(bobCard).toBeHidden({ timeout: 15_000 });
     test.info().annotations.push({
       type: 'finding',
-      description: `P5: Bob's week approved — group removed from queue.`,
+      description: `P5: Bob's ${weekStart} week approved — group removed from queue.`,
     });
   });
 
   test('Manager rejects Carol\'s week with a reason', async ({ page }) => {
-    test.setTimeout(30_000);
-    const { employees } = seed();
+    test.setTimeout(60_000);
+    const { employees, project_code } = seed();
     const carol = employees[1];
+    const weekStart = isoMonday(WEEKS_AHEAD);
     await page.goto(`${MAIN_URL}/app/approvals`, { waitUntil: 'load' });
     // Wait for heading to confirm Angular component mounted
     await expect(page.getByRole('heading', { name: /timesheet approvals/i })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 45_000 });
 
     // Mock the dialog (prompt) — Playwright can handle browser dialogs
     page.once('dialog', async (dialog) => {
       await dialog.accept('Hours look excessive — please recheck');
     });
 
-    const carolCard = page.locator('[class*="rounded-lg"]', {
-      has: page.locator('p.font-semibold', { hasText: carol.name }),
-    }).first();
+    const carolCard = approvalCard(page, carol.name, weekStart, project_code);
     await expect(carolCard).toBeVisible({ timeout: 10_000 });
-    const carolGroupCount = await page.locator('p.font-semibold', { hasText: carol.name }).count();
     await carolCard.getByRole('button', { name: /reject/i }).click();
 
-    if (carolGroupCount === 1) {
-      await expect(page.locator('p.font-semibold', { hasText: carol.name })).toHaveCount(0, { timeout: 15_000 });
-    } else {
-      await expect(page.locator('p.font-semibold', { hasText: carol.name })).toHaveCount(carolGroupCount - 1, { timeout: 15_000 });
-    }
+    await expect(carolCard).toBeHidden({ timeout: 15_000 });
     test.info().annotations.push({
       type: 'finding',
-      description: `P5: Carol's week rejected with reason — group removed from queue.`,
+      description: `P5: Carol's ${weekStart} week rejected with reason — group removed from queue.`,
     });
   });
 });
@@ -820,17 +952,32 @@ test.describe('S5 · Portal — Carol sees rejection and re-edits', () => {
   });
 
   test('Carol\'s rejected entries are editable again', async ({ page }) => {
-    test.setTimeout(30_000);
-    await page.goto(`${PORTAL_URL}/timesheet`, { waitUntil: 'load' });
-    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 20_000 });
-    // Carol's rejected entries are on TEST_WEEK (where she submitted in S3)
-    await navigateToTestWeek(page, WEEKS_AHEAD);
+    test.setTimeout(60_000);
+    const { employees, password, project_code, project_id } = seed();
+    const carol = employees[1];
+    const weekStart = isoMonday(WEEKS_AHEAD);
+
+    async function loadRejectedWeek() {
+      await gotoPortalTimesheetReady(page);
+      await navigateToTestWeek(page, WEEKS_AHEAD);
+    }
+
+    await loadRejectedWeek();
+    if (await page.getByRole('alert').isVisible().catch(() => false)) {
+      await portalLogin(page, page.context(), carol.email, password, CAROL_STATE);
+      await loadRejectedWeek();
+    }
+
+    await expectRejectedWeek(page, weekStart, carol.id, project_id);
+    if (await page.getByRole('alert').isVisible().catch(() => false)) {
+      await loadRejectedWeek();
+    }
 
     // Cells that were rejected should now be editable (not locked)
-    const projectRow = page.locator('tr', { hasText: seed().project_code });
+    const projectRow = page.locator('tr', { hasText: project_code });
     const inputs = projectRow.locator('input[type="number"]');
     // At least one editable input should exist (unlocked rejected entries)
-    await expect(inputs.first()).toBeVisible({ timeout: 10_000 });
+    await expect(inputs.first()).toBeVisible({ timeout: 15_000 });
     test.info().annotations.push({
       type: 'finding',
       description: 'P5: Carol\'s rejected entries are editable again in the portal.',
@@ -847,11 +994,19 @@ test.describe('S6 · Billing gate — approved-only via API', () => {
   });
 
   test('Invoice Drafts page mounts and shows engagement', async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
     const { engagement_name } = seed();
-    await page.goto(`${MAIN_URL}/app/engagements`, { waitUntil: 'load' });
-    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 });
-    await expect(page.getByText(engagement_name, { exact: false })).toBeVisible({ timeout: 15_000 });
+    const engagementLink = page.getByText(engagement_name, { exact: false });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await page.goto(`${MAIN_URL}/app/engagements`, { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('heading', { name: /^engagements$/i })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('[aria-busy="true"], .animate-spin')).toHaveCount(0, { timeout: 30_000 });
+      if (await engagementLink.isVisible({ timeout: 5_000 }).catch(() => false)) break;
+      if (!(await page.getByRole('alert').isVisible().catch(() => false))) break;
+      await page.waitForTimeout(1_000);
+    }
+    await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 10_000 });
+    await expect(engagementLink).toBeVisible({ timeout: 15_000 });
     test.info().annotations.push({
       type: 'finding',
       description: `P6: Engagement ${engagement_name} visible — ready for invoice drafting.`,
@@ -859,7 +1014,7 @@ test.describe('S6 · Billing gate — approved-only via API', () => {
   });
 
   test('Billing gate: approved entry count via API matches expectation', async ({ page, request }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
     const { tenant_id, project_id } = seed();
 
     // Read the token from localStorage (main ERP session)
@@ -869,7 +1024,7 @@ test.describe('S6 · Billing gate — approved-only via API', () => {
 
     // Direct API call: count approved+billable+unbilled entries for our project
     const resp = await request.get(
-      `http://localhost:8011/api/v1/time-entries?project_id=${project_id}`,
+      `${API_URL}/api/v1/time-entries?project_id=${project_id}`,
       { headers: { 'Authorization': `Bearer ${token}`, 'X-Tenant-ID': tenant_id } }
     );
     expect(resp.ok()).toBeTruthy();

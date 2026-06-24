@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BillLineCreate(BaseModel):
@@ -21,10 +21,24 @@ class BillLineCreate(BaseModel):
     tax_amount: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
     # Optional: override expense account; defaults to COA 5000 on approval
     account_id: str | None = None
+    is_prepaid: bool = False
+    service_start_date: date | None = None
+    service_end_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_prepaid_schedule(self) -> BillLineCreate:
+        if not self.is_prepaid:
+            return self
+        if self.service_start_date is None or self.service_end_date is None:
+            raise ValueError("Prepaid lines require service_start_date and service_end_date")
+        if self.service_end_date < self.service_start_date:
+            raise ValueError("service_end_date must be on or after service_start_date")
+        return self
 
 
 class BillCreate(BaseModel):
     client_id: str = Field(..., description="Must reference a client with kind='vendor' or 'both'")
+    purchase_order_id: str | None = Field(default=None, description="Approved PO/service order")
     currency: str = Field(default="USD", min_length=3, max_length=3)
     issue_date: date | None = None
     due_date: date | None = None
@@ -37,11 +51,14 @@ class BillLineResponse(BaseModel):
     id: str
     bill_id: str
     description: str
-    quantity: str       # Decimal as string
-    unit_price: str     # Decimal as string
-    amount: str         # Decimal as string
-    tax_amount: str     # Decimal as string
+    quantity: str  # Decimal as string
+    unit_price: str  # Decimal as string
+    amount: str  # Decimal as string
+    tax_amount: str  # Decimal as string
     account_id: str | None
+    is_prepaid: bool = False
+    service_start_date: str | None = None
+    service_end_date: str | None = None
     created_at: str
 
 
@@ -49,15 +66,18 @@ class BillResponse(BaseModel):
     id: str
     tenant_id: str
     client_id: str
+    purchase_order_id: str | None = None
     bill_number: str
     currency: str
-    subtotal: str           # Decimal as string
-    tax_total: str          # Decimal as string
-    total: str              # Decimal as string
+    subtotal: str  # Decimal as string
+    tax_total: str  # Decimal as string
+    total: str  # Decimal as string
     status: str
     issue_date: str | None
     due_date: str | None
     vendor_invoice_number: str | None
+    po_match_status: str = "not_linked"
+    po_match_summary: dict[str, object] = Field(default_factory=dict)
     notes: str | None
     created_at: str
     lines: list[BillLineResponse] = Field(default_factory=list)
@@ -77,11 +97,11 @@ class BillApproveResponse(BaseModel):
 
 
 class AgingBucket(BaseModel):
-    label: str       # e.g. "current", "1-30", "31-60", "61-90", "90+"
-    total: str       # Decimal as string
+    label: str  # e.g. "current", "1-30", "31-60", "61-90", "90+"
+    total: str  # Decimal as string
     count: int
 
 
 class ApAgingResponse(BaseModel):
     buckets: list[AgingBucket]
-    grand_total: str    # Decimal as string
+    grand_total: str  # Decimal as string

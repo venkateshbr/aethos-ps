@@ -73,3 +73,47 @@ class ProjectRepository:
             lambda: self.db.table(_TABLE).insert(payload).execute()
         )
         return result.data[0]
+
+    # ------------------------------------------------------------------
+    # Project phases / milestones
+    # ------------------------------------------------------------------
+
+    async def list_phases(self, project_id: str) -> list[dict]:
+        def _query() -> object:
+            return (
+                self.db.table("project_phases")
+                .select("*")
+                .eq("tenant_id", self.tenant_id)
+                .eq("project_id", project_id)
+                .is_("deleted_at", "null")
+                .order("order_index")
+                .order("end_date")
+                .execute()
+            )
+
+        result = await asyncio.to_thread(_query)
+        return result.data or []
+
+    async def create_phase(self, project_id: str, data: dict) -> dict:
+        payload = {**data, "tenant_id": self.tenant_id, "project_id": project_id}
+        result = await asyncio.to_thread(
+            lambda: self.db.table("project_phases").insert(payload).execute()
+        )
+        return result.data[0]
+
+    async def update_phase(
+        self,
+        project_id: str,
+        phase_id: str,
+        data: dict,
+    ) -> dict | None:
+        result = await asyncio.to_thread(
+            lambda: self.db.table("project_phases")
+            .update(data)
+            .eq("id", phase_id)
+            .eq("project_id", project_id)
+            .eq("tenant_id", self.tenant_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        return result.data[0] if result.data else None

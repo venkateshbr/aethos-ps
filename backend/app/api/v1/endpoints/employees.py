@@ -10,11 +10,12 @@ RBAC:
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.employees import (
@@ -32,8 +33,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+StatusQuery = Annotated[str | None, Query(alias="status")]
+SearchQuery = Annotated[str | None, Query(description="Match name or email")]
+LimitQuery = Annotated[int, Query(ge=1, le=500)]
 
-def _service(
+
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> EmployeesService:
+    return EmployeesService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> EmployeesService:
@@ -42,11 +54,11 @@ def _service(
 
 @router.get("", response_model=EmployeeListResponse)
 async def list_employees(
-    status_filter: str | None = Query(default=None, alias="status"),
-    search: str | None = Query(default=None, description="Match name or email"),
-    limit: int = Query(default=200, ge=1, le=500),
+    status_filter: StatusQuery = None,
+    search: SearchQuery = None,
+    limit: LimitQuery = 200,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_read_service),  # noqa: B008
 ) -> EmployeeListResponse:
     return await svc.list_employees(status_filter=status_filter, search=search, limit=limit)
 
@@ -55,7 +67,7 @@ async def list_employees(
 async def create_employee(
     payload: EmployeeCreate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_write_service),  # noqa: B008
 ) -> EmployeeResponse:
     return await svc.create_employee(payload)
 
@@ -64,7 +76,7 @@ async def create_employee(
 async def get_employee(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_read_service),  # noqa: B008
 ) -> EmployeeResponse:
     emp = await svc.get_employee(id)
     if emp is None:
@@ -77,7 +89,7 @@ async def update_employee(
     id: str,
     payload: EmployeeUpdate,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_write_service),  # noqa: B008
 ) -> EmployeeResponse:
     return await svc.update_employee(id, payload)
 
@@ -86,7 +98,7 @@ async def update_employee(
 async def delete_employee(
     id: str,
     _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_write_service),  # noqa: B008
 ) -> None:
     await svc.delete_employee(id)
 
@@ -96,7 +108,7 @@ async def invite_employee(
     id: str,
     payload: EmployeeInviteRequest,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
-    svc: EmployeesService = Depends(_service),  # noqa: B008
+    svc: EmployeesService = Depends(_write_service),  # noqa: B008
 ) -> EmployeeInviteResponse:
     """Grant an employee Timesheet-Portal access (admin+).
 

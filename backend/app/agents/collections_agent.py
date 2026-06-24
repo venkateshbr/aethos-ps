@@ -21,6 +21,11 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.agents.base import AgentDeps
+from app.models.collections_policy import (
+    CollectionsPolicyConfig,
+    CollectionTone,
+)
+from app.services.collections_policy_service import default_collections_policy
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +45,54 @@ class CollectionsDraft(BaseModel):
     body_html: str
     escalation_recommended: bool = False
     confidence: float = Field(default=0.90, ge=0.0, le=1.0)
+    policy_id: str | None = None
+    policy_source: str = "system_default"
+    cooldown_days: int = 7
+    max_reminders_per_invoice: int = 3
 
 
-def draft_collection_email(invoice: dict, deps: AgentDeps) -> CollectionsDraft:
+_AUTO_SEND_TONE_RANK = {"none": 0, "gentle": 1, "firm": 2, "final": 3}
+
+
+def days_overdue_for_invoice(invoice: dict) -> int:
+    """Return non-negative days overdue for an invoice row."""
+    today = date.today()
+    due = date.fromisoformat(invoice["due_date"]) if invoice.get("due_date") else today
+    return max(0, (today - due).days)
+
+
+def collection_tone_for_days(
+    days_overdue: int,
+    policy: CollectionsPolicyConfig | None = None,
+) -> CollectionTone | None:
+    """Resolve the reminder tone for a day count under a collections policy."""
+    active_policy = policy or default_collections_policy()
+    if not active_policy.is_enabled or days_overdue < active_policy.gentle_after_days:
+        return None
+    if days_overdue >= active_policy.final_after_days:
+        return "final"
+    if days_overdue >= active_policy.firm_after_days:
+        return "firm"
+    return "gentle"
+
+
+def policy_allows_auto_send(
+    policy: CollectionsPolicyConfig | None,
+    tone: str,
+) -> bool:
+    """Return whether policy allows this tone to be sent without HITL."""
+    active_policy = policy or default_collections_policy()
+    allowed_rank = _AUTO_SEND_TONE_RANK[active_policy.max_auto_send_tone]
+    tone_rank = _AUTO_SEND_TONE_RANK.get(tone, 0)
+    return allowed_rank > 0 and 0 < tone_rank <= allowed_rank
+
+
+def draft_collection_email(
+    invoice: dict,
+    deps: AgentDeps,
+    policy: CollectionsPolicyConfig | None = None,
+    tone: CollectionTone | None = None,
+) -> CollectionsDraft:
     """Draft a dunning email for a single overdue invoice.
 
     Parameters
@@ -55,17 +105,11 @@ def draft_collection_email(invoice: dict, deps: AgentDeps) -> CollectionsDraft:
     -------
     A fully-populated :class:`CollectionsDraft`.
     """
-    today = date.today()
-    due = date.fromisoformat(invoice["due_date"]) if invoice.get("due_date") else today
-    days = max(0, (today - due).days)
+    active_policy = policy or default_collections_policy()
+    due = date.fromisoformat(invoice["due_date"]) if invoice.get("due_date") else date.today()
+    days = days_overdue_for_invoice(invoice)
 
-    # Tone tier
-    if days <= 7:
-        tone = "gentle"
-    elif days <= 30:
-        tone = "firm"
-    else:
-        tone = "final"
+    resolved_tone = tone or collection_tone_for_days(days, active_policy) or "gentle"
 
     # Fetch client name
     client_result = (
@@ -98,7 +142,7 @@ def draft_collection_email(invoice: dict, deps: AgentDeps) -> CollectionsDraft:
         else ""
     )
 
-    if tone == "gentle":
+    if resolved_tone == "gentle":
         subject = f"Friendly reminder: Invoice {inv_num} is due"
         body_html = (
             f"<p>Hi {client_name},</p>"
@@ -107,7 +151,7 @@ def draft_collection_email(invoice: dict, deps: AgentDeps) -> CollectionsDraft:
             f"{pay_btn}"
             f"<p>Best, {firm}</p>"
         )
-    elif tone == "firm":
+    elif resolved_tone == "firm":
         subject = f"Payment overdue: Invoice {inv_num} ({days} days past due)"
         body_html = (
             f"<p>Hi {client_name},</p>"
@@ -134,8 +178,12 @@ def draft_collection_email(invoice: dict, deps: AgentDeps) -> CollectionsDraft:
         amount_due=amount,
         currency=currency,
         days_overdue=days,
-        tone=tone,
+        tone=resolved_tone,
         subject=subject,
         body_html=body_html,
-        escalation_recommended=(tone == "final"),
+        escalation_recommended=(resolved_tone == "final"),
+        policy_id=active_policy.id,
+        policy_source=active_policy.policy_source,
+        cooldown_days=active_policy.cooldown_days,
+        max_reminders_per_invoice=active_policy.max_reminders_per_invoice,
     )

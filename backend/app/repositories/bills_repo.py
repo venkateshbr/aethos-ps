@@ -6,12 +6,19 @@ import asyncio
 import logging
 from decimal import Decimal
 
+from app.services.postgrest_errors import is_missing_column_error
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 _BILLS_TABLE = "bills"
 _LINES_TABLE = "bill_lines"
+_OPTIONAL_PO_MATCH_FIELDS = frozenset(
+    {"purchase_order_id", "po_match_status", "po_match_summary"}
+)
+_OPTIONAL_BILL_LINE_FIELDS = frozenset(
+    {"is_prepaid", "service_start_date", "service_end_date"}
+)
 
 
 class BillsRepository:
@@ -71,22 +78,60 @@ class BillsRepository:
 
     async def create(self, data: dict) -> dict:
         payload = {**data, "tenant_id": self.tenant_id}
-        result = await asyncio.to_thread(
-            lambda: self.db.table(_BILLS_TABLE).insert(payload).execute()
-        )
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_BILLS_TABLE).insert(payload).execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_PO_MATCH_FIELDS):
+                raise
+            fallback_payload = _without_fields(payload, _OPTIONAL_PO_MATCH_FIELDS)
+            if fallback_payload == payload:
+                raise
+            logger.warning(
+                "bills table is missing optional PO match columns; retrying insert "
+                "without those fields"
+            )
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_BILLS_TABLE).insert(fallback_payload).execute()
+            )
         return result.data[0]
 
     async def update(self, bill_id: str, patch: dict) -> dict | None:
         existing = await self.get(bill_id)
         if existing is None:
             return None
-        result = await asyncio.to_thread(
-            lambda: self.db.table(_BILLS_TABLE)
-            .update(patch)
-            .eq("id", bill_id)
-            .eq("tenant_id", self.tenant_id)
-            .execute()
-        )
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_BILLS_TABLE)
+                .update(patch)
+                .eq("id", bill_id)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_PO_MATCH_FIELDS):
+                raise
+            fallback_patch = _without_fields(patch, _OPTIONAL_PO_MATCH_FIELDS)
+            if fallback_patch == patch:
+                raise
+            if not fallback_patch:
+                logger.warning(
+                    "bills table is missing optional PO match columns; skipping "
+                    "update because no supported fields remain"
+                )
+                return existing
+            logger.warning(
+                "bills table is missing optional PO match columns; retrying update "
+                "without those fields"
+            )
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_BILLS_TABLE)
+                .update(fallback_patch)
+                .eq("id", bill_id)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
+            )
         return result.data[0] if result.data else None
 
     async def update_totals(
@@ -116,9 +161,23 @@ class BillsRepository:
 
     async def create_line(self, bill_id: str, data: dict) -> dict:
         payload = {**data, "bill_id": bill_id, "tenant_id": self.tenant_id}
-        result = await asyncio.to_thread(
-            lambda: self.db.table(_LINES_TABLE).insert(payload).execute()
-        )
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_LINES_TABLE).insert(payload).execute()
+            )
+        except Exception as exc:
+            if not is_missing_column_error(exc, _OPTIONAL_BILL_LINE_FIELDS):
+                raise
+            fallback_payload = _without_fields(payload, _OPTIONAL_BILL_LINE_FIELDS)
+            if fallback_payload == payload:
+                raise
+            logger.warning(
+                "bill_lines table is missing optional prepaid columns; retrying insert "
+                "without those fields"
+            )
+            result = await asyncio.to_thread(
+                lambda: self.db.table(_LINES_TABLE).insert(fallback_payload).execute()
+            )
         return result.data[0]
 
     # ------------------------------------------------------------------
@@ -174,3 +233,18 @@ class BillsRepository:
             .execute()
         )
         return result.data[0]["id"] if result.data else None
+
+    async def list_linked_to_purchase_order(self, purchase_order_id: str) -> list[dict]:
+        result = await asyncio.to_thread(
+            lambda: self.db.table(_BILLS_TABLE)
+            .select("id,total,status")
+            .eq("tenant_id", self.tenant_id)
+            .eq("purchase_order_id", purchase_order_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        return result.data or []
+
+
+def _without_fields(payload: dict, fields: frozenset[str]) -> dict:
+    return {key: value for key, value in payload.items() if key not in fields}

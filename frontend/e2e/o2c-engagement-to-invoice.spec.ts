@@ -61,14 +61,18 @@ test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => 
     await expect(page.getByRole('heading', { name: /^engagements$/i, level: 1 })).toBeVisible();
 
     // #133 fix: backend now returns bare array; FE services updated to accept it.
-    // Actual empty-state copy: "No engagements yet. Start by uploading an engagement letter..."
-    // Wait for loading to complete first (loading skeleton disappears).
+    // Reusable QA tenants may already contain engagements, so either the
+    // engagement table/cards or the empty-state copy proves the page survived.
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
-    const emptyCopy = page.getByText(/No engagements yet/i);
-    await expect(emptyCopy.first()).toBeVisible({ timeout: 15_000 });
+    const content = page.locator('table[aria-label="Engagements"]').or(
+      page.locator('[aria-label^="Engagement: "]'),
+    ).or(
+      page.getByText(/No engagements yet/i),
+    );
+    await expect(content.first()).toBeVisible({ timeout: 15_000 });
     test.info().annotations.push({
       type: 'finding',
-      description: '#133 fix verified: empty-state copy renders correctly for fresh tenant.',
+      description: '#133 fix verified: engagements page renders with existing data or empty-state.',
     });
   });
 
@@ -93,9 +97,15 @@ test.describe('R-Real-6 · O2C — engagement-to-invoice through the UI', () => 
     ).or(page.getByRole('heading', { name: /new engagement|create engagement/i }));
     await expect(slideIn.first()).toBeVisible({ timeout: 10_000 });
 
+    await expect(page.locator('#eng-service')).toBeVisible();
+    await expect(page.locator('#eng-service-line')).toBeVisible();
+    await expect(page.locator('#eng-rate-card')).toBeVisible();
+    await expect(page.locator('#eng-billing')).toContainText('Retainer Drawdown');
+    await expect(page.locator('#eng-billing')).toContainText('Mixed');
+
     test.info().annotations.push({
       type: 'finding',
-      description: '#130 fix verified: "New engagement" opens the slide-in create form.',
+      description: '#130 + Phase 1 verified: "New engagement" opens with service catalogue, service line, rate card, and expanded billing arrangement controls.',
     });
   });
 

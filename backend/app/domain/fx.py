@@ -52,7 +52,7 @@ async def get_fx_rate(
         from_currency: ISO 4217 source currency code (e.g. "GBP").
         to_currency:   ISO 4217 target currency code (e.g. "USD").
         rate_date:     The date for which the rate is needed.
-        db_client:     Supabase service-role ``Client`` instance.
+        db_client:     Supabase client instance.
 
     Returns:
         The exchange rate as a ``Decimal``.

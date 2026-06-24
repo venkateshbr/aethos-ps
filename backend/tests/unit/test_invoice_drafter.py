@@ -33,7 +33,11 @@ def _make_deps(db: MagicMock) -> AgentDeps:
     return AgentDeps(tenant_id="tenant-1", user_id="user-1", db=db)
 
 
-def _engagement(billing_arrangement: str, billing_terms: dict | None = None) -> dict:
+def _engagement(
+    billing_arrangement: str,
+    billing_terms: dict | None = None,
+    service_catalogue_id: str | None = None,
+) -> dict:
     return {
         "id": "eng-1",
         "name": "Test Engagement",
@@ -41,6 +45,7 @@ def _engagement(billing_arrangement: str, billing_terms: dict | None = None) -> 
         "currency": "USD",
         "billing_arrangement": billing_arrangement,
         "rate_card_id": None,
+        "service_catalogue_id": service_catalogue_id,
         "engagement_billing_terms": billing_terms or {},
         "clients": {"id": "client-1", "name": "ACME Corp"},
     }
@@ -99,6 +104,48 @@ def test_draft_fixed_fee_returns_correct_amount() -> None:
     assert draft.total == Decimal("5000.00")
 
 
+def test_draft_fixed_fee_carries_service_catalogue_id() -> None:
+    """Engagement service catalogue linkage is preserved on draft invoice lines."""
+    db = MagicMock()
+    eng = _engagement(
+        "fixed_fee",
+        {"fixed_fee_amount": "5000.00"},
+        service_catalogue_id="svc-001",
+    )
+    _set_engagement_mock(db, eng)
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].service_catalogue_id == "svc-001"
+
+
+def test_draft_fixed_fee_uses_per_unit_billing_terms() -> None:
+    """Per-employee payroll terms draft quantity x unit price invoice lines."""
+    db = MagicMock()
+    eng = _engagement(
+        "fixed_fee",
+        {
+            "billing_unit": "per_employee",
+            "unit_label": "Employees",
+            "unit_quantity": "42",
+            "unit_price": "18.50",
+        },
+    )
+    _set_engagement_mock(db, eng)
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].description == "Employees: Test Engagement"
+    assert draft.lines[0].quantity == Decimal("42")
+    assert draft.lines[0].unit_price == Decimal("18.50")
+    assert draft.lines[0].amount == Decimal("777.00")
+    assert draft.subtotal == Decimal("777.00")
+
+
 # ---------------------------------------------------------------------------
 # Test 2: retainer billing returns single monthly retainer line
 # ---------------------------------------------------------------------------
@@ -118,6 +165,68 @@ def test_draft_retainer_returns_monthly_amount() -> None:
     assert draft.lines[0].amount == Decimal("3000.00")
     assert draft.subtotal == Decimal("3000.00")
     assert draft.total == Decimal("3000.00")
+
+
+def test_draft_retainer_draw_caps_offset_by_ledger_balance() -> None:
+    """Retainer draw offsets use available ledger balance before configured draw."""
+    db = MagicMock()
+    eng = _engagement(
+        "retainer_draw",
+        {"retainer_monthly_amount": "1500.00", "retainer_floor": "500.00"},
+    )
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-1",
+                    "project_id": "project-1",
+                    "employee_id": "employee-1",
+                    "hours": "20",
+                }
+            ]
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-1",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": "100.00",
+                }
+            ]
+        elif table_name == "retainer_ledger_entries":
+            result.data = [
+                {"entry_type": "deposit", "amount": "700.00"},
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    adjustment = next(line for line in draft.lines if line.description == "Retainer applied")
+    assert adjustment.amount == Decimal("-700.00")
+    assert draft.subtotal == Decimal("1300.00")
+    assert "below floor" in draft.summary
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +277,153 @@ def test_draft_tm_with_no_entries_returns_empty_lines() -> None:
     assert len(draft.lines) == 0
     assert draft.subtotal == Decimal("0")
     assert draft.total == Decimal("0")
+
+
+def test_draft_tm_uses_assignment_and_client_rate_overrides() -> None:
+    """T&M draft prefers assignment override, then client override, then base role rate."""
+    db = MagicMock()
+    eng = _engagement("time_and_materials")
+    eng["rate_card_id"] = "rc-1"
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-override",
+                    "project_id": "project-1",
+                    "employee_id": "employee-override",
+                    "hours": "2",
+                },
+                {
+                    "id": "time-client",
+                    "project_id": "project-1",
+                    "employee_id": "employee-client",
+                    "hours": "3",
+                },
+            ]
+        elif table_name == "rate_card_lines":
+            result.data = [{"role": "Consultant", "rate": "100.00"}]
+        elif table_name == "rate_card_client_overrides":
+            result.data = [{"role": "Consultant", "rate": "125.00"}]
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-override",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": "150.00",
+                },
+                {
+                    "employee_id": "employee-client",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": None,
+                },
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert [line.unit_price for line in draft.lines] == [
+        Decimal("150.00"),
+        Decimal("125.00"),
+    ]
+    assert [line.amount for line in draft.lines] == [
+        Decimal("300.00"),
+        Decimal("375.00"),
+    ]
+    assert draft.subtotal == Decimal("675.00")
+
+
+def test_draft_tm_prefers_service_line_rate_over_generic_role_rate() -> None:
+    """T&M draft uses the engagement service-line rate before generic role rate."""
+    db = MagicMock()
+    eng = _engagement("time_and_materials")
+    eng["rate_card_id"] = "rc-1"
+    eng["service_line"] = "advisory"
+
+    def table_side(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.is_.return_value = chain
+        chain.gte.return_value = chain
+        chain.lte.return_value = chain
+        chain.limit.return_value = chain
+
+        result = MagicMock()
+        if table_name == "engagements":
+            result.data = [eng]
+        elif table_name == "projects":
+            result.data = [{"id": "project-1"}]
+        elif table_name == "time_entries":
+            result.data = [
+                {
+                    "id": "time-advisory",
+                    "project_id": "project-1",
+                    "employee_id": "employee-advisory",
+                    "hours": "2",
+                }
+            ]
+        elif table_name == "rate_card_lines":
+            result.data = [
+                {
+                    "role": "Consultant",
+                    "rate": "100.00",
+                    "service_line": None,
+                },
+                {
+                    "role": "Consultant",
+                    "rate": "175.00",
+                    "service_line": "advisory",
+                },
+            ]
+        elif table_name == "rate_card_client_overrides":
+            result.data = []
+        elif table_name == "project_assignments":
+            result.data = [
+                {
+                    "employee_id": "employee-advisory",
+                    "project_id": "project-1",
+                    "role": "Consultant",
+                    "override_rate": None,
+                }
+            ]
+        else:
+            result.data = []
+        chain.execute.return_value = result
+        return chain
+
+    db.table.side_effect = table_side
+    deps = _make_deps(db)
+
+    with _NO_TAX:
+        draft = draft_invoice("eng-1", deps)
+
+    assert draft.lines[0].unit_price == Decimal("175.00")
+    assert draft.lines[0].amount == Decimal("350.00")
 
 
 # ---------------------------------------------------------------------------

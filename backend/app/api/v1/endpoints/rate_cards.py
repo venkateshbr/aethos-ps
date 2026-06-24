@@ -12,7 +12,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.rate_cards import RateCardCreate, RateCardResponse
@@ -24,7 +24,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _service(
+def _read_service(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> RateCardService:
+    return RateCardService(db, tenant_id)
+
+
+def _write_service(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> RateCardService:
@@ -34,7 +41,7 @@ def _service(
 @router.get("", response_model=list[RateCardResponse])
 async def list_rate_cards(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: RateCardService = Depends(_service),  # noqa: B008
+    svc: RateCardService = Depends(_read_service),  # noqa: B008
 ) -> list[RateCardResponse]:
     return await svc.list_rate_cards()
 
@@ -43,7 +50,7 @@ async def list_rate_cards(
 async def create_rate_card(
     payload: RateCardCreate,
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
-    svc: RateCardService = Depends(_service),  # noqa: B008
+    svc: RateCardService = Depends(_write_service),  # noqa: B008
 ) -> RateCardResponse:
     return await svc.create_rate_card(payload)
 
@@ -52,7 +59,7 @@ async def create_rate_card(
 async def get_rate_card(
     id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    svc: RateCardService = Depends(_service),  # noqa: B008
+    svc: RateCardService = Depends(_read_service),  # noqa: B008
 ) -> RateCardResponse:
     card = await svc.get_rate_card(id)
     if card is None:

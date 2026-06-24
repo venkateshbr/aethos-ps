@@ -1,6 +1,11 @@
 import { Routes } from '@angular/router';
 import { authGuard, authChildGuard } from './core/guards/auth.guard';
 
+const loadTimeEntriesComponent = () =>
+  import('./features/time-entries/time-entries-list.component').then(
+    m => m.TimeEntriesListComponent,
+  );
+
 export const routes: Routes = [
   // ── Public routes — no app shell, no auth ───────────────────────────────────
   {
@@ -100,8 +105,11 @@ export const routes: Routes = [
       },
       {
         path: 'time',
-        loadComponent: () =>
-          import('./features/time-entries/time-entries-list.component').then(m => m.TimeEntriesListComponent),
+        loadComponent: loadTimeEntriesComponent,
+      },
+      {
+        path: 'time-entries',
+        loadComponent: loadTimeEntriesComponent,
       },
       {
         path: 'expenses',

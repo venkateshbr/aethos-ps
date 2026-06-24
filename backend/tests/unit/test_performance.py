@@ -8,7 +8,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -97,7 +97,9 @@ def test_health_ready_structure_on_db_ok():
     ):
         mock_settings.supabase_url = "https://fake.supabase.co"
         mock_settings.supabase_anon_key = "fake-key"
-        mock_settings.upstash_redis_url = None
+        mock_settings.database_url = ""
+        mock_settings.queue_required = False
+        mock_settings.extraction_mode = "sync"
 
         result = asyncio.run(_call_health_ready())
 
@@ -140,10 +142,76 @@ def test_health_ready_queue_not_configured_when_database_url_missing():
         mock_settings.supabase_url = "https://fake.supabase.co"
         mock_settings.supabase_anon_key = "fake-key"
         mock_settings.database_url = ""  # not configured
+        mock_settings.queue_required = False
+        mock_settings.extraction_mode = "sync"
 
         result = asyncio.run(_call_health_ready())
 
-    assert result["checks"].get("queue") == {"status": "not_configured"}
+    assert result["checks"].get("queue") == {
+        "status": "not_configured",
+        "configured": False,
+        "required": False,
+    }
+    assert result["status"] == "ready"
+
+
+def test_health_ready_degrades_when_required_queue_missing():
+    """Required queue mode must fail readiness when DATABASE_URL is unset."""
+    import asyncio
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+        MagicMock()
+    )
+
+    with (
+        patch("supabase.create_client", return_value=mock_client),
+        patch("app.core.config.settings") as mock_settings,
+    ):
+        mock_settings.supabase_url = "https://fake.supabase.co"
+        mock_settings.supabase_anon_key = "fake-key"
+        mock_settings.database_url = ""
+        mock_settings.queue_required = True
+        mock_settings.extraction_mode = "sync"
+
+        result = asyncio.run(_call_health_ready())
+
+    assert result["status"] == "degraded"
+    assert result["checks"].get("queue") == {
+        "status": "not_configured",
+        "configured": False,
+        "required": True,
+    }
+
+
+def test_health_ready_ready_when_required_queue_connected():
+    """Required queue mode is ready when the Procrastinate connector responds."""
+    import asyncio
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+        MagicMock()
+    )
+
+    with (
+        patch("supabase.create_client", return_value=mock_client),
+        patch("app.core.config.settings") as mock_settings,
+        patch("app.workers.procrastinate_app.app") as queue_app,
+    ):
+        mock_settings.supabase_url = "https://fake.supabase.co"
+        mock_settings.supabase_anon_key = "fake-key"
+        mock_settings.database_url = "postgresql://postgres:password@db.example.test:5432/postgres"
+        mock_settings.queue_required = True
+        mock_settings.extraction_mode = "sync"
+        queue_app.check_connection_async = AsyncMock()
+
+        result = asyncio.run(_call_health_ready())
+
+    assert result["status"] == "ready"
+    assert result["checks"]["queue"]["status"] == "ok"
+    assert result["checks"]["queue"]["configured"] is True
+    assert result["checks"]["queue"]["required"] is True
+    assert isinstance(result["checks"]["queue"]["latency_ms"], int)
 
 
 # ---------------------------------------------------------------------------

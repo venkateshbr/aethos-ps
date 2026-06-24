@@ -1,13 +1,10 @@
-"""Period lock tests (C27 + F8 reconciliation gap).
+"""Period lock tests (C27 + close reconciliation).
 
 Covers:
 - happy path: admin locks a period; status reflects locked
 - double-lock returns 409
 - non-admin cannot lock (manager 403) — covered in test_rbac_matrix
-- F8: lock should reject if sub-ledger reconciliation fails; today it doesn't
-
-The reconciliation gap (F8) is tested with a documented xfail so the test fails
-*loudly* once Karya implements it (so we don't forget the test exists).
+- lock rejects when finalized sub-ledger rows are missing GL journals
 """
 
 from __future__ import annotations
@@ -59,6 +56,28 @@ def _cleanup_lock(world: SeedWorld, period: str) -> None:
         db.table("period_locks").delete().eq("tenant_id", world.tenant_a.tenant_id).eq(
             "period", period
         ).execute()
+    except Exception:
+        pass
+
+
+def _cleanup_invoice(world: SeedWorld, invoice_id: str) -> None:
+    """Delete a test invoice row by tenant + id (best-effort)."""
+    try:
+        db = make_service_client()
+        db.table("invoices").delete().eq("tenant_id", world.tenant_a.tenant_id).eq(
+            "id", invoice_id
+        ).execute()
+    except Exception:
+        pass
+
+
+def _cleanup_agent_suggestion(world: SeedWorld, suggestion_id: str) -> None:
+    """Delete a test suggestion row by tenant + id (best-effort)."""
+    try:
+        db = make_service_client()
+        db.table("agent_suggestions").delete().eq(
+            "tenant_id", world.tenant_a.tenant_id
+        ).eq("id", suggestion_id).execute()
     except Exception:
         pass
 
@@ -119,6 +138,136 @@ def test_period_lock_invalid_format_returns_422(
         )
 
 
+def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can preview period close readiness before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-readiness")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["ready"] is True
+    assert body["findings"] == []
+    assert body["trial_balance_balanced"] is True
+
+
+def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can see a derived close checklist before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-status")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["status"] == "ready"
+    assert body["ready_to_lock"] is True
+    assert body["pending_reviews"] == []
+    assert body["lock_blockers"] == []
+    assert {item["code"] for item in body["checklist"]} == {
+        "subledger_reconciliation",
+        "trial_balance",
+        "close_reviews",
+        "period_lock",
+    }
+
+
+def test_period_close_package_happy_path(admin_client_a: httpx.Client) -> None:
+    """Admins can fetch a composed close package before locking."""
+    period = _unique_future_period()
+    r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-package")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["period_start"] == f"{period}-01"
+    assert body["previous_period"]
+    assert body["close_status"]["period"] == period
+    assert body["gl_summary"]["period"] == period
+    assert body["trial_balance"]["is_balanced"] is True
+    assert {"ar_open_total", "ap_open_total", "wip_total"} == set(
+        body["working_capital"]
+    )
+    assert {row["code"] for row in body["variance_commentary"]} >= {
+        "revenue_variance",
+        "expense_variance",
+        "net_income_variance",
+        "margin_variance",
+        "working_capital",
+    }
+
+
+def test_propose_wip_accrual_empty_period_returns_no_suggestions(
+    admin_client_a: httpx.Client,
+) -> None:
+    """The accrual agent proposal endpoint handles periods with no WIP."""
+    period = _unique_future_period()
+    r = admin_client_a.post(
+        f"/api/v1/accounting/periods/{period}/propose-wip-accrual"
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["proposal_count"] == 0
+    assert body["created_count"] == 0
+    assert body["suggestion_ids"] == []
+
+
+def test_propose_deferred_revenue_release_empty_period_returns_no_suggestions(
+    admin_client_a: httpx.Client,
+) -> None:
+    """The revenue agent proposal endpoint handles periods with no deferred credits."""
+    period = _unique_future_period()
+    r = admin_client_a.post(
+        f"/api/v1/accounting/periods/{period}/propose-deferred-revenue-release"
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["period"] == period
+    assert body["proposal_count"] == 0
+    assert body["created_count"] == 0
+    assert body["suggestion_ids"] == []
+
+
+def test_period_lock_rejects_pending_close_review(
+    admin_client_a: httpx.Client, world: SeedWorld
+) -> None:
+    """A pending close-related HITL suggestion must be resolved before lock."""
+    period = _unique_future_period()
+    suggestion_id = str(uuid.uuid4())
+    try:
+        db = make_service_client()
+        db.table("agent_suggestions").insert(
+            {
+                "id": suggestion_id,
+                "tenant_id": world.tenant_a.tenant_id,
+                "agent_name": "accrual_agent",
+                "action_type": "draft_journal",
+                "input_snapshot": {"period": period},
+                "output_snapshot": {
+                    "period": period,
+                    "currency": world.tenant_a.base_currency,
+                    "wip_value": "100.00",
+                },
+                "confidence": "0.68",
+                "status": "pending",
+                "hitl_required": True,
+            }
+        ).execute()
+
+        status = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-status")
+        assert status.status_code == 200, status.text
+        status_body = status.json()
+        assert status_body["ready_to_lock"] is False
+        assert status_body["lock_blockers"] == ["close_reviews"]
+        assert status_body["pending_reviews"][0]["id"] == suggestion_id
+
+        r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert detail["code"] == "close_review_pending"
+        assert detail["pending_reviews"][0]["id"] == suggestion_id
+    finally:
+        _cleanup_agent_suggestion(world, suggestion_id)
+        _cleanup_lock(world, period)
+
+
 def test_period_lock_cross_tenant_isolation(
     admin_client_a: httpx.Client, client_b: httpx.Client, world: SeedWorld
 ) -> None:
@@ -165,33 +314,44 @@ def test_period_lock_cross_tenant_isolation(
         _cleanup_lock(world, period)
 
 
-@pytest.mark.xfail(
-    reason="F8: period lock does not run sub-ledger reconciliation before locking — "
-    "see accounting.py:155-158 TODO and bug filed via Aksha QA suite",
-    strict=False,
-)
 def test_period_lock_rejects_when_subledger_unbalanced(
     admin_client_a: httpx.Client, world: SeedWorld
 ) -> None:
-    """A period with unposted invoices should refuse to lock.
-
-    Today the lock is applied without the reconciliation check. When that
-    feature lands, this test should pass and the xfail decorator should be
-    removed. The xfail is non-strict (XPASS won't error) so the test serves
-    as a regression sentinel.
-
-    To make this test meaningful we'd need to insert an unposted invoice in
-    the target period via the service-role client. For now we just assert the
-    desired behaviour and rely on the xfail.
-    """
+    """A period with a finalized invoice missing its GL journal refuses to lock."""
     period = _unique_future_period()
+    invoice_id = str(uuid.uuid4())
     try:
-        # In a complete impl we'd seed an unposted invoice in this period and
-        # expect the lock to 409. Today the lock succeeds unconditionally.
-        r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
-        # If F8 were fixed, this would be 409 (unbalanced) or similar.
-        assert r.status_code == 409, (
-            "F8 still open: lock allowed despite (hypothetical) unposted sub-ledger entries"
+        db = make_service_client()
+        db.table("invoices").insert(
+            {
+                "id": invoice_id,
+                "tenant_id": world.tenant_a.tenant_id,
+                "engagement_id": world.tenant_a.engagement_ids[0],
+                "client_id": world.tenant_a.client_ids[0],
+                "currency": world.tenant_a.base_currency,
+                "subtotal": "100.00",
+                "tax_total": "0.00",
+                "total": "100.00",
+                "status": "approved",
+                "issue_date": f"{period}-15",
+                "due_date": f"{period}-28",
+                "notes": "period-lock reconciliation regression fixture",
+            }
+        ).execute()
+
+        readiness = admin_client_a.get(
+            f"/api/v1/accounting/periods/{period}/close-readiness"
         )
+        assert readiness.status_code == 200, readiness.text
+        readiness_body = readiness.json()
+        assert readiness_body["ready"] is False
+        assert readiness_body["findings"][0]["code"] == "missing_invoice_journal"
+
+        r = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert detail["code"] == "close_reconciliation_failed"
+        assert detail["findings"][0]["code"] == "missing_invoice_journal"
     finally:
+        _cleanup_invoice(world, invoice_id)
         _cleanup_lock(world, period)

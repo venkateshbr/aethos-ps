@@ -26,6 +26,9 @@ interface BillDetail {
   bill_number: string;
   vendor_name?: string | null;
   vendor_id?: string | null;
+  purchase_order_id?: string | null;
+  po_match_status?: string | null;
+  po_match_summary?: Record<string, unknown> | null;
   currency: string;
   subtotal: string;
   tax_total: string;
@@ -209,6 +212,21 @@ interface BillDetail {
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
             <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Issue Date</dt>
             <dd class="text-text-primary text-sm tabular-nums">{{ bill()!.issue_date ?? '—' }}</dd>
+          </div>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">PO / SO Match</dt>
+            <dd class="text-sm">
+              @if (bill()!.purchase_order_id) {
+                <div class="flex flex-col gap-1">
+                  <span class="font-mono text-accent-light">{{ poNumber(bill()!) }}</span>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit" [class]="poMatchClass(bill()!.po_match_status)">
+                    {{ poMatchLabel(bill()!.po_match_status) }}
+                  </span>
+                </div>
+              } @else {
+                <span class="text-text-muted">Not linked</span>
+              }
+            </dd>
           </div>
           <div class="bg-surface-raised border border-border-default rounded-lg p-4">
             <dt class="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Due Date</dt>
@@ -464,5 +482,37 @@ export class BillDetailComponent implements OnInit {
       void:     'Voided',
     };
     return labels[status] ?? status;
+  }
+
+  poNumber(bill: BillDetail): string {
+    const summary = bill.po_match_summary ?? {};
+    return String(summary['purchase_order_number'] ?? bill.purchase_order_id ?? 'Linked');
+  }
+
+  poMatchLabel(status: string | null | undefined): string {
+    const labels: Record<string, string> = {
+      not_linked: 'Not linked',
+      matched: 'Matched',
+      over_tolerance: 'Over tolerance',
+      vendor_mismatch: 'Vendor mismatch',
+      currency_mismatch: 'Currency mismatch',
+      order_not_approved: 'Order not approved',
+      order_not_found: 'Order not found',
+    };
+    return labels[status ?? 'not_linked'] ?? status ?? 'Not linked';
+  }
+
+  poMatchClass(status: string | null | undefined): string {
+    switch (status) {
+      case 'matched': return 'bg-accent/15 text-accent-light';
+      case 'over_tolerance':
+      case 'vendor_mismatch':
+      case 'currency_mismatch':
+      case 'order_not_approved':
+      case 'order_not_found':
+        return 'bg-confidence-low/10 text-confidence-low';
+      default:
+        return 'bg-surface text-text-muted border border-border-default';
+    }
   }
 }

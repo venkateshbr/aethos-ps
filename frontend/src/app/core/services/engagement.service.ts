@@ -10,8 +10,24 @@ export interface EngagementSummary {
   total_value: string | null;
   status: string;
   client_id: string;
+  description?: string | null;
   client_name?: string;
+  service_line?: string | null;
+  service_catalogue_id?: string | null;
+  rate_card_id?: string | null;
   rate_card_name?: string;
+  billing_terms?: {
+    fixed_fee_amount?: string | null;
+    milestone_total?: string | null;
+    retainer_monthly_amount?: string | null;
+    retainer_floor?: string | null;
+    retainer_rollover?: boolean | null;
+    cap_amount?: string | null;
+    billing_unit?: string | null;
+    unit_label?: string | null;
+    unit_quantity?: string | null;
+    unit_price?: string | null;
+  } | null;
   start_date?: string | null;
   end_date?: string | null;
 }
@@ -48,19 +64,37 @@ export interface EngagementCreate {
   billing_arrangement: string;
   currency: string;
   total_value?: string | null;
+  description?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  description?: string | null;
   rate_card_id?: string | null;
+  service_line?: string | null;
+  service_catalogue_id?: string | null;
+  billing_terms?: {
+    fixed_fee_amount?: string | null;
+    milestone_total?: string | null;
+    retainer_monthly_amount?: string | null;
+    retainer_floor?: string | null;
+    retainer_rollover?: boolean | null;
+    cap_amount?: string | null;
+    billing_unit?: string | null;
+    unit_label?: string | null;
+    unit_quantity?: string | null;
+    unit_price?: string | null;
+  } | null;
 }
 
 export interface ProjectSummary {
   id: string;
   name: string;
+  description?: string | null;
   code?: string | null;  // PRJ-0001 (migration 0021)
   engagement_id: string;
   currency: string;
   budget: string | null;
+  budget_hours?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
   status: string;
 }
 
@@ -72,10 +106,17 @@ export class EngagementService {
   private http = inject(HttpClient);
   private base = '/api/v1';
 
-  getEngagements(filters?: { status?: string; client_id?: string }): Observable<EngagementListResponse> {
+  getEngagements(filters?: {
+    status?: string;
+    client_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Observable<EngagementListResponse> {
     let params = new HttpParams();
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.client_id) params = params.set('client_id', filters.client_id);
+    if (filters?.limit) params = params.set('limit', filters.limit);
+    if (filters?.offset) params = params.set('offset', filters.offset);
     return this.http.get<EngagementListResponse>(`${this.base}/engagements`, { params });
   }
 

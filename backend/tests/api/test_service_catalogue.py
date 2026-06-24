@@ -72,15 +72,26 @@ def test_tenant():
         ("4002", "Revenue — Company Secretarial"),
         ("4003", "Revenue — Payroll"),
     ]:
-        db.table("accounts").insert(
-            {
-                "tenant_id": tenant_id,
-                "code": code,
-                "name": name,
-                "account_type": "revenue",
-                "is_system": True,
-            }
-        ).execute()
+        existing = (
+            db.table("accounts")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("code", code)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not existing:
+            db.table("accounts").insert(
+                {
+                    "tenant_id": tenant_id,
+                    "code": code,
+                    "name": name,
+                    "account_type": "revenue",
+                    "is_system": True,
+                }
+            ).execute()
 
     # Seed the 17 system services (mirrors migration 0033 seed block).
     services = [
@@ -104,7 +115,7 @@ def test_tenant():
     ]
 
     account_ids: dict[str, str] = {}
-    for code, name, account_type, *_ in [
+    for code, _name, _account_type, *_ in [
         ("4000", "Revenue", "revenue"),
         ("4001", "Revenue — Tax Services", "revenue"),
         ("4002", "Revenue — Company Secretarial", "revenue"),
@@ -150,8 +161,6 @@ def test_services_seeded_for_tenant(test_tenant) -> None:
     """Migration 0033 seeds exactly 17 system services per tenant."""
     db = test_tenant["db"]
     tenant_id = test_tenant["tenant_id"]
-
-    db.rpc("set_config", {"setting": "app.current_tenant_id", "value": tenant_id, "is_local": False}).execute()
 
     rows = (
         db.table("service_catalogue")
@@ -217,8 +226,9 @@ def test_cannot_deactivate_system_service(test_tenant) -> None:
     db = test_tenant["db"]
     tenant_id = test_tenant["tenant_id"]
 
-    from app.services.service_catalogue_service import ServiceCatalogueService
     import asyncio
+
+    from app.services.service_catalogue_service import ServiceCatalogueService
 
     svc = ServiceCatalogueService(db, tenant_id)
 
@@ -239,7 +249,7 @@ def test_cannot_deactivate_system_service(test_tenant) -> None:
     system_id = str(rows[0]["id"])
 
     with pytest.raises(PermissionError, match="System services cannot be deactivated"):
-        asyncio.get_event_loop().run_until_complete(svc.deactivate_service(system_id))
+        asyncio.run(svc.deactivate_service(system_id))
 
 
 # ---------------------------------------------------------------------------
@@ -294,13 +304,14 @@ def test_revenue_by_service_line(test_tenant) -> None:
                 "id": inv_id,
                 "tenant_id": tenant_id,
                 "engagement_id": eng_id,
+                "client_id": client_id,
                 "status": "sent",
                 "issue_date": "2026-06-01",
                 "due_date": "2026-06-30",
                 "currency": "GBP",
                 "total": total,
                 "subtotal": total,
-                "tax_amount": "0.00",
+                "tax_total": "0.00",
             }
         ).execute()
         db.table("invoice_lines").insert(
@@ -343,11 +354,12 @@ def test_list_filter_by_service_line(test_tenant) -> None:
     db = test_tenant["db"]
     tenant_id = test_tenant["tenant_id"]
 
-    from app.services.service_catalogue_service import ServiceCatalogueService
     import asyncio
 
+    from app.services.service_catalogue_service import ServiceCatalogueService
+
     svc = ServiceCatalogueService(db, tenant_id)
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         svc.list_services(service_line="tax", active_only=True)
     )
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from datetime import UTC, date
 from datetime import datetime as _dt
 from decimal import Decimal, InvalidOperation
@@ -18,9 +19,15 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
-from app.models.invoices import InvoiceCreate, InvoiceResponse, PublicInvoiceResponse
+from app.models.invoices import (
+    InvoiceCreate,
+    InvoiceLineCreate,
+    InvoiceResponse,
+    PublicInvoiceResponse,
+)
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services._validation import assert_belongs_to_tenant
+from app.services.retainer_ledger_service import record_retainer_draw
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -32,6 +39,14 @@ def _to_decimal(value: str | int | float | None, default: str = "0") -> Decimal:
         return Decimal(str(value)) if value is not None else Decimal(default)
     except InvalidOperation:
         return Decimal(default)
+
+
+def _quantize_money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"))
+
+
+def _line_amount(line: InvoiceLineCreate) -> Decimal:
+    return _quantize_money(line.quantity * line.unit_price)
 
 
 class InvoicesService:
@@ -66,6 +81,33 @@ class InvoicesService:
             raise HTTPException(status_code=404, detail="Invoice not found")
         lines = await self._repo.list_lines(invoice_id)
         return InvoiceResponse.from_db(row, lines)
+
+    async def rotate_public_token(
+        self,
+        invoice_id: str,
+        *,
+        rotated_by: str,
+    ) -> InvoiceResponse:
+        """Rotate the unauthenticated public invoice token and revoke the old one."""
+        row = await self._repo.get_by_id(invoice_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        old_token = row.get("public_token")
+        if old_token:
+            await self._repo.revoke_public_token(
+                invoice=row,
+                public_token=str(old_token),
+                revoked_by=rotated_by,
+            )
+
+        new_token = secrets.token_urlsafe(24)
+        updated = await self._repo.update(invoice_id, {"public_token": new_token})
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        lines = await self._repo.list_lines(invoice_id)
+        return InvoiceResponse.from_db(updated, lines)
 
     async def get_by_public_token(self, token: str) -> PublicInvoiceResponse:
         """Fetch invoice for the public payment page — no auth required."""
@@ -104,14 +146,64 @@ class InvoicesService:
         if data.notes:
             invoice_data["notes"] = data.notes
 
-        # Compute totals from lines
+        # Validate line-level FKs and compute totals before inserting the invoice.
+        # If any line is invalid, no draft header is left behind.
         subtotal = Decimal("0")
         tax_total = Decimal("0")
+        line_payloads: list[dict] = []
         for line in data.lines:
-            line_amount = (line.quantity * line.unit_price).quantize(Decimal("0.01"))
+            line_amount = _line_amount(line)
+            tax_amount = Decimal("0")
+            tax_rate_id: str | None = None
+
+            if line.tax_rate_id:
+                tax_row = await self._repo.get_tax_rate(line.tax_rate_id)
+                if tax_row is None:
+                    raise HTTPException(status_code=404, detail="Tax rate not found")
+                tax_rate_id = str(tax_row["id"])
+                tax_rate = _to_decimal(tax_row.get("rate"))
+                tax_amount = _quantize_money(line_amount * tax_rate)
+            if line.time_entry_id:
+                await assert_belongs_to_tenant(
+                    self.db, "time_entries", line.time_entry_id, self.tenant_id,
+                    not_found_detail="Time entry not found",
+                )
+            if line.expense_id:
+                await assert_belongs_to_tenant(
+                    self.db, "project_expenses", line.expense_id, self.tenant_id,
+                    not_found_detail="Expense not found",
+                )
+            if line.service_catalogue_id:
+                await assert_belongs_to_tenant(
+                    self.db,
+                    "service_catalogue",
+                    line.service_catalogue_id,
+                    self.tenant_id,
+                    not_found_detail="Service catalogue item not found",
+                )
+
             subtotal += line_amount
+            tax_total += tax_amount
+            line_payloads.append(
+                {
+                    "description": line.description,
+                    "quantity": str(line.quantity),
+                    "unit_price": serialise_money(line.unit_price),
+                    "amount": serialise_money(line_amount),
+                    "tax_rate_id": tax_rate_id,
+                    "tax_amount": serialise_money(tax_amount),
+                    "time_entry_id": line.time_entry_id,
+                    "expense_id": line.expense_id,
+                    "service_catalogue_id": line.service_catalogue_id,
+                }
+            )
 
         total = subtotal + tax_total
+        if subtotal < Decimal("0") or total < Decimal("0"):
+            raise HTTPException(
+                status_code=422,
+                detail="Invoice total cannot be negative after adjustments",
+            )
         invoice_data["subtotal"] = serialise_money(subtotal)
         invoice_data["tax_total"] = serialise_money(tax_total)
         invoice_data["total"] = serialise_money(total)
@@ -121,43 +213,70 @@ class InvoicesService:
 
         # Insert lines
         line_rows: list[dict] = []
-        for line in data.lines:
-            line_amount = (line.quantity * line.unit_price).quantize(Decimal("0.01"))
+        for payload in line_payloads:
             line_data: dict = {
                 "tenant_id": self.tenant_id,
                 "invoice_id": invoice_id,
-                "description": line.description,
-                "quantity": str(line.quantity),
-                "unit_price": serialise_money(line.unit_price),
-                "amount": serialise_money(line_amount),
-                "tax_amount": "0.00",
+                "description": payload["description"],
+                "quantity": payload["quantity"],
+                "unit_price": payload["unit_price"],
+                "amount": payload["amount"],
+                "tax_amount": payload["tax_amount"],
             }
-            if line.tax_rate_id:
-                await assert_belongs_to_tenant(
-                    self.db, "tax_rates", line.tax_rate_id, self.tenant_id,
-                    not_found_detail="Tax rate not found",
-                )
-                line_data["tax_rate_id"] = line.tax_rate_id
-            if line.time_entry_id:
-                await assert_belongs_to_tenant(
-                    self.db, "time_entries", line.time_entry_id, self.tenant_id,
-                    not_found_detail="Time entry not found",
-                )
-                line_data["time_entry_id"] = line.time_entry_id
-            if line.expense_id:
-                await assert_belongs_to_tenant(
-                    self.db, "project_expenses", line.expense_id, self.tenant_id,
-                    not_found_detail="Expense not found",
-                )
-                line_data["expense_id"] = line.expense_id
+            if payload["tax_rate_id"]:
+                line_data["tax_rate_id"] = payload["tax_rate_id"]
+            if payload["time_entry_id"]:
+                line_data["time_entry_id"] = payload["time_entry_id"]
+            if payload["expense_id"]:
+                line_data["expense_id"] = payload["expense_id"]
+            if payload["service_catalogue_id"]:
+                line_data["service_catalogue_id"] = payload["service_catalogue_id"]
             created_line = await self._repo.create_line(line_data)
             line_rows.append(created_line)
+
+        await self._record_retainer_draw_from_lines(
+            engagement_id=data.engagement_id,
+            invoice_id=invoice_id,
+            currency=data.currency,
+            line_rows=line_rows,
+            created_by=created_by,
+        )
 
         logger.info(
             "Invoice created",
             extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
         )
         return InvoiceResponse.from_db(row, line_rows)
+
+    async def _record_retainer_draw_from_lines(
+        self,
+        *,
+        engagement_id: str,
+        invoice_id: str,
+        currency: str,
+        line_rows: list[dict],
+        created_by: str,
+    ) -> None:
+        draw_amount = Decimal("0")
+        for line in line_rows:
+            description = str(line.get("description") or "").lower()
+            amount = _to_decimal(line.get("amount"))
+            if amount < 0 and "retainer applied" in description:
+                draw_amount += -amount
+
+        if draw_amount <= 0:
+            return
+
+        await record_retainer_draw(
+            self.db,
+            tenant_id=self.tenant_id,
+            engagement_id=engagement_id,
+            invoice_id=invoice_id,
+            amount=draw_amount,
+            currency=currency,
+            description=f"Retainer draw applied to invoice {invoice_id}",
+            created_by_user_id=created_by,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle transitions
@@ -166,7 +285,7 @@ class InvoicesService:
     async def approve_invoice(self, invoice_id: str, approved_by: str) -> InvoiceResponse:
         """Move invoice to approved status and post AR journal.
 
-        Journal: DR 1200 Accounts Receivable / CR 4000 Revenue
+        Journal: DR 1200 Accounts Receivable / CR 4000 Revenue + CR 2300 Sales Tax Payable.
         """
         row = await self._repo.get_by_id(invoice_id)
         if row is None:
@@ -178,11 +297,16 @@ class InvoicesService:
             )
 
         total = _to_decimal(row.get("total"))
+        subtotal = _to_decimal(row.get("subtotal"))
+        tax_total = _to_decimal(row.get("tax_total"))
         currency = row.get("currency", "USD")
         invoice_number = row.get("invoice_number", invoice_id[:8])
 
         # Resolve account IDs by code
-        acct_map = await self._repo.get_account_ids_by_codes(["1200", "4000"])
+        account_codes = ["1200", "4000"]
+        if tax_total > Decimal("0"):
+            account_codes.append("2300")
+        acct_map = await self._repo.get_account_ids_by_codes(account_codes)
 
         lines = [
             JournalLineSpec(
@@ -196,12 +320,23 @@ class InvoicesService:
             JournalLineSpec(
                 direction="CR",
                 account_code="4000",
-                amount=total,
+                amount=subtotal,
                 description=f"Revenue for invoice {invoice_number}",
                 account_id=acct_map.get("4000"),
                 currency=currency,
             ),
         ]
+        if tax_total > Decimal("0"):
+            lines.append(
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="2300",
+                    amount=tax_total,
+                    description=f"Sales tax payable for invoice {invoice_number}",
+                    account_id=acct_map.get("2300"),
+                    currency=currency,
+                )
+            )
 
         entry_date = (
             row.get("issue_date")
@@ -411,7 +546,10 @@ class InvoicesService:
                 "Invoice sent via PDF-only path (Stripe not configured)",
                 extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
             )
-            updated = await self._repo.update(invoice_id, {"status": "sent"})
+            updated = await self._repo.update(
+                invoice_id,
+                {"status": "sent", "sent_at": _dt.now(tz=UTC).isoformat()},
+            )
             if updated is None:
                 raise HTTPException(status_code=404, detail="Invoice not found after update")
             invoice_lines = await self._repo.list_lines(invoice_id)
@@ -442,6 +580,12 @@ class InvoicesService:
                 "metadata": {
                     "invoice_id": invoice_id,
                     "tenant_id": self.tenant_id,
+                },
+                "payment_intent_data": {
+                    "metadata": {
+                        "invoice_id": invoice_id,
+                        "tenant_id": self.tenant_id,
+                    },
                 },
                 "after_completion": {
                     "type": "redirect",
@@ -479,6 +623,7 @@ class InvoicesService:
             invoice_id,
             {
                 "status": "sent",
+                "sent_at": _dt.now(tz=UTC).isoformat(),
                 "stripe_payment_link_id": payment_link.id,
                 "stripe_payment_link_url": payment_link.url,
             },

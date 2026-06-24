@@ -7,6 +7,7 @@ Promotion logic (per agent/action pair, last 30 days):
   - Approval rate threshold: 98% for money agents, 95% for others.
   - Average confidence must be ≥ 85%.
   - Edit rate (approved_with_edits / approved) must be ≤ 15%.
+  - Requires explicit admin opt-in, a passing eval gate, and max-risk permission.
   - Skips pairs already at L3 or locked at L2.
   - Creates a ``hitl_task`` of kind ``promote_autonomy`` for admin review —
     does NOT auto-apply the promotion.
@@ -17,7 +18,7 @@ Demotion logic (per L3 agent/action pair, last 14 days):
     a ``hitl_task`` of kind ``autonomy_demotion`` for awareness.
 
 Money agents (higher thresholds):
-  invoice_drafter_agent, accounting_guardian, bill_pay_agent
+  copilot_agent, invoice_drafter_agent, accounting_guardian, bill_pay_agent
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from app.agents.tool_registry import risk_class_allows, risk_class_for_action
 from app.core.config import settings
 from app.workers.procrastinate_app import app
 from supabase import create_client
@@ -35,7 +37,18 @@ logger = logging.getLogger(__name__)
 
 # Agents that touch financial transactions — require higher promotion thresholds.
 MONEY_AGENTS: frozenset[str] = frozenset(
-    {"invoice_drafter_agent", "accounting_guardian", "bill_pay_agent"}
+    {
+        "accrual_agent",
+        "accounting_guardian",
+        "bill_pay_agent",
+        "billing_run_agent",
+        "collections_agent",
+        "copilot_agent",
+        "invoice_drafter_agent",
+        "prepaid_amortization_agent",
+        "recurring_journal_agent",
+        "revenue_recognition_agent",
+    }
 )
 
 
@@ -50,9 +63,7 @@ async def autonomy_promoter_worker(timestamp: int) -> dict:
     """
     _ = timestamp  # provided by Procrastinate periodic; unused
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
-    tenants = (
-        db.table("tenants").select("id").eq("status", "active").execute().data or []
-    )
+    tenants = db.table("tenants").select("id").eq("status", "active").execute().data or []
     proposed = 0
     demoted = 0
 
@@ -102,9 +113,7 @@ def _check_promotions(db, tenant_id: str) -> int:
             continue
 
         approved = [
-            r
-            for r in decided
-            if r["status"] in ("approved", "auto_applied", "approved_with_edits")
+            r for r in decided if r["status"] in ("approved", "auto_applied", "approved_with_edits")
         ]
         edited = [r for r in decided if r["status"] == "approved_with_edits"]
 
@@ -113,33 +122,36 @@ def _check_promotions(db, tenant_id: str) -> int:
 
         approval_rate = Decimal(str(len(approved) / n))
         edit_rate = Decimal(str(len(edited) / len(approved)))
-        avg_conf = sum(
-            Decimal(str(r.get("confidence", "0"))) for r in approved
-        ) / len(approved)
+        avg_conf = sum(Decimal(str(r.get("confidence", "0"))) for r in approved) / len(approved)
 
-        if (
-            approval_rate < min_rate
-            or avg_conf < Decimal("0.85")
-            or edit_rate > Decimal("0.15")
-        ):
+        if approval_rate < min_rate or avg_conf < Decimal("0.85") or edit_rate > Decimal("0.15"):
             continue
 
-        # Skip pairs already at L3 or locked at L2
+        # Skip pairs already at L3, locked at L2, or missing required L3 gates.
         existing = (
             db.table("agent_autonomy_settings")
-            .select("level,locked_at_l2")
+            .select("level,locked_at_l2,l3_opt_in,eval_passed_at,max_auto_risk")
             .eq("tenant_id", tenant_id)
             .eq("agent_name", agent)
             .eq("action_type", action)
             .execute()
             .data
         )
-        if existing:
-            s = existing[0]
-            if s.get("level", 2) >= 3:
-                continue
-            if s.get("locked_at_l2"):
-                continue
+        if not existing:
+            continue
+        s = existing[0]
+        if s.get("level", 2) >= 3:
+            continue
+        if s.get("locked_at_l2"):
+            continue
+        if not s.get("l3_opt_in"):
+            continue
+        if not s.get("eval_passed_at"):
+            continue
+        risk_class = risk_class_for_action(agent, action)
+        max_auto_risk = s.get("max_auto_risk") or "draft"
+        if not risk_class_allows(max_auto_risk, risk_class):
+            continue
 
         # Skip if a pending promotion task already exists for this tenant
         dup = (
@@ -173,6 +185,9 @@ def _check_promotions(db, tenant_id: str) -> int:
                     "sample_count": n,
                     "proposed_level": 3,
                     "confidence_threshold": "0.90",
+                    "eval_passed_at": s.get("eval_passed_at"),
+                    "max_auto_risk": max_auto_risk,
+                    "risk_class": risk_class,
                 },
                 "status": "open",
             }
@@ -219,17 +234,15 @@ def _check_demotions(db, tenant_id: str) -> int:
             continue
 
         approved = [
-            r
-            for r in rows
-            if r["status"] in ("approved", "auto_applied", "approved_with_edits")
+            r for r in rows if r["status"] in ("approved", "auto_applied", "approved_with_edits")
         ]
         rate = Decimal(str(len(approved) / len(rows)))
 
         if rate < Decimal("0.85"):
             # Demote to L2, unlock (clear locked_at_l2 flag)
-            db.table("agent_autonomy_settings").update(
-                {"level": 2, "locked_at_l2": False}
-            ).eq("id", s["id"]).execute()
+            db.table("agent_autonomy_settings").update({"level": 2, "locked_at_l2": False}).eq(
+                "id", s["id"]
+            ).execute()
 
             db.table("hitl_tasks").insert(
                 {
@@ -237,8 +250,7 @@ def _check_demotions(db, tenant_id: str) -> int:
                     "kind": "autonomy_demotion",
                     "priority": "high",
                     "title": (
-                        f"{s['agent_name']} demoted to L2 — "
-                        f"{float(rate * 100):.1f}% approval"
+                        f"{s['agent_name']} demoted to L2 — {float(rate * 100):.1f}% approval"
                     ),
                     "description": "Fell below 85% threshold over 14 days.",
                     "payload": {

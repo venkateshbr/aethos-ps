@@ -7,6 +7,7 @@ RBAC:
   create:  admin+
   approve: admin+
   export:  admin+
+  settle:  admin+
   propose: admin+
 """
 
@@ -20,7 +21,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.services.bill_payments_service import BillPaymentsService
@@ -31,7 +32,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _service(
+def _read_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> BillPaymentsService:
+    return BillPaymentsService(db, tenant_id)
+
+
+def _write_service(
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> BillPaymentsService:
@@ -57,7 +65,7 @@ class CreateBatchRequest(BaseModel):
 @router.get("/batches")
 def list_batches(
     status: str | None = Query(None),
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
+    svc: BillPaymentsService = Depends(_read_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> list[dict]:
     return svc.list_batches(status=status)
@@ -66,7 +74,7 @@ def list_batches(
 @router.post("/batches", status_code=201)
 def create_batch(
     body: CreateBatchRequest,
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
     user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> dict:
     return svc.create_batch(body.bill_ids, body.pay_date, body.bank_account_label, user.user_id)
@@ -75,7 +83,7 @@ def create_batch(
 @router.get("/batches/{batch_id}")
 def get_batch(
     batch_id: str,
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
+    svc: BillPaymentsService = Depends(_read_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> dict:
     return svc.get_batch(batch_id)
@@ -84,7 +92,7 @@ def get_batch(
 @router.post("/batches/{batch_id}/approve")
 def approve_batch(
     batch_id: str,
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
     user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> dict:
     return svc.approve_batch(batch_id, user.user_id)
@@ -94,17 +102,17 @@ def approve_batch(
 def export_batch(
     batch_id: str,
     format: str = Query("csv", pattern="^(nacha|csv)$"),
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
-    _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> Response:
     if format == "nacha":
-        content = svc.export_nacha(batch_id)
+        content = svc.export_nacha(batch_id, user.user_id)
         return Response(
             content=content,
             media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename=batch-{batch_id[:8]}.txt"},
         )
-    content = svc.export_csv(batch_id)
+    content = svc.export_csv(batch_id, user.user_id)
     return Response(
         content=content,
         media_type="text/csv",
@@ -115,10 +123,19 @@ def export_batch(
 @router.patch("/batches/{batch_id}/mark-sent")
 def mark_sent(
     batch_id: str,
-    svc: BillPaymentsService = Depends(_service),  # noqa: B008
-    _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
 ) -> dict:
-    return svc.mark_sent(batch_id)
+    return svc.mark_sent(batch_id, user.user_id)
+
+
+@router.post("/batches/{batch_id}/settle")
+def settle_batch(
+    batch_id: str,
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
+    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+) -> dict:
+    return svc.settle_batch(batch_id, user.user_id)
 
 
 @router.post("/propose")
@@ -133,13 +150,46 @@ async def propose(
     Always L2 — writes an agent_suggestion + hitl_task for human approval.
     """
     from app.agents.base import AgentDeps
-    from app.agents.bill_pay_agent import propose_payment_batch
+    from app.agents.bill_pay_agent import (
+        find_duplicate_payment_proposal,
+        propose_payment_batch,
+    )
     from app.agents.suggestion_writer import write_agent_suggestion
 
     deps = AgentDeps(tenant_id=tenant_id, user_id=user.user_id, db=db)
     proposal = propose_payment_batch(deps, due_within_days)
+    response = proposal.model_dump(mode="json")
 
-    await write_agent_suggestion(
+    if not proposal.proposed_bill_ids:
+        logger.info(
+            "bill_pay_agent_proposal_empty",
+            extra={"tenant_id": tenant_id, "user_id": user.user_id},
+        )
+        return {
+            **response,
+            "suggestion_id": None,
+            "duplicate_suppressed": False,
+            "skipped_reason": "no_approved_bills",
+        }
+
+    duplicate_id = find_duplicate_payment_proposal(deps, proposal.proposed_bill_ids)
+    if duplicate_id:
+        logger.info(
+            "bill_pay_agent_duplicate_suppressed",
+            extra={
+                "tenant_id": tenant_id,
+                "user_id": user.user_id,
+                "suggestion_id": duplicate_id,
+                "bill_count": len(proposal.proposed_bill_ids),
+            },
+        )
+        return {
+            **response,
+            "suggestion_id": duplicate_id,
+            "duplicate_suppressed": True,
+        }
+
+    suggestion = await write_agent_suggestion(
         deps,
         agent_name="bill_pay_agent",
         action_type="create_bill_payment_batch",
@@ -162,4 +212,8 @@ async def propose(
         },
     )
 
-    return proposal.model_dump(mode="json")
+    return {
+        **response,
+        "suggestion_id": suggestion.get("id"),
+        "duplicate_suppressed": False,
+    }

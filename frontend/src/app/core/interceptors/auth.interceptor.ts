@@ -52,6 +52,11 @@ const STORAGE_KEY = 'aethos_token';
 const TENANT_STORAGE_KEY = 'aethos_tenant_id';
 const ROLE_STORAGE_KEY = 'aethos_role';
 
+function readStoredValue(key: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(key);
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
 
@@ -64,12 +69,17 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // membership dependency (`get_tenant_id` per #90) requires X-Tenant-ID on
   // every authenticated route — without it the API replies 403 "Tenant
   // context missing".
+  const accessToken = _accessToken ?? readStoredValue(STORAGE_KEY);
+  const tenantId = _tenantId ?? readStoredValue(TENANT_STORAGE_KEY);
+  if (accessToken && !_accessToken) _accessToken = accessToken;
+  if (tenantId && !_tenantId) _tenantId = tenantId;
+
   let headers = req.headers;
-  if (_accessToken) {
-    headers = headers.set('Authorization', `Bearer ${_accessToken}`);
+  if (accessToken) {
+    headers = headers.set('Authorization', `Bearer ${accessToken}`);
   }
-  if (_tenantId && !req.headers.has('X-Tenant-ID')) {
-    headers = headers.set('X-Tenant-ID', _tenantId);
+  if (tenantId && !req.headers.has('X-Tenant-ID')) {
+    headers = headers.set('X-Tenant-ID', tenantId);
   }
   const forwarded = headers === req.headers ? req : req.clone({ headers });
 

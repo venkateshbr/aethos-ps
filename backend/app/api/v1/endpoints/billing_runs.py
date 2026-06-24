@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.agents.base import AgentDeps
 from app.agents.invoice_drafter_agent import draft_invoice
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.billing_runs import BillingRunCreate, BillingRunResponse
@@ -92,6 +92,7 @@ async def _draft_invoices_for_run(
                     tax_rate_id=line.tax_rate_id,
                     time_entry_id=line.time_entry_id,
                     expense_id=line.expense_id,
+                    service_catalogue_id=line.service_catalogue_id,
                 )
                 for line in invoice_draft.lines
             ]
@@ -125,7 +126,14 @@ async def _draft_invoices_for_run(
 # ---------------------------------------------------------------------------
 
 
-def _repo(
+def _read_repo(
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+) -> BillingRunsRepository:
+    return BillingRunsRepository(db, tenant_id)
+
+
+def _write_repo(
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> BillingRunsRepository:
@@ -140,7 +148,7 @@ def _repo(
 @router.get("", response_model=list[BillingRunResponse])
 async def list_billing_runs(
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    repo: BillingRunsRepository = Depends(_repo),  # noqa: B008
+    repo: BillingRunsRepository = Depends(_read_repo),  # noqa: B008
 ) -> list[BillingRunResponse]:
     rows = await repo.list_runs()
     return [BillingRunResponse.from_db(r) for r in rows]
@@ -150,7 +158,7 @@ async def list_billing_runs(
 async def create_billing_run(
     payload: BillingRunCreate,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
-    repo: BillingRunsRepository = Depends(_repo),  # noqa: B008
+    repo: BillingRunsRepository = Depends(_write_repo),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> BillingRunResponse:
     data: dict = {
@@ -170,7 +178,7 @@ async def create_billing_run(
 async def get_billing_run(
     run_id: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
-    repo: BillingRunsRepository = Depends(_repo),  # noqa: B008
+    repo: BillingRunsRepository = Depends(_read_repo),  # noqa: B008
 ) -> BillingRunResponse:
     row = await repo.get_by_id(run_id)
     if row is None:
@@ -182,7 +190,7 @@ async def get_billing_run(
 async def approve_billing_run(
     run_id: str,
     current_user: CurrentUser = require_role(UserRole.owner),  # noqa: B008
-    repo: BillingRunsRepository = Depends(_repo),  # noqa: B008
+    repo: BillingRunsRepository = Depends(_write_repo),  # noqa: B008
     db: Client = Depends(get_service_role_client),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
 ) -> BillingRunResponse:

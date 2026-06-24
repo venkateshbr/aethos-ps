@@ -38,13 +38,19 @@ class EngagementRepository:
         self,
         status: str | None = None,
         client_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict]:
-        query = self._base_query()
-        if status:
-            query = query.eq("status", status)
-        if client_id:
-            query = query.eq("client_id", client_id)
-        result = await asyncio.to_thread(lambda: query.execute())
+        def _query() -> object:
+            query = self._base_query()
+            if status:
+                query = query.eq("status", status)
+            if client_id:
+                query = query.eq("client_id", client_id)
+            query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
+            return query.execute()
+
+        result = await asyncio.to_thread(_query)
         return result.data or []
 
     async def get(self, id: str) -> dict | None:
@@ -105,8 +111,8 @@ class EngagementRepository:
     async def get_invoice_summary(self, engagement_id: str) -> dict:
         """Return billed_to_date, invoice_count, last_invoice_date for an engagement.
 
-        Only non-voided, non-deleted invoices are included in the billing total,
-        matching the partial index idx_invoices_engagement_summary.
+        Only posted/sent/paid, non-deleted invoices are included in the billing
+        total. Drafts are still work-in-progress and voids are reversals.
         """
         result = await asyncio.to_thread(
             lambda: self.db.table("invoices")
@@ -115,6 +121,7 @@ class EngagementRepository:
             .eq("engagement_id", engagement_id)
             .is_("deleted_at", "null")
             .neq("status", "voided")
+            .neq("status", "draft")
             .execute()
         )
         rows = result.data or []
@@ -174,9 +181,6 @@ class EngagementRepository:
             return {"wip_hours": 0.0, "wip_value": "0.00"}
 
         # Step 3 — resolve bill rates
-        # Collect unique (project_id, employee_id) pairs for assignment lookup
-        pairs = list({(r["project_id"], r["employee_id"]) for r in te_rows})
-
         # Fetch project_assignments for override_rate
         pa_result = await asyncio.to_thread(
             lambda: self.db.table("project_assignments")

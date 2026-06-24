@@ -11,7 +11,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.db import get_service_role_client
+from app.core.db import get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.domain.fx import FxRateNotFoundError
 from app.services.fx_rate_service import get_fx_rate_with_staleness
@@ -28,7 +28,7 @@ async def get_fx_rate(
     to_currency: str,
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     _tenant_id: str = Depends(get_tenant_id),
-    db: Client = Depends(get_service_role_client),  # noqa: B008
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> dict:
     """Return the FX rate for a currency pair with a staleness flag.
 

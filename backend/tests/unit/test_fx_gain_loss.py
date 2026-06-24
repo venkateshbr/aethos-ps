@@ -109,7 +109,7 @@ async def test_fx_gain_posts_journal() -> None:
     mock_acct_result = MagicMock()
     mock_acct_result.data = [
         {"code": "1200", "id": "acct-ar"},
-        {"code": "7100", "id": "acct-gain"},
+        {"code": "7900", "id": "acct-fx"},
     ]
 
     # Mock _system_actor
@@ -169,7 +169,7 @@ async def test_fx_gain_posts_journal() -> None:
     assert lines[0].direction == "DR"
     assert lines[0].account_code == "1200"
     assert lines[1].direction == "CR"
-    assert lines[1].account_code == "7100"
+    assert lines[1].account_code == "7900"
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ async def test_fx_loss_posts_journal() -> None:
     mock_acct_result = MagicMock()
     mock_acct_result.data = [
         {"code": "1200", "id": "acct-ar"},
-        {"code": "7200", "id": "acct-loss"},
+        {"code": "7900", "id": "acct-fx"},
     ]
     mock_actor_result = MagicMock()
     mock_actor_result.data = [{"user_id": "user-system-001"}]
@@ -230,6 +230,6 @@ async def test_fx_loss_posts_journal() -> None:
     mock_post.assert_called_once()
     lines = mock_post.call_args.kwargs["lines"]
     assert lines[0].direction == "DR"
-    assert lines[0].account_code == "7200"
+    assert lines[0].account_code == "7900"
     assert lines[1].direction == "CR"
     assert lines[1].account_code == "1200"

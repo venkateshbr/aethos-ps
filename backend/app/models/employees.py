@@ -53,6 +53,7 @@ class EmployeeCreate(BaseModel):
     default_bill_rate_currency: str | None = Field(default=None, min_length=3, max_length=3)
     cost_rate: Decimal | None = Field(default=None, ge=0)
     available_hours_per_week: Decimal | None = Field(default=None, ge=0, le=168)
+    target_billable_utilization_pct: Decimal | None = Field(default=None, ge=0, le=100)
     manager_id: str | None = Field(default=None, max_length=36)
     skills: list[str] = Field(default_factory=list)
     practice_area: PracticeArea | None = None
@@ -70,6 +71,7 @@ class EmployeeUpdate(BaseModel):
     default_bill_rate_currency: str | None = Field(default=None, min_length=3, max_length=3)
     cost_rate: Decimal | None = Field(default=None, ge=0)
     available_hours_per_week: Decimal | None = Field(default=None, ge=0, le=168)
+    target_billable_utilization_pct: Decimal | None = Field(default=None, ge=0, le=100)
     manager_id: str | None = Field(default=None, max_length=36)
     skills: list[str] | None = None
     status: str | None = Field(default=None, max_length=40)
@@ -90,6 +92,7 @@ class EmployeeResponse(BaseModel):
     default_bill_rate_currency: str | None = None
     cost_rate: str | None = None
     available_hours_per_week: str | None = None
+    target_billable_utilization_pct: str | None = None
     manager_id: str | None = None
     skills: list[str] = Field(default_factory=list)
     # Login linkage — null until the employee is invited to the portal (#134 P3).
@@ -103,7 +106,11 @@ class EmployeeResponse(BaseModel):
     seniority: str | None = None
 
     @field_validator(
-        "default_bill_rate", "cost_rate", "available_hours_per_week", mode="before"
+        "default_bill_rate",
+        "cost_rate",
+        "available_hours_per_week",
+        "target_billable_utilization_pct",
+        mode="before",
     )
     @classmethod
     def decimal_to_str(cls, v: object) -> str | None:
@@ -141,4 +148,3 @@ class EmployeeInviteResponse(BaseModel):
     set_password_url: str | None = None
     # Temporary password shown ONCE (pilot only — Resend email not yet wired).
     temp_password: str | None = None
-

@@ -7,7 +7,6 @@ must include a warning. The draft is NOT blocked — only warned.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest

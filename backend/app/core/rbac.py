@@ -29,6 +29,11 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
+from app.core.tenant import (
+    _VERIFIED_TENANT_ROLE_STATE_KEY,
+    _VERIFIED_TENANT_STATE_KEY,
+    _lookup_active_membership,
+)
 from supabase import Client
 
 
@@ -61,30 +66,38 @@ def _resolve_role(current_user: CurrentUser, request: Request, db: Client) -> Us
     that bypass the JWT hook, as well as environments where the hook is not yet
     configured.
     """
+    raw_role = (current_user.role or "").strip()
     try:
-        return UserRole(current_user.role)
+        return UserRole(raw_role)
     except ValueError:
-        pass
+        if raw_role not in {"", "anon", "authenticated"}:
+            return UserRole.viewer
 
     # JWT role is absent or unrecognised — fall back to tenant_users table.
     raw_tenant_id = request.headers.get("X-Tenant-ID", "").strip()
     if not raw_tenant_id:
         return UserRole.viewer
 
-    try:
-        result = (
-            db.table("tenant_users")
-            .select("role")
-            .eq("user_id", current_user.user_id)
-            .eq("tenant_id", raw_tenant_id)
-            .is_("deleted_at", "null")
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            return UserRole(result.data[0]["role"])
-    except Exception:
-        pass
+    cached_tenant_id = getattr(request.state, _VERIFIED_TENANT_STATE_KEY, None)
+    cached_role = getattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, None)
+    if cached_tenant_id == raw_tenant_id and cached_role:
+        try:
+            return UserRole(cached_role)
+        except ValueError:
+            return UserRole.viewer
+
+    membership = _lookup_active_membership(
+        db,
+        user_id=current_user.user_id,
+        tenant_id=raw_tenant_id,
+    )
+    if membership is not None:
+        setattr(request.state, _VERIFIED_TENANT_STATE_KEY, raw_tenant_id)
+        setattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, membership["role"])
+        try:
+            return UserRole(membership["role"])
+        except ValueError:
+            return UserRole.viewer
 
     return UserRole.viewer
 

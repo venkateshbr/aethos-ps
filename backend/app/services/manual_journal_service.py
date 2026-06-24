@@ -94,16 +94,6 @@ class ManualJournalService:
                 detail=str(exc),
             ) from exc
 
-        # Store reference on the journal_entries row if supplied
-        if payload.reference:
-            await asyncio.to_thread(
-                lambda: self.db.table("journal_entries")
-                .update({"reference": payload.reference})
-                .eq("id", je["id"])
-                .execute()
-            )
-            je["reference"] = payload.reference
-
         # 4. Fetch journal_lines for the response
         def _fetch_lines() -> list[dict]:
             result = (
