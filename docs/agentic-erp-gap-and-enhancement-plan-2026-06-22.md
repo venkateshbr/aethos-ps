@@ -65,7 +65,7 @@ Still open:
 
 Aethos PS already has the shape of a professional-services ERP: tenant auth, contacts, employees, engagements, projects, time, invoices, bills, journals, reports, documents, HITL, and several agents are present. The strongest architectural choices are the tenant-scoped FastAPI/Supabase spine, the `agent_suggestions` + `hitl_tasks` review substrate, and the use of a canonical accounting guardian before journal posting.
 
-The platform is not yet a reliable autonomous ERP. The current system behaves more like an AI-assisted PSA/ERP MVP with manual and semi-automated workflows. The main gap is not just missing screens; it is the missing agent operating model: durable workflow plans, per-tool authorization, agent run telemetry, eval-driven promotion, deterministic replay, and scheduled autonomous execution across engagement-to-cash, procure-to-pay, and record-to-report.
+The launch baseline now includes the core agent operating model: durable workflow runs, per-tool authorization, HITL policy routing, run/tool telemetry, deterministic replay controls, scheduled workflow workers, and browser-verified Copilot write execution. The platform should still be presented as a controlled agentic ERP rather than a fully autonomous ERP: money movement, accounting posting, and provider-backed external actions remain deliberately human-gated, and deeper provider integrations remain future product depth.
 
 2026-06-24 status: demo and contract stabilization is materially complete. Signed Stripe payment webhook, delayed Stripe reconciliation, FX settlement browser coverage, viewer mutation guards, audit/event-suggestion evidence, launch-safe mutating/external-provider replay planning, workflow-run visibility, queue readiness gating, and personalized assignment queues are implemented; the remaining launch-readiness work is refreshed docs evidence when screenshots/report updates are in scope.
 
@@ -140,7 +140,7 @@ Gaps / status:
 - Done 2026-06-23: tax-rate API/settings UI, seeded market defaults, invoice drafter tax, manual invoice line tax, invoice approval tax-payable split, and bill approval input-tax-recoverable split are implemented.
 - Partial 2026-06-23: WIP accrual, employee reimbursement expense accrual, deferred revenue release, milestone revenue recognition, percentage-of-completion revenue recognition, prepaid expense amortization, and recurring-journal proposal endpoints/agents exist and flow through HITL draft-journal approval/posting. Retainer drawdown now has a persisted ledger, balance-aware invoice offsets, floor warnings from actual draw/balance, and automatic draw entries from invoice creation. Remaining revenue-recognition/close depth is broader schedule management and scheduled execution.
 - Done 2026-06-23: client groups and member roles exist with API/UI and profitability rollups. Remaining multi-entity work is legal-entity depth and demo-grade family-office workflows.
-- Open: no client portal workflow beyond public invoice payment.
+- Future product depth: no client portal workflow beyond public invoice payment.
 - Done 2026-06-24: Copilot write tools are registered in the common tool-risk registry and policy path. Live LLM `log_time_entry` is verified in Chromium: chat emits a completed tool card, policy creates a HITL review task, Inbox approval materializes the time entry, and `/app/time` shows the new row.
 
 ### Procure To Pay
