@@ -35,14 +35,14 @@ Pre-conditions:
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 1 | Carol | Drops `aws_invoice.pdf` in chat | `vendor_invoice_agent` runs; produces `BillDraft` with vendor, lines, tax, currency, confidence |
+| 1 | Carol | Drops `aws_invoice.pdf` in chat | `vendor_invoice_agent` runs; produces `BillDraft` with vendor, lines, tax, currency, confidence, vendor match, GL coding suggestions, match/coding status, and review exceptions |
 | 2 | system | If confidence < 0.9 → `hitl_task`. Else → auto-applied (only for L3 vendors). | Inline `BillExtractedCard` |
 
 ### §1.2 Approve
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 3 | Bob | Approves bill draft | Bill row `status=approved`; `accounting_guardian` validates; journal posted: DR `5000 Expense` (or `1500 Asset`) / CR `2000 Accounts Payable` |
+| 3 | Bob | Approves bill draft | Draft bill and bill lines are created with reviewed coding, source document linkage, and `vendor_invoice_review`; bill approval later posts journal via `accounting_guardian`: DR `5000 Expense` (or `1500 Asset`) / CR `2000 Accounts Payable` |
 
 ### §1.3 Schedule payment
 
@@ -79,7 +79,7 @@ Pre-conditions:
 | §3.1 | NACHA file fails validation (bad routing number) | UI surfaces specific field error; file not produced; bill_payment rows remain `scheduled` |
 | §3.2 | Bill amount > available bank balance threshold | Warning surfaced; batch can still be created but requires owner approval (not manager) |
 | §3.3 | LLM extraction wrong vendor (ambiguous OCR) | Confidence < 0.6; `hitl_task` priority `high`; Carol can edit before approve |
-| §3.4 | Duplicate bill (same vendor_invoice_number + vendor_id) | Detection at draft stage; UI shows "Possible duplicate of bill #1234"; allow override with reason |
+| §3.4 | Duplicate bill (same vendor_invoice_number + vendor_id) | Detection at draft stage; Inbox shows duplicate review exception; approve-as-is returns 409; approve-with-edits must include duplicate override with reason |
 | §3.5 | Webhook (Stripe Connect vendor pay, v1.1) miss | Reconciliation worker matches by `stripe_transfer_id` |
 | §3.6 | Period locked when approving bill | 422 `period_locked`; UI offers to date in current period |
 | §3.7 | Manager attempts batch approval > $50k (config tenant cap) | API returns 403 with "Owner approval required above {threshold}"; UI re-routes to "Request approval from owner" |
@@ -121,6 +121,7 @@ Pre-conditions:
 
 - `events`: `bill.created`, `bill.approved`, `bill_payment.batch_created`, `bill_payment.batch_approved`, `bill_payment.bank_file_exported`, `bill_payment.sent_to_bank`, `bill.paid`
 - `agent_suggestions`: rows for `vendor_invoice_agent` and `bill_pay_agent`
+- `bills.vendor_invoice_review`: reviewed vendor match, GL coding suggestions, duplicate override, exceptions, and source document evidence
 - `audit_log`: bank file export records the user, timestamp, batch IDs, file checksum
 
 ## §7 Performance Budget

@@ -37,6 +37,7 @@ written in user language and intentionally avoid internal tool names.
 | Goal | Prompt |
 | --- | --- |
 | Vendor invoice intake | `Process this vendor invoice, match it to the right vendor and project where possible, code exceptions for review, and send the bill draft to Inbox.` |
+| Duplicate invoice review | `Review this possible duplicate vendor invoice. Compare the vendor, invoice number, amount, date, source document, and coding evidence. If it is legitimate, add a duplicate-review reason before approval.` |
 | Bill-pay run | `Prepare this week's bill-pay run. Prioritize due and overdue approved bills, exclude anything disputed, explain the rationale, and send the payment batch to Inbox.` |
 | AP risk review | `Review AP Aging and tell me which vendors need payment attention this week. Separate safe recommendations from actions that need approval.` |
 

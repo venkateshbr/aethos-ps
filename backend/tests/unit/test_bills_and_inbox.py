@@ -13,7 +13,9 @@ All tests are pure-Python — no I/O, no DB, no HTTP.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -555,6 +557,247 @@ async def test_materialise_unknown_kind_is_noop() -> None:
     svc = InboxService.__new__(InboxService)
     result = await svc._materialise("something_else", {})
     assert result["entity_id"] is None
+
+
+class _Result:
+    def __init__(self, data: list[dict[str, Any]]) -> None:
+        self.data = data
+
+
+class _P2PQuery:
+    def __init__(self, db: _P2PDb, table: str) -> None:
+        self.db = db
+        self.table = table
+        self.eq_filters: list[tuple[str, Any]] = []
+        self.null_filters: list[str] = []
+        self.limit_count: int | None = None
+        self.insert_payload: dict[str, Any] | None = None
+        self.update_payload: dict[str, Any] | None = None
+        self.ilike_filter: tuple[str, str] | None = None
+
+    def select(self, *_args: Any, **_kwargs: Any) -> _P2PQuery:
+        return self
+
+    def eq(self, key: str, value: Any) -> _P2PQuery:
+        self.eq_filters.append((key, value))
+        return self
+
+    def is_(self, key: str, value: Any) -> _P2PQuery:
+        if value == "null":
+            self.null_filters.append(key)
+        return self
+
+    def ilike(self, key: str, pattern: str) -> _P2PQuery:
+        self.ilike_filter = (key, pattern.strip("%").lower())
+        return self
+
+    def limit(self, count: int) -> _P2PQuery:
+        self.limit_count = count
+        return self
+
+    def insert(self, payload: dict[str, Any]) -> _P2PQuery:
+        self.insert_payload = dict(payload)
+        return self
+
+    def update(self, payload: dict[str, Any]) -> _P2PQuery:
+        self.update_payload = dict(payload)
+        return self
+
+    def execute(self) -> _Result:
+        if self.insert_payload is not None:
+            row = self._insert_row()
+            self.db.tables[self.table].append(row)
+            return _Result([deepcopy(row)])
+
+        rows = self._filtered_rows()
+        if self.update_payload is not None:
+            for row in rows:
+                row.update(self.update_payload)
+            return _Result(deepcopy(rows))
+        if self.limit_count is not None:
+            rows = rows[: self.limit_count]
+        return _Result(deepcopy(rows))
+
+    def _filtered_rows(self) -> list[dict[str, Any]]:
+        rows = list(self.db.tables[self.table])
+        for key, value in self.eq_filters:
+            rows = [row for row in rows if row.get(key) == value]
+        for key in self.null_filters:
+            rows = [row for row in rows if row.get(key) is None]
+        if self.ilike_filter is not None:
+            key, needle = self.ilike_filter
+            rows = [row for row in rows if needle in str(row.get(key) or "").lower()]
+        return rows
+
+    def _insert_row(self) -> dict[str, Any]:
+        assert self.insert_payload is not None
+        if self.table == "bills":
+            return {
+                "id": "bill-created",
+                "tenant_id": "tenant-1",
+                "bill_number": "BILL-0001",
+                "subtotal": "0.00",
+                "tax_total": "0.00",
+                "total": "0.00",
+                "status": "draft",
+                "created_at": "2026-06-24T00:00:00+00:00",
+                "updated_at": "2026-06-24T00:00:00+00:00",
+                "deleted_at": None,
+                **self.insert_payload,
+            }
+        if self.table == "bill_lines":
+            return {
+                "id": f"line-{len(self.db.tables[self.table]) + 1}",
+                "created_at": "2026-06-24T00:00:00+00:00",
+                **self.insert_payload,
+            }
+        if self.table == "clients":
+            return {
+                "id": "client-created",
+                "tenant_id": "tenant-1",
+                "deleted_at": None,
+                **self.insert_payload,
+            }
+        raise AssertionError(f"unexpected insert into {self.table}")
+
+
+class _P2PDb:
+    def __init__(self) -> None:
+        self.tables: dict[str, list[dict[str, Any]]] = {
+            "clients": [
+                {
+                    "id": "vendor-1",
+                    "tenant_id": "tenant-1",
+                    "name": "AWS",
+                    "kind": "vendor",
+                    "deleted_at": None,
+                }
+            ],
+            "accounts": [
+                {
+                    "id": "acct-software",
+                    "tenant_id": "tenant-1",
+                    "code": "5100",
+                    "name": "Software",
+                    "deleted_at": None,
+                }
+            ],
+            "bills": [],
+            "bill_lines": [],
+            "procurement_documents": [],
+            "procurement_document_lines": [],
+        }
+
+    def table(self, name: str) -> _P2PQuery:
+        self.tables.setdefault(name, [])
+        return _P2PQuery(self, name)
+
+
+@pytest.mark.asyncio
+async def test_materialise_bill_blocks_duplicate_without_explicit_override() -> None:
+    from fastapi import HTTPException
+
+    from app.services.inbox_service import InboxService
+
+    svc = InboxService(_P2PDb(), "tenant-1")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc._materialise_bill(
+            {
+                "vendor_name": "AWS",
+                "possible_duplicate": True,
+                "subtotal": "100.00",
+                "tax_total": "0.00",
+                "total": "100.00",
+                "lines": [{"description": "Cloud hosting", "amount": "100.00"}],
+            },
+            user_id="manager-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "duplicate_vendor_invoice_review_required"
+
+
+@pytest.mark.asyncio
+async def test_materialise_bill_creates_lines_and_review_evidence() -> None:
+    from app.services.inbox_service import InboxService
+
+    db = _P2PDb()
+    svc = InboxService(db, "tenant-1")
+
+    result = await svc._materialise_bill(
+        {
+            "client_id": "vendor-1",
+            "vendor_name": "AWS",
+            "vendor_invoice_number": "AWS-100",
+            "currency": "USD",
+            "subtotal": "100.00",
+            "tax_total": "10.00",
+            "total": "110.00",
+            "issue_date": "2026-06-01",
+            "due_date": "2026-07-01",
+            "original_document_id": "document-1",
+            "possible_duplicate": True,
+            "duplicate_review": {
+                "approved_duplicate": True,
+                "reason": "Legitimate split invoice after AP review.",
+            },
+            "match_status": "duplicate_review_required",
+            "coding_status": "coded",
+            "vendor_match": {"matched_client_id": "vendor-1", "confidence": 0.97},
+            "gl_suggestions": [
+                {
+                    "account_id": "acct-software",
+                    "account_code": "5100",
+                    "account_name": "Software",
+                    "confidence": 0.91,
+                }
+            ],
+            "review_exceptions": [{"code": "possible_duplicate", "severity": "high"}],
+            "lines": [
+                {
+                    "description": "Cloud hosting",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                    "account_id": "acct-software",
+                }
+            ],
+        },
+        user_id="manager-1",
+    )
+
+    assert result == {"entity_type": "bill", "entity_id": "bill-created"}
+    bill = db.tables["bills"][0]
+    assert bill["source_document_id"] == "document-1"
+    assert bill["vendor_invoice_review"]["reviewed_by_user_id"] == "manager-1"
+    assert bill["vendor_invoice_review"]["duplicate_review"]["approved_duplicate"] is True
+    assert bill["vendor_invoice_review"]["match_status"] == "duplicate_review_required"
+    assert db.tables["bill_lines"][0]["account_id"] == "acct-software"
+
+
+@pytest.mark.asyncio
+async def test_materialise_bill_falls_back_when_extracted_lines_are_malformed() -> None:
+    from app.services.inbox_service import InboxService
+
+    db = _P2PDb()
+    svc = InboxService(db, "tenant-1")
+
+    await svc._materialise_bill(
+        {
+            "client_id": "vendor-1",
+            "vendor_name": "AWS",
+            "subtotal": "42.00",
+            "tax_total": "4.20",
+            "total": "46.20",
+            "lines": ["not-a-line"],
+        },
+        user_id="manager-1",
+    )
+
+    line = db.tables["bill_lines"][0]
+    assert line["description"] == "Vendor invoice"
+    assert line["amount"] == "42.00"
+    assert line["tax_amount"] == "4.20"
 
 
 # ---------------------------------------------------------------------------

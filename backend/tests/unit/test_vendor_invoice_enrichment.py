@@ -154,6 +154,54 @@ def test_gl_suggestion_low_confidence_allowed() -> None:
     assert s.confidence == 0.50
 
 
+def test_vendor_invoice_output_includes_match_coding_and_exceptions() -> None:
+    from app.agents.schemas import BillDraft, GLSuggestion, VendorMatchResult
+    from app.workers.document_extraction import _normalise_vendor_invoice_output
+
+    draft = BillDraft(
+        vendor_name="AWS",
+        vendor_invoice_number="AWS-100",
+        currency="USD",
+        subtotal=Decimal("100.00"),
+        tax_total=Decimal("10.00"),
+        total=Decimal("110.00"),
+        lines=[{"description": "Cloud hosting", "amount": "100.00"}],
+        confidence=0.88,
+        possible_duplicate=True,
+    )
+    object.__setattr__(
+        draft,
+        "_vendor_match",
+        VendorMatchResult(
+            matched_client_id="00000000-0000-0000-0000-000000000001",  # type: ignore[arg-type]
+            confidence=0.97,
+            match_reason="Exact tax-id match",
+        ),
+    )
+    object.__setattr__(
+        draft,
+        "_gl_suggestions",
+        [
+            GLSuggestion(
+                account_id="00000000-0000-0000-0000-000000000010",  # type: ignore[arg-type]
+                account_code="5100",
+                account_name="Software",
+                confidence=0.91,
+            )
+        ],
+    )
+
+    output = _normalise_vendor_invoice_output(draft.model_dump(mode="json"), draft)
+
+    assert output["client_id"] == "00000000-0000-0000-0000-000000000001"
+    assert output["vendor_match"]["match_reason"] == "Exact tax-id match"
+    assert output["gl_suggestions"][0]["account_code"] == "5100"
+    assert output["lines"][0]["account_id"] == "00000000-0000-0000-0000-000000000010"
+    assert output["coding_status"] == "coded"
+    assert output["match_status"] == "duplicate_review_required"
+    assert output["review_exceptions"][0]["code"] == "possible_duplicate"
+
+
 # ---------------------------------------------------------------------------
 # _exact_name_match fallback
 # ---------------------------------------------------------------------------
