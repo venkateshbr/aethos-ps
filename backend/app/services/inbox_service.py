@@ -34,7 +34,12 @@ from app.models.inbox import (
 )
 from app.repositories.inbox_repo import InboxRepository
 from app.services.agent_run_ledger import stable_payload_hash
-from app.services.approval_policy import ApprovalPolicyDecision, ApprovalPolicyMatrix
+from app.services.approval_policy import (
+    ApprovalPolicyDecision,
+    ApprovalPolicyMatrix,
+    ApprovalPolicySettings,
+)
+from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -70,8 +75,13 @@ class InboxService:
             [str(row["id"]) for row in rows],
             limit_per_task=3,
         )
+        policy = await self._approval_policy_settings()
         items = [
-            _row_to_summary(r, decision_history=histories.get(str(r["id"]), []))
+            _row_to_summary(
+                r,
+                decision_history=histories.get(str(r["id"]), []),
+                policy=policy,
+            )
             for r in rows
         ]
         return HitlTaskListResponse(items=items, total=len(items))
@@ -81,7 +91,8 @@ class InboxService:
         if row is None:
             return None
         history = await self._repo.list_decision_events_for_task(task_id)
-        return _row_to_detail(row, decision_history=history)
+        policy = await self._approval_policy_settings()
+        return _row_to_detail(row, decision_history=history, policy=policy)
 
     # ------------------------------------------------------------------
     # Actions
@@ -282,7 +293,12 @@ class InboxService:
     ) -> ApprovalCheck:
         kind = str(task.get("kind") or "")
         payload = payload_override or self._task_materialisation_payload(task)
-        decision = ApprovalPolicyMatrix.decision_for_task(kind, payload)
+        policy = await self._approval_policy_settings()
+        decision = ApprovalPolicyMatrix.decision_for_task(
+            kind,
+            payload,
+            settings=policy,
+        )
         user_role = await self._fetch_user_role(user_id)
         if ROLE_HIERARCHY[user_role] >= ROLE_HIERARCHY[decision.required_role]:
             return ApprovalCheck(decision=decision, user_role=user_role, payload=payload)
@@ -311,6 +327,12 @@ class InboxService:
                 f"for {decision.reason}; current role is {user_role.value}"
             ),
         )
+
+    async def _approval_policy_settings(self) -> ApprovalPolicySettings:
+        return await ApprovalPolicySettingsService(
+            self._db,
+            self._tenant_id,
+        ).get_runtime_settings()
 
     async def _record_decision_event(
         self,
@@ -1398,8 +1420,9 @@ def _row_to_summary(
     row: dict,
     *,
     decision_history: list[dict] | None = None,
+    policy: ApprovalPolicySettings | None = None,
 ) -> HitlTaskSummary:
-    approval = _approval_policy_metadata(row)
+    approval = _approval_policy_metadata(row, policy=policy)
     return HitlTaskSummary(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -1425,8 +1448,9 @@ def _row_to_detail(
     row: dict,
     *,
     decision_history: list[dict] | None = None,
+    policy: ApprovalPolicySettings | None = None,
 ) -> HitlTaskDetail:
-    approval = _approval_policy_metadata(row)
+    approval = _approval_policy_metadata(row, policy=policy)
     return HitlTaskDetail(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -1450,7 +1474,11 @@ def _row_to_detail(
     )
 
 
-def _approval_policy_metadata(row: dict) -> dict[str, str]:
+def _approval_policy_metadata(
+    row: dict,
+    *,
+    policy: ApprovalPolicySettings | None = None,
+) -> dict[str, str]:
     suggestion_payload = row.get("suggestion_payload") or {}
     task_payload = row.get("payload") or {}
     if not isinstance(suggestion_payload, dict):
@@ -1461,6 +1489,7 @@ def _approval_policy_metadata(row: dict) -> dict[str, str]:
     return ApprovalPolicyMatrix.decision_for_task(
         str(row.get("kind") or ""),
         payload,
+        settings=policy,
     ).to_metadata()
 
 

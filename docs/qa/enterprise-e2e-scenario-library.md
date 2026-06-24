@@ -52,7 +52,7 @@ agent ledger.
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Planned | #301 |
-| ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Planned | #296 |
+| ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Implemented first slice; Playwright automation pending | #296 |
 | ENT-AUD-003 | Business record exposes immutable decision timeline | Planned | #297 |
 | ENT-RBAC-002 | Finance-role personas are browser-proven | Planned | #298 |
 
@@ -141,7 +141,11 @@ Expected result:
 
 Persona: Admin configuring finance controls.
 
-Status: Planned under #296.
+Status: First slice implemented. Settings exposes an Approval Policy Matrix,
+`GET /api/v1/approval-policy/effective` returns tenant policy with system
+defaults, `PUT /api/v1/approval-policy/default` lets Admin/Owner users raise
+supported review roles, and Inbox policy metadata/enforcement uses tenant
+overrides while preserving safe default floors.
 
 Steps:
 
@@ -156,6 +160,13 @@ Expected result:
 - Admin can inspect but not approve work that now requires Owner.
 - Owner approval materializes through the existing guarded path.
 - Approve-with-edits re-evaluates the edited payload against the saved policy.
+
+Automation target:
+
+- Component: load default matrix, save admin edits, and block Manager save.
+- API: reject unsafe downgrade of money-out default role below Admin.
+- API/Inbox: save external-send role as Admin, open a `send_email` task, and
+  assert `required_approval_role=admin`.
 
 ## ENT-AUD-001 - Immutable Decision Event
 

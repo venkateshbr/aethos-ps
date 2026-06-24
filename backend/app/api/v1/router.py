@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     accounting,
     accounts,
     agents,
+    approval_policy,
     auth,
     bill_payments,
     billing,
@@ -57,6 +58,7 @@ api_router.include_router(documents.router, prefix="/documents", tags=["document
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router.include_router(collections_policy.router, prefix="/collections", tags=["collections"])
+api_router.include_router(approval_policy.router, prefix="/approval-policy", tags=["approval-policy"])
 api_router.include_router(client_groups.router, prefix="/client-groups", tags=["client-groups"])
 api_router.include_router(rate_cards.router, prefix="/rate-cards", tags=["rate-cards"])
 api_router.include_router(engagements.router, prefix="/engagements", tags=["engagements"])

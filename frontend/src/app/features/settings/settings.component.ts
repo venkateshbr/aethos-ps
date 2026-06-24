@@ -9,6 +9,7 @@ import { AgentWorkflowRunsComponent } from './agent-workflow-runs.component';
 import { IntegrationsComponent } from './integrations.component';
 import { CollectionsPolicyComponent } from './collections-policy.component';
 import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
+import { ApprovalPolicyComponent } from './approval-policy.component';
 
 @Component({
   selector: 'app-settings',
@@ -24,6 +25,7 @@ import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
     IntegrationsComponent,
     CollectionsPolicyComponent,
     FinanceOpsScheduleComponent,
+    ApprovalPolicyComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -76,6 +78,13 @@ import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
             Accounts Receivable
           </h2>
           <app-collections-policy />
+        </section>
+
+        <section aria-labelledby="approval-controls-heading">
+          <h2 id="approval-controls-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Approval Controls
+          </h2>
+          <app-approval-policy />
         </section>
 
         <!-- Autonomy section (#209) -->
