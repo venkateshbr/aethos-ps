@@ -44,7 +44,14 @@ interface JournalEntry {
   reason?: string | null;
   entry_date: string;
   reference?: string | null;
-  reference_type: 'manual' | 'auto' | 'invoice' | 'bill' | 'payment' | 'year_end_close';
+  reference_type:
+    | 'manual'
+    | 'manual_reversal'
+    | 'auto'
+    | 'invoice'
+    | 'bill'
+    | 'payment'
+    | 'year_end_close';
   posted_by?: string | null;
   total_dr: string;
   lines?: JournalLine[];
@@ -848,6 +855,65 @@ type FilterChip = 'all' | 'manual' | 'auto';
                       <p class="text-text-disabled text-xs">No line detail available.</p>
                     }
                     <app-decision-timeline entityType="journal_entry" [entityId]="row.id" title="Journal approval timeline" />
+                    @if (canPost() && row.reference_type === 'manual') {
+                      <div class="mt-4 border-t border-border-subtle pt-3">
+                        @if (reversalRowId() !== row.id) {
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded border border-border-default bg-surface px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-base disabled:opacity-60"
+                            [disabled]="reversalAction() === row.id"
+                            (click)="openReversalForm(row, $event)"
+                          >
+                            <mat-icon style="font-size:1rem;width:1rem;height:1rem;">undo</mat-icon>
+                            Reverse
+                          </button>
+                        } @else {
+                          <form
+                            [formGroup]="reversalForm"
+                            (ngSubmit)="submitReversal(row, $event)"
+                            class="grid gap-2 md:grid-cols-[10rem_1fr_auto]"
+                            novalidate
+                          >
+                            <input
+                              type="date"
+                              formControlName="entry_date"
+                              class="rounded border border-border-default bg-surface-base px-3 py-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                              aria-label="Reversal entry date"
+                            />
+                            <input
+                              type="text"
+                              formControlName="reason"
+                              maxlength="500"
+                              placeholder="Reversal reason"
+                              class="rounded border border-border-default bg-surface-base px-3 py-2 text-xs text-text-primary placeholder:text-text-disabled focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                            />
+                            <div class="flex items-center gap-2">
+                              <button
+                                type="submit"
+                                class="inline-flex items-center gap-1.5 rounded bg-accent px-3 py-2 text-xs font-medium text-accent-on transition-colors hover:bg-accent-hover disabled:opacity-60"
+                                [disabled]="reversalForm.invalid || reversalAction() === row.id"
+                              >
+                                <mat-icon style="font-size:1rem;width:1rem;height:1rem;">undo</mat-icon>
+                                Post
+                              </button>
+                              <button
+                                type="button"
+                                class="rounded px-2 py-2 text-xs text-text-muted transition-colors hover:text-text-primary"
+                                (click)="closeReversalForm($event)"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                          @if (reversalForm.controls.reason.touched && reversalForm.controls.reason.errors?.['minlength']) {
+                            <p class="mt-1 text-xs text-confidence-low">Use at least 10 characters.</p>
+                          }
+                          @if (reversalError()) {
+                            <p class="mt-1 text-xs text-confidence-low" role="alert">{{ reversalError() }}</p>
+                          }
+                        }
+                      </div>
+                    }
                   </div>
                 }
               </td>
@@ -1321,6 +1387,9 @@ export class JournalEntriesListComponent implements OnInit {
   submitting = signal(false);
   formError  = signal<string | null>(null);
   successToast = signal<string | null>(null);
+  reversalRowId = signal<string | null>(null);
+  reversalAction = signal<string | null>(null);
+  reversalError = signal<string | null>(null);
 
   // COA for account picker
   accounts = signal<Account[]>([]);
@@ -1355,6 +1424,11 @@ export class JournalEntriesListComponent implements OnInit {
   closeOverrideForm = this.fb.nonNullable.group({
     blocker_code: ['close_tasks', [Validators.required]],
     reason: ['', [Validators.required, Validators.minLength(10), Validators.maxLength(2000)]],
+  });
+
+  reversalForm = this.fb.nonNullable.group({
+    entry_date: [new Date().toISOString().split('T')[0], [Validators.required]],
+    reason: ['', [Validators.required, Validators.minLength(10), Validators.maxLength(500)]],
   });
 
   get linesArray(): FormArray {
@@ -1642,6 +1716,52 @@ export class JournalEntriesListComponent implements OnInit {
     this.showForm.set(false);
     this.activeSuggestionLine.set(null);
     this.filteredAccounts.set([]);
+  }
+
+  openReversalForm(row: JournalEntry, event: Event): void {
+    event.stopPropagation();
+    this.reversalRowId.set(row.id);
+    this.reversalError.set(null);
+    this.reversalForm.reset({
+      entry_date: new Date().toISOString().split('T')[0],
+      reason: '',
+    });
+  }
+
+  closeReversalForm(event?: Event): void {
+    event?.stopPropagation();
+    this.reversalRowId.set(null);
+    this.reversalError.set(null);
+  }
+
+  submitReversal(row: JournalEntry, event?: Event): void {
+    event?.stopPropagation();
+    if (this.reversalForm.invalid) {
+      this.reversalForm.markAllAsTouched();
+      return;
+    }
+    const value = this.reversalForm.getRawValue();
+    this.reversalAction.set(row.id);
+    this.reversalError.set(null);
+    this.http.post<JournalEntry>(
+      `/api/v1/accounting/journal-entries/${row.id}/reverse`,
+      {
+        entry_date: value.entry_date,
+        reason: value.reason.trim(),
+      },
+    ).subscribe({
+      next: (created) => {
+        this.entries.update(list => [created, ...list]);
+        this.reversalAction.set(null);
+        this.closeReversalForm();
+        this.successToast.set(`Reversal ${created.entry_number} posted.`);
+        setTimeout(() => this.successToast.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.reversalError.set(userMessageForError(err, 'Manual Journal Reversal'));
+        this.reversalAction.set(null);
+      },
+    });
   }
 
   loadAccounts(): void {

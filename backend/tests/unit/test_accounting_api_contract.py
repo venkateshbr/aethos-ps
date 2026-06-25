@@ -13,7 +13,10 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
-from app.models.accounting import ManualJournalApprovalTaskResponse, ManualJournalEntryResponse
+from app.models.accounting import (
+    ManualJournalApprovalTaskResponse,
+    ManualJournalEntryResponse,
+)
 from app.services.close_package_service import ClosePackageService
 from app.services.close_reconciliation_service import (
     CloseReconciliationResult,
@@ -508,6 +511,53 @@ def test_manual_journal_create_can_return_pending_approval(
     assert body["status"] == "pending_approval"
     assert body["task_id"] == "hitl-task-1"
     assert body["required_approval_role"] == "admin"
+
+
+def test_manual_journal_reverse_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _reverse_manual_journal(
+        self: ManualJournalService,
+        journal_entry_id: str,
+        payload: Any,
+    ) -> ManualJournalEntryResponse:
+        assert self.db is fake_db
+        assert self.actor_role == "admin"
+        assert journal_entry_id == JOURNAL_ID
+        assert payload.reason == "Reverse duplicate accrual after review."
+        return ManualJournalEntryResponse(
+            id="journal-reversal",
+            entry_number="JE-R1",
+            description="Reversal of JE-0001",
+            reason=payload.reason,
+            entry_date="2026-06-23",
+            period="2026-06",
+            reference_type="manual_reversal",
+            reference=JOURNAL_ID,
+            created_by="manager-1",
+            posted_at="2026-06-23T00:00:00+00:00",
+            lines=[],
+        )
+
+    monkeypatch.setattr(ManualJournalService, "reverse_manual_journal", _reverse_manual_journal)
+
+    response = client.post(
+        f"/api/v1/accounting/journal-entries/{JOURNAL_ID}/reverse",
+        json={
+            "entry_date": "2026-06-23",
+            "reason": "Reverse duplicate accrual after review.",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] == "journal-reversal"
+    assert body["reference"] == JOURNAL_ID
 
 
 def test_recurring_journal_template_create_uses_service_role_client(
