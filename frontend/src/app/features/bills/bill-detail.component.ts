@@ -45,6 +45,26 @@ interface BillDetail {
   lines: BillLine[];
 }
 
+interface PoMatchSource {
+  po_match_summary?: Record<string, unknown> | null;
+}
+
+interface PoLineException {
+  code: string;
+  message: string;
+  billLineDescription: string;
+  orderLineDescription: string;
+}
+
+interface PoLineMatch {
+  billLineDescription: string;
+  orderLineDescription: string;
+  quantityStatus: string;
+  unitPriceStatus: string;
+  amountStatus: string;
+  servicePeriodStatus: string;
+}
+
 // TODO: Wire up journal entries once GET /api/v1/accounting/journals?reference_id=...
 // &reference_type=bill endpoint is confirmed by Karya. See issue #202.
 // interface JournalLine {
@@ -272,6 +292,9 @@ interface BillDetail {
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit" [class]="poMatchClass(bill()!.po_match_status)">
                     {{ poMatchLabel(bill()!.po_match_status) }}
                   </span>
+                  @if (poLineEvidenceLabel(bill()!)) {
+                    <span class="text-xs text-text-muted">{{ poLineEvidenceLabel(bill()!) }}</span>
+                  }
                 </div>
               } @else {
                 <span class="text-text-muted">Not linked</span>
@@ -289,6 +312,45 @@ interface BillDetail {
             </div>
           }
         </div>
+
+        @if (bill()!.purchase_order_id && hasPoMatchEvidence(bill()!)) {
+          <section class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4" aria-labelledby="po-match-evidence-heading">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="po-match-evidence-heading" class="text-sm font-semibold text-text-primary">PO / SO match evidence</h2>
+                <p class="mt-0.5 text-xs text-text-muted">{{ poNumber(bill()!) }}</p>
+              </div>
+              <span class="rounded bg-surface px-2 py-0.5 text-xs text-text-secondary">
+                {{ poLineEvidenceLabel(bill()!) || poMatchLabel(bill()!.po_match_status) }}
+              </span>
+            </div>
+
+            @if (poLineExceptions(bill()!).length) {
+              <div class="space-y-1.5">
+                @for (exception of poLineExceptions(bill()!); track exception.code + exception.billLineDescription + exception.orderLineDescription) {
+                  <div class="rounded border border-confidence-low/20 bg-confidence-low/10 px-2 py-1.5 text-xs text-confidence-low">
+                    <span class="font-medium">{{ poExceptionLabel(exception.code) }}</span>
+                    @if (exception.billLineDescription) { <span> - {{ exception.billLineDescription }}</span> }
+                    @if (exception.orderLineDescription) { <span> against {{ exception.orderLineDescription }}</span> }
+                    @if (exception.message) { <span class="block text-[11px] text-confidence-low/90">{{ exception.message }}</span> }
+                  </div>
+                }
+              </div>
+            }
+
+            @if (poLineMatches(bill()!).length) {
+              <div class="mt-3 grid gap-2 md:grid-cols-2">
+                @for (match of poLineMatches(bill()!); track match.billLineDescription + match.orderLineDescription) {
+                  <div class="rounded border border-border-subtle bg-surface px-3 py-2">
+                    <p class="text-xs font-medium text-text-primary">{{ match.billLineDescription }}</p>
+                    <p class="mt-0.5 text-[11px] text-text-muted">Order line: {{ match.orderLineDescription }}</p>
+                    <p class="mt-1 text-[11px] text-text-secondary">{{ poLineMatchSummary(match) }}</p>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+        }
 
         @if (bill()!.notes) {
           <div class="mb-6 bg-surface-raised border border-border-default rounded-lg p-4">
@@ -623,6 +685,8 @@ export class BillDetailComponent implements OnInit {
       currency_mismatch: 'Currency mismatch',
       order_not_approved: 'Order not approved',
       order_not_found: 'Order not found',
+      line_mismatch: 'Line mismatch',
+      service_period_mismatch: 'Service period mismatch',
     };
     return labels[status ?? 'not_linked'] ?? status ?? 'Not linked';
   }
@@ -635,9 +699,95 @@ export class BillDetailComponent implements OnInit {
       case 'currency_mismatch':
       case 'order_not_approved':
       case 'order_not_found':
+      case 'line_mismatch':
+      case 'service_period_mismatch':
         return 'bg-confidence-low/10 text-confidence-low';
       default:
         return 'bg-surface text-text-muted border border-border-default';
     }
+  }
+
+  hasPoMatchEvidence(bill: BillDetail): boolean {
+    return !!this.poLineEvidenceLabel(bill)
+      || this.poLineExceptions(bill).length > 0
+      || this.poLineMatches(bill).length > 0;
+  }
+
+  poLineEvidenceLabel(row: PoMatchSource): string {
+    const status = String(row.po_match_summary?.['line_match_status'] ?? '');
+    const labels: Record<string, string> = {
+      matched: 'Line evidence matched',
+      mismatch: 'Line evidence exception',
+      not_available: 'Line evidence not available',
+    };
+    return labels[status] ?? '';
+  }
+
+  poLineExceptions(row: PoMatchSource): PoLineException[] {
+    const raw = row.po_match_summary?.['line_exceptions'];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        code: String(item['code'] ?? 'line_mismatch'),
+        message: String(item['message'] ?? ''),
+        billLineDescription: String(item['bill_line_description'] ?? ''),
+        orderLineDescription: String(item['order_line_description'] ?? ''),
+      }));
+  }
+
+  poLineMatches(row: PoMatchSource): PoLineMatch[] {
+    const raw = row.po_match_summary?.['line_matches'];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        billLineDescription: String(item['bill_line_description'] ?? ''),
+        orderLineDescription: String(item['order_line_description'] ?? ''),
+        quantityStatus: this.matchFieldStatus(item['quantity']),
+        unitPriceStatus: this.matchFieldStatus(item['unit_price']),
+        amountStatus: this.matchFieldStatus(item['amount']),
+        servicePeriodStatus: this.matchFieldStatus(item['service_period']),
+      }));
+  }
+
+  poLineMatchSummary(match: PoLineMatch): string {
+    const parts = [
+      `Qty ${this.matchStatusLabel(match.quantityStatus)}`,
+      `unit price ${this.matchStatusLabel(match.unitPriceStatus)}`,
+      `amount ${this.matchStatusLabel(match.amountStatus)}`,
+    ];
+    if (match.servicePeriodStatus && match.servicePeriodStatus !== 'not_applicable') {
+      parts.push(`service period ${this.matchStatusLabel(match.servicePeriodStatus)}`);
+    }
+    return parts.join(', ');
+  }
+
+  poExceptionLabel(code: string): string {
+    const labels: Record<string, string> = {
+      quantity_mismatch: 'Quantity mismatch',
+      unit_price_mismatch: 'Unit price mismatch',
+      amount_mismatch: 'Amount mismatch',
+      unmatched_bill_line: 'Unmatched bill line',
+      service_period_missing: 'Service period missing',
+      service_period_mismatch: 'Service period mismatch',
+    };
+    return labels[code] ?? code.replace(/_/g, ' ');
+  }
+
+  private matchFieldStatus(value: unknown): string {
+    if (typeof value !== 'object' || value === null) return '';
+    return String((value as Record<string, unknown>)['status'] ?? '');
+  }
+
+  private matchStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      matched: 'matched',
+      mismatch: 'mismatch',
+      missing: 'missing',
+      not_available: 'not available',
+      not_applicable: 'not applicable',
+    };
+    return labels[status] ?? status;
   }
 }

@@ -47,7 +47,8 @@ agent ledger.
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Browser proof automated in #317 | #295, #317 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
-| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310; deeper PO/service-order matching remains future depth | #299, #310 |
+| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310 | #299, #310 |
+| ENT-P2P-004 | Line-level PO/SO match evidence blocks mismatched bill approval | API/browser proof automated in #323 | #323 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310; year-end close remains future depth | #300, #310 |
@@ -631,6 +632,8 @@ duplicates open the edit drawer for a reviewer-entered reason before approval.
 Bill detail shows the preserved `vendor_invoice_review` evidence after
 materialization. #310 adds Playwright proof for the AP review card, duplicate
 reason capture, Bill detail evidence, and separate bill-pay proposal review.
+#323 adds line-level PO/service-order match evidence for linked bills through
+the Bills service path.
 
 Steps:
 
@@ -660,6 +663,43 @@ Automation target:
 - Browser: #310 uses the business prompt `Process this vendor invoice for Aster
   Cloud Services...` and asserts that no internal tool name is required in the
   user prompt.
+
+## ENT-P2P-004 - Line-Level PO/SO Match Evidence
+
+Persona: AP Lead and Controller.
+
+Status: Implemented in #323. Linked bills now compare bill lines against the
+approved purchase order or service order by description, quantity, unit price,
+amount, and service period where applicable. The API records `line_matches` and
+`line_exceptions` in `po_match_summary`, and non-matched line/service-period
+statuses block bill approval through the existing AP approval gate. Bills list
+and Bill detail expose the exception evidence.
+
+Steps:
+
+1. Create or load an approved purchase order or service order with line-level
+   details.
+2. Create a linked vendor bill with a matching line and verify the bill records
+   line evidence as matched.
+3. Repeat with quantity, unit-price, unmatched-line, and service-period
+   mismatches.
+4. Attempt to approve the mismatched bill.
+5. Open `/app/bills` and the bill detail route to verify visible exception
+   evidence.
+
+Expected result:
+
+- Matched bills show line-level PO/SO evidence.
+- Quantity, unit-price, unmatched-line, and service-period exceptions are
+  recorded with readable evidence.
+- Mismatched linked bills remain draft and approval fails with the match
+  summary.
+- Browser users can see the exception without reading raw JSON.
+
+Automation target:
+
+- API/unit: `cd backend && uv run pytest tests/unit/test_bills_api_contract.py -q`
+- Browser: `cd frontend && npx playwright test e2e/enterprise-p2p-line-match-evidence.spec.ts --project=chromium`
 
 ## ENT-R2R-001 - Close Evidence Package
 

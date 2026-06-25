@@ -52,6 +52,17 @@ export interface ProcurementDocumentSummary {
   remaining_total: string;
 }
 
+interface PoMatchSource {
+  po_match_summary?: Record<string, unknown> | null;
+}
+
+interface PoLineException {
+  code: string;
+  message: string;
+  billLineDescription: string;
+  orderLineDescription: string;
+}
+
 type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
 
 @Component({
@@ -303,6 +314,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit" [class]="poMatchClass(row.po_match_status)">
                       {{ poMatchLabel(row.po_match_status) }}
                     </span>
+                    @if (poMatchExceptionSummary(row)) {
+                      <span class="text-xs leading-snug text-confidence-low">
+                        {{ poMatchExceptionSummary(row) }}
+                      </span>
+                    }
                   </div>
                 } @else {
                   <span class="text-text-disabled">—</span>
@@ -1547,6 +1563,8 @@ export class BillsListComponent implements OnInit {
       currency_mismatch: 'Currency mismatch',
       order_not_approved: 'Order not approved',
       order_not_found: 'Order not found',
+      line_mismatch: 'Line mismatch',
+      service_period_mismatch: 'Service period mismatch',
     };
     return labels[status ?? 'not_linked'] ?? status ?? 'Not linked';
   }
@@ -1559,10 +1577,44 @@ export class BillsListComponent implements OnInit {
       case 'currency_mismatch':
       case 'order_not_approved':
       case 'order_not_found':
+      case 'line_mismatch':
+      case 'service_period_mismatch':
         return 'bg-confidence-low/10 text-confidence-low';
       default:
         return 'bg-surface text-text-muted border border-border-default';
     }
+  }
+
+  poMatchExceptionSummary(row: PoMatchSource): string {
+    const exceptions = this.poLineExceptions(row);
+    if (!exceptions.length) return '';
+    const first = this.poExceptionLabel(exceptions[0].code);
+    return exceptions.length === 1 ? first : `${first} +${exceptions.length - 1} more`;
+  }
+
+  private poLineExceptions(row: PoMatchSource): PoLineException[] {
+    const raw = row.po_match_summary?.['line_exceptions'];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        code: String(item['code'] ?? 'line_mismatch'),
+        message: String(item['message'] ?? ''),
+        billLineDescription: String(item['bill_line_description'] ?? ''),
+        orderLineDescription: String(item['order_line_description'] ?? ''),
+      }));
+  }
+
+  private poExceptionLabel(code: string): string {
+    const labels: Record<string, string> = {
+      quantity_mismatch: 'Quantity mismatch',
+      unit_price_mismatch: 'Unit price mismatch',
+      amount_mismatch: 'Amount mismatch',
+      unmatched_bill_line: 'Unmatched bill line',
+      service_period_missing: 'Service period missing',
+      service_period_mismatch: 'Service period mismatch',
+    };
+    return labels[code] ?? code.replace(/_/g, ' ');
   }
 
   // ── Status helpers ────────────────────────────────────────────────────

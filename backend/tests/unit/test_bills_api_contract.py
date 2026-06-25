@@ -176,7 +176,22 @@ class _FakeDb:
                     "deleted_at": None,
                 }
             ],
-            "procurement_document_lines": [],
+            "procurement_document_lines": [
+                {
+                    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "tenant_id": TENANT_ID,
+                    "procurement_document_id": PURCHASE_ORDER_ID,
+                    "description": "Implementation tooling",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                    "account_id": None,
+                    "service_start_date": None,
+                    "service_end_date": None,
+                    "created_at": "2026-06-20T00:00:00+00:00",
+                }
+            ],
             "bill_lines": [
                 {
                     "id": "88888888-8888-4888-8888-888888888888",
@@ -376,6 +391,223 @@ def test_bill_create_records_purchase_order_match(
     assert body["po_match_summary"]["purchase_order_number"] == "PO-0001"
     assert body["po_match_summary"]["order_total"] == "220.00"
     assert body["po_match_summary"]["bill_total"] == "110.00"
+    assert body["po_match_summary"]["line_match_status"] == "matched"
+    assert body["po_match_summary"]["line_matches"][0]["match_basis"] == "description_exact"
+    assert body["po_match_summary"]["line_matches"][0]["quantity"] == {
+        "bill": "1",
+        "order": "1",
+        "status": "matched",
+    }
+    assert body["po_match_summary"]["line_exceptions"] == []
+
+
+def test_bill_create_records_purchase_order_quantity_mismatch(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    fake_db.tables["procurement_document_lines"][0]["quantity"] = "2"
+    fake_db.tables["procurement_document_lines"][0]["unit_price"] = "50.00"
+
+    response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "PO-MATCH-QTY",
+            "lines": [
+                {
+                    "description": "Implementation tooling",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["po_match_status"] == "line_mismatch"
+    assert body["po_match_summary"]["line_match_status"] == "mismatch"
+    exception_codes = {
+        exception["code"] for exception in body["po_match_summary"]["line_exceptions"]
+    }
+    assert "quantity_mismatch" in exception_codes
+
+
+def test_bill_create_records_purchase_order_unit_price_mismatch(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "PO-MATCH-PRICE",
+            "lines": [
+                {
+                    "description": "Implementation tooling",
+                    "quantity": "1",
+                    "unit_price": "90.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["po_match_status"] == "line_mismatch"
+    assert body["po_match_summary"]["line_exceptions"][0]["code"] == "unit_price_mismatch"
+    assert body["po_match_summary"]["line_exceptions"][0]["bill_unit_price"] == "90.00"
+    assert body["po_match_summary"]["line_exceptions"][0]["order_unit_price"] == "100.00"
+
+
+def test_bill_create_records_unmatched_purchase_order_line(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "PO-MATCH-UNMATCHED",
+            "lines": [
+                {
+                    "description": "Contractor onboarding",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["po_match_status"] == "line_mismatch"
+    assert body["po_match_summary"]["line_exceptions"] == [
+        {
+            "code": "unmatched_bill_line",
+            "message": "Bill line does not match any remaining PO/SO line by description",
+            "bill_line_description": "Contractor onboarding",
+        }
+    ]
+
+
+def test_bill_create_records_service_order_period_mismatch(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    fake_db.tables["procurement_documents"][0].update(
+        {
+            "document_type": "service_order",
+            "document_number": "SO-0001",
+            "service_start_date": "2026-06-01",
+            "service_end_date": "2026-06-30",
+        }
+    )
+    fake_db.tables["procurement_document_lines"][0].update(
+        {
+            "service_start_date": "2026-06-01",
+            "service_end_date": "2026-06-30",
+        }
+    )
+
+    response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "SO-PERIOD-MISMATCH",
+            "lines": [
+                {
+                    "description": "Implementation tooling",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                    "service_start_date": "2026-07-01",
+                    "service_end_date": "2026-07-31",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["po_match_status"] == "service_period_mismatch"
+    assert body["lines"][0]["service_start_date"] == "2026-07-01"
+    assert body["lines"][0]["service_end_date"] == "2026-07-31"
+    assert body["po_match_summary"]["purchase_order_type"] == "service_order"
+    assert body["po_match_summary"]["line_exceptions"][0]["code"] == "service_period_mismatch"
+    assert body["po_match_summary"]["line_exceptions"][0]["service_period"] == {
+        "bill_start": "2026-07-01",
+        "bill_end": "2026-07-31",
+        "order_start": "2026-06-01",
+        "order_end": "2026-06-30",
+        "status": "mismatch",
+    }
+
+
+def test_bill_approval_blocks_line_level_purchase_order_mismatch(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="admin-1",
+        email="admin@example.com",
+        role="admin",
+    )
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    create_response = client.post(
+        "/api/v1/bills",
+        json={
+            "client_id": CLIENT_ID,
+            "purchase_order_id": PURCHASE_ORDER_ID,
+            "currency": "USD",
+            "vendor_invoice_number": "PO-MATCH-BLOCK",
+            "lines": [
+                {
+                    "description": "Contractor onboarding",
+                    "quantity": "1",
+                    "unit_price": "100.00",
+                    "amount": "100.00",
+                    "tax_amount": "10.00",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    approve_response = client.patch(f"/api/v1/bills/{CREATED_BILL_ID}/approve")
+
+    assert approve_response.status_code == 422, approve_response.text
+    detail = approve_response.json()["detail"]
+    assert detail["message"] == "Bill does not match the linked purchase order"
+    assert detail["po_match"]["status"] == "line_mismatch"
+    assert detail["po_match"]["line_exceptions"][0]["code"] == "unmatched_bill_line"
 
 
 def test_viewer_can_read_bills_but_cannot_mutate_ap(
