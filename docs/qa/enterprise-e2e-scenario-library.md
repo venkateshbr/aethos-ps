@@ -260,6 +260,8 @@ Expected result:
 - Posted lines retain transaction `amount` and `currency`.
 - Posted lines store `base_amount` converted to tenant base currency at the
   entry date FX rate.
+- Posted foreign-currency lines store `fx_rate_id` for the FX row used at
+  posting time.
 - `accounting_guardian` validates balance using base amounts, not just matching
   transaction amounts.
 - Missing FX rate rejects the post with a non-500 validation error.
@@ -780,8 +782,10 @@ Expected result:
 
 - `payments.amount` and `payments.currency` retain the transaction receipt.
 - `payments.base_amount` stores tenant-base value at the payment-date FX rate.
+- `payments.fx_rate_id` references the immutable FX row used for conversion
+  when the payment currency differs from tenant base currency.
 - The DR Bank / CR AR journal retains transaction currency and stores matching
-  base amounts.
+  base amounts plus the FX rate id used for conversion.
 - Realised FX gain/loss uses `payment_base_amount - invoice.base_total`.
 - Missing payment FX rate rejects or aborts before an incorrect payment row is
   inserted.

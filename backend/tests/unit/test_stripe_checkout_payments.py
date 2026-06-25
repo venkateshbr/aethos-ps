@@ -77,6 +77,7 @@ async def test_records_payment_with_payment_link_fallback_when_session_metadata_
                     base_currency="USD",
                     rate=Decimal("1"),
                     rate_date=date(2026, 6, 25),
+                    fx_rate_id=None,
                 )
             ),
         ) as payment_fx,
@@ -95,10 +96,12 @@ async def test_records_payment_with_payment_link_fallback_when_session_metadata_
     insert.assert_awaited_once()
     assert insert.await_args.kwargs["amount"] == Decimal("125")
     assert insert.await_args.kwargs["base_amount"] == Decimal("125.00")
+    assert insert.await_args.kwargs["fx_rate_id"] is None
     assert insert.await_args.kwargs["payment_intent_id"] == "pi_test_fallback"
     payment_fx.assert_awaited_once()
     payment_journal.assert_awaited_once()
     assert payment_journal.await_args.kwargs["base_amount"] == Decimal("125.00")
+    assert payment_journal.await_args.kwargs["fx_rate_id"] is None
     fx_gain_loss.assert_awaited_once()
     assert fx_gain_loss.await_args.kwargs["payment_base_amount"] == Decimal("125.00")
     assert fx_gain_loss.await_args.kwargs["base_currency"] == "USD"

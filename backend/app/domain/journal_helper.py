@@ -39,6 +39,7 @@ class JournalLineSpec:
     ``description`` is an optional narrative for the line.
     ``currency`` is the ISO-4217 currency code (default "USD").
     ``base_amount`` is the tenant-base-currency equivalent (defaults to amount for single-currency).
+    ``fx_rate_id`` is the immutable FX rate row used for base conversion, when any.
     """
 
     direction: str  # "DR" or "CR"
@@ -48,6 +49,7 @@ class JournalLineSpec:
     account_id: str | None = None
     currency: str = "USD"
     base_amount: Decimal | None = None
+    fx_rate_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.direction not in ("DR", "CR"):
@@ -160,6 +162,7 @@ def post_journal(
                 "amount": str(spec.amount),
                 "currency": spec.currency,
                 "base_amount": str(spec.base_amount if spec.base_amount is not None else spec.amount),
+                "fx_rate_id": spec.fx_rate_id,
                 "description": spec.description,
             }
         )
@@ -197,6 +200,7 @@ def post_journal(
                 "amount": str(residual),
                 "currency": base_currency,
                 "base_amount": str(residual),
+                "fx_rate_id": None,
                 "description": "Realized FX Gain/Loss",
             }
         )

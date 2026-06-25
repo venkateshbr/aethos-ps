@@ -13,6 +13,7 @@ Usage in service layer:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -35,6 +36,15 @@ class FxRateNotFoundError(Exception):
         self.from_currency = from_currency
         self.to_currency = to_currency
         self.rate_date = rate_date
+
+
+@dataclass(frozen=True)
+class FxRateRecord:
+    from_currency: str
+    to_currency: str
+    rate_date: date
+    rate: Decimal
+    id: str | None = None
 
 
 async def get_fx_rate(
@@ -63,17 +73,35 @@ async def get_fx_rate(
     Warns (via logging):
         If the rate found is more than ``_STALE_THRESHOLD_DAYS`` old.
     """
+    return (
+        await get_fx_rate_record(from_currency, to_currency, rate_date, db_client)
+    ).rate
+
+
+async def get_fx_rate_record(
+    from_currency: str,
+    to_currency: str,
+    rate_date: date,
+    db_client,
+) -> FxRateRecord:
+    """Look up an FX rate row with its immutable provenance id."""
     from_currency = from_currency.upper()
     to_currency = to_currency.upper()
 
-    # Fast path: same currency is always 1.
+    # Fast path: same currency is always 1 and has no fx_rates row.
     if from_currency == to_currency:
-        return Decimal("1")
+        return FxRateRecord(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            rate_date=rate_date,
+            rate=Decimal("1"),
+            id=None,
+        )
 
     # Look up on or before rate_date (most recent available).
     result = (
         db_client.table("fx_rates")
-        .select("rate, rate_date")
+        .select("id, rate, rate_date")
         .eq("from_currency", from_currency)
         .eq("to_currency", to_currency)
         .lte("rate_date", rate_date.isoformat())
@@ -100,4 +128,10 @@ async def get_fx_rate(
             actual_date,
         )
 
-    return Decimal(str(row["rate"]))
+    return FxRateRecord(
+        from_currency=from_currency,
+        to_currency=to_currency,
+        rate_date=actual_date,
+        rate=Decimal(str(row["rate"])),
+        id=str(row["id"]) if row.get("id") else None,
+    )

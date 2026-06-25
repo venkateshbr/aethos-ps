@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.domain.fx import FxRateRecord
 from app.services.payment_fx_service import payment_fx_amounts
 
 pytestmark = pytest.mark.unit
@@ -47,9 +48,9 @@ class _TenantDb:
 
 @pytest.mark.asyncio
 async def test_payment_fx_amounts_same_currency_skips_fx_lookup() -> None:
-    get_fx_rate = AsyncMock()
+    get_fx_rate_record = AsyncMock()
 
-    with patch("app.services.payment_fx_service.get_fx_rate", get_fx_rate):
+    with patch("app.services.payment_fx_service.get_fx_rate_record", get_fx_rate_record):
         result = await payment_fx_amounts(
             db=_TenantDb("USD"),  # type: ignore[arg-type]
             tenant_id="tenant-1",
@@ -58,20 +59,29 @@ async def test_payment_fx_amounts_same_currency_skips_fx_lookup() -> None:
             paid_at="2026-06-25T12:00:00+00:00",
         )
 
-    get_fx_rate.assert_not_awaited()
+    get_fx_rate_record.assert_not_awaited()
     assert result.currency == "USD"
     assert result.base_currency == "USD"
     assert result.base_amount == Decimal("125.00")
     assert result.rate == Decimal("1")
     assert result.rate_date == date(2026, 6, 25)
+    assert result.fx_rate_id is None
 
 
 @pytest.mark.asyncio
 async def test_payment_fx_amounts_converts_foreign_payment_to_base() -> None:
-    get_fx_rate = AsyncMock(return_value=Decimal("1.25"))
+    get_fx_rate_record = AsyncMock(
+        return_value=FxRateRecord(
+            from_currency="GBP",
+            to_currency="USD",
+            rate_date=date(2026, 6, 24),
+            rate=Decimal("1.25"),
+            id="fx-rate-1",
+        )
+    )
     db = _TenantDb("USD")
 
-    with patch("app.services.payment_fx_service.get_fx_rate", get_fx_rate):
+    with patch("app.services.payment_fx_service.get_fx_rate_record", get_fx_rate_record):
         result = await payment_fx_amounts(
             db=db,  # type: ignore[arg-type]
             tenant_id="tenant-1",
@@ -80,7 +90,7 @@ async def test_payment_fx_amounts_converts_foreign_payment_to_base() -> None:
             paid_at="2026-06-25T12:00:00+00:00",
         )
 
-    get_fx_rate.assert_awaited_once_with(
+    get_fx_rate_record.assert_awaited_once_with(
         "GBP",
         "USD",
         date(2026, 6, 25),
@@ -88,3 +98,5 @@ async def test_payment_fx_amounts_converts_foreign_payment_to_base() -> None:
     )
     assert result.base_amount == Decimal("125.00")
     assert result.rate == Decimal("1.25")
+    assert result.rate_date == date(2026, 6, 24)
+    assert result.fx_rate_id == "fx-rate-1"
