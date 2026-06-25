@@ -1380,6 +1380,11 @@ class InboxService:
             if payload.get("total_value")
             else None
         )
+        rate_card_id, rate_card_line_count = await self._create_rate_card_from_hints(
+            payload,
+            engagement_name=engagement_name,
+            currency=engagement_currency,
+        )
         eng_row = await asyncio.to_thread(
             lambda: self._db.table("engagements")
             .insert(
@@ -1394,6 +1399,7 @@ class InboxService:
                     "start_date": _non_empty(payload.get("start_date")),
                     "end_date": _non_empty(payload.get("end_date")),
                     "status": "draft",
+                    "rate_card_id": rate_card_id,
                     "source_document_id": self._source_document_id(payload),  # #127
                 }
             )
@@ -1443,7 +1449,63 @@ class InboxService:
             "client_id": str(client_id),
             "project_id": project_id,
             "project_name": project_name,
+            "rate_card_id": rate_card_id,
+            "rate_card_line_count": rate_card_line_count,
         }
+
+    async def _create_rate_card_from_hints(
+        self,
+        payload: dict,
+        *,
+        engagement_name: str,
+        currency: str,
+    ) -> tuple[str | None, int]:
+        lines = _normalise_rate_card_hint_lines(payload.get("rate_card_hints"))
+        if not lines:
+            return None, 0
+
+        effective_date = (
+            _non_empty(payload.get("start_date"))
+            or date.today().isoformat()
+        )
+        try:
+            card_row = await asyncio.to_thread(
+                lambda: self._db.table("rate_cards")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "name": f"{engagement_name} Rate Card",
+                        "currency": currency,
+                        "effective_date": effective_date,
+                    }
+                )
+                .execute()
+            )
+            if not card_row.data:
+                return None, 0
+            rate_card_id = str(card_row.data[0]["id"])
+            await asyncio.to_thread(
+                lambda: self._db.table("rate_card_lines")
+                .insert(
+                    [
+                        {
+                            **line,
+                            "tenant_id": self._tenant_id,
+                            "rate_card_id": rate_card_id,
+                        }
+                        for line in lines
+                    ]
+                )
+                .execute()
+            )
+            return rate_card_id, len(lines)
+        except Exception as exc:
+            logger.warning(
+                "Auto-create rate card failed for engagement %s: %s",
+                engagement_name,
+                exc,
+            )
+            return None, 0
 
     async def _materialise_expense(self, payload: dict) -> dict:
         import asyncio
@@ -1850,6 +1912,49 @@ def _safe_payload_summary(payload: dict | None) -> dict[str, Any]:
     if redacted:
         summary["redacted_fields"] = sorted(redacted)
     return summary
+
+
+def _normalise_rate_card_hint_lines(hints: Any) -> list[dict[str, str | None]]:
+    if not isinstance(hints, list):
+        return []
+    lines: list[dict[str, str | None]] = []
+    seen_roles: set[str] = set()
+    for hint in hints:
+        if not isinstance(hint, dict):
+            continue
+        role = _non_empty(hint.get("role"))
+        if role is None:
+            continue
+        role_key = role.casefold()
+        if role_key in seen_roles:
+            continue
+        try:
+            rate = Decimal(str(hint.get("rate") or ""))
+        except Exception:
+            continue
+        if rate < 0:
+            continue
+        seen_roles.add(role_key)
+        lines.append(
+            {
+                "role": role,
+                "rate": f"{rate:.2f}",
+                "service_line": _normalise_rate_card_service_line(
+                    hint.get("service_line")
+                ),
+            }
+        )
+    return lines
+
+
+def _normalise_rate_card_service_line(value: Any) -> str | None:
+    service_line = _non_empty(value)
+    if service_line is None:
+        return None
+    service_line = service_line.lower().replace(" ", "_").replace("-", "_")
+    if service_line in {"accounting", "tax", "cosec", "payroll", "advisory", "other"}:
+        return service_line
+    return None
 
 
 def _is_manual_journal_threshold_payload(payload: dict | None) -> bool:

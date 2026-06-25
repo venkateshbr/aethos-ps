@@ -307,7 +307,7 @@ Acceptance:
 Goal: agents perform routine ERP work with humans handling exceptions.
 
 Engagement-to-cash loops:
-- Partial: engagement intake agent creates engagement/project drafts from documents; rate-card draft depth remains open.
+- Done/partial 2026-06-25: engagement intake agent creates engagement/project drafts from documents, and approved drafts with reviewed rate hints now materialize linked rate cards for downstream billing. Broader segmented price-book administration remains future UX/reporting depth.
 - Partial 2026-06-23: time-entry reminder agent/worker drafts and sends/HITL-routes weekly under-logged-timesheet reminders from employee availability, utilization targets, active project assignments, and logged time; external calendar/email event ingestion remains open.
 - Partial 2026-06-23: billing-run agent prepares invoices by schedule and billing terms and records workflow state in `agent_workflow_runs`.
 - Done 2026-06-23: collections reminder loops are policy-driven with tenant defaults and client overrides for enablement, stage thresholds, cooldown, max reminders, and max auto-send tone. The nightly worker resolves policy before drafting, suppresses reminders outside policy/max count/cooldown, records durable `agent_workflow_runs` state, and the Settings UI exposes the tenant default policy.

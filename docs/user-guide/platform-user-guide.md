@@ -156,7 +156,7 @@ tool name when they need deterministic run-ledger assertions.
 | Scheduled Finance Ops Manager | Runs on configured tenant cadence, creates a reviewed action-plan Inbox task, and creates separate escalation notices for stale/high-risk Inbox work |
 | Financial statement package | Generates read-only summary from report/journal data |
 | Vendor invoice upload | Extracts to Inbox review, then creates bill after approval |
-| Engagement-letter upload | Extracts to Inbox review, then creates client, engagement, and first project after approval |
+| Engagement-letter upload | Extracts to Inbox review, then creates client, engagement, first project, and reviewed rate card after approval |
 
 ### Scheduled Finance Ops Manager
 

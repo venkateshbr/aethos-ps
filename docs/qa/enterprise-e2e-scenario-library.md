@@ -45,6 +45,7 @@ agent ledger.
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Browser proof automated in #317 | #283, #317 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Browser proof automated in #317 | #283, #317 |
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Browser proof automated in #317 | #295, #317 |
+| ENT-E2C-001 | Engagement-letter approval creates linked rate card from reviewed hints | API proof implemented in #345; browser proof target pending | #267, #345 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310 | #299, #310 |
@@ -683,6 +684,36 @@ Automation target:
 - Component: load seeded default, save admin edits, and block Manager save.
 - Browser: login as Admin, save weekly schedule, verify success state, then
   login as Manager and assert form controls are disabled.
+
+## ENT-E2C-001 - Engagement-Letter Rate Card Materialization
+
+Persona: Engagement Manager, Finance Ops Manager, Billing Lead.
+
+Preconditions:
+
+- An engagement-letter or SOW document includes role/rate terms.
+- Copilot/document extraction creates a `create_engagement_draft` Inbox task
+  with reviewed `rate_card_hints`.
+
+Steps:
+
+1. Upload or seed an engagement-letter draft payload with at least two role/rate
+   hints.
+2. Review the Inbox task and approve, or approve with edits.
+3. Open the created engagement and first project.
+4. Open Settings/Rate Cards or query the API for the created rate card.
+5. Draft a future invoice for the engagement and confirm rates resolve from the
+   linked card.
+
+Expected result:
+
+- Approval creates the customer, draft engagement, first project, and one rate
+  card from the reviewed hints.
+- The engagement references the created `rate_card_id`, and the first project
+  is created under that engagement.
+- Duplicate or malformed hint rows are ignored rather than blocking onboarding.
+- Inbox materialization evidence includes `rate_card_id` and
+  `rate_card_line_count`.
 
 ## ENT-P2P-001 - Vendor Invoice Coding Exception
 

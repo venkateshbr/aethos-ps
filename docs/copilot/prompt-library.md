@@ -85,10 +85,10 @@ assertions.
 
 | Goal | Prompt |
 | --- | --- |
-| Engagement letter intake | `Review this engagement letter, create the client, engagement, billing terms, and first project. Send anything risky to Inbox.` |
+| Engagement letter intake | `Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.` |
 | SOW review | `Review this SOW and summarize scope, pricing, dates, billing terms, rate hints, and first project setup. Route the proposed records to Inbox before creation.` |
 | Vendor onboarding | `Review this new vendor setup request. Summarize tax details, payment terms, banking risk if present, required approvals, and any missing source documents before creating or updating the vendor record.` |
-| Project setup review | `Create a project setup checklist for this new engagement. Include billing model, service line, milestones, staffing, rate assumptions, WIP risk, and any fields that need manager approval.` |
+| Project setup review | `Create a project setup checklist for this new engagement. Include billing model, service line, milestones, staffing, linked rate card, WIP risk, and any fields that need manager approval.` |
 
 ## Reports And Documents
 
