@@ -96,12 +96,12 @@ Human-in-control, AI-doing-the-work.
 | AR/AP Aging | Available as v1 reports | Present |
 | Project P&L | Available as v1 report | Present |
 | WIP Report | Available as v1 report | Present |
-| Balance Sheet | Not implemented | Missing |
-| Cash Flow Statement | Not implemented | Missing |
-| Financial Close Process | No structured close flow | Missing |
-| Year-End Close entries | Not implemented | Missing |
+| Balance Sheet | Implemented from posted journal lines with current-year net income rolled into equity | Partial — COA still lacks current/non-current subtype and contra-account metadata |
+| Cash Flow Statement | Implemented as a direct cash-flow report from posted cash movements | Partial — indirect-method presentation and broader FX presentation remain future polish |
+| Financial Close Process | Partial — close status/readiness/package endpoints, close tasks, blockers, overrides, scheduled close preparation, and close-panel proposal actions exist | Auto-posting close journals and auto-locking periods remain intentionally human-gated; jurisdiction-specific filing exports remain future compliance depth |
+| Year-End Close entries | Implemented — retained-earnings preview/posting, duplicate guardrails, locked-year handling, and AI-routed Inbox approval exist | Present; dual-review policy depth can be revisited if required by compliance scope |
 | Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335; reversal workflow implemented in #337; submitted/rejected lifecycle events implemented in #339; same-user approval denial implemented in #341 | Incomplete — editable draft/status-filter depth and created/edited timeline remain future product work |
-| Retained Earnings account | Not seeded | Missing — must be seeded at tenant creation |
+| Retained Earnings account | Seeded/supported as `3000 Retained Earnings`; year-end close blocks with a clear setup error if missing | Monitor seed coverage for legacy/demo tenants |
 
 ---
 
@@ -177,7 +177,7 @@ Total Liabilities + Equity (must equal Total Assets ± $0.01 rounding)
 
 **FR-BS-03** Net Income on the Balance Sheet is the sum of all revenue account balances minus all expense account balances for journal lines posted since the last year-end close (or since tenant inception if never closed). This is a live calculation, not a cached value.
 
-**FR-BS-04** Retained Earnings displayed on the Balance Sheet = the balance of the `retained_earnings` system account (account code `3900` by convention). This account accumulates via year-end close entries only (see F4).
+**FR-BS-04** Retained Earnings displayed on the Balance Sheet = the balance of the `retained_earnings` system account (account code `3000` by convention in the current COA seed). This account accumulates via year-end close entries only (see F4).
 
 **FR-BS-05** The Balance Sheet must include a balancing check: if `Total Assets - Total Liabilities - Total Equity > $0.01`, display a warning banner: "Balance Sheet is out of balance by [amount]. Contact support or check for unposted journals." This condition should never occur in normal operation (accounting_guardian ensures balanced journals) but is a safety display.
 
@@ -383,9 +383,9 @@ For each expense account with a non-zero balance:
 Then net Income Summary balance:
   If net income (revenue > expense):
     DR Income Summary           [net income]
-    CR Retained Earnings (3900) [net income]
+    CR Retained Earnings (3000) [net income]
   If net loss (expense > revenue):
-    DR Retained Earnings (3900) [net loss]
+    DR Retained Earnings (3000) [net loss]
     CR Income Summary           [net loss]
 ```
 
@@ -395,7 +395,7 @@ Then net Income Summary balance:
 
 **FR-YE-05** Year-end close posts only after a multi-step confirmation: (1) user reviews the proposed closing journal entry in the close_assist_agent wizard; (2) user types the year to confirm (e.g. "2025"); (3) system posts the entry.
 
-**FR-YE-06** Roll-forward: the Balance Sheet's "Retained Earnings" line now shows the running balance of account 3900, which includes all prior year-end close entries.
+**FR-YE-06** Roll-forward: the Balance Sheet's "Retained Earnings" line now shows the running balance of account 3000, which includes all prior year-end close entries.
 
 **FR-YE-07** Year-end close is restricted to `role=owner` only.
 
@@ -519,7 +519,7 @@ ALTER TABLE accounts ADD COLUMN is_contra BOOLEAN NOT NULL DEFAULT FALSE;
 INSERT INTO accounts (tenant_id, code, name, type, sub_type, is_system)
 VALUES
   (tenant_id, '3800', 'Income Summary', 'equity', 'income_summary', TRUE),
-  (tenant_id, '3900', 'Retained Earnings', 'equity', 'retained_earnings', TRUE);
+  (tenant_id, '3000', 'Retained Earnings', 'equity', 'retained_earnings', TRUE);
 -- For existing tenants (migration):
 -- Run a data migration to insert these accounts for tenants where they don't exist.
 ```
