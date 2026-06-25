@@ -42,9 +42,9 @@ agent ledger.
 | ENT-AUD-001 | Inbox approval writes immutable decision event | Browser/API proof automated in #309 | #281, #309 |
 | ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Browser/API proof automated in #309 | #281, #309 |
 | ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Browser/API proof automated in #309 | #282, #309 |
-| ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
-| ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
-| ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Implemented first slice; Playwright automation pending | #295 |
+| ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Browser proof automated in #317 | #283, #317 |
+| ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Browser proof automated in #317 | #283, #317 |
+| ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Browser proof automated in #317 | #295, #317 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310; deeper PO/service-order matching remains future depth | #299, #310 |
@@ -71,6 +71,12 @@ Run this when validating the #310 AI finance workflow browser proof:
 
 ```bash
 cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
+```
+
+Run this when validating the #317 scheduled Finance Ops Manager browser proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium
 ```
 
 Run these when validating the #311 operational health and distributed limiter proof:
@@ -428,11 +434,11 @@ Automation target:
 
 Persona: Owner/Admin configuring AI operations.
 
-Status: First slice implemented. Admins can configure the tenant cadence through
-Settings or `GET/PUT /api/v1/agents/finance-ops/schedule`. The hourly
-Procrastinate worker creates a `scheduled_finance_ops_manager` workflow run and
-a reviewed `copilot_create_finance_ops_action_plan` Inbox task when the cadence
-is due. Browser automation is still pending.
+Status: Browser proof automated in #317. Admins can configure the tenant
+cadence through Settings or `GET/PUT /api/v1/agents/finance-ops/schedule`. The
+hourly Procrastinate worker creates a `scheduled_finance_ops_manager` workflow
+run and a reviewed `copilot_create_finance_ops_action_plan` Inbox task when the
+cadence is due.
 
 Steps:
 
@@ -461,14 +467,20 @@ Automation target:
 - Idempotency: rerun the worker for the same tenant/cadence bucket and assert a
   duplicate open plan is not created.
 
+Automated proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium
+```
+
 ## ENT-AIOPS-002 - Inbox Escalation
 
 Persona: Controller with stale high-risk work.
 
-Status: First slice implemented. The scheduled Finance Ops Manager creates
-separate `finance_ops_escalation` Inbox notices for stale or high-risk source
-tasks. The notice payload summarizes safe metadata and points back to the
-source task; it does not copy the full source payload.
+Status: Browser proof automated in #317. The scheduled Finance Ops Manager
+creates separate `finance_ops_escalation` Inbox notices for stale or high-risk
+source tasks. The notice payload summarizes safe metadata and points back to
+the source task; it does not copy the full source payload.
 
 Steps:
 
@@ -501,10 +513,10 @@ Automation target:
 
 Persona: Admin configuring AI operations; Manager inspecting schedule.
 
-Status: First slice implemented. Settings now exposes Finance Ops Manager
-cadence, enabled state, period mode, work item limit, stale-approval windows,
-and escalation toggle. Admin/Owner users can save changes; Manager users can
-inspect but not edit.
+Status: Browser proof automated in #317. Settings now exposes Finance Ops
+Manager cadence, enabled state, period mode, work item limit, stale-approval
+windows, and escalation toggle. Admin/Owner users can save changes; Manager
+users can inspect but not edit.
 
 Steps:
 

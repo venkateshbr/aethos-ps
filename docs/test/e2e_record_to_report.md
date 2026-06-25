@@ -146,6 +146,17 @@ financial statement tabs, and Settings Agent Run Ledger evidence. Year-end
 close, retained earnings rollover depth, and manual journal audit enhancements
 remain future R2R depth.
 
+The #317 browser proof covers the scheduled Finance Ops Manager setup and
+review boundary:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium
+```
+
+Coverage: Settings schedule save/read-only behavior, reviewed scheduled
+action-plan Inbox task, separate stale high-risk escalation notice, and
+`scheduled_finance_ops_manager` workflow telemetry.
+
 ## §7 Performance Budget
 
 | Operation | Soft budget |
