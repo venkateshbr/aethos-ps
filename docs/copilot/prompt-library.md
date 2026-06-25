@@ -35,6 +35,7 @@ assertions.
 | Update rates | `Update Sarah Patel's advisory billing rate to 425 USD per hour starting July 1, 2026. Route the rate change to Inbox for approval.` |
 | Revenue tie-out | `Tie June 2026 revenue to approved invoices, billing terms, WIP movement, and posted journals. Flag any draft invoice or unposted journal that keeps the report from being final.` |
 | Public invoice check | `Check whether the public invoice link for the latest Northstar invoice is safe to share. Confirm the amount, due date, customer name, and payment status before any external send.` |
+| Multi-currency payment settlement | `Review the latest GBP customer payment. Confirm the transaction amount, USD base amount, realised FX gain or loss, and whether AR Aging and Cash Flow will update after settlement.` |
 
 ## Collections
 
@@ -117,6 +118,7 @@ launch passes. The exact business names can be replaced with launch test data.
 | Scenario | Prompts | Expected proof |
 | --- | --- | --- |
 | Controls/audit/RBAC proof (#309) | Review approval policy; draft high-value bill-pay run; show decision trail; review finance access | Required-role Inbox task, denied under-privileged action, immutable decision event, read-only UI/API denial |
+| Multi-currency AR payment proof (#349) | `Review the latest GBP customer payment. Confirm the transaction amount, USD base amount, realised FX gain or loss, and whether AR Aging and Cash Flow will update after settlement.` | Payment transaction/base amounts, DR Bank/CR AR base amounts, realised FX delta, AR Aging and Cash Flow tie-out |
 | AI finance workflow proof (#310) | `Process this vendor invoice for Aster Cloud Services. Match it to the right vendor and project, flag any duplicate risk, code it to software subscriptions, send exceptions to Inbox for review, and prepare a bill-pay proposal after the bill is reviewed.` `Run month-end close readiness for June 2026. Prepare the close review package, capture any controller override evidence, and generate financial statement commentary for the management pack.` | AP exception evidence, corrected bill, payment batch review, close evidence, statement commentary, agent/tool ledger evidence |
 | AI year-end close proof (#329) | `Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.` | `copilot_prepare_year_end_close` Inbox task, preview blockers, retained-earnings amount/direction, comparative commentary, posted `YE-YYYY` journal after approval |
 | Multi-currency R2R proof (#347) | `Prepare a GBP 1,000 month-end payroll accrual journal for June 2026. Show the USD base-currency impact using the posting-date FX rate, route it to Inbox before posting, and verify the Trial Balance remains balanced after approval.` | GBP transaction amounts, USD base amounts, no silent missing-rate post, balanced Trial Balance, manual-journal audit evidence |

@@ -157,7 +157,7 @@ Run these edge cases across the scenarios rather than as isolated smoke tests.
 | Duplicate/naming | Create records with similar names and verify list search/filtering distinguishes them; exact duplicates should either be allowed intentionally or rejected clearly |
 | Dates | End date before start date; due date before invoice date; service period outside contract; period-locked journal date; DST/timezone boundary time entry |
 | Amount precision | Zero amount, negative amount, extra decimal precision, very large amount, tax rounding residual, invoice/bill total recomputation |
-| Currency | USD base plus at least one GBP/SGD/INR/AUD scenario, including a manual journal or AI draft journal; unsupported currency rejection if a free-text field exists; same-currency payment batch guard |
+| Currency | USD base plus at least one GBP/SGD/INR/AUD scenario, including a manual journal or AI draft journal and a non-base-currency AR payment; unsupported currency rejection if a free-text field exists; same-currency payment batch guard |
 | Billing models | T&M, fixed fee, retainer, retainer draw/floor, milestone, capped T&M, mixed fixed plus T&M, per-unit payroll if UI exposes it |
 | Caps and budgets | Capped T&M over cap, budget hours overrun, low-margin project, missing rate, inactive service |
 | Approvals | Submitted/approved/rejected lifecycle; reject with blank reason; double-click approval; stale page approval after another user acted |
@@ -166,7 +166,7 @@ Run these edge cases across the scenarios rather than as isolated smoke tests.
 | Public access | Public invoice works without auth; authenticated app remains guarded; invalid public token shows a controlled error |
 | Documents and AI | Valid upload, unsupported file type, extracted draft edit, low confidence, prompt injection, reject correction logged |
 | P2P matching | Exact PO match, quantity mismatch, price mismatch, missing PO, duplicate vendor invoice number, prepaid/service-period bill |
-| Payments | Partial payment, overpayment, duplicate payment attempt, settlement reversal if exposed, paid item excluded from aging |
+| Payments | Partial payment, overpayment, duplicate payment attempt, non-base-currency receipt base amount and realised FX tie-out, settlement reversal if exposed, paid item excluded from aging |
 | Journals/R2R | Balanced manual journal with business reason accepted, high-value journal routed to Inbox approval, posted manual journal reversed with reason, multi-currency manual journal stores base-currency amounts and remains balanced in reports, imbalanced blocked, recurring template generated, close task waived with reason, close package loads, period lock readiness guard, journal audit event visible |
 | Reports | Empty state, data state, refresh, period selector, tab switch, no stale skeletons, no console/API 500s |
 | Resilience | Browser refresh on detail pages, back/forward navigation, long names, long notes, narrow/mobile viewport for primary forms |
@@ -312,6 +312,7 @@ Additional checks:
 - Margin: verify Project P&L reflects labor cost even when billing is fixed-fee.
 - Edge case: attempt a fixed-fee invoice with zero/negative line or invalid tax rate; UI must reject or show controlled error.
 - Edge case: mark invoice paid twice or enter an overpayment if the UI exposes manual payment amount; duplicate/overpayment must be blocked or explicitly accounted for.
+- Multi-currency receipt: record or reconcile a GBP payment for a USD-base tenant; verify Payments shows transaction and base amounts, the payment journal stores base amounts, realised FX gain/loss is posted when payment-date base differs from invoice `base_total`, and AR Aging/Cash Flow tie out.
 - Evidence: fixed-fee engagement setup, invoice detail with tax, payment state, Revenue, AR Aging, Cash Flow, Income Statement, Statutory Pack tax controls.
 
 ## Scenario 5 - IT Infrastructure Procurement
