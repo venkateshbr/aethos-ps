@@ -550,7 +550,7 @@ Current implementation assessment:
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
 | Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
-| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, then automated in #309: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, and browser proof verifies Owner/Admin, Manager, and Viewer paths across Settings, Inbox, and Bill detail | Dedicated finance-role enum expansion and full multi-persona Playwright matrix remain future depth | #282, #298, #309 |
+| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, automated in #309, then expanded in #321: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, browser proof verifies Owner/Admin, Manager, and Viewer paths across Settings, Inbox, and Bill detail, and the full persona matrix verifies Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive route/action expectations | Dedicated finance-role enum assignment remains future enterprise controls depth | #282, #298, #309, #321 |
 | Enterprise ops hardening | Implemented first slices in #286 and #301, then automated in #311: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback/deny-safe behavior, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Deployed Supabase smoke validation remains environment evidence; deterministic browser/API proof is automated | #286, #301, #311 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -782,14 +782,16 @@ Expected result:
 
 Implementation status:
 - First slice implemented under #282 and #298, with browser/API proof added in
-  #309. The backend exposes
+  #309 and full persona matrix browser proof added in #321. The backend exposes
   `GET /api/v1/tenants/finance-personas`, Settings renders the catalog under
   Approval Controls, component tests cover manager/viewer persona compatibility,
   backend tests prove viewer readability plus existing role mapping, and
   Playwright verifies Owner/Admin visibility, Manager owner-required approval
   denial, Viewer read-only Settings/Inbox/Bill-detail behavior, Inbox Done
-  decision history, and Bill decision timeline evidence. Full browser
-  automation across every named finance persona remains future depth.
+  decision history, and Bill decision timeline evidence. The #321 matrix signs
+  in as Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive through
+  the current enforced-role compatibility model and verifies Settings, Inbox,
+  Bills/AP, Invoices/AR, Accounting, Reports, and read-only mutation guards.
 
 Automation:
 ```bash
@@ -864,6 +866,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/enterprise-scheduled-finance-ops.spec.ts` | #317 scheduled Finance Ops Manager proof | Covers Settings schedule save/read-only behavior, scheduled action-plan Inbox task, stale high-risk escalation notice, and `scheduled_finance_ops_manager` workflow telemetry |
 | `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` | #310 AI finance workflow proof | Covers business-language Copilot prompts, P2P AP exception review, duplicate reason approval, bill evidence, bill-pay proposal review, R2R close package/override, statement tabs, and Agent Run Ledger evidence |
 | `frontend/e2e/enterprise-ops-health.spec.ts` | #311 operational health proof | Covers Settings Operational Health runtime, table/migration, distributed limiter, request/background failure, agent/tool/workflow failure, routed alert, and secret-redaction evidence |
+| `frontend/e2e/enterprise-finance-persona-matrix.spec.ts` | #321 full finance persona matrix proof | Covers Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive compatibility mappings plus Settings, Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and viewer mutation guards |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
 | `frontend/e2e/r2r-reports-render.spec.ts` and `frontend/e2e/trial-balance.spec.ts` | Reports render supplement | Proves report tabs mount; business tie-outs still come from scenarios |
 | `frontend/e2e/engagement-to-cash.spec.ts` | Deep API edge regression | Covers many edge cases, RBAC, FX, idempotency; mark as supplemental unless the step is browser-driven |

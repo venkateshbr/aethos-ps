@@ -483,6 +483,7 @@ The following work is tracked under parent issue #278:
 | #311 | Ops proof | Browser/API proof implemented for distributed limiter, alert, and Operational Health dashboard |
 | #312 | Docs and prompts | Full platform guide and prompt-library proof |
 | #317 | QA proof | Browser E2E implemented for scheduled Finance Ops Manager schedule, Inbox output, escalation, and workflow telemetry |
+| #321 | RBAC proof | Browser E2E implemented for the full finance persona matrix |
 
 ## 12. Scenario Crosswalk
 
@@ -490,12 +491,12 @@ The following work is tracked under parent issue #278:
 | --- | --- | --- |
 | Operating model, Copilot, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310 automated for P2P/R2R AI finance workflows; #317 automated for scheduled Finance Ops Manager; #312 docs proof |
 | Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 automated |
-| Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix remains future depth |
+| Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321 |
 | Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
 | Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 automated |
 | Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
 | Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
-| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #311 automated for Operational Health; #317 automated for scheduled manager |
+| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #311 automated for Operational Health; #317 automated for scheduled manager |
 
 ## 13. Documentation And Test Definition Of Done
 

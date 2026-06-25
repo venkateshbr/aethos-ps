@@ -225,7 +225,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
             General ledger journals — auto-posted and manual adjustments.
           </p>
         </div>
-        <!-- New Entry button — only for manager/owner -->
+        <!-- New Entry button: manager+; backend enforces the same hierarchy. -->
         @if (canPost()) {
           <button
             type="button"
@@ -1135,12 +1135,12 @@ export class JournalEntriesListComponent implements OnInit {
     this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
   );
 
-  // RBAC: read role from localStorage (set by login flow)
-  // The back-end enforces this too — this is only a UI affordance.
+  // RBAC: read role from localStorage (set by login flow).
+  // The backend enforces this too; this is only a UI affordance.
   canPost = computed(() => {
     try {
       const raw = localStorage.getItem('aethos_role');
-      return raw === 'manager' || raw === 'owner';
+      return this.roleRank(raw) >= this.roleRank('manager');
     } catch {
       return false;
     }
@@ -1780,6 +1780,18 @@ export class JournalEntriesListComponent implements OnInit {
       case 'payment': return 'bg-emerald-500/20 text-emerald-300';
       default:        return 'bg-surface text-text-muted';
     }
+  }
+
+  private roleRank(role: string | null | undefined): number {
+    const ranks: Record<string, number> = {
+      owner: 5,
+      admin: 4,
+      manager: 3,
+      member: 2,
+      viewer: 1,
+      employee: 0,
+    };
+    return ranks[role ?? 'viewer'] ?? 1;
   }
 
   closeTaskLabel(status: string): string {
