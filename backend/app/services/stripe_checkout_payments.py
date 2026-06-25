@@ -136,6 +136,7 @@ async def record_checkout_session_payment(
         amount=amount_received,
         currency=currency,
         base_amount=fx_amounts.base_amount,
+        fx_rate_id=fx_amounts.fx_rate_id,
         paid_at_iso=paid_at_iso,
         payment_intent_id=payment_intent_id,
         source=source,
@@ -159,6 +160,7 @@ async def record_checkout_session_payment(
             amount_received=amount_received,
             currency=currency,
             base_amount=fx_amounts.base_amount,
+            fx_rate_id=fx_amounts.fx_rate_id,
             actor_uuid=actor_uuid,
             payment_intent_id=payment_intent_id,
         )
@@ -270,6 +272,7 @@ async def _insert_payment(
     amount: Decimal,
     currency: str,
     base_amount: Decimal,
+    fx_rate_id: str | None,
     paid_at_iso: str,
     payment_intent_id: str | None,
     source: str,
@@ -280,6 +283,7 @@ async def _insert_payment(
         "amount": str(amount),
         "currency": currency,
         "base_amount": str(base_amount),
+        "fx_rate_id": fx_rate_id,
         "paid_at": paid_at_iso,
         "notes": f"Recorded from {source}",
     }
@@ -350,6 +354,7 @@ async def _post_payment_journal(
     amount_received: Decimal,
     currency: str,
     base_amount: Decimal,
+    fx_rate_id: str | None,
     actor_uuid: str,
     payment_intent_id: str | None,
 ) -> bool:
@@ -364,6 +369,7 @@ async def _post_payment_journal(
             account_id=acct_map.get("1100"),
             currency=currency,
             base_amount=base_amount,
+            fx_rate_id=fx_rate_id,
         ),
         JournalLineSpec(
             direction="CR",
@@ -373,6 +379,7 @@ async def _post_payment_journal(
             account_id=acct_map.get("1200"),
             currency=currency,
             base_amount=base_amount,
+            fx_rate_id=fx_rate_id,
         ),
     ]
     try:

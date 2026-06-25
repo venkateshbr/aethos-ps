@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.domain.fx import FxRateNotFoundError, get_fx_rate
+from app.domain.fx import FxRateNotFoundError, get_fx_rate, get_fx_rate_record
 
 pytestmark = pytest.mark.unit
 
@@ -102,6 +102,31 @@ async def test_get_fx_rate_returns_decimal_from_db() -> None:
 
     rate = await get_fx_rate("USD", "SGD", date(2026, 5, 19), db_mock)
     assert rate == Decimal("1.250000")
+
+
+@pytest.mark.asyncio
+async def test_get_fx_rate_record_returns_rate_id_from_db() -> None:
+    db_mock = MagicMock()
+    mock_result = MagicMock()
+    mock_result.data = [
+        {"id": "fx-rate-1", "rate": "1.250000", "rate_date": "2026-05-19"}
+    ]
+    (
+        db_mock.table.return_value
+        .select.return_value
+        .eq.return_value
+        .eq.return_value
+        .lte.return_value
+        .order.return_value
+        .limit.return_value
+        .execute.return_value
+    ) = mock_result
+
+    record = await get_fx_rate_record("USD", "SGD", date(2026, 5, 19), db_mock)
+
+    assert record.id == "fx-rate-1"
+    assert record.rate == Decimal("1.250000")
+    assert record.rate_date == date(2026, 5, 19)
 
 
 @pytest.mark.asyncio

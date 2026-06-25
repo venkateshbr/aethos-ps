@@ -254,6 +254,7 @@ async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
         base_currency="USD",
         rate=Decimal("1.25"),
         rate_date=date(2026, 6, 25),
+        fx_rate_id="fx-rate-1",
     )
 
     with (
@@ -281,12 +282,14 @@ async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
     assert payment["amount"] == "100.00"
     assert payment["currency"] == "GBP"
     assert payment["base_amount"] == "125.00"
+    assert payment["fx_rate_id"] == "fx-rate-1"
     lines = post_journal.call_args.kwargs["lines"]
     assert [line.currency for line in lines] == ["GBP", "GBP"]
     assert [line.base_amount for line in lines] == [
         Decimal("125.00"),
         Decimal("125.00"),
     ]
+    assert [line.fx_rate_id for line in lines] == ["fx-rate-1", "fx-rate-1"]
     fx_gain_loss.assert_awaited_once()
     assert fx_gain_loss.await_args.kwargs["payment_base_amount"] == Decimal("125.00")
 

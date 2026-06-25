@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.domain.fx import FxRateNotFoundError, get_fx_rate
+from app.domain.fx import FxRateNotFoundError, get_fx_rate_record
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import quantise_money, serialise_money
 from app.models.accounting import (
@@ -343,11 +343,12 @@ class ManualJournalService:
         lines: list[JournalLineSpec] = []
         for line in payload.lines:
             currency = line.currency.upper()
+            fx_rate_id: str | None = None
             if currency == base_currency:
                 base_amount = line.amount
             else:
                 try:
-                    rate = await get_fx_rate(
+                    rate_record = await get_fx_rate_record(
                         currency,
                         base_currency,
                         payload.entry_date,
@@ -362,7 +363,8 @@ class ManualJournalService:
                             f"{exc.rate_date}."
                         ),
                     ) from exc
-                base_amount = quantise_money(line.amount * rate)
+                fx_rate_id = rate_record.id
+                base_amount = quantise_money(line.amount * rate_record.rate)
                 if base_amount is None:
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -377,6 +379,7 @@ class ManualJournalService:
                     currency=currency,
                     description=line.description or "",
                     base_amount=base_amount,
+                    fx_rate_id=fx_rate_id,
                 )
             )
         return lines

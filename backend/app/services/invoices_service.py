@@ -452,6 +452,7 @@ class InvoicesService:
             "amount": str(amount),
             "currency": pay_currency,
             "base_amount": str(fx_amounts.base_amount),
+            "fx_rate_id": fx_amounts.fx_rate_id,
             "paid_at": paid_at,
         }
         if notes:
@@ -500,6 +501,7 @@ class InvoicesService:
                 account_id=acct_map.get("1100"),
                 currency=pay_currency,
                 base_amount=fx_amounts.base_amount,
+                fx_rate_id=fx_amounts.fx_rate_id,
             ),
             JournalLineSpec(
                 direction="CR",
@@ -509,6 +511,7 @@ class InvoicesService:
                 account_id=acct_map.get("1200"),
                 currency=pay_currency,
                 base_amount=fx_amounts.base_amount,
+                fx_rate_id=fx_amounts.fx_rate_id,
             ),
         ]
         try:

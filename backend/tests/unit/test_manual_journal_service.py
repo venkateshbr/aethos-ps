@@ -10,7 +10,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.domain.fx import FxRateNotFoundError
+from app.domain.fx import FxRateNotFoundError, FxRateRecord
 from app.models.accounting import (
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
@@ -414,7 +414,7 @@ async def test_manual_journal_same_currency_does_not_lookup_fx_rate() -> None:
 
     with (
         patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
-        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.get_fx_rate_record", fx_mock),
         patch("app.services.manual_journal_service.post_journal", post_mock),
     ):
         await svc.post_manual_journal(_payload())
@@ -426,6 +426,7 @@ async def test_manual_journal_same_currency_does_not_lookup_fx_rate() -> None:
         Decimal("100.00"),
         Decimal("100.00"),
     ]
+    assert [line.fx_rate_id for line in lines] == [None, None]
 
 
 @pytest.mark.asyncio
@@ -451,11 +452,19 @@ async def test_manual_journal_foreign_currency_converts_base_amount() -> None:
             "posted_at": "2026-06-22T00:00:00Z",
         }
     )
-    fx_mock = AsyncMock(return_value=Decimal("0.80"))
+    fx_mock = AsyncMock(
+        return_value=FxRateRecord(
+            from_currency="USD",
+            to_currency="GBP",
+            rate_date=date(2026, 6, 22),
+            rate=Decimal("0.80"),
+            id="fx-rate-1",
+        )
+    )
 
     with (
         patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
-        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.get_fx_rate_record", fx_mock),
         patch("app.services.manual_journal_service.post_journal", post_mock),
     ):
         await svc.post_manual_journal(_payload(currency="usd"))
@@ -468,6 +477,7 @@ async def test_manual_journal_foreign_currency_converts_base_amount() -> None:
         Decimal("80.00"),
         Decimal("80.00"),
     ]
+    assert [line.fx_rate_id for line in lines] == ["fx-rate-1", "fx-rate-1"]
 
 
 @pytest.mark.asyncio
@@ -486,7 +496,7 @@ async def test_manual_journal_missing_fx_rate_rejects_before_posting() -> None:
 
     with (
         patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
-        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.get_fx_rate_record", fx_mock),
         patch("app.services.manual_journal_service.post_journal", post_mock),
         pytest.raises(HTTPException) as exc_info,
     ):

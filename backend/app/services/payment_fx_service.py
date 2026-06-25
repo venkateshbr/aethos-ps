@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.domain.fx import get_fx_rate
+from app.domain.fx import get_fx_rate_record
 from app.domain.money import quantise_money
 from supabase import Client
 
@@ -20,6 +20,7 @@ class PaymentFxAmounts:
     base_currency: str
     rate: Decimal
     rate_date: date
+    fx_rate_id: str | None = None
 
 
 def payment_rate_date(paid_at: date | datetime | str | None) -> date:
@@ -69,10 +70,11 @@ async def payment_fx_amounts(
             base_currency=base_currency,
             rate=Decimal("1"),
             rate_date=rate_date,
+            fx_rate_id=None,
         )
 
-    rate = await get_fx_rate(payment_currency, base_currency, rate_date, db)
-    base_amount = quantise_money(amount * rate)
+    rate_record = await get_fx_rate_record(payment_currency, base_currency, rate_date, db)
+    base_amount = quantise_money(amount * rate_record.rate)
     if base_amount is None:
         raise ValueError("Payment base amount could not be calculated")
     return PaymentFxAmounts(
@@ -80,6 +82,7 @@ async def payment_fx_amounts(
         currency=payment_currency,
         base_amount=base_amount,
         base_currency=base_currency,
-        rate=rate,
-        rate_date=rate_date,
+        rate=rate_record.rate,
+        rate_date=rate_record.rate_date,
+        fx_rate_id=rate_record.id,
     )

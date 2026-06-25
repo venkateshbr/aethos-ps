@@ -312,7 +312,7 @@ Additional checks:
 - Margin: verify Project P&L reflects labor cost even when billing is fixed-fee.
 - Edge case: attempt a fixed-fee invoice with zero/negative line or invalid tax rate; UI must reject or show controlled error.
 - Edge case: mark invoice paid twice or enter an overpayment if the UI exposes manual payment amount; duplicate/overpayment must be blocked or explicitly accounted for.
-- Multi-currency receipt: record or reconcile a GBP payment for a USD-base tenant; verify Payments shows transaction and base amounts, the payment journal stores base amounts, realised FX gain/loss is posted when payment-date base differs from invoice `base_total`, and AR Aging/Cash Flow tie out.
+- Multi-currency receipt: record or reconcile a GBP payment for a USD-base tenant; verify Payments shows transaction and base amounts plus FX rate provenance, the payment journal stores base amounts and `fx_rate_id`, realised FX gain/loss is posted when payment-date base differs from invoice `base_total`, and AR Aging/Cash Flow tie out.
 - Evidence: fixed-fee engagement setup, invoice detail with tax, payment state, Revenue, AR Aging, Cash Flow, Income Statement, Statutory Pack tax controls.
 
 ## Scenario 5 - IT Infrastructure Procurement
@@ -438,7 +438,7 @@ Expected result:
 - Manual journal posts only when balanced and a business reason of at least 10 characters is provided.
 - Posted manual journal detail shows the business reason and the immutable event log contains `manual_journal.posted` metadata with the same reason, actor, line count, and debit total.
 - Manual journal debit totals at or above the tenant manual-journal threshold route to Inbox approval instead of posting immediately. Inbox approval posts the journal once through the same guardian/audit path.
-- Multi-currency manual journal lines store both transaction `amount`/`currency` and converted tenant-base `base_amount`; Trial Balance and financial statements remain balanced in base currency.
+- Multi-currency manual journal lines store transaction `amount`/`currency`, converted tenant-base `base_amount`, and `fx_rate_id` provenance; Trial Balance and financial statements remain balanced in base currency.
 - Manual journal reversals create a new balanced `manual_reversal` entry, link back to the original journal, and append `manual_journal.reversed` audit evidence.
 - Close tasks can be bootstrapped and updated from the browser.
 - Agent proposals route through Inbox review before posting.
