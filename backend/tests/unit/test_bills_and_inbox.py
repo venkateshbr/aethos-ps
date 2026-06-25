@@ -881,3 +881,140 @@ async def test_materialise_engagement_creates_reviewed_first_project() -> None:
     assert project_row["start_date"] == "2026-07-01"
     assert project_row["end_date"] == "2026-09-30"
     assert project_row["status"] == "planning"
+
+
+@pytest.mark.asyncio
+async def test_materialise_engagement_creates_rate_card_from_reviewed_hints() -> None:
+    """Approved engagement drafts turn reviewed rate hints into linked rate cards."""
+    from unittest.mock import MagicMock
+
+    from app.services.inbox_service import InboxService
+
+    inserts: list[tuple[str, Any]] = []
+
+    def _table(name: str):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.ilike.return_value = chain
+        chain.limit.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+
+        def _insert(row: Any):
+            inserts.append((name, row))
+            ret = MagicMock()
+            ret.execute.return_value = MagicMock(data=[{"id": f"{name}-id"}])
+            return ret
+
+        chain.insert.side_effect = _insert
+        return chain
+
+    db = MagicMock()
+    db.table.side_effect = _table
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = db
+    svc._tenant_id = "tenant-1"
+
+    result = await svc._materialise_engagement(
+        {
+            "client_name": "Lumera Technologies",
+            "engagement_name": "Lumera SOC 2 Readiness",
+            "currency": "SGD",
+            "billing_arrangement": "time_and_materials",
+            "start_date": "2026-07-01",
+            "scope_summary": "SOC 2 readiness assessment.",
+            "first_project_name": "SOC 2 Readiness",
+            "rate_card_hints": [
+                {
+                    "role": "Partner",
+                    "rate": "450.00",
+                    "service_line": "advisory",
+                },
+                {"role": "Manager", "rate": "320"},
+                {"role": "Partner", "rate": "475.00"},
+            ],
+        }
+    )
+
+    assert result["rate_card_id"] == "rate_cards-id"
+    assert result["rate_card_line_count"] == 2
+    rate_card_row = next(row for t, row in inserts if t == "rate_cards")
+    assert rate_card_row["name"] == "Lumera SOC 2 Readiness Rate Card"
+    assert rate_card_row["currency"] == "SGD"
+    assert rate_card_row["effective_date"] == "2026-07-01"
+    rate_card_lines = next(row for t, row in inserts if t == "rate_card_lines")
+    assert rate_card_lines == [
+        {
+            "role": "Partner",
+            "rate": "450.00",
+            "service_line": "advisory",
+            "tenant_id": "tenant-1",
+            "rate_card_id": "rate_cards-id",
+        },
+        {
+            "role": "Manager",
+            "rate": "320.00",
+            "service_line": None,
+            "tenant_id": "tenant-1",
+            "rate_card_id": "rate_cards-id",
+        },
+    ]
+    engagement_row = next(row for t, row in inserts if t == "engagements")
+    assert engagement_row["rate_card_id"] == "rate_cards-id"
+
+
+@pytest.mark.asyncio
+async def test_materialise_engagement_ignores_malformed_rate_card_hints() -> None:
+    """Malformed rate hints do not block engagement and first-project creation."""
+    from unittest.mock import MagicMock
+
+    from app.services.inbox_service import InboxService
+
+    inserts: list[tuple[str, Any]] = []
+
+    def _table(name: str):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.ilike.return_value = chain
+        chain.limit.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+
+        def _insert(row: Any):
+            inserts.append((name, row))
+            ret = MagicMock()
+            ret.execute.return_value = MagicMock(data=[{"id": f"{name}-id"}])
+            return ret
+
+        chain.insert.side_effect = _insert
+        return chain
+
+    db = MagicMock()
+    db.table.side_effect = _table
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = db
+    svc._tenant_id = "tenant-1"
+
+    result = await svc._materialise_engagement(
+        {
+            "client_name": "Lumera Technologies",
+            "engagement_name": "Lumera SOC 2 Readiness",
+            "currency": "SGD",
+            "rate_card_hints": [
+                "not-a-hint",
+                {"role": "", "rate": "400.00"},
+                {"role": "Manager", "rate": "not-money"},
+                {"role": "Analyst", "rate": "-50.00"},
+            ],
+        }
+    )
+
+    assert result["rate_card_id"] is None
+    assert result["rate_card_line_count"] == 0
+    inserted_tables = [t for t, _ in inserts]
+    assert "rate_cards" not in inserted_tables
+    assert "rate_card_lines" not in inserted_tables
+    assert "engagements" in inserted_tables
+    assert "projects" in inserted_tables

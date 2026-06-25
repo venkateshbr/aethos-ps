@@ -553,7 +553,7 @@ Current implementation assessment:
 | AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence. #327 adds retained-earnings posting evidence for year-end statement tie-out, #329 adds current-vs-prior year commentary to the year-end close approval payload, and #331 adds comparative statement package variance commentary for default prior-period and explicit comparison windows | Board-pack export/PDF generation remains future reporting depth | #261, #300, #310, #327, #329, #331 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | AI semantic PO selection and project coding from source documents remain broader P2P coverage | #264 |
 | AI vendor invoice exceptions | Implemented first slices in #284/#299 and automated in #310: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence. #323 adds line-level PO/service-order match evidence: linked bills compare bill lines to approved PO/SO lines for description, quantity, unit price, amount, and service period where applicable; mismatches record `line_exceptions`, show in Bills list/detail, and block approval through the existing AP gate | Payment remains a separate bill-pay approval flow; fuzzy/semantic AI PO selection remains future P2P depth | #284, #299, #310, #323 |
-| AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
+| AI engagement-letter onboarding | Implemented and browser-verified in #267, then deepened in #345: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, first project, and a linked rate card when reviewed rate hints are present | Broader admin reporting around segmented price books remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267, #345 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
 | Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
@@ -594,21 +594,22 @@ Persona: Engagement Manager. AI role: Finance Ops Manager with engagement-letter
 
 Browser steps:
 1. `/app/copilot`: upload a new SOW or engagement letter for `Launch QA 20260624 - AI Onboarding`.
-2. Ask Copilot: `Review this SOW, create the client, engagement, billing terms, and first project. Send anything risky to Inbox.`
+2. Ask Copilot: `Review this SOW, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.`
 3. `/app/inbox`: review the extracted customer, engagement, billing arrangement, dates, rates, and project proposal.
 4. Approve with edits where required.
-5. `/app/clients`, `/app/engagements`, `/app/projects`: verify records were created from the reviewed payload.
+5. `/app/clients`, `/app/engagements`, `/app/projects`: verify records were created from the reviewed payload and the engagement references the created rate card when rate hints were reviewed.
 6. `/app/documents`: verify the source document links back to the created records where supported.
 
 Expected result:
 - AI extracts the engagement structure from the document.
 - Humans review extracted commercial terms before records are created.
+- Reviewed rate hints create a linked rate card for downstream invoice drafting.
 - The source document remains traceable.
 
 Implementation status:
-- Implemented and browser-verified under #267. Copilot upload classifies SOW/engagement-letter documents separately from vendor invoices, the extraction worker creates a `create_engagement_draft` Inbox task with the proposed client, engagement, billing arrangement, dates, rates/fees, and first project, and Inbox approval or approve-with-edits materialises customer, draft engagement, and first project records. The engagement stores source-document linkage where supported.
+- Implemented and browser-verified under #267, then deepened in #345. Copilot upload classifies SOW/engagement-letter documents separately from vendor invoices, the extraction worker creates a `create_engagement_draft` Inbox task with the proposed client, engagement, billing arrangement, dates, rates/fees, and first project, and Inbox approval or approve-with-edits materialises customer, draft engagement, first project, and a linked rate card when reviewed rate hints are present. The engagement stores source-document linkage where supported.
 
-Evidence: upload state, Inbox detail, created engagement/project, document source linkage.
+Evidence: upload state, Inbox detail, created engagement/project/rate card, document source linkage.
 
 ## Scenario 13 - AI Drafts Customer Invoice
 
