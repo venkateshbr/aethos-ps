@@ -37,11 +37,11 @@ agent ledger.
 | --- | --- | --- | --- |
 | ENT-DOC-001 | Platform guide links current product workflow to QA scenarios | Implemented as documentation baseline | #279 |
 | ENT-DOC-002 | Full platform guide and prompt-library proof maps AI finance workflows to E2E evidence | Implemented documentation proof; static link check required | #312 |
-| ENT-CTRL-001 | Approval policy routes high-risk task to required role | Implemented first slice; browser automation pending | #280 |
-| ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Implemented first slice; browser automation pending | #280 |
-| ENT-AUD-001 | Inbox approval writes immutable decision event | Implemented first slice; browser automation pending | #281 |
-| ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Implemented first slice; browser automation pending | #281 |
-| ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Implemented first slice; browser automation pending | #282 |
+| ENT-CTRL-001 | Approval policy routes high-risk task to required role | Browser/API proof automated in #309 | #280, #309 |
+| ENT-CTRL-002 | Unauthorized approver is blocked with clean API/UI behavior | Browser/API proof automated in #309 | #280, #309 |
+| ENT-AUD-001 | Inbox approval writes immutable decision event | Browser/API proof automated in #309 | #281, #309 |
+| ENT-AUD-002 | Approve-with-edits preserves before/after decision summary | Browser/API proof automated in #309 | #281, #309 |
+| ENT-RBAC-001 | Auditor/read-only persona can inspect but not mutate finance records | Browser/API proof automated in #309 | #282, #309 |
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Implemented first slice; Playwright automation pending | #295 |
@@ -54,9 +54,18 @@ agent ledger.
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Implemented first slice; Playwright automation pending | #301 |
-| ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Implemented first slice; Playwright automation pending | #296 |
-| ENT-AUD-003 | Business record exposes immutable decision timeline | Implemented first slice; Playwright automation pending | #297 |
-| ENT-RBAC-002 | Finance-role personas are browser-proven | Implemented first slice; Playwright role matrix pending | #298 |
+| ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Browser/API proof automated in #309 | #296, #309 |
+| ENT-AUD-003 | Business record exposes immutable decision timeline | Browser/API proof automated in #309 | #297, #309 |
+| ENT-RBAC-002 | Finance-role personas are browser-proven | Browser/API proof automated in #309; full persona matrix remains future depth | #298, #309 |
+
+## Automated Proof Commands
+
+Run these when validating the #309 controls, audit, and RBAC proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts --project=chromium
+cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py tests/unit/test_inbox_api_contract.py tests/unit/test_financial_events_api_contract.py tests/unit/test_rbac.py -q
+```
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 
@@ -91,13 +100,15 @@ Automation target:
 
 Persona: Product owner, finance operator, QA lead, implementation agent.
 
-Status: Documentation proof implemented under #312. Browser automation remains
-tracked by #309, #310, and #311.
+Status: Documentation proof implemented under #312. Controls/audit/RBAC browser
+automation is implemented under #309; AI finance workflow and live ops browser
+proof remain tracked by #310 and #311.
 
 Preconditions:
 
 - First-slice enterprise issues #279-#301 are complete.
-- Third-wave proof issues #309, #310, #311, and #312 exist under parent #278.
+- Third-wave proof issues #309, #310, #311, and #312 exist under parent #278,
+  with #309 completed as the controls/audit/RBAC browser proof.
 
 Steps:
 
@@ -111,8 +122,9 @@ Steps:
    name internal tools.
 5. For each major workflow, confirm the guide links to at least one scenario ID
    or launch/test guide.
-6. Confirm the residual automation/proof backlog is explicit: #309 for
-   controls/audit/RBAC, #310 for AI finance workflows, and #311 for live ops.
+6. Confirm the automation/proof map is explicit: #309 completed for
+   controls/audit/RBAC, #310 remaining for AI finance workflows, and #311
+   remaining for live ops.
 
 Expected result:
 
@@ -164,6 +176,9 @@ Negative path:
 Evidence:
 
 - Inbox card, policy decision, agent/tool ledger, created record, audit event.
+- Automated proof: #309 verifies the owner-required Inbox card is visible to a
+  manager, the manager approval control stays disabled, and backend contract
+  tests enforce approval-policy routing.
 
 ## ENT-CTRL-002 - Unauthorized Approval Denial
 
@@ -183,6 +198,11 @@ Expected result:
 - Task remains open and assigned to the correct review lane.
 - Denied attempt is safe to audit when the audit slice is implemented.
 
+Automated proof:
+
+- #309 verifies the browser-disabled approval path for under-privileged users
+  and pairs it with backend Inbox/API contract tests for 403 denial.
+
 ## ENT-CTRL-003 - Tenant Approval Policy Configuration
 
 Persona: Admin configuring finance controls.
@@ -191,7 +211,8 @@ Status: First slice implemented. Settings exposes an Approval Policy Matrix,
 `GET /api/v1/approval-policy/effective` returns tenant policy with system
 defaults, `PUT /api/v1/approval-policy/default` lets Admin/Owner users raise
 supported review roles, and Inbox policy metadata/enforcement uses tenant
-overrides while preserving safe default floors.
+overrides while preserving safe default floors. #309 adds browser/API proof for
+Settings visibility, persisted policy shape, and owner-threshold Inbox routing.
 
 Steps:
 
@@ -220,7 +241,8 @@ Persona: Controller approving an AI-created draft.
 
 Status: First slice implemented. Inbox approve/reject/approval-denial paths
 append `financial_events` records, and Inbox Done/All status views display the
-recent decision timeline. Browser automation is still pending.
+recent decision timeline. #309 adds browser/API proof for resolved Inbox
+decision history.
 
 Steps:
 
@@ -253,7 +275,7 @@ Persona: AP Lead correcting an extracted vendor invoice.
 
 Status: First slice implemented. Approve-with-edits writes before/after safe
 summaries and hashes to the immutable financial event ledger. Browser
-automation is still pending.
+proof for before/after decision summaries is automated in #309.
 
 Steps:
 
@@ -282,7 +304,8 @@ Status: First slice implemented. HITL decision events are now projected onto
 materialized business records and exposed through a viewer-accessible
 record-scoped API. Bill, invoice, engagement, bill-payment batch, journal,
 month-end close, and source-document surfaces render a reusable decision
-timeline when events exist. Playwright automation is still pending.
+timeline when events exist. #309 adds browser/API proof for bill decision
+timeline visibility from outside Inbox.
 
 Steps:
 
@@ -319,7 +342,8 @@ Status: First slice implemented. Current `viewer` role maps to auditor/read-only
 personas; API tests prove read-only access to reports, bills/procurement, and
 Inbox while denying mutating finance actions. Bills/AP UI disables create,
 approval, conversion, and Pay Bills entry actions for read-only users. Browser
-automation is still pending.
+proof for Settings, Inbox, and Bill-detail read-only behavior is automated in
+#309; broader page-by-page viewer regression remains future depth.
 
 Steps:
 
@@ -352,8 +376,9 @@ finance-persona catalog at `GET /api/v1/tenants/finance-personas`, maps
 product-facing finance labels onto existing enforced roles, and unit/API tests
 prove the mapping does not add new permissions. Settings now shows Finance role
 personas under Approval Controls and highlights the personas compatible with the
-current tenant role. Full browser automation across every persona remains
-pending.
+current tenant role. #309 adds browser/API proof for Owner/Admin, Manager, and
+Viewer paths; full browser automation across every finance persona remains
+future depth.
 
 Steps:
 
