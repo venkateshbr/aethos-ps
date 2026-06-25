@@ -98,6 +98,10 @@ def test_tool_registry_classifies_copilot_tools() -> None:
     assert risk_class_for_tool("copilot_agent", "log_time_entry") == "write_low_risk"
     assert risk_class_for_tool("copilot_agent", "update_rate_card") == "write_money_in"
     assert risk_class_for_tool("copilot_agent", "prepare_month_end_close") == "accounting"
+    assert risk_class_for_tool("copilot_agent", "prepare_year_end_close") == "accounting"
+    assert action_type_for_tool("copilot_agent", "prepare_year_end_close") == (
+        "copilot_prepare_year_end_close"
+    )
     assert risk_class_for_tool("copilot_agent", "unknown_tool") == "draft"
     assert risk_class_for_action("copilot_agent", "default") == "accounting"
 

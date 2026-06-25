@@ -494,6 +494,7 @@ class InboxService:
             "copilot_update_rate_card",
             "copilot_draft_invoice",
             "copilot_prepare_month_end_close",
+            "copilot_prepare_year_end_close",
             "copilot_create_finance_ops_action_plan",
             "finance_ops_action_item",
         ):
@@ -540,6 +541,7 @@ class InboxService:
             "update_rate_card",
             "draft_invoice",
             "prepare_month_end_close",
+            "prepare_year_end_close",
             "create_finance_ops_action_plan",
         ):
             raise HTTPException(
@@ -582,6 +584,11 @@ class InboxService:
             return {"entity_type": "invoice", "entity_id": result.get("invoice_id")}
         if tool_name == "prepare_month_end_close":
             return {"entity_type": "month_end_close", "entity_id": result.get("period")}
+        if tool_name == "prepare_year_end_close":
+            return {
+                "entity_type": "year_end_close",
+                "entity_id": result.get("journal_entry_id") or result.get("period"),
+            }
         return {"entity_type": "rate_card", "entity_id": result.get("rate_card_line_id")}
 
     async def _materialise_finance_ops_action_plan(self, payload: dict) -> dict:
@@ -671,6 +678,15 @@ class InboxService:
                     return {
                         "error": "Close Plan Item dispatch requires a period.",
                     }
+            elif tool_name == "prepare_year_end_close":
+                if not tool_input.get("year"):
+                    year = str(payload.get("year") or period[:4]).strip()
+                    if year:
+                        tool_input["year"] = year
+                if not tool_input.get("year"):
+                    return {
+                        "error": "Year-end close Plan Item dispatch requires a year.",
+                    }
             elif tool_name == "draft_invoice":
                 invoice_input = InboxService._finance_ops_invoice_dispatch_input(
                     payload,
@@ -701,6 +717,16 @@ class InboxService:
             return {
                 "tool_name": "propose_bill_payment_batch",
                 "tool_input": {"due_within_days": 7},
+            }
+        if suggested_tool == "prepare_year_end_close":
+            year = str(payload.get("year") or period[:4]).strip()
+            if not year:
+                return {
+                    "error": "Year-end close Plan Item dispatch requires a year.",
+                }
+            return {
+                "tool_name": "prepare_year_end_close",
+                "tool_input": {"year": year},
             }
         if suggested_tool == "prepare_month_end_close" or domain == "close":
             if not period:
@@ -879,6 +905,8 @@ class InboxService:
             return "draft_collection_reminders"
         if suggested_tool == "propose_bill_payment_batch" or domain == "ap":
             return "propose_bill_payment_batch"
+        if suggested_tool == "prepare_year_end_close":
+            return "prepare_year_end_close"
         if suggested_tool == "prepare_month_end_close" or domain == "close":
             return "prepare_month_end_close"
         if suggested_tool == "draft_invoice" or domain == "wip":
@@ -892,6 +920,9 @@ class InboxService:
             return {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"}
         if dispatch_tool == "propose_bill_payment_batch":
             return {"due_within_days": 7}
+        if dispatch_tool == "prepare_year_end_close":
+            year = str(item.get("year") or period[:4]).strip()
+            return {"year": year} if year else {}
         if dispatch_tool == "prepare_month_end_close":
             return {"period": period}
         if dispatch_tool == "draft_invoice":

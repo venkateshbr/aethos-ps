@@ -507,6 +507,7 @@ def test_finance_ops_tools_registered():
     assert "draft_collection_reminders" in tool_names
     assert "propose_bill_payment_batch" in tool_names
     assert "prepare_month_end_close" in tool_names
+    assert "prepare_year_end_close" in tool_names
     assert "generate_financial_statement_package" in tool_names
 
 
@@ -520,6 +521,7 @@ def test_finance_ops_tool_schemas():
     collections_schema = tools["draft_collection_reminders"]["input_schema"]
     bill_pay_schema = tools["propose_bill_payment_batch"]["input_schema"]
     close_schema = tools["prepare_month_end_close"]["input_schema"]
+    year_end_close_schema = tools["prepare_year_end_close"]["input_schema"]
     statements_schema = tools["generate_financial_statement_package"]["input_schema"]
 
     assert "period" in command_center_schema["properties"]
@@ -541,6 +543,8 @@ def test_finance_ops_tool_schemas():
     assert "bank_account_label" in bill_pay_schema["properties"]
     assert close_schema["required"] == ["period"]
     assert "period" in close_schema["properties"]
+    assert year_end_close_schema["required"] == ["year"]
+    assert "year" in year_end_close_schema["properties"]
     assert statements_schema["required"] == ["period_start"]
     assert "period_end" in statements_schema["properties"]
 
@@ -556,6 +560,8 @@ def test_system_prompt_mentions_finance_ops_tools():
     assert "collections reminders" in prompt
     assert "bill pay" in prompt or "payment batch" in prompt
     assert "month-end close" in prompt
+    assert "year-end close" in prompt
+    assert "retained earnings" in prompt
     assert "financial statement" in prompt
 
 
@@ -601,6 +607,7 @@ def test_execute_tool_dispatches_finance_ops_tools():
     assert "draft_collection_reminders" in source
     assert "propose_bill_payment_batch" in source
     assert "prepare_month_end_close" in source
+    assert "prepare_year_end_close" in source
     assert "generate_financial_statement_package" in source
 
 
@@ -1068,6 +1075,129 @@ async def test_prepare_month_end_close_execute_runs_workflow():
 
     assert result == {"close_prepared": True, "period": "2026-06"}
     agent._prepare_month_end_close.assert_awaited_once_with({"period": "2026-06"})
+
+
+@pytest.mark.asyncio
+async def test_prepare_year_end_close_execute_runs_workflow():
+    """Direct year-end close execution delegates to the retained-earnings helper."""
+    agent, _db = _make_agent({})
+    agent._prepare_year_end_close = AsyncMock(  # type: ignore[method-assign]
+        return_value={"year_end_close_posted": True, "period": "2026-12"}
+    )
+
+    result = await agent._execute_tool("prepare_year_end_close", {"year": 2026})
+
+    assert result == {"year_end_close_posted": True, "period": "2026-12"}
+    agent._prepare_year_end_close.assert_awaited_once_with({"year": 2026})
+
+
+@pytest.mark.asyncio
+async def test_prepare_year_end_close_posts_after_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Post-approval execution calls the year-end close service."""
+    agent, _db = _make_agent({})
+
+    def _post_year_end_close(self, year: int) -> dict:
+        assert year == 2026
+        return {
+            "year": 2026,
+            "period": "2026-12",
+            "journal_entry_id": "journal-ye-2026",
+            "entry_number": "YE-2026",
+        }
+
+    monkeypatch.setattr(
+        "app.services.year_end_close_service.YearEndCloseService.post_year_end_close",
+        _post_year_end_close,
+    )
+
+    result = await agent._prepare_year_end_close({"year": 2026})
+
+    assert result["year_end_close_posted"] is True
+    assert result["journal_entry_id"] == "journal-ye-2026"
+
+
+@pytest.mark.asyncio
+async def test_year_end_close_review_payload_includes_preview_and_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Year-end close Inbox review shows close evidence before posting."""
+    agent, _db = _make_agent({})
+
+    def _preview(self, year: int) -> dict:
+        assert year == 2026
+        return {
+            "year": 2026,
+            "period": "2026-12",
+            "entry_date": "2026-12-31",
+            "workflow": "year_end_close",
+            "ready_to_post": True,
+            "blocker_count": 0,
+            "blockers": [],
+            "locked_periods": [],
+            "duplicate_journal": None,
+            "pnl_account_count": 2,
+            "closing_accounts": [],
+            "net_income": "400.00",
+            "revenue_closed": "1200.00",
+            "expenses_closed": "800.00",
+            "retained_earnings_direction": "CR",
+            "retained_earnings_amount": "400.00",
+            "retained_earnings_account": {"code": "3000", "name": "Retained Earnings"},
+            "line_count": 3,
+        }
+
+    class _StatementPack:
+        def __init__(self, revenue: str, expenses: str, net_income: str) -> None:
+            self.revenue = revenue
+            self.expenses = expenses
+            self.net_income = net_income
+
+        def model_dump(self, *, mode: str = "python") -> dict:
+            assert mode == "json"
+            return {
+                "income_statement": {
+                    "total_revenue": self.revenue,
+                    "total_expenses": self.expenses,
+                    "net_income": self.net_income,
+                },
+                "cash_flow": {"ending_cash": "250.00"},
+                "retained_earnings_roll_forward": {
+                    "ending_retained_earnings": "900.00"
+                },
+                "balance_sheet": {"is_balanced": True},
+            }
+
+    def _statutory_pack(self, *, period_start: str, period_end: str) -> _StatementPack:
+        assert period_end.endswith("-12")
+        if period_start == "2026-01":
+            return _StatementPack("1200.00", "800.00", "400.00")
+        if period_start == "2025-01":
+            return _StatementPack("1000.00", "700.00", "300.00")
+        raise AssertionError(period_start)
+
+    monkeypatch.setattr(
+        "app.services.year_end_close_service.YearEndCloseService.preview_year_end_close",
+        _preview,
+    )
+    monkeypatch.setattr(
+        "app.services.reports_service.ReportsService.statutory_reporting_pack",
+        _statutory_pack,
+    )
+
+    result = await agent._build_year_end_close_review_payload({"year": 2026})
+
+    assert result["period"] == "2026-12"
+    assert result["preview"]["workflow"] == "year_end_close"
+    assert result["preview"]["ready_to_post"] is True
+    assert result["year_end_close_preview"]["net_income"] == "400.00"
+    comparison = result["comparative_statement_commentary"]
+    assert comparison["available"] is True
+    assert comparison["current_year"] == 2026
+    assert comparison["prior_year"] == 2025
+    assert comparison["variances"]["net_income"] == "100.00"
+    assert comparison["commentary"][0]["evidence"]["current_year"] == 2026
 
 
 @pytest.mark.asyncio
