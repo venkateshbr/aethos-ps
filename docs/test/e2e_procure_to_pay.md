@@ -124,6 +124,20 @@ Pre-conditions:
 - `bills.vendor_invoice_review`: reviewed vendor match, GL coding suggestions, duplicate override, exceptions, and source document evidence
 - `audit_log`: bank file export records the user, timestamp, batch IDs, file checksum
 
+## §6.1 Automated Browser Proof
+
+The #310 browser proof covers a deterministic P2P slice with user-facing
+Copilot prompts:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
+```
+
+Coverage: vendor invoice exception prompt, Inbox AP review evidence, duplicate
+reason approve-with-edits, Bill detail `vendor_invoice_review`, separate
+bill-pay proposal review, and Pay Bills visibility. Deeper PO/service-order
+matching, native bank export formats, and settlement remain broader P2P depth.
+
 ## §7 Performance Budget
 
 | Step | Soft budget |

@@ -45,12 +45,12 @@ agent ledger.
 | ENT-AIOPS-001 | Scheduled Finance Ops Manager run creates reviewed work plan | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Implemented first slice; browser automation pending | #283 |
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Implemented first slice; Playwright automation pending | #295 |
-| ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Implemented first slice; browser automation pending | #284 |
-| ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Implemented first slice; browser automation pending | #284 |
-| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Implemented first slice; Playwright automation pending | #299 |
-| ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Implemented first slice; browser automation pending | #285 |
-| ENT-R2R-002 | Close override requires reason and is audit-visible | Implemented first slice; browser automation pending | #285 |
-| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Implemented first slice; browser automation pending | #300 |
+| ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Browser proof automated in #310 | #284, #310 |
+| ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
+| ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310; deeper PO/service-order matching remains future depth | #299, #310 |
+| ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Browser proof automated in #310 | #285, #310 |
+| ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
+| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310; year-end close remains future depth | #300, #310 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Implemented first slice; Playwright automation pending | #301 |
@@ -65,6 +65,12 @@ Run these when validating the #309 controls, audit, and RBAC proof:
 ```bash
 cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts --project=chromium
 cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py tests/unit/test_inbox_api_contract.py tests/unit/test_financial_events_api_contract.py tests/unit/test_rbac.py -q
+```
+
+Run this when validating the #310 AI finance workflow browser proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
 ```
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
@@ -101,14 +107,15 @@ Automation target:
 Persona: Product owner, finance operator, QA lead, implementation agent.
 
 Status: Documentation proof implemented under #312. Controls/audit/RBAC browser
-automation is implemented under #309; AI finance workflow and live ops browser
-proof remain tracked by #310 and #311.
+automation is implemented under #309, and AI finance workflow browser proof is
+implemented under #310. Live ops browser proof remains tracked by #311.
 
 Preconditions:
 
 - First-slice enterprise issues #279-#301 are complete.
 - Third-wave proof issues #309, #310, #311, and #312 exist under parent #278,
-  with #309 completed as the controls/audit/RBAC browser proof.
+  with #309 completed as the controls/audit/RBAC browser proof and #310
+  completed as the AI finance workflow browser proof.
 
 Steps:
 
@@ -123,7 +130,7 @@ Steps:
 5. For each major workflow, confirm the guide links to at least one scenario ID
    or launch/test guide.
 6. Confirm the automation/proof map is explicit: #309 completed for
-   controls/audit/RBAC, #310 remaining for AI finance workflows, and #311
+   controls/audit/RBAC, #310 completed for AI finance workflows, and #311
    remaining for live ops.
 
 Expected result:
@@ -524,8 +531,10 @@ Status: First slice implemented. Vendor invoice extraction now serializes vendor
 match, GL coding suggestions, match/coding status, and review exceptions into
 the Inbox payload. Approval materializes bills through the Bills service path,
 creates reviewed bill lines, preserves source document linkage, and stores
-`vendor_invoice_review` evidence on the bill. Browser automation is still
-pending.
+`vendor_invoice_review` evidence on the bill. #310 adds browser proof for a
+business-language Copilot prompt, Inbox AP exception review, approve-with-edits
+materialization, Bill detail AP evidence, and the separate payment proposal
+review.
 
 Steps:
 
@@ -549,6 +558,8 @@ Automation target:
   `bills.source_document_id`, and `bills.vendor_invoice_review`.
 - Browser: upload invoice, open Inbox bill task, verify match/coding status and
   exception count, edit coding, approve, then open Bill detail and verify lines.
+- Browser: `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` covers the
+  deterministic #310 proof with mocked API contracts and user-facing prompts.
 
 ## ENT-P2P-002 - Duplicate Or Mismatch Review
 
@@ -558,7 +569,8 @@ Status: First slice implemented. Possible duplicate vendor invoice drafts are
 blocked on approve-as-is. They require approve-with-edits with
 `duplicate_review.approved_duplicate=true` and a reason. PO mismatch validation
 continues to run through the Bills service path during materialization and bill
-approval.
+approval. #310 adds browser proof that duplicate evidence opens the edit drawer,
+captures a reviewer reason, and persists that reason into Bill detail evidence.
 
 Steps:
 
@@ -580,6 +592,8 @@ Automation target:
 - API: approve-with-edits including duplicate override reason materializes the
   bill and persists the duplicate review evidence.
 - Browser: duplicate card displays match/coding exception summary before review.
+- Browser: #310 verifies duplicate card evidence, duplicate reason validation,
+  approve-with-edits, and post-review Bill detail evidence.
 
 ## ENT-P2P-003 - Browser Vendor Invoice Exception Review
 
@@ -590,7 +604,8 @@ evidence including vendor match, duplicate guard, source document, GL coding
 suggestions, project/customer hints, and required correction exceptions. Possible
 duplicates open the edit drawer for a reviewer-entered reason before approval.
 Bill detail shows the preserved `vendor_invoice_review` evidence after
-materialization. Playwright automation is still pending.
+materialization. #310 adds Playwright proof for the AP review card, duplicate
+reason capture, Bill detail evidence, and separate bill-pay proposal review.
 
 Steps:
 
@@ -617,6 +632,9 @@ Automation target:
   evidence and duplicate reason validation, approve with reason, then open Bill
   detail and verify the same evidence appears before selecting the bill for a
   separate payment batch.
+- Browser: #310 uses the business prompt `Process this vendor invoice for Aster
+  Cloud Services...` and asserts that no internal tool name is required in the
+  user prompt.
 
 ## ENT-R2R-001 - Close Evidence Package
 
@@ -625,8 +643,9 @@ Persona: Controller.
 Status: First slice implemented. Close package responses now include
 `readiness_evidence` for AR, AP, WIP, GL, approvals, and overrides. Close status
 also includes unposted journals, incomplete close tasks, and recorded overrides
-so the package and lock guard share the same readiness model. Browser automation
-is still pending.
+so the package and lock guard share the same readiness model. #310 adds browser
+proof for business-language close prep, Inbox close approval, Accounting close
+package evidence, and statement report tie-out.
 
 Steps:
 
@@ -648,6 +667,8 @@ Automation target:
   each area and includes supporting record references.
 - Browser: open Accounting > Journal Entries close package, verify AR/AP/WIP/GL
   metrics and close commentary render without requiring tool names.
+- Browser: `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` covers the
+  deterministic #310 R2R proof with mocked public API contracts.
 
 ## ENT-R2R-002 - Close Override With Reason
 
@@ -657,7 +678,8 @@ Status: First slice implemented. Close overrides are durable rows with blocker
 code, reason, actor, timestamp, and blocker evidence. The period-lock API still
 returns the existing blocker errors unless the matching override is recorded
 or submitted with the lock request. Override evidence is visible in the close
-package.
+package. #310 adds browser proof for recording a named close blocker override
+reason and seeing it persist in the close package.
 
 Steps:
 
@@ -678,8 +700,8 @@ Automation target:
 - API: attempt lock with a short override reason; assert 422.
 - API: attempt lock with a valid `unposted_journals` override; assert period is
   locked and `accounting_close_overrides` contains reason and actor.
-- Browser: record override reason from close review UI once the richer close
-  wizard exists, then verify the close package displays it.
+- Browser: record override reason from close review UI and verify the close
+  package displays the reason, actor role, and approval timeline evidence.
 
 ## ENT-R2R-003 - Close Wizard And Statement Commentary
 
@@ -689,7 +711,8 @@ Status: First slice implemented. The Accounting close package panel now lets
 Admin/Owner users record a blocker-specific override reason, override evidence
 includes actor role, close package commentary carries structured evidence, and
 Copilot financial statement packages include close-readiness warnings plus
-management commentary sourced from the close package.
+management commentary sourced from the close package. #310 adds browser proof
+for statement tabs and Agent Run Ledger evidence after the close workflow.
 
 Steps:
 
@@ -712,6 +735,9 @@ Automation target:
 - API: create a close override and assert `created_by_role` is persisted.
 - Copilot/API: generate financial statements and assert close warnings plus
   evidence-backed commentary are present.
+- Browser: #310 uses the business prompt `Run month-end close readiness for
+  June 2026...` and verifies Reports Balance Sheet, Income Statement, Statutory
+  Pack, and Settings Agent Run Ledger tool evidence.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 

@@ -119,7 +119,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Profile/change password | `/app/profile`, settings account controls | Access pass | Profile renders; change-password form validates current/new/confirm fields where exposed |
 | Payments list | `/app/payments` | 1-4, 7 | Payments page renders and reflects recorded invoice payments where the product exposes payment list data |
 | Multi-tenant isolation | Authenticated app routes | Access pass | Records created in one tenant do not appear in another tenant; direct URLs fail cleanly |
-| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309 is automated and residual proof issues #310 and #311 are linked |
+| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309 and #310 are automated and residual proof issue #311 is linked |
 
 ## Reports Coverage Checklist
 
@@ -542,10 +542,10 @@ Current implementation assessment:
 | Scheduled AI Finance Ops Manager | Implemented first slices in #283 and #295: tenant cadence can be configured through Settings or the Agents API, the hourly worker creates a traceable `scheduled_finance_ops_manager` workflow run, routes a scheduled action plan to Inbox, suppresses duplicate open plans for the same cadence window, and creates separate escalation notices for stale/high-risk Inbox work | Full Playwright automation remains future work; scheduled execution still stops at reviewed plans/escalation notices | #283, #295 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch | Export/send/settlement remain explicit downstream guarded steps | #262 |
-| AI month-end close controller | Implemented and browser-verified in #260, then hardened in #285 and #300: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons | Full browser automation for override entry remains future R2R depth | #260, #285, #300 |
-| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary | Full browser automation for statement commentary review remains future command-center depth | #261, #300 |
+| AI month-end close controller | Implemented and browser-verified in #260, then hardened in #285/#300 and automated in #310: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons | Year-end close and retained-earnings depth remain future R2R work | #260, #285, #300, #310 |
+| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence | Deeper comparative commentary remains future command-center depth | #261, #300, #310 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | Full PO matching/project coding from document remains broader P2P coverage | #264 |
-| AI vendor invoice exceptions | Implemented first slices in #284 and #299: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail now surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence | Full Playwright automation and deeper PO/service-order matching remain future P2P depth; payment remains a separate bill-pay approval flow | #284, #299 |
+| AI vendor invoice exceptions | Implemented first slices in #284/#299 and automated in #310: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence | Deeper PO/service-order matching remains future P2P depth; payment remains a separate bill-pay approval flow | #284, #299, #310 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
@@ -641,7 +641,14 @@ Expected result:
 Implementation status:
 - First exception-review slice implemented. Vendor invoice extraction, bill materialisation, Inbox AP review evidence, duplicate reason capture, and Bill detail review evidence exist.
 - Browser-verified under #264 for Copilot upload, extraction status, Inbox approval, and bill creation with source-document traceability.
-- Remaining launch depth: full browser automation for duplicate/mismatch editing and deeper PO/service-order matching.
+- Browser automation added under #310 for business-language Copilot prompting,
+  duplicate/mismatch edit approval, Bill detail evidence, and separate bill-pay
+  proposal review. Remaining launch depth is deeper PO/service-order matching.
+
+Automation:
+```bash
+cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
+```
 
 Evidence: upload, Inbox review, bill detail, AP Aging/Project P&L.
 
@@ -664,6 +671,8 @@ Expected result:
 
 Implementation status:
 - Implemented and browser-verified under #262. Live evidence covers Copilot proposal, Inbox approval, draft payment batch creation, and Pay Bills UI visibility.
+- Browser automation under #310 covers an AI bill-pay proposal as a separate
+  reviewed Inbox decision after vendor invoice bill creation.
 
 Evidence: Copilot proposal, Inbox task, payment batch, AP Aging before/after.
 
@@ -686,6 +695,9 @@ Expected result:
 
 Implementation status:
 - Implemented and browser-verified under #260. Live evidence covers Copilot close-prep request, Inbox approval, close-task bootstrap, and Accounting Journals close panel visibility.
+- Browser automation under #310 covers business-language close preparation,
+  close Inbox approval, close package evidence, override reason capture, and
+  close approval timeline visibility.
 
 Evidence: Copilot readiness summary, Inbox tasks, posted journal, close package, readiness/lock state.
 
@@ -730,6 +742,9 @@ Expected result:
 
 Implementation status:
 - Implemented and browser-verified under #261. Live evidence covers Copilot statement-package generation and Reports UI cross-checks for Balance Sheet, Income Statement, and Statutory Pack.
+- Browser automation under #310 covers business-language statement commentary
+  generation, Reports tab tie-out, and Agent Run Ledger tool evidence without
+  requiring tool names in the user prompt.
 
 Evidence: Copilot package, report tabs, variance commentary, close readiness status.
 
@@ -818,6 +833,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/timesheet-e2e.spec.ts` | Time, approvals, portal, billing gate supplement | Includes deeper time approval lifecycle; verify whether any API setup is used before counting as browser-only |
 | `frontend/e2e/bills-list.spec.ts` | Bills render/filter supplement | Useful for P2P route regression |
 | `frontend/e2e/p2p-vendor-bill.spec.ts` | P2P render supplement | Covers bills, expenses, pay-bills, Copilot upload entry points |
+| `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` | #310 AI finance workflow proof | Covers business-language Copilot prompts, P2P AP exception review, duplicate reason approval, bill evidence, bill-pay proposal review, R2R close package/override, statement tabs, and Agent Run Ledger evidence |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
 | `frontend/e2e/r2r-reports-render.spec.ts` and `frontend/e2e/trial-balance.spec.ts` | Reports render supplement | Proves report tabs mount; business tie-outs still come from scenarios |
 | `frontend/e2e/engagement-to-cash.spec.ts` | Deep API edge regression | Covers many edge cases, RBAC, FX, idempotency; mark as supplemental unless the step is browser-driven |

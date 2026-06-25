@@ -294,8 +294,9 @@ Invoice intake/coding approval and payment approval are separate guarded steps:
 approving the vendor invoice creates the reviewed bill, while payment still
 requires a bill-pay proposal and payment-batch approval. Remaining enterprise
 P2P depth is planned under later advanced P2P work: deeper PO/service-order
-matching, recurring bills, native bank formats, and full browser automation for
-the exception-review path.
+matching, recurring bills, and native bank formats. Browser automation for the
+AP exception-review path and separate bill-pay proposal review is implemented
+under #310.
 
 Scenario anchors: launch scenarios 5-7 and 9,
 `docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, and
@@ -331,9 +332,9 @@ The Accounting close package panel also lets Admin/Owner users record named
 override reasons for supported blockers and immediately shows those overrides
 in the period evidence.
 
-Remaining enterprise R2R depth after the #285/#300 first slices:
+Remaining enterprise R2R depth after the #285/#300 first slices and #310
+browser proof:
 
-- Full browser automation for the close override flow and statement commentary.
 - Year-end close and retained earnings depth.
 - Manual journal audit enhancements.
 
@@ -471,7 +472,7 @@ The following work is tracked under parent issue #278:
 | #300 | R2R | Close override wizard and statement commentary, first slice implemented |
 | #301 | Ops/Security | Distributed rate limiting, Operational Health dashboard, and safe alert routing, first slice implemented |
 | #309 | QA proof | Browser E2E implemented for controls, audit, and RBAC proof |
-| #310 | QA proof | Browser E2E for AI finance workflows across P2P and R2R |
+| #310 | QA proof | Browser E2E implemented for AI finance workflows across P2P and R2R |
 | #311 | Ops proof | Live distributed limiter, alert, and health-dashboard proof |
 | #312 | Docs and prompts | Full platform guide and prompt-library proof |
 
@@ -479,13 +480,13 @@ The following work is tracked under parent issue #278:
 
 | Guide area | User-facing proof | Automation/proof backlog |
 | --- | --- | --- |
-| Operating model, Copilot, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310, #312 |
+| Operating model, Copilot, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310 automated for P2P/R2R AI finance workflows; #312 docs proof |
 | Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 automated |
 | Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix remains future depth |
-| Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | #310 |
-| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 |
-| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 |
-| Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310, #311 |
+| Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
+| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 automated |
+| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
+| Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 remains for live ops |
 | Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #311 remains for live ops |
 
 ## 13. Documentation And Test Definition Of Done
