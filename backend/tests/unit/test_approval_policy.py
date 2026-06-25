@@ -37,6 +37,32 @@ def test_accounting_task_requires_admin() -> None:
     assert decision.risk_class == "accounting"
 
 
+def test_high_value_manual_journal_uses_threshold_reason() -> None:
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "draft_journal",
+        {"total_debits": "15000.00"},
+    )
+
+    assert decision.required_role == UserRole.admin
+    assert decision.reason == "manual_journal_above_approval_threshold"
+    assert decision.threshold == ApprovalPolicySettings().manual_journal_approval_threshold
+
+
+def test_manual_journal_amount_can_be_derived_from_lines() -> None:
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "draft_journal",
+        {
+            "lines": [
+                {"direction": "DR", "amount": "12000.00"},
+                {"direction": "CR", "amount": "12000.00"},
+            ]
+        },
+    )
+
+    assert decision.amount == 12000
+    assert decision.reason == "manual_journal_above_approval_threshold"
+
+
 def test_year_end_close_task_requires_admin() -> None:
     decision = ApprovalPolicyMatrix.decision_for_task(
         "copilot_prepare_year_end_close",
@@ -82,3 +108,8 @@ def test_tenant_policy_can_raise_external_send_to_admin() -> None:
 def test_tenant_policy_cannot_lower_money_out_below_admin() -> None:
     with pytest.raises(ValueError, match="money_out_default_role"):
         ApprovalPolicySettings(money_out_default_role=UserRole.manager)
+
+
+def test_tenant_policy_rejects_negative_manual_journal_threshold() -> None:
+    with pytest.raises(ValueError, match="manual_journal_approval_threshold"):
+        ApprovalPolicySettings(manual_journal_approval_threshold=-1)

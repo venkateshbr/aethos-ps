@@ -85,6 +85,9 @@ def _row_to_response(row: dict) -> ApprovalPolicyResponse:
         money_out_owner_threshold=row.get("money_out_owner_threshold") or "50000",
         money_out_owner_role=row.get("money_out_owner_role") or "owner",
         accounting_role=row.get("accounting_role") or "admin",
+        manual_journal_approval_threshold=(
+            row.get("manual_journal_approval_threshold") or "10000"
+        ),
         money_in_role=row.get("money_in_role") or "manager",
         draft_role=row.get("draft_role") or "manager",
         external_send_role=row.get("external_send_role") or "manager",
@@ -108,6 +111,7 @@ def _settings_to_response(
         money_out_owner_threshold=settings.money_out_owner_threshold,
         money_out_owner_role=settings.money_out_owner_role.value,
         accounting_role=settings.accounting_role.value,
+        manual_journal_approval_threshold=settings.manual_journal_approval_threshold,
         money_in_role=settings.money_in_role.value,
         draft_role=settings.draft_role.value,
         external_send_role=settings.external_send_role.value,

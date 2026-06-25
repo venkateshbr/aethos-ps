@@ -68,7 +68,7 @@ assertions.
 | Variance explanation | `Explain material variances in June 2026 financial statements versus May 2026 and recommend next actions. Do not post journals or lock the period without approval.` |
 | Close package tie-out | `Tie the June 2026 close package to AR Aging, AP Aging, WIP, Trial Balance, unposted journals, close tasks, and recorded override reasons. Show what is ready and what still needs review.` |
 | Manual journal review | `Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, and approval role. Do not post it without Inbox approval.` |
-| Manual journal evidence | `Prepare a manual journal packet for this adjustment. Include the business reason, supporting source records, debit and credit accounts, amount, period-lock status, and whether Inbox approval is required before posting.` |
+| Manual journal evidence | `Prepare a manual journal packet for this adjustment. Include the business reason, supporting source records, debit and credit accounts, total debit amount, period-lock status, manual-journal approval threshold, required Accounting approver role, and whether Inbox approval is required before posting.` |
 
 ## Audit And Controls
 

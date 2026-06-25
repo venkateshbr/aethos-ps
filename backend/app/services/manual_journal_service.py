@@ -22,9 +22,12 @@ from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
 from app.models.accounting import (
     JournalEntryListItem,
+    ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
 )
+from app.services.approval_policy import ApprovalPolicyMatrix
+from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
 from app.services.period_lock_service import assert_period_open
 from supabase import Client
 
@@ -46,6 +49,23 @@ class ManualJournalService:
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.actor_role = actor_role
+
+    async def submit_manual_journal(
+        self, payload: ManualJournalEntryIn
+    ) -> ManualJournalEntryResponse | ManualJournalApprovalTaskResponse:
+        """Post immediately or route a high-value manual journal to Inbox."""
+        total_debits = self._payload_total_debits(payload)
+        policy = await ApprovalPolicySettingsService(
+            self.db,
+            self.tenant_id,
+        ).get_runtime_settings()
+        if total_debits >= policy.manual_journal_approval_threshold:
+            return await self._create_manual_journal_approval_task(
+                payload=payload,
+                total_debits=total_debits,
+                threshold=policy.manual_journal_approval_threshold,
+            )
+        return await self.post_manual_journal(payload)
 
     async def post_manual_journal(
         self, payload: ManualJournalEntryIn
@@ -188,6 +208,95 @@ class ManualJournalService:
             for r in rows
         ]
 
+    async def _create_manual_journal_approval_task(
+        self,
+        *,
+        payload: ManualJournalEntryIn,
+        total_debits: Decimal,
+        threshold: Decimal,
+    ) -> ManualJournalApprovalTaskResponse:
+        """Create the review task for an over-threshold manual journal."""
+        journal_payload = payload.model_dump(mode="json")
+        journal_payload["total_debits"] = serialise_money(total_debits)
+        journal_payload["manual_journal_approval"] = {
+            "source": "manual_journal_threshold",
+            "submitted_by": self.user_id,
+            "submitted_by_role": self.actor_role,
+            "threshold": serialise_money(threshold),
+        }
+        decision = ApprovalPolicyMatrix.decision_for_task(
+            "draft_journal",
+            journal_payload,
+            settings=await ApprovalPolicySettingsService(
+                self.db,
+                self.tenant_id,
+            ).get_runtime_settings(),
+        )
+
+        def _insert_task() -> tuple[str | None, str | None]:
+            suggestion_rows = (
+                self.db.table("agent_suggestions")
+                .insert(
+                    {
+                        "tenant_id": self.tenant_id,
+                        "agent_name": "manual_journal_service",
+                        "action_type": "draft_journal",
+                        "input_snapshot": {
+                            "source": "manual_journal_threshold",
+                            "submitted_by": self.user_id,
+                        },
+                        "output_snapshot": journal_payload,
+                        "confidence": "1.00",
+                        "status": "pending",
+                        "hitl_required": True,
+                    }
+                )
+                .execute()
+                .data
+                or []
+            )
+            suggestion_id = suggestion_rows[0].get("id") if suggestion_rows else None
+            task_rows = (
+                self.db.table("hitl_tasks")
+                .insert(
+                    {
+                        "tenant_id": self.tenant_id,
+                        "agent_suggestion_id": suggestion_id,
+                        "kind": "draft_journal",
+                        "priority": "high",
+                        "title": f"Review high-value manual journal: {payload.description}",
+                        "description": (
+                            f"Manual journal debit total {serialise_money(total_debits)} "
+                            f"meets or exceeds threshold {serialise_money(threshold)}. "
+                            "Review before posting to the general ledger."
+                        ),
+                        "payload": journal_payload,
+                        "status": "open",
+                    }
+                )
+                .execute()
+                .data
+                or []
+            )
+            task_id = task_rows[0].get("id") if task_rows else None
+            return (
+                str(suggestion_id) if suggestion_id is not None else None,
+                str(task_id) if task_id is not None else None,
+            )
+
+        suggestion_id, task_id = await asyncio.to_thread(_insert_task)
+        return ManualJournalApprovalTaskResponse(
+            task_id=task_id,
+            suggestion_id=suggestion_id,
+            required_approval_role=decision.required_role.value,
+            approval_policy_reason=decision.reason,
+            total_debits=serialise_money(total_debits) or "0.00",
+            threshold=serialise_money(threshold) or "0.00",
+            message=(
+                "Manual journal routed to Inbox for approval before posting."
+            ),
+        )
+
     async def _append_manual_journal_event(
         self,
         *,
@@ -241,3 +350,7 @@ class ManualJournalService:
                 },
             ).execute()
         )
+
+    @staticmethod
+    def _payload_total_debits(payload: ManualJournalEntryIn) -> Decimal:
+        return sum(line.amount for line in payload.lines if line.direction == "DR")

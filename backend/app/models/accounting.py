@@ -124,6 +124,19 @@ class ManualJournalEntryResponse(BaseModel):
         )
 
 
+class ManualJournalApprovalTaskResponse(BaseModel):
+    """Response for a manual journal routed to Inbox approval instead of posting."""
+
+    status: Literal["pending_approval"] = "pending_approval"
+    task_id: str | None = None
+    suggestion_id: str | None = None
+    required_approval_role: str
+    approval_policy_reason: str
+    total_debits: str
+    threshold: str
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Journal Entry list item (used by GET /journal-entries)
 # ---------------------------------------------------------------------------

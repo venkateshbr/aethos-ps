@@ -50,6 +50,19 @@ interface JournalEntry {
   lines?: JournalLine[];
 }
 
+interface ManualJournalPendingApproval {
+  status: 'pending_approval';
+  task_id?: string | null;
+  suggestion_id?: string | null;
+  required_approval_role: string;
+  approval_policy_reason: string;
+  total_debits: string;
+  threshold: string;
+  message: string;
+}
+
+type ManualJournalSubmitResponse = JournalEntry | ManualJournalPendingApproval;
+
 interface Account {
   id: string;
   code: string;
@@ -238,6 +251,12 @@ function yearEndCloseErrorMessage(err: unknown): string | null {
   }
   if (detail?.message) return detail.message;
   return null;
+}
+
+function isManualJournalPendingApproval(
+  response: ManualJournalSubmitResponse,
+): response is ManualJournalPendingApproval {
+  return 'status' in response && response.status === 'pending_approval';
 }
 
 // ─── Filter type ──────────────────────────────────────────────────────────────
@@ -1727,8 +1746,17 @@ export class JournalEntriesListComponent implements OnInit {
       })),
     };
 
-    this.http.post<JournalEntry>('/api/v1/accounting/journal-entries', payload).subscribe({
+    this.http.post<ManualJournalSubmitResponse>('/api/v1/accounting/journal-entries', payload).subscribe({
       next: (created) => {
+        if (isManualJournalPendingApproval(created)) {
+          this.submitting.set(false);
+          this.closeForm();
+          this.successToast.set(
+            `Manual journal routed to Inbox for ${created.required_approval_role} approval.`,
+          );
+          setTimeout(() => this.successToast.set(null), 5000);
+          return;
+        }
         this.entries.update(list => [created, ...list]);
         this.submitting.set(false);
         this.closeForm();

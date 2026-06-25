@@ -15,6 +15,7 @@ interface ApprovalPolicy {
   money_out_owner_threshold: string;
   money_out_owner_role: ApprovalRole;
   accounting_role: ApprovalRole;
+  manual_journal_approval_threshold: string;
   money_in_role: ApprovalRole;
   draft_role: ApprovalRole;
   external_send_role: ApprovalRole;
@@ -109,6 +110,17 @@ const ADMIN_OWNER_OPTIONS = ROLE_OPTIONS.filter(option => option.value !== 'mana
                   <option [value]="option.value">{{ option.label }}</option>
                 }
               </select>
+            </label>
+
+            <label class="block">
+              <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">Manual journal threshold</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                formControlName="manual_journal_approval_threshold"
+                class="w-full rounded border border-border-default bg-surface-base px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
             </label>
 
             <label class="block">
@@ -229,6 +241,7 @@ export class ApprovalPolicyComponent implements OnInit {
     money_out_owner_threshold: [50000, [Validators.required, Validators.min(0)]],
     money_out_owner_role: ['owner' as ApprovalRole, [Validators.required]],
     accounting_role: ['admin' as ApprovalRole, [Validators.required]],
+    manual_journal_approval_threshold: [10000, [Validators.required, Validators.min(0)]],
     money_in_role: ['manager' as ApprovalRole, [Validators.required]],
     draft_role: ['manager' as ApprovalRole, [Validators.required]],
     external_send_role: ['manager' as ApprovalRole, [Validators.required]],
@@ -267,6 +280,9 @@ export class ApprovalPolicyComponent implements OnInit {
       money_out_owner_threshold: String(Number(value.money_out_owner_threshold)),
       money_out_owner_role: value.money_out_owner_role,
       accounting_role: value.accounting_role,
+      manual_journal_approval_threshold: String(
+        Number(value.manual_journal_approval_threshold),
+      ),
       money_in_role: value.money_in_role,
       draft_role: value.draft_role,
       external_send_role: value.external_send_role,
@@ -306,6 +322,7 @@ export class ApprovalPolicyComponent implements OnInit {
       money_out_owner_threshold: Number(policy.money_out_owner_threshold),
       money_out_owner_role: policy.money_out_owner_role,
       accounting_role: policy.accounting_role,
+      manual_journal_approval_threshold: Number(policy.manual_journal_approval_threshold),
       money_in_role: policy.money_in_role,
       draft_role: policy.draft_role,
       external_send_role: policy.external_send_role,

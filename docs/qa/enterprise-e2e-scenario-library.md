@@ -57,6 +57,7 @@ agent ledger.
 | ENT-R2R-005 | AI year-end close routes retained-earnings posting through Inbox | API/agent proof automated in #329 | #329 |
 | ENT-R2R-006 | AI financial statement package includes comparative variance commentary | API/agent proof automated in #331 | #331 |
 | ENT-R2R-007 | Manual journal requires business reason and emits audit evidence | API/UI proof implemented in #333 | #333 |
+| ENT-R2R-008 | High-value manual journal routes to Inbox approval | API/UI proof implemented in #335 | #335 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -116,6 +117,14 @@ cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit
 cd frontend && npx tsc -p tsconfig.spec.json --noEmit
 ```
 
+Run these when validating the #335 manual journal threshold approval proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py tests/unit/test_approval_policy.py tests/unit/test_approval_policy_api_contract.py -q
+cd frontend && npx ng test --watch=false --include src/app/features/settings/approval-policy.component.spec.ts
+cd frontend && npx tsc -p tsconfig.spec.json --noEmit
+```
+
 Run these when validating the #311 operational health and distributed limiter proof:
 
 ```bash
@@ -148,6 +157,34 @@ Expected result:
 - `financial_events` contains `manual_journal.posted` with reason, actor role, line count, and debit total metadata.
 - Missing or short reason is rejected with a non-500 validation error.
 - AI draft journals approved from Inbox derive a reason from proposal context if older payloads do not include one.
+
+## ENT-R2R-008 - Manual Journal Threshold Approval
+
+Persona: Finance Ops Manager, Controller, Admin/Owner approver.
+
+Preconditions:
+
+- Approval Policy Settings has a manual-journal threshold, default `10000.00`.
+- Accounting required role is Admin or Owner.
+- Current period is open and chart of accounts has valid debit/credit accounts.
+
+Steps:
+
+1. Open `/app/settings` and set the manual-journal threshold to a value below the test journal amount.
+2. Open `/app/accounting/journals`.
+3. Submit a balanced manual journal with a business reason and total debits at or above the threshold.
+4. Verify the Accounting UI shows a pending-approval success state and does not append a posted journal row.
+5. Open `/app/inbox` as the required Accounting approver role.
+6. Approve the manual-journal review task.
+7. Return to `/app/accounting/journals` and verify the journal appears exactly once with reason and audit timeline.
+
+Expected result:
+
+- Direct submission creates `agent_suggestions` + `hitl_tasks` review rows with kind `draft_journal`.
+- The pending task shows required Accounting approval role and threshold metadata.
+- Approval materializes through `ManualJournalService.post_manual_journal`, not a duplicate direct-post path.
+- `manual_journal.posted` financial-event evidence is written after approval.
+- Under-threshold journals continue to post immediately through the guarded direct path.
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 

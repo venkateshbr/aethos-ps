@@ -100,7 +100,7 @@ Human-in-control, AI-doing-the-work.
 | Cash Flow Statement | Not implemented | Missing |
 | Financial Close Process | No structured close flow | Missing |
 | Year-End Close entries | Not implemented | Missing |
-| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333 | Incomplete — no approval threshold, reversal workflow, or full state-change log |
+| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335 | Incomplete — no reversal workflow or full state-change log |
 | Retained Earnings account | Not seeded | Missing — must be seeded at tenant creation |
 
 ---
@@ -424,9 +424,11 @@ Then net Income Summary balance:
 Implementation note 2026-06-25: #333 implements the first audit slice:
 `journal_entries.reason`, required service/API/UI reason capture for manual
 journals, immutable `manual_journal.posted` financial-event evidence, and Inbox
-compatibility for older AI draft-journal proposals. Threshold approval,
-rejection workflow, reversal workflow, and full state-transition audit remain
-future slices.
+compatibility for older AI draft-journal proposals. #335 implements tenant
+manual-journal threshold approval: over-threshold direct submissions create
+Inbox `draft_journal` tasks, and approval posts once through the same
+guardian/audit path. Rejection workflow, reversal workflow, and full
+state-transition audit remain future slices.
 
 ### 9.1 User Stories
 
