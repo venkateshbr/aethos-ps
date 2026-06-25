@@ -18,6 +18,7 @@ Use these rules for every scenario:
 6. For every negative test, verify the UI blocks invalid submission with a visible message or returns a non-500 failure that is shown to the user.
 7. Record the exact route, role, expected result, actual result, and evidence path for every discrepancy.
 8. Treat console errors, HTTP 500s, broken loading states, missing empty states, and silent failures as launch gaps.
+9. When a scenario uses Copilot, write the prompt in business language first. Internal tool names may be used only in QA fixtures or ledger assertions.
 
 ## Test Roles And Access Coverage
 
@@ -118,6 +119,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Profile/change password | `/app/profile`, settings account controls | Access pass | Profile renders; change-password form validates current/new/confirm fields where exposed |
 | Payments list | `/app/payments` | 1-4, 7 | Payments page renders and reflects recorded invoice payments where the product exposes payment list data |
 | Multi-tenant isolation | Authenticated app routes | Access pass | Records created in one tenant do not appear in another tenant; direct URLs fail cleanly |
+| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; residual proof issues #309, #310, and #311 are linked |
 
 ## Reports Coverage Checklist
 
