@@ -42,6 +42,46 @@ class ClosingAccount:
     balance: Decimal
 
 
+@dataclass(frozen=True)
+class YearEndCloseContext:
+    year: int
+    start_period: str
+    end_period: str
+    entry_date: str
+    locked_periods: list[str]
+    duplicate: dict[str, Any] | None
+    retained_earnings: dict[str, Any] | None
+    closing_accounts: list[ClosingAccount]
+
+    @property
+    def net_income(self) -> Decimal:
+        return _net_income(self.closing_accounts)
+
+    @property
+    def revenue_closed(self) -> Decimal:
+        return sum(
+            row.balance for row in self.closing_accounts if row.account_type == "revenue"
+        )
+
+    @property
+    def expenses_closed(self) -> Decimal:
+        return sum(
+            row.balance for row in self.closing_accounts if row.account_type == "expense"
+        )
+
+    @property
+    def retained_direction(self) -> str | None:
+        if self.net_income > Decimal("0"):
+            return "CR"
+        if self.net_income < Decimal("0"):
+            return "DR"
+        return None
+
+    @property
+    def retained_amount(self) -> Decimal:
+        return abs(self.net_income)
+
+
 class YearEndCloseService:
     """Prepare and post the annual closing journal for a tenant."""
 
@@ -50,72 +90,33 @@ class YearEndCloseService:
         self.tenant_id = tenant_id
         self.user_id = user_id
 
+    def preview_year_end_close(self, year: int) -> dict[str, Any]:
+        """Return review evidence for year-end close without posting a journal."""
+        context = self._context(year)
+        return self._preview_payload(context)
+
     def post_year_end_close(self, year: int) -> dict[str, Any]:
         """Post the year-end close journal for ``year``.
 
         The journal zeros posted revenue and expense balances for January
         through December and offsets the net result to Retained Earnings.
         """
-        start_period = f"{year}-01"
-        end_period = f"{year}-12"
-        entry_date = date(year, 12, 31).isoformat()
+        context = self._context(year)
+        self._raise_for_blocker(context)
 
-        locked_periods = self._locked_periods(start_period, end_period)
-        if locked_periods:
-            raise YearEndCloseError(
-                "year_end_close_period_locked",
-                "Unlock the fiscal-year periods before posting year-end close.",
-                status_code=409,
-                detail={"year": year, "locked_periods": locked_periods},
-            )
-
-        duplicate = self._existing_close(end_period)
-        if duplicate is not None:
-            raise YearEndCloseError(
-                "year_end_close_already_posted",
-                f"Year-end close for {year} is already posted.",
-                status_code=409,
-                detail={
-                    "year": year,
-                    "journal_entry_id": str(duplicate.get("id")),
-                    "entry_number": str(duplicate.get("entry_number") or ""),
-                },
-            )
-
-        retained_earnings = self._retained_earnings_account()
+        retained_earnings = context.retained_earnings
         if retained_earnings is None:
-            raise YearEndCloseError(
-                "retained_earnings_account_missing",
-                "Retained Earnings account is not configured for this tenant.",
-                detail={"year": year, "expected_code": "3000"},
-            )
-
-        closing_accounts = self._pnl_balances(start_period, end_period)
-        if not closing_accounts:
-            raise YearEndCloseError(
-                "year_end_close_no_activity",
-                "No posted revenue or expense activity exists for this fiscal year.",
-                detail={"year": year},
-            )
-
-        lines = self._closing_lines(closing_accounts)
-        net_income = _net_income(closing_accounts)
-        retained_direction: str | None = None
-        retained_amount = abs(net_income)
-        if net_income > Decimal("0"):
-            retained_direction = "CR"
-        elif net_income < Decimal("0"):
-            retained_direction = "DR"
-
-        if retained_direction is not None:
+            raise AssertionError("retained earnings account unexpectedly missing")
+        lines = self._closing_lines(context.closing_accounts)
+        if context.retained_direction is not None:
             lines.append(
                 JournalLineSpec(
-                    direction=retained_direction,
+                    direction=context.retained_direction,
                     account_code=str(retained_earnings["code"]),
                     account_id=str(retained_earnings["id"]),
-                    amount=retained_amount,
-                    base_amount=retained_amount,
-                    description=f"Roll {year} net income to retained earnings",
+                    amount=context.retained_amount,
+                    base_amount=context.retained_amount,
+                    description=f"Roll {context.year} net income to retained earnings",
                 )
             )
 
@@ -123,37 +124,159 @@ class YearEndCloseService:
             db=self.db,
             tenant_id=self.tenant_id,
             created_by=self.user_id,
-            description=f"Year-end close {year}: roll P&L to retained earnings",
-            entry_date=entry_date,
+            description=f"Year-end close {context.year}: roll P&L to retained earnings",
+            entry_date=context.entry_date,
             reference_type="year_end_close",
             reference_id=None,  # type: ignore[arg-type]
-            entry_number=f"YE-{year}",
+            entry_number=f"YE-{context.year}",
             lines=lines,
         )
 
         return {
-            "year": year,
-            "period": end_period,
-            "entry_date": entry_date,
+            "year": context.year,
+            "period": context.end_period,
+            "entry_date": context.entry_date,
             "journal_entry_id": str(journal["id"]),
-            "entry_number": str(journal.get("entry_number") or f"YE-{year}"),
+            "entry_number": str(journal.get("entry_number") or f"YE-{context.year}"),
             "posted_at": str(journal.get("posted_at") or ""),
-            "net_income": serialise_money(net_income),
-            "retained_earnings_direction": retained_direction,
-            "retained_earnings_amount": serialise_money(retained_amount),
+            "net_income": serialise_money(context.net_income),
+            "retained_earnings_direction": context.retained_direction,
+            "retained_earnings_amount": serialise_money(context.retained_amount),
             "retained_earnings_account": {
                 "id": str(retained_earnings["id"]),
                 "code": str(retained_earnings["code"]),
                 "name": str(retained_earnings["name"]),
             },
-            "revenue_closed": serialise_money(
-                sum(row.balance for row in closing_accounts if row.account_type == "revenue")
-            ),
-            "expenses_closed": serialise_money(
-                sum(row.balance for row in closing_accounts if row.account_type == "expense")
-            ),
+            "revenue_closed": serialise_money(context.revenue_closed),
+            "expenses_closed": serialise_money(context.expenses_closed),
             "line_count": len(lines),
         }
+
+    def _context(self, year: int) -> YearEndCloseContext:
+        start_period = f"{year}-01"
+        end_period = f"{year}-12"
+        return YearEndCloseContext(
+            year=year,
+            start_period=start_period,
+            end_period=end_period,
+            entry_date=date(year, 12, 31).isoformat(),
+            locked_periods=self._locked_periods(start_period, end_period),
+            duplicate=self._existing_close(end_period),
+            retained_earnings=self._retained_earnings_account(),
+            closing_accounts=self._pnl_balances(start_period, end_period),
+        )
+
+    def _preview_payload(self, context: YearEndCloseContext) -> dict[str, Any]:
+        blockers = self._blockers(context)
+        retained_earnings = context.retained_earnings
+        closing_line_count = len(context.closing_accounts)
+        retained_line_count = 1 if context.retained_direction is not None else 0
+
+        return {
+            "year": context.year,
+            "period": context.end_period,
+            "entry_date": context.entry_date,
+            "workflow": "year_end_close",
+            "ready_to_post": not blockers,
+            "blocker_count": len(blockers),
+            "blockers": blockers,
+            "locked_periods": context.locked_periods,
+            "duplicate_journal": _duplicate_preview(context.duplicate),
+            "pnl_account_count": len(context.closing_accounts),
+            "closing_accounts": [
+                {
+                    "id": account.id,
+                    "code": account.code,
+                    "name": account.name,
+                    "account_type": account.account_type,
+                    "balance": serialise_money(account.balance),
+                }
+                for account in context.closing_accounts
+            ],
+            "net_income": serialise_money(context.net_income),
+            "revenue_closed": serialise_money(context.revenue_closed),
+            "expenses_closed": serialise_money(context.expenses_closed),
+            "retained_earnings_direction": context.retained_direction,
+            "retained_earnings_amount": serialise_money(context.retained_amount),
+            "retained_earnings_account": (
+                {
+                    "id": str(retained_earnings["id"]),
+                    "code": str(retained_earnings["code"]),
+                    "name": str(retained_earnings["name"]),
+                }
+                if retained_earnings is not None
+                else None
+            ),
+            "line_count": closing_line_count + retained_line_count,
+        }
+
+    @staticmethod
+    def _blockers(context: YearEndCloseContext) -> list[dict[str, Any]]:
+        blockers: list[dict[str, Any]] = []
+        if context.locked_periods:
+            blockers.append(
+                {
+                    "code": "year_end_close_period_locked",
+                    "message": (
+                        "Unlock the fiscal-year periods before posting year-end close."
+                    ),
+                    "status_code": 409,
+                    "locked_periods": context.locked_periods,
+                }
+            )
+        if context.duplicate is not None:
+            duplicate = _duplicate_preview(context.duplicate)
+            blockers.append(
+                {
+                    "code": "year_end_close_already_posted",
+                    "message": f"Year-end close for {context.year} is already posted.",
+                    "status_code": 409,
+                    "journal_entry_id": duplicate.get("journal_entry_id"),
+                    "entry_number": duplicate.get("entry_number"),
+                }
+            )
+        if context.retained_earnings is None:
+            blockers.append(
+                {
+                    "code": "retained_earnings_account_missing",
+                    "message": (
+                        "Retained Earnings account is not configured for this tenant."
+                    ),
+                    "status_code": 422,
+                    "expected_code": "3000",
+                }
+            )
+        if not context.closing_accounts:
+            blockers.append(
+                {
+                    "code": "year_end_close_no_activity",
+                    "message": (
+                        "No posted revenue or expense activity exists for this fiscal year."
+                    ),
+                    "status_code": 422,
+                }
+            )
+        return blockers
+
+    def _raise_for_blocker(self, context: YearEndCloseContext) -> None:
+        for blocker in self._blockers(context):
+            code = str(blocker["code"])
+            message = str(blocker["message"])
+            status_code = int(blocker.get("status_code") or 422)
+            detail = {"year": context.year}
+            if code == "year_end_close_period_locked":
+                detail["locked_periods"] = context.locked_periods
+            elif code == "year_end_close_already_posted":
+                detail["journal_entry_id"] = str(blocker.get("journal_entry_id") or "")
+                detail["entry_number"] = str(blocker.get("entry_number") or "")
+            elif code == "retained_earnings_account_missing":
+                detail["expected_code"] = "3000"
+            raise YearEndCloseError(
+                code,
+                message,
+                status_code=status_code,
+                detail=detail,
+            )
 
     def _locked_periods(self, start_period: str, end_period: str) -> list[str]:
         rows = (
@@ -282,6 +405,16 @@ def _single_join(value: Any) -> dict[str, Any]:
     if isinstance(value, list):
         return value[0] if value else {}
     return value if isinstance(value, dict) else {}
+
+
+def _duplicate_preview(row: dict[str, Any] | None) -> dict[str, str] | None:
+    if row is None:
+        return None
+    return {
+        "journal_entry_id": str(row.get("id") or ""),
+        "entry_number": str(row.get("entry_number") or ""),
+        "posted_at": str(row.get("posted_at") or ""),
+    }
 
 
 def _natural_balance(account_type: str, direction: str, amount: Decimal) -> Decimal:

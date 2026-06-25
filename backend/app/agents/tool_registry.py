@@ -59,6 +59,7 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
         action_type="create_bill_payment_batch",
     ),
     AgentToolDefinition("copilot_agent", "prepare_month_end_close", "accounting"),
+    AgentToolDefinition("copilot_agent", "prepare_year_end_close", "accounting"),
     AgentToolDefinition(
         "copilot_agent",
         "generate_financial_statement_package",

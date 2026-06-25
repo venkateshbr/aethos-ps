@@ -42,6 +42,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 7 | Owner/Admin | Reviews close package and resolves blockers | Sub-ledger, trial-balance, unposted-journal, close-review, and close-task blockers must be resolved or explicitly overridden with a reason and actor. |
 | 8 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
 | 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
+| 8b | Finance Ops Manager | `/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/inbox` task | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
 
 ### §1.3 Reports
 
@@ -153,8 +154,19 @@ cd frontend && npx playwright test e2e/enterprise-r2r-year-end-close.spec.ts --p
 
 Coverage: Accounting close panel year-end action, `year_end_close` journal
 evidence, retained-earnings amount, and refreshed journal list. AI-orchestrated
-year-end close approval and manual journal audit enhancements remain future R2R
-depth.
+year-end close approval is covered by #329 backend agent/service proof; manual
+journal audit enhancements remain future R2R depth.
+
+The #329 backend proof covers AI-routed year-end close approval:
+
+```bash
+cd backend && uv run pytest tests/unit/test_year_end_close_service.py tests/unit/test_copilot_tools.py tests/unit/test_copilot_hitl_policy.py tests/unit/test_agent_run_ledger.py tests/unit/test_approval_policy.py -q
+```
+
+Coverage: `prepare_year_end_close` tool contract, accounting HITL routing,
+Inbox materialisation, Finance Ops Plan Item dispatch, non-mutating preview
+blockers, retained-earnings posting metadata, and comparative statement
+commentary.
 
 The #317 browser proof covers the scheduled Finance Ops Manager setup and
 review boundary:

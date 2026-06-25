@@ -430,6 +430,55 @@ async def test_month_end_close_policy_routes_to_hitl_with_review_payload(
 
 
 @pytest.mark.asyncio
+async def test_year_end_close_policy_routes_to_hitl_with_review_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+
+    agent = _make_agent()
+    agent.tool_policy = _StaticPolicy(
+        AgentToolPolicyDecision(
+            allowed=True,
+            execute_now=False,
+            route_to_hitl=True,
+            reason="accounting_requires_human_review",
+            user_role=UserRole.admin,
+            minimum_role=UserRole.admin,
+            autonomy_level=2,
+        )
+    )
+    review_payload = {
+        "year": 2026,
+        "period": "2026-12",
+        "preview": {
+            "period": "2026-12",
+            "workflow": "year_end_close",
+            "ready_to_post": True,
+        },
+        "year_end_close_preview": {"net_income": "400.00"},
+    }
+    agent._build_year_end_close_review_payload = AsyncMock(return_value=review_payload)  # type: ignore[method-assign]
+    agent._execute_tool = AsyncMock(return_value={"year_end_close_posted": True})
+    write_suggestion = AsyncMock(return_value={"id": "sug-year-close-1"})
+    monkeypatch.setattr(graph, "write_agent_suggestion", write_suggestion)
+
+    result = await agent._execute_tool_with_policy(
+        "prepare_year_end_close",
+        {"year": 2026},
+    )
+
+    assert result["requires_review"] is True
+    assert result["suggestion_id"] == "sug-year-close-1"
+    assert result["action_type"] == "copilot_prepare_year_end_close"
+    assert result["risk_class"] == "accounting"
+    agent._execute_tool.assert_not_awaited()
+    suggestion_kwargs = write_suggestion.await_args.kwargs
+    assert suggestion_kwargs["output"]["tool_name"] == "prepare_year_end_close"
+    assert suggestion_kwargs["output"]["year"] == 2026
+    assert suggestion_kwargs["output"]["preview"] == review_payload["preview"]
+
+
+@pytest.mark.asyncio
 async def test_finance_ops_action_plan_policy_routes_to_hitl_with_plan_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -623,6 +672,39 @@ async def test_inbox_materialises_copilot_month_end_close(
 
 
 @pytest.mark.asyncio
+async def test_inbox_materialises_copilot_year_end_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(
+        return_value={
+            "year_end_close_posted": True,
+            "period": "2026-12",
+            "journal_entry_id": "journal-ye-2026",
+        }
+    )
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "tool_name": "prepare_year_end_close",
+            "tool_input": {"year": 2026},
+            "requested_by_user_id": "user-1",
+        }
+    )
+
+    assert result == {"entity_type": "year_end_close", "entity_id": "journal-ye-2026"}
+    execute_tool.assert_awaited_once_with(
+        "prepare_year_end_close",
+        {"year": 2026},
+    )
+
+
+@pytest.mark.asyncio
 async def test_inbox_materialises_copilot_finance_ops_action_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -801,6 +883,45 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_bill_pay(
         {"due_within_days": 7},
     )
     assert result["dispatched_tool"] == "propose_bill_payment_batch"
+    assert result["child_review_tasks_created"] == 1
+
+
+@pytest.mark.asyncio
+async def test_inbox_materialises_finance_ops_action_item_dispatches_year_end_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents.copilot import graph
+    from app.services.inbox_service import InboxService
+
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    execute_tool = AsyncMock(
+        return_value={
+            "requires_review": True,
+            "suggestion_id": "sug-year-close",
+            "tool_name": "prepare_year_end_close",
+            "action_type": "copilot_prepare_year_end_close",
+        }
+    )
+    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool_with_policy", execute_tool)
+
+    svc = InboxService(MagicMock(), tenant_id="tenant-abc")
+    result = await svc._materialise_copilot_tool(
+        {
+            "finance_ops_action_item": True,
+            "parent_plan_id": "finance-ops-plan-1",
+            "action_item_id": "finance-ops-plan-1-year-close",
+            "period": "2026-12",
+            "domain": "close",
+            "suggested_tool": "prepare_year_end_close",
+        },
+        user_id="approver-1",
+    )
+
+    execute_tool.assert_awaited_once_with(
+        "prepare_year_end_close",
+        {"year": "2026"},
+    )
+    assert result["dispatched_tool"] == "prepare_year_end_close"
     assert result["child_review_tasks_created"] == 1
 
 

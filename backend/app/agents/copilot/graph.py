@@ -83,6 +83,9 @@ class CopilotAgent:
         "When users ask to prepare month-end close, use the prepare_month_end_close "
         "tool. It creates an Inbox review task before bootstrapping close tasks "
         "or journal proposals.\n"
+        "When users ask to prepare year-end close or roll net income to retained "
+        "earnings, use the prepare_year_end_close tool. It creates an Inbox "
+        "review task before posting the retained-earnings journal.\n"
         "When users ask for financial statements or a statement package, use the "
         "generate_financial_statement_package tool.\n"
         "When users ask about unbilled work or WIP, use get_wip.\n"
@@ -447,6 +450,27 @@ class CopilotAgent:
                     },
                 },
                 "required": ["period"],
+            },
+        },
+        {
+            "name": "prepare_year_end_close",
+            "description": (
+                "Prepare the year-end close retained-earnings posting for a fiscal "
+                "year. Use when the user asks to run year-end close, close the "
+                "fiscal year, or roll net income to retained earnings. The request "
+                "is routed to Inbox before any journal is posted."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "minimum": 1900,
+                        "maximum": 9999,
+                        "description": "Fiscal year to close, formatted YYYY.",
+                    },
+                },
+                "required": ["year"],
             },
         },
         {
@@ -817,6 +841,8 @@ class CopilotAgent:
             return await self._build_bill_payment_batch_payload(tool_input)
         if tool_name == "prepare_month_end_close":
             return await self._prepare_month_end_close(tool_input)
+        if tool_name == "prepare_year_end_close":
+            return await self._prepare_year_end_close(tool_input)
         if tool_name == "generate_financial_statement_package":
             return await self._generate_financial_statement_package(tool_input)
         logger.warning(
@@ -909,6 +935,15 @@ class CopilotAgent:
                 output.update(bill_pay_payload)
             elif tool_name == "prepare_month_end_close":
                 close_payload = await self._build_month_end_close_review_payload(tool_input)
+                if close_payload.get("error"):
+                    return {
+                        "error": close_payload["error"],
+                        "tool_name": tool_name,
+                        "risk_class": risk_class,
+                    }
+                output.update(close_payload)
+            elif tool_name == "prepare_year_end_close":
+                close_payload = await self._build_year_end_close_review_payload(tool_input)
                 if close_payload.get("error"):
                     return {
                         "error": close_payload["error"],
@@ -1203,6 +1238,59 @@ class CopilotAgent:
             )
             return {"error": str(exc)}
 
+    async def _build_year_end_close_review_payload(self, args: dict) -> dict:
+        """Build the review payload shown before posting year-end close."""
+        import asyncio
+
+        try:
+            year = self._parse_year(args.get("year"))
+
+            from app.services.year_end_close_service import YearEndCloseService
+
+            preview = await asyncio.to_thread(
+                lambda: YearEndCloseService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                    str(self.deps.user_id),
+                ).preview_year_end_close(year)
+            )
+            comparison = await self._year_end_statement_comparison(year)
+
+            return {
+                "year": year,
+                "period": preview["period"],
+                "preview": {
+                    "period": preview["period"],
+                    "workflow": "year_end_close",
+                    "ready_to_post": preview["ready_to_post"],
+                    "blocker_count": preview["blocker_count"],
+                    "net_income": preview["net_income"],
+                    "retained_earnings_amount": preview[
+                        "retained_earnings_amount"
+                    ],
+                    "retained_earnings_direction": preview[
+                        "retained_earnings_direction"
+                    ],
+                    "line_count": preview["line_count"],
+                    "pnl_account_count": preview["pnl_account_count"],
+                },
+                "year_end_close_preview": preview,
+                "comparative_statement_commentary": comparison,
+                "approval_effect": (
+                    "Approval posts the year-end close journal through the accounting "
+                    "service. It does not lock periods or approve other close tasks."
+                ),
+            }
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "year-end close review payload build failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
     async def _prepare_month_end_close(self, args: dict) -> dict:
         """Run the existing close-preparation workflow after Inbox approval."""
         try:
@@ -1226,6 +1314,93 @@ class CopilotAgent:
                 extra={"tenant_id": self.deps.tenant_id},
             )
             return {"error": str(exc)}
+
+    async def _prepare_year_end_close(self, args: dict) -> dict:
+        """Post the year-end close journal after Inbox approval."""
+        import asyncio
+
+        try:
+            year = self._parse_year(args.get("year"))
+
+            from app.services.year_end_close_service import (
+                YearEndCloseError,
+                YearEndCloseService,
+            )
+
+            result = await asyncio.to_thread(
+                lambda: YearEndCloseService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                    str(self.deps.user_id),
+                ).post_year_end_close(year)
+            )
+            return {"year_end_close_posted": True, **result}
+        except YearEndCloseError as exc:
+            return {
+                "error": exc.detail["message"],
+                "code": exc.code,
+                "detail": exc.detail,
+            }
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.error(
+                "year-end close posting failed",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id},
+            )
+            return {"error": str(exc)}
+
+    async def _year_end_statement_comparison(self, year: int) -> dict:
+        """Return compact current-vs-prior statement evidence for the review task."""
+        import asyncio
+
+        try:
+            from app.services.reports_service import ReportsService
+
+            def _statement_pack(start: str, end: str) -> dict:
+                return ReportsService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).statutory_reporting_pack(
+                    period_start=start,
+                    period_end=end,
+                ).model_dump(mode="json")
+
+            current = await asyncio.to_thread(
+                lambda: _statement_pack(f"{year}-01", f"{year}-12")
+            )
+            prior_year = year - 1
+            prior = await asyncio.to_thread(
+                lambda: _statement_pack(f"{prior_year}-01", f"{prior_year}-12")
+            )
+            current_summary = self._statement_year_summary(current)
+            prior_summary = self._statement_year_summary(prior)
+
+            return {
+                "available": True,
+                "current_year": year,
+                "prior_year": prior_year,
+                "current": current_summary,
+                "prior": prior_summary,
+                "variances": self._statement_year_variances(
+                    current_summary,
+                    prior_summary,
+                ),
+                "commentary": self._statement_year_commentary(
+                    year,
+                    prior_year,
+                    current_summary,
+                    prior_summary,
+                ),
+            }
+        except Exception as exc:
+            logger.warning(
+                "year-end close comparative statement evidence unavailable",
+                exc_info=True,
+                extra={"tenant_id": self.deps.tenant_id, "year": year},
+            )
+            return {"available": False, "error": str(exc)}
 
     async def _generate_financial_statement_package(self, args: dict) -> dict:
         """Generate a compact read-only financial statement package summary."""
@@ -2121,6 +2296,89 @@ class CopilotAgent:
             "over_90": str(payload.get("over_90", "0")),
         }
 
+    @staticmethod
+    def _statement_year_summary(data: dict) -> dict:
+        income_statement = data.get("income_statement") or {}
+        cash_flow = data.get("cash_flow") or {}
+        retained_earnings = data.get("retained_earnings_roll_forward") or {}
+        balance_sheet = data.get("balance_sheet") or {}
+        return {
+            "total_revenue": str(income_statement.get("total_revenue") or "0"),
+            "total_expenses": str(income_statement.get("total_expenses") or "0"),
+            "net_income": str(income_statement.get("net_income") or "0"),
+            "ending_cash": str(cash_flow.get("ending_cash") or "0"),
+            "ending_retained_earnings": str(
+                retained_earnings.get("ending_retained_earnings") or "0"
+            ),
+            "balance_sheet_balanced": bool(balance_sheet.get("is_balanced")),
+        }
+
+    @classmethod
+    def _statement_year_variances(cls, current: dict, prior: dict) -> dict:
+        from app.domain.money import serialise_money
+
+        keys = (
+            "total_revenue",
+            "total_expenses",
+            "net_income",
+            "ending_cash",
+            "ending_retained_earnings",
+        )
+        return {
+            key: serialise_money(
+                cls._money_decimal(current.get(key)) - cls._money_decimal(prior.get(key))
+            )
+            for key in keys
+        }
+
+    @classmethod
+    def _statement_year_commentary(
+        cls,
+        year: int,
+        prior_year: int,
+        current: dict,
+        prior: dict,
+    ) -> list[dict]:
+        from app.domain.money import serialise_money
+
+        labels = {
+            "total_revenue": "Revenue",
+            "total_expenses": "Expenses",
+            "net_income": "Net income",
+        }
+        commentary: list[dict] = []
+        for key, label in labels.items():
+            current_value = cls._money_decimal(current.get(key))
+            prior_value = cls._money_decimal(prior.get(key))
+            delta = current_value - prior_value
+            if delta > Decimal("0"):
+                direction = "increased"
+            elif delta < Decimal("0"):
+                direction = "decreased"
+            else:
+                direction = "was unchanged"
+            amount = serialise_money(abs(delta)) or "0.00"
+            summary = (
+                f"{label} {direction} by {amount} versus {prior_year}."
+                if delta
+                else f"{label} was unchanged versus {prior_year}."
+            )
+            commentary.append(
+                {
+                    "code": f"{key}_year_over_year",
+                    "severity": "watch" if key == "net_income" and delta < 0 else "info",
+                    "summary": summary,
+                    "evidence": {
+                        "current_year": year,
+                        "prior_year": prior_year,
+                        "current": str(current.get(key) or "0"),
+                        "prior": str(prior.get(key) or "0"),
+                        "variance": serialise_money(delta) or "0.00",
+                    },
+                }
+            )
+        return commentary
+
     @classmethod
     def _top_wip_projects(cls, rows: list[dict], limit: int) -> list[dict]:
         sorted_rows = sorted(
@@ -2516,6 +2774,19 @@ class CopilotAgent:
         if year < 1900 or month < 1 or month > 12:
             raise ValueError(f"{field_name} must be a valid accounting period")
         return f"{year:04d}-{month:02d}"
+
+    @staticmethod
+    def _parse_year(value: object, field_name: str = "year") -> int:
+        year_text = str(value or "").strip()
+        if len(year_text) != 4:
+            raise ValueError(f"{field_name} must be formatted as YYYY")
+        try:
+            year = int(year_text)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be formatted as YYYY") from exc
+        if year < 1900:
+            raise ValueError(f"{field_name} must be a valid fiscal year")
+        return year
 
     async def _log_time_entry(self, args: dict) -> dict:
         """Log a time entry via chat — fuzzy-matches project name, resolves employee from user_id.

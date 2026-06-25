@@ -206,7 +206,13 @@ class ApprovalPolicyMatrix:
             return "write_money_out"
         if kind in {"draft_journal", "create_journal", "create_manual_journal"}:
             return "accounting"
-        if kind == "copilot_prepare_month_end_close" or tool_name == "prepare_month_end_close":
+        if kind in {
+            "copilot_prepare_month_end_close",
+            "copilot_prepare_year_end_close",
+        } or tool_name in {
+            "prepare_month_end_close",
+            "prepare_year_end_close",
+        }:
             return "accounting"
         if kind == "copilot_draft_invoice" or tool_name == "draft_invoice":
             return "write_money_in"

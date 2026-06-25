@@ -37,6 +37,16 @@ def test_accounting_task_requires_admin() -> None:
     assert decision.risk_class == "accounting"
 
 
+def test_year_end_close_task_requires_admin() -> None:
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "copilot_prepare_year_end_close",
+        {"year": 2026},
+    )
+
+    assert decision.required_role == UserRole.admin
+    assert decision.risk_class == "accounting"
+
+
 def test_invoice_draft_requires_manager() -> None:
     decision = ApprovalPolicyMatrix.decision_for_task(
         "copilot_draft_invoice",

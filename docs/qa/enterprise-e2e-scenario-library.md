@@ -54,6 +54,7 @@ agent ledger.
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310 | #300, #310 |
 | ENT-R2R-004 | Year-end close posts retained-earnings journal evidence | API/browser proof automated in #327 | #327 |
+| ENT-R2R-005 | AI year-end close routes retained-earnings posting through Inbox | API/agent proof automated in #329 | #329 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -92,6 +93,12 @@ Run this when validating the #327 R2R year-end close browser proof:
 
 ```bash
 cd frontend && npx playwright test e2e/enterprise-r2r-year-end-close.spec.ts --project=chromium
+```
+
+Run this when validating the #329 AI-routed year-end close proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_year_end_close_service.py tests/unit/test_copilot_tools.py tests/unit/test_copilot_hitl_policy.py tests/unit/test_agent_run_ledger.py tests/unit/test_approval_policy.py -q
 ```
 
 Run these when validating the #311 operational health and distributed limiter proof:
@@ -879,6 +886,45 @@ Automation target:
 - Browser: `frontend/e2e/enterprise-r2r-year-end-close.spec.ts` covers the
   Accounting close panel action, retained-earnings evidence, and refreshed
   journal list.
+
+## ENT-R2R-005 - AI Year-End Close Inbox Approval
+
+Persona: AI Finance Ops Manager, Controller, and Admin approver.
+
+Status: Implemented in #329. Copilot can interpret a business-language request
+to prepare year-end close, build a retained-earnings posting preview, route the
+accounting-risk action to Inbox as `copilot_prepare_year_end_close`, and only
+post the `year_end_close` journal after approval.
+
+Steps:
+
+1. `/app/copilot`: ask `Prepare year-end close for fiscal year 2026. Check
+   retained earnings setup, duplicate close risk, locked periods, P&L activity,
+   and comparative statement movement. Route the posting to Inbox for approval.`
+2. Verify Copilot creates an Inbox review task instead of posting a journal.
+3. Inspect the Inbox payload for year, period, readiness blockers, closing
+   accounts, net income, retained-earnings direction/amount, and
+   current-vs-prior year statement commentary.
+4. Approve the Inbox task as an Admin/Owner.
+5. Confirm approval calls the existing year-end close service and returns the
+   posted journal metadata.
+
+Expected result:
+
+- The tool is classified as `accounting` risk and uses
+  `copilot_prepare_year_end_close`.
+- The preview is non-mutating and exposes blockers rather than hiding them.
+- Approval posts through the same service used by the Accounting close panel.
+- Finance Ops Plan Item dispatch can start the same specialist year-end review
+  workflow without directly posting the journal from the manager action plan.
+
+Automation target:
+
+- API/agent: assert Copilot exposes `prepare_year_end_close`, routes it to HITL,
+  creates the expected review payload, and materializes approval through
+  `YearEndCloseService.post_year_end_close`.
+- API/agent: assert Finance Ops Plan Item dispatch maps
+  `prepare_year_end_close` to a downstream specialist review task.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 

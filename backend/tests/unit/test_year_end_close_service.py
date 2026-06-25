@@ -159,6 +159,35 @@ def test_posts_balanced_year_end_close_for_net_income(monkeypatch: pytest.Monkey
     ]
 
 
+def test_previews_year_end_close_without_posting(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _post_journal(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("preview must not post a journal")
+
+    monkeypatch.setattr("app.services.year_end_close_service.post_journal", _post_journal)
+    svc = YearEndCloseService(
+        _db(
+            lines=[
+                _line(direction="CR", amount="1200.00", code="4000", name="Revenue", account_type="revenue"),
+                _line(direction="DR", amount="300.00", code="5000", name="Expenses", account_type="expense"),
+            ],
+        ),  # type: ignore[arg-type]
+        TENANT_ID,
+        USER_ID,
+    )
+
+    preview = svc.preview_year_end_close(2026)
+
+    assert preview["ready_to_post"] is True
+    assert preview["workflow"] == "year_end_close"
+    assert preview["period"] == "2026-12"
+    assert preview["net_income"] == "900.00"
+    assert preview["retained_earnings_direction"] == "CR"
+    assert preview["retained_earnings_amount"] == "900.00"
+    assert preview["retained_earnings_account"]["code"] == "3000"
+    assert preview["line_count"] == 3
+    assert [account["code"] for account in preview["closing_accounts"]] == ["4000", "5000"]
+
+
 def test_posts_retained_earnings_debit_for_net_loss(monkeypatch: pytest.MonkeyPatch) -> None:
     posted: dict[str, Any] = {}
 
@@ -264,3 +293,31 @@ def test_rejects_when_there_is_no_posted_pnl_activity() -> None:
         svc.post_year_end_close(2026)
 
     assert exc.value.code == "year_end_close_no_activity"
+
+
+def test_preview_surfaces_blockers_without_raising() -> None:
+    db = _db(accounts=[], lines=[])
+    db.tables["period_locks"] = [{"tenant_id": TENANT_ID, "period": "2026-05"}]
+    db.tables["journal_entries"] = [
+        {
+            "id": "journal-existing",
+            "tenant_id": TENANT_ID,
+            "period": "2026-12",
+            "reference_type": "year_end_close",
+            "entry_number": "YE-2026",
+            "posted_at": "2026-12-31T23:59:00+00:00",
+        }
+    ]
+    svc = YearEndCloseService(db, TENANT_ID, USER_ID)  # type: ignore[arg-type]
+
+    preview = svc.preview_year_end_close(2026)
+
+    assert preview["ready_to_post"] is False
+    assert preview["blocker_count"] == 4
+    assert [blocker["code"] for blocker in preview["blockers"]] == [
+        "year_end_close_period_locked",
+        "year_end_close_already_posted",
+        "retained_earnings_account_missing",
+        "year_end_close_no_activity",
+    ]
+    assert preview["duplicate_journal"]["journal_entry_id"] == "journal-existing"
