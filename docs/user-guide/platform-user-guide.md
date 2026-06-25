@@ -290,19 +290,25 @@ materialized. Inbox exposes that reason field for vendor invoice duplicates and
 blocks one-click approval until a reviewer explains why the duplicate should be
 accepted. Approved vendor invoice drafts now create bill lines through the same
 Bills service path used by manual bill creation, so account coding and PO match
-validation are preserved.
+validation are preserved. Linked bills also record line-level PO/service-order
+match evidence: matched lines and exceptions are stored in `po_match_summary`
+and shown from Bills list/detail. Quantity, unit-price, unmatched-line, and
+service-period exceptions keep the bill in draft and block approval until the
+linked order or bill evidence is corrected.
 
 Invoice intake/coding approval and payment approval are separate guarded steps:
 approving the vendor invoice creates the reviewed bill, while payment still
 requires a bill-pay proposal and payment-batch approval. Remaining enterprise
-P2P depth is planned under later advanced P2P work: deeper PO/service-order
-matching, recurring bills, and native bank formats. Browser automation for the
-AP exception-review path and separate bill-pay proposal review is implemented
-under #310.
+P2P depth is planned under later advanced P2P work: AI semantic PO selection
+from source documents, recurring bills, and native bank formats. Browser
+automation for the AP exception-review path and separate bill-pay proposal
+review is implemented under #310; line-level PO/SO match evidence is covered
+under #323.
 
 Scenario anchors: launch scenarios 5-7 and 9,
-`docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, and
-#310 for automated AI finance workflow proof.
+`docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003,
+ENT-P2P-004, #310 for automated AI finance workflow proof, and #323 for
+line-level PO/SO match proof.
 
 ## 7. Record To Report
 
@@ -484,6 +490,7 @@ The following work is tracked under parent issue #278:
 | #312 | Docs and prompts | Full platform guide and prompt-library proof |
 | #317 | QA proof | Browser E2E implemented for scheduled Finance Ops Manager schedule, Inbox output, escalation, and workflow telemetry |
 | #321 | RBAC proof | Browser E2E implemented for the full finance persona matrix |
+| #323 | P2P proof | Line-level PO/service-order match evidence and approval blocking implemented |
 
 ## 12. Scenario Crosswalk
 
@@ -493,7 +500,7 @@ The following work is tracked under parent issue #278:
 | Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 automated |
 | Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321 |
 | Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
-| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 automated |
+| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-004, launch scenarios 5-7 | #310 automated; #323 automated for line-level PO/SO match evidence |
 | Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
 | Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
 | Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #311 automated for Operational Health; #317 automated for scheduled manager |

@@ -41,6 +41,7 @@ _AP_ACCOUNT_CODE = "2000"  # Accounts Payable (CR)
 _INPUT_TAX_ACCOUNT_CODE = "1300"  # Input Tax Recoverable (DR)
 _PREPAID_ACCOUNT_CODE = "1500"  # Prepaid Expenses (DR on approval, CR on amortization)
 _PO_MATCH_TOLERANCE = Decimal("0.01")
+_LINE_QUANTITY_TOLERANCE = Decimal("0.0001")
 
 
 def _line_to_response(row: dict) -> BillLineResponse:
@@ -87,6 +88,261 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         created_at=str(row["created_at"]),
         lines=[_line_to_response(ln) for ln in (lines or [])],
     )
+
+
+def _line_field(line: object, key: str) -> object | None:
+    if isinstance(line, dict):
+        return line.get(key)
+    return getattr(line, key, None)
+
+
+def _line_description(line: object, *, fallback: str = "Line") -> str:
+    value = _line_field(line, "description")
+    return str(value).strip() if value is not None and str(value).strip() else fallback
+
+
+def _normalise_description(value: object | None) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _line_decimal(line: object, key: str) -> Decimal:
+    value = _line_field(line, key)
+    if value in (None, ""):
+        return Decimal("0")
+    return Decimal(str(value))
+
+
+def _serialise_quantity(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _line_date(line: object, key: str) -> date | None:
+    value = _line_field(line, key)
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _date_value(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _comparison_summary(
+    *,
+    bill_value: Decimal,
+    order_value: Decimal,
+    tolerance: Decimal,
+    money: bool,
+) -> dict[str, str]:
+    matched = abs(bill_value - order_value) <= tolerance
+    serialise = serialise_money if money else _serialise_quantity
+    return {
+        "bill": serialise(bill_value) or "0.00",
+        "order": serialise(order_value) or "0.00",
+        "status": "matched" if matched else "mismatch",
+    }
+
+
+def _service_period_summary(
+    *,
+    order: dict,
+    order_line: dict,
+    bill_line: object,
+) -> dict[str, str | None]:
+    if order.get("document_type") != "service_order":
+        return {"status": "not_applicable"}
+    order_start = _line_date(order_line, "service_start_date") or _line_date(
+        order,
+        "service_start_date",
+    )
+    order_end = _line_date(order_line, "service_end_date") or _line_date(
+        order,
+        "service_end_date",
+    )
+    bill_start = _line_date(bill_line, "service_start_date")
+    bill_end = _line_date(bill_line, "service_end_date")
+    result: dict[str, str | None] = {
+        "bill_start": _date_value(bill_start),
+        "bill_end": _date_value(bill_end),
+        "order_start": _date_value(order_start),
+        "order_end": _date_value(order_end),
+        "status": "matched",
+    }
+    if order_start is None and order_end is None:
+        result["status"] = "not_available"
+        return result
+    if bill_start is None or bill_end is None:
+        result["status"] = "missing"
+        return result
+    if (order_start is not None and bill_start < order_start) or (
+        order_end is not None and bill_end > order_end
+    ):
+        result["status"] = "mismatch"
+    return result
+
+
+def _build_line_match_summary(
+    *,
+    order: dict,
+    order_lines: list[dict],
+    bill_lines: list[object] | None,
+) -> dict[str, object]:
+    if not bill_lines or not order_lines:
+        return {
+            "line_match_status": "not_available",
+            "line_matches": [],
+            "line_exceptions": [],
+        }
+
+    line_matches: list[dict[str, object]] = []
+    line_exceptions: list[dict[str, object]] = []
+    used_order_line_indexes: set[int] = set()
+
+    def add_exception(
+        code: str,
+        *,
+        message: str,
+        bill_line: object,
+        order_line: dict | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        exception: dict[str, object] = {
+            "code": code,
+            "message": message,
+            "bill_line_description": _line_description(bill_line),
+        }
+        if order_line is not None:
+            exception["order_line_description"] = _line_description(order_line)
+        if details:
+            exception.update(details)
+        line_exceptions.append(exception)
+
+    for bill_index, bill_line in enumerate(bill_lines):
+        bill_description = _line_description(bill_line, fallback=f"Bill line {bill_index + 1}")
+        bill_description_key = _normalise_description(bill_description)
+        order_index = next(
+            (
+                index
+                for index, candidate in enumerate(order_lines)
+                if index not in used_order_line_indexes
+                and _normalise_description(candidate.get("description")) == bill_description_key
+            ),
+            None,
+        )
+        if order_index is None:
+            add_exception(
+                "unmatched_bill_line",
+                message="Bill line does not match any remaining PO/SO line by description",
+                bill_line=bill_line,
+            )
+            continue
+
+        used_order_line_indexes.add(order_index)
+        order_line = order_lines[order_index]
+        order_description = _line_description(order_line, fallback=f"Order line {order_index + 1}")
+
+        bill_quantity = _line_decimal(bill_line, "quantity")
+        order_quantity = _line_decimal(order_line, "quantity")
+        bill_unit_price = _line_decimal(bill_line, "unit_price")
+        order_unit_price = _line_decimal(order_line, "unit_price")
+        bill_amount = _line_decimal(bill_line, "amount")
+        order_amount = _line_decimal(order_line, "amount")
+
+        quantity_summary = _comparison_summary(
+            bill_value=bill_quantity,
+            order_value=order_quantity,
+            tolerance=_LINE_QUANTITY_TOLERANCE,
+            money=False,
+        )
+        unit_price_summary = _comparison_summary(
+            bill_value=bill_unit_price,
+            order_value=order_unit_price,
+            tolerance=_PO_MATCH_TOLERANCE,
+            money=True,
+        )
+        amount_summary = _comparison_summary(
+            bill_value=bill_amount,
+            order_value=order_amount,
+            tolerance=_PO_MATCH_TOLERANCE,
+            money=True,
+        )
+        service_period = _service_period_summary(
+            order=order,
+            order_line=order_line,
+            bill_line=bill_line,
+        )
+
+        line_match = {
+            "bill_line_description": bill_description,
+            "order_line_description": order_description,
+            "match_basis": "description_exact",
+            "quantity": quantity_summary,
+            "unit_price": unit_price_summary,
+            "amount": amount_summary,
+            "service_period": service_period,
+        }
+        line_matches.append(line_match)
+
+        if quantity_summary["status"] != "matched":
+            add_exception(
+                "quantity_mismatch",
+                message="Bill line quantity differs from the linked PO/SO line",
+                bill_line=bill_line,
+                order_line=order_line,
+                details={
+                    "bill_quantity": quantity_summary["bill"],
+                    "order_quantity": quantity_summary["order"],
+                },
+            )
+        if unit_price_summary["status"] != "matched":
+            add_exception(
+                "unit_price_mismatch",
+                message="Bill line unit price differs from the linked PO/SO line",
+                bill_line=bill_line,
+                order_line=order_line,
+                details={
+                    "bill_unit_price": unit_price_summary["bill"],
+                    "order_unit_price": unit_price_summary["order"],
+                },
+            )
+        if amount_summary["status"] != "matched":
+            add_exception(
+                "amount_mismatch",
+                message="Bill line amount differs from the linked PO/SO line",
+                bill_line=bill_line,
+                order_line=order_line,
+                details={
+                    "bill_amount": amount_summary["bill"],
+                    "order_amount": amount_summary["order"],
+                },
+            )
+        if service_period["status"] == "missing":
+            add_exception(
+                "service_period_missing",
+                message="Bill line is missing service-period evidence required by the service order",
+                bill_line=bill_line,
+                order_line=order_line,
+                details={"service_period": service_period},
+            )
+        elif service_period["status"] == "mismatch":
+            add_exception(
+                "service_period_mismatch",
+                message="Bill line service period falls outside the linked service order period",
+                bill_line=bill_line,
+                order_line=order_line,
+                details={"service_period": service_period},
+            )
+
+    return {
+        "line_match_status": "matched" if not line_exceptions else "mismatch",
+        "line_matches": line_matches,
+        "line_exceptions": line_exceptions,
+    }
 
 
 def _build_ap_journal_lines(
@@ -240,6 +496,7 @@ class BillsService:
                 client_id=data.client_id,
                 currency=data.currency,
                 bill_total=total,
+                bill_lines=data.lines,
             )
             po_match_status = str(po_match_summary["status"])
             if po_match_status == "order_not_found":
@@ -304,8 +561,9 @@ class BillsService:
                 )
                 line_payload["account_id"] = line.account_id
             line_payload["is_prepaid"] = line.is_prepaid
-            if line.is_prepaid:
+            if line.service_start_date is not None:
                 line_payload["service_start_date"] = line.service_start_date.isoformat()
+            if line.service_end_date is not None:
                 line_payload["service_end_date"] = line.service_end_date.isoformat()
             line_row = await self._repo.create_line(bill_id, line_payload)
             lines_rows.append(line_row)
@@ -359,6 +617,7 @@ class BillsService:
                 client_id=str(bill["client_id"]),
                 currency=str(bill.get("currency") or "USD"),
                 bill_total=total,
+                bill_lines=lines,
                 bill_id=bill_id,
             )
             await self._repo.update(
@@ -485,6 +744,7 @@ class BillsService:
         client_id: str,
         currency: str,
         bill_total: Decimal,
+        bill_lines: list[object] | None = None,
         bill_id: str | None = None,
     ) -> dict[str, object]:
         order = await self._procurement_repo.get(purchase_order_id)
@@ -522,6 +782,24 @@ class BillsService:
             summary["status"] = "currency_mismatch"
         elif bill_total > remaining_before_bill + _PO_MATCH_TOLERANCE:
             summary["status"] = "over_tolerance"
+
+        order_lines = await self._procurement_repo.get_lines(purchase_order_id)
+        line_summary = _build_line_match_summary(
+            order=order,
+            order_lines=order_lines,
+            bill_lines=bill_lines,
+        )
+        summary.update(line_summary)
+        if summary["status"] == "matched" and line_summary["line_match_status"] == "mismatch":
+            line_exceptions = line_summary.get("line_exceptions")
+            service_period_failed = any(
+                isinstance(exception, dict)
+                and exception.get("code") in {"service_period_missing", "service_period_mismatch"}
+                for exception in (line_exceptions if isinstance(line_exceptions, list) else [])
+            )
+            summary["status"] = (
+                "service_period_mismatch" if service_period_failed else "line_mismatch"
+            )
 
         return summary
 
