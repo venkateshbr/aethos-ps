@@ -5,7 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -165,6 +164,7 @@ class _FakeDb:
                     "tenant_id": TENANT_ID,
                     "entry_number": "JE-0001",
                     "description": "Month-end accrual",
+                    "reason": "Accrue approved June payroll before close.",
                     "entry_date": "2026-06-22",
                     "period": "2026-06",
                     "reference_type": "manual",
@@ -177,6 +177,7 @@ class _FakeDb:
                     "tenant_id": OTHER_TENANT_ID,
                     "entry_number": "JE-FOREIGN",
                     "description": "Foreign journal",
+                    "reason": "Foreign tenant manual journal reason.",
                     "entry_date": "2026-06-22",
                     "period": "2026-06",
                     "reference_type": "manual",
@@ -369,6 +370,7 @@ def test_accounting_read_routes_use_rls_client(
             "id": JOURNAL_ID,
             "entry_number": "JE-0001",
             "description": "Month-end accrual",
+            "reason": "Accrue approved June payroll before close.",
             "entry_date": "2026-06-22",
             "period": "2026-06",
             "reference_type": "manual",
@@ -397,11 +399,21 @@ def test_manual_journal_create_uses_service_role_client(
 ) -> None:
     app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
     app.dependency_overrides[get_service_role_client] = lambda: fake_db
-    post_mock = AsyncMock(
-        return_value=ManualJournalEntryResponse(
+    posted_payloads: list[Any] = []
+
+    async def _post_manual_journal(
+        self: ManualJournalService,
+        payload: Any,
+    ) -> ManualJournalEntryResponse:
+        assert self.db is fake_db
+        assert self.actor_role == "admin"
+        assert payload.reason == "Record approved finance adjustment for API contract test."
+        posted_payloads.append(payload)
+        return ManualJournalEntryResponse(
             id=JOURNAL_ID,
             entry_number="JE-0001",
             description="Manual adjustment",
+            reason=payload.reason,
             entry_date="2026-06-22",
             period="2026-06",
             reference_type="manual",
@@ -410,13 +422,14 @@ def test_manual_journal_create_uses_service_role_client(
             posted_at="2026-06-22T00:00:00+00:00",
             lines=[],
         )
-    )
-    monkeypatch.setattr(ManualJournalService, "post_manual_journal", post_mock)
+
+    monkeypatch.setattr(ManualJournalService, "post_manual_journal", _post_manual_journal)
 
     response = client.post(
         "/api/v1/accounting/journal-entries",
         json={
             "description": "Manual adjustment",
+            "reason": "Record approved finance adjustment for API contract test.",
             "entry_date": "2026-06-22",
             "lines": [
                 {
@@ -437,7 +450,8 @@ def test_manual_journal_create_uses_service_role_client(
 
     assert response.status_code == 201, response.text
     assert response.json()["id"] == JOURNAL_ID
-    post_mock.assert_awaited_once()
+    assert response.json()["reason"] == "Record approved finance adjustment for API contract test."
+    assert len(posted_payloads) == 1
 
 
 def test_recurring_journal_template_create_uses_service_role_client(

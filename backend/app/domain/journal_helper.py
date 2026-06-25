@@ -21,6 +21,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 from supabase import Client
 
@@ -84,6 +85,7 @@ def post_journal(
     reference_id: str,
     lines: list[JournalLineSpec],
     entry_number: str | None = None,
+    extra_entry_fields: dict[str, Any] | None = None,
 ) -> dict:
     """Validate with accounting_guardian then INSERT journal_entry + journal_lines.
 
@@ -101,6 +103,7 @@ def post_journal(
         reference_id: UUID of the referencing record.
         lines: List of JournalLineSpec entries (must balance within 0.01).
         entry_number: Optional entry number (auto-generated if not provided).
+        extra_entry_fields: Optional additional journal_entries fields to persist.
 
     Returns:
         The journal_entry row dict as returned by Supabase.
@@ -120,22 +123,24 @@ def post_journal(
     if not entry_number:
         entry_number = f"JE-{str(uuid.uuid4())[:8].upper()}"
 
+    entry_payload = {
+        "tenant_id": tenant_id,
+        "entry_number": entry_number,
+        "entry_type": "auto",
+        "description": description,
+        "entry_date": entry_date,
+        "period": period,
+        "reference_type": reference_type,
+        "reference_id": reference_id,
+        "posted_at": datetime.now(UTC).isoformat(),
+        "created_by": created_by,
+    }
+    if extra_entry_fields:
+        entry_payload.update(extra_entry_fields)
+
     je = (
         db.table("journal_entries")
-        .insert(
-            {
-                "tenant_id": tenant_id,
-                "entry_number": entry_number,
-                "entry_type": "auto",
-                "description": description,
-                "entry_date": entry_date,
-                "period": period,
-                "reference_type": reference_type,
-                "reference_id": reference_id,
-                "posted_at": datetime.now(UTC).isoformat(),
-                "created_by": created_by,
-            }
-        )
+        .insert(entry_payload)
         .execute()
         .data[0]
     )

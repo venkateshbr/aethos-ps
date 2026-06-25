@@ -48,6 +48,7 @@ def _get_tenant_accounts(tenant_id: str) -> list[dict]:
 def _balanced_payload(dr_account_id: str, cr_account_id: str, *, date: str = "2099-01-15") -> dict:
     return {
         "description": "Month-end accrual — test entry",
+        "reason": "Record test accrual based on approved supporting evidence.",
         "entry_date": date,
         "reference": "TEST-REF-001",
         "lines": [
@@ -192,6 +193,7 @@ def test_balanced_journal_posts(
     assert "entry_number" in body
     assert body["entry_number"].startswith("JE-")
     assert body["reference_type"] == "manual"
+    assert body["reason"] == payload["reason"]
     assert "lines" in body
     assert len(body["lines"]) >= 2
 
@@ -207,6 +209,7 @@ def test_unbalanced_journal_rejected(
     cr_id = tenant_accounts[1]["id"]
     payload = {
         "description": "Imbalanced test entry",
+        "reason": "Validate that imbalanced manual journals are rejected.",
         "entry_date": "2099-01-15",
         "lines": [
             {
@@ -275,6 +278,7 @@ def test_invalid_account_rejected(
 
     payload = {
         "description": "Unknown account test",
+        "reason": "Validate that journals using unknown accounts are rejected.",
         "entry_date": "2099-02-10",
         "lines": [
             {
@@ -401,6 +405,7 @@ def test_single_line_rejected(
     dr_id = tenant_accounts[0]["id"]
     payload = {
         "description": "Single line test",
+        "reason": "Validate that manual journals require two or more lines.",
         "entry_date": "2099-03-01",
         "lines": [
             {
@@ -427,6 +432,7 @@ def test_negative_amount_rejected(
     cr_id = tenant_accounts[1]["id"]
     payload = {
         "description": "Negative amount test",
+        "reason": "Validate that negative manual journal amounts are rejected.",
         "entry_date": "2099-03-01",
         "lines": [
             {

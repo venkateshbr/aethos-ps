@@ -1083,7 +1083,12 @@ async def create_manual_journal(
 
     RBAC: manager+ through the shared role hierarchy.
     """
-    svc = ManualJournalService(db=db, tenant_id=tenant_id, user_id=current_user.user_id)
+    svc = ManualJournalService(
+        db=db,
+        tenant_id=tenant_id,
+        user_id=current_user.user_id,
+        actor_role=current_user.role,
+    )
     return await svc.post_manual_journal(payload)
 
 

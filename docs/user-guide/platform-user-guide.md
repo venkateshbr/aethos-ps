@@ -322,7 +322,9 @@ Record to Report covers accounting journals, close, and reporting.
 Current workflows:
 
 - Invoice and bill approvals post balanced journals through guarded paths.
-- Manual journals can be created from the Accounting area.
+- Manual journals can be created from the Accounting area. Each manual journal
+  requires a business reason, stores that reason on the journal entry, and
+  appends immutable `manual_journal.posted` evidence for audit review.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained
@@ -356,10 +358,11 @@ override reasons for supported blockers and immediately shows those overrides
 in the period evidence.
 
 Remaining enterprise R2R depth after the #285/#300 first slices, #310 browser
-proof, #327 year-end close posting, #329 AI-routed year-end approval, and #331
-comparative statement packages:
+proof, #327 year-end close posting, #329 AI-routed year-end approval, #331
+comparative statement packages, and #333 manual-journal audit evidence:
 
-- Manual journal audit enhancements.
+- Manual journal threshold approval, reversal workflow, and richer workpaper
+  orchestration.
 
 Scenario anchors: launch scenarios 8-10,
 `docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003,

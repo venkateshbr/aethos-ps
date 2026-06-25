@@ -67,7 +67,8 @@ assertions.
 | Comparative financial statements | `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and evidence-backed management commentary. Compare it to May 2026 and show the variances.` |
 | Variance explanation | `Explain material variances in June 2026 financial statements versus May 2026 and recommend next actions. Do not post journals or lock the period without approval.` |
 | Close package tie-out | `Tie the June 2026 close package to AR Aging, AP Aging, WIP, Trial Balance, unposted journals, close tasks, and recorded override reasons. Show what is ready and what still needs review.` |
-| Manual journal review | `Review this manual journal proposal for balance, account validity, period lock status, supporting evidence, and approval role. Do not post it without Inbox approval.` |
+| Manual journal review | `Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, and approval role. Do not post it without Inbox approval.` |
+| Manual journal evidence | `Prepare a manual journal packet for this adjustment. Include the business reason, supporting source records, debit and credit accounts, amount, period-lock status, and whether Inbox approval is required before posting.` |
 
 ## Audit And Controls
 
