@@ -131,6 +131,21 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 - `accounting_close_overrides`: close blocker code, reason, actor, timestamp, and blocker evidence for explicit overrides
 - `close_package.readiness_evidence`: AR/AP/WIP/GL/approval evidence and recorded overrides shown to the reviewer
 
+## §6.1 Automated Browser Proof
+
+The #310 browser proof covers a deterministic R2R slice with user-facing
+Copilot prompts:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
+```
+
+Coverage: month-end close readiness prompt, close Inbox approval, close package
+AR/AP/WIP/GL evidence, named override reason capture, close approval timeline,
+financial statement tabs, and Settings Agent Run Ledger evidence. Year-end
+close, retained earnings rollover depth, and manual journal audit enhancements
+remain future R2R depth.
+
 ## §7 Performance Budget
 
 | Operation | Soft budget |

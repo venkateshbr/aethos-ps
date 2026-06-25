@@ -113,7 +113,7 @@ launch passes. The exact business names can be replaced with launch test data.
 | Scenario | Prompts | Expected proof |
 | --- | --- | --- |
 | Controls/audit/RBAC proof (#309) | Review approval policy; draft high-value bill-pay run; show decision trail; review finance access | Required-role Inbox task, denied under-privileged action, immutable decision event, read-only UI/API denial |
-| AI finance workflow proof (#310) | Process vendor invoice; review duplicate invoice; prepare bill-pay run; prepare month-end close; generate financial statements | AP exception evidence, corrected bill, payment batch review, close evidence, statement commentary |
+| AI finance workflow proof (#310) | `Process this vendor invoice for Aster Cloud Services. Match it to the right vendor and project, flag any duplicate risk, code it to software subscriptions, send exceptions to Inbox for review, and prepare a bill-pay proposal after the bill is reviewed.` `Run month-end close readiness for June 2026. Prepare the close review package, capture any controller override evidence, and generate financial statement commentary for the management pack.` | AP exception evidence, corrected bill, payment batch review, close evidence, statement commentary, agent/tool ledger evidence |
 | Ops proof (#311) | Review operational health; show alert readiness; review agent activity | Rate-limit backend, sanitized failure signals, routed alerts, no exposed secrets |
 | Documentation proof (#312) | Run daily finance ops check; explain blockers; prepare executive weekly brief | Guide/prompt examples map to business tasks without internal tool names |
 
