@@ -54,6 +54,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 12 | Utilization | Billable hours / available hours per employee |
 | 13 | WIP | Unbilled effort × rate per project |
 | 14 | Trial balance | DR total = CR total for the period; if not, raise alarm |
+| 14a | AI statement package | Copilot generates current and comparison-period statement summaries, deterministic variances, and commentary from report-service outputs |
 
 ### §1.4 AI Finance Ops Manager command center
 
@@ -167,6 +168,16 @@ Coverage: `prepare_year_end_close` tool contract, accounting HITL routing,
 Inbox materialisation, Finance Ops Plan Item dispatch, non-mutating preview
 blockers, retained-earnings posting metadata, and comparative statement
 commentary.
+
+The #331 backend proof covers comparative AI statement packages:
+
+```bash
+cd backend && uv run pytest tests/unit/test_copilot_tools.py -q
+```
+
+Coverage: statement package comparison period schema, default prior-window
+comparison, explicit comparison period support, deterministic variances, and
+readable validation for incomplete comparison inputs.
 
 The #317 browser proof covers the scheduled Finance Ops Manager setup and
 review boundary:

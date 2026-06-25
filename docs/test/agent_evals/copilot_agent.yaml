@@ -138,6 +138,22 @@ datasets:
         - type: field_exact
           path: route_to_hitl
 
+    - id: route_to_comparative_financial_statement_package
+      tags: [routing, finance_ops, reports]
+      inputs:
+        message: "generate Q2 2026 financial statements and compare them to Q2 2025"
+      expected:
+        target_agent: copilot_agent
+        tool_name: generate_financial_statement_package
+        route_to_hitl: false
+      evaluators:
+        - type: field_exact
+          path: target_agent
+        - type: field_exact
+          path: tool_name
+        - type: field_exact
+          path: route_to_hitl
+
     - id: route_to_collections
       tags: [routing, finance_ops, collections]
       inputs:

@@ -55,6 +55,7 @@ agent ledger.
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310 | #300, #310 |
 | ENT-R2R-004 | Year-end close posts retained-earnings journal evidence | API/browser proof automated in #327 | #327 |
 | ENT-R2R-005 | AI year-end close routes retained-earnings posting through Inbox | API/agent proof automated in #329 | #329 |
+| ENT-R2R-006 | AI financial statement package includes comparative variance commentary | API/agent proof automated in #331 | #331 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -99,6 +100,12 @@ Run this when validating the #329 AI-routed year-end close proof:
 
 ```bash
 cd backend && uv run pytest tests/unit/test_year_end_close_service.py tests/unit/test_copilot_tools.py tests/unit/test_copilot_hitl_policy.py tests/unit/test_agent_run_ledger.py tests/unit/test_approval_policy.py -q
+```
+
+Run this when validating the #331 comparative statement package proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_copilot_tools.py -q
 ```
 
 Run these when validating the #311 operational health and distributed limiter proof:
@@ -925,6 +932,41 @@ Automation target:
   `YearEndCloseService.post_year_end_close`.
 - API/agent: assert Finance Ops Plan Item dispatch maps
   `prepare_year_end_close` to a downstream specialist review task.
+
+## ENT-R2R-006 - Comparative AI Financial Statement Package
+
+Persona: Controller, CFO, and AI Finance Ops Manager.
+
+Status: Implemented in #331. Copilot-generated financial statement packages
+include a deterministic comparative statement section built from posted
+report-service outputs. The package remains read-only and does not require
+Inbox approval because no accounting records are created or changed.
+
+Steps:
+
+1. `/app/copilot`: ask `Generate the financial statement package for Q2 2026
+   and compare it to Q2 2025. Include close-readiness warnings and
+   evidence-backed variance commentary.`
+2. Verify Copilot uses `generate_financial_statement_package`.
+3. Inspect the result for current period, comparison period, statement summary,
+   variances, and commentary.
+4. Cross-check the statement tabs in Reports for the current period.
+
+Expected result:
+
+- If no comparison period is supplied, the package compares against the
+  immediately preceding window of the same length.
+- If a comparison period is supplied, the package uses that explicit window.
+- Revenue, expenses, net income, cash, retained earnings, and balance status
+  come from report-service outputs rather than model-invented values.
+- Invalid comparison ranges return readable validation errors.
+
+Automation target:
+
+- API/agent: assert default prior-period comparison for a one-month package.
+- API/agent: assert explicit multi-month comparison window support.
+- API/agent: assert invalid comparison end without start returns a readable
+  error.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 
