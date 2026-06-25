@@ -114,6 +114,7 @@ class _ThresholdQuery:
 
 class _ThresholdDb:
     def __init__(self, *, threshold: str) -> None:
+        self.rpc_calls: list[tuple[str, dict]] = []
         self.tables: dict[str, list[dict]] = {
             "tenant_approval_policies": [
                 {
@@ -130,6 +131,10 @@ class _ThresholdDb:
         if name not in self.tables:
             raise AssertionError(f"unexpected table: {name}")
         return _ThresholdQuery(self, name)
+
+    def rpc(self, name: str, params: dict) -> _RpcQuery:
+        self.rpc_calls.append((name, params))
+        return _RpcQuery()
 
 
 class _ReversalQuery:
@@ -427,6 +432,21 @@ async def test_submit_manual_journal_above_threshold_creates_inbox_task() -> Non
     assert task["kind"] == "draft_journal"
     assert task["payload"]["manual_journal_approval"]["source"] == (
         "manual_journal_threshold"
+    )
+    assert db.rpc_calls[0][0] == "append_financial_event"
+    event = db.rpc_calls[0][1]
+    assert event["p_event_type"] == "manual_journal.submitted_for_approval"
+    assert event["p_entity_type"] == "hitl_task"
+    assert event["p_entity_id"] == task["id"]
+    assert event["p_source_id"] == suggestion["id"]
+    assert event["p_actor_role"] == "manager"
+    assert event["p_action"] == "submitted_for_approval"
+    assert event["p_metadata"]["reason"].startswith("Accrue June payroll")
+    assert event["p_metadata"]["total_debits"] == "15000.00"
+    assert event["p_metadata"]["threshold"] == "10000.00"
+    assert event["p_metadata"]["required_role"] == "admin"
+    assert event["p_idempotency_key"] == (
+        f"manual_journal.submitted_for_approval:{task['id']}"
     )
 
 

@@ -57,7 +57,7 @@ agent ledger.
 | ENT-R2R-005 | AI year-end close routes retained-earnings posting through Inbox | API/agent proof automated in #329 | #329 |
 | ENT-R2R-006 | AI financial statement package includes comparative variance commentary | API/agent proof automated in #331 | #331 |
 | ENT-R2R-007 | Manual journal requires business reason and emits audit evidence | API/UI proof implemented in #333 | #333 |
-| ENT-R2R-008 | High-value manual journal routes to Inbox approval | API/UI proof implemented in #335 | #335 |
+| ENT-R2R-008 | High-value manual journal routes to Inbox approval | API/UI proof implemented in #335; lifecycle audit proof implemented in #339 | #335, #339 |
 | ENT-R2R-009 | Posted manual journal reverses through controlled audit path | API/UI proof implemented in #337 | #337 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
@@ -186,13 +186,16 @@ Steps:
 5. Open `/app/inbox` as the required Accounting approver role.
 6. Approve the manual-journal review task.
 7. Return to `/app/accounting/journals` and verify the journal appears exactly once with reason and audit timeline.
+8. Repeat with another over-threshold manual journal and reject the Inbox task with a rejection reason.
 
 Expected result:
 
 - Direct submission creates `agent_suggestions` + `hitl_tasks` review rows with kind `draft_journal`.
 - The pending task shows required Accounting approval role and threshold metadata.
+- `financial_events` contains `manual_journal.submitted_for_approval` with task id, suggestion id, actor role, business reason, debit total, threshold, required role, and payload hash metadata.
 - Approval materializes through `ManualJournalService.post_manual_journal`, not a duplicate direct-post path.
 - `manual_journal.posted` financial-event evidence is written after approval.
+- Rejection leaves no posted journal and writes both generic `hitl_task.rejected` evidence and manual-journal-specific `manual_journal.rejected` evidence with the rejection reason.
 - Under-threshold journals continue to post immediately through the guarded direct path.
 
 ## ENT-R2R-009 - Manual Journal Reversal Workflow
