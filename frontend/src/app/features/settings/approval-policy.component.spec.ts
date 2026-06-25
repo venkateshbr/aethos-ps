@@ -13,6 +13,7 @@ const policy = {
   money_out_owner_threshold: '50000',
   money_out_owner_role: 'owner',
   accounting_role: 'admin',
+  manual_journal_approval_threshold: '10000',
   money_in_role: 'manager',
   draft_role: 'manager',
   external_send_role: 'manager',
@@ -67,6 +68,7 @@ describe('ApprovalPolicyComponent', () => {
       money_out_default_role: 'owner',
       money_out_owner_threshold: 25000,
       accounting_role: 'owner',
+      manual_journal_approval_threshold: 15000,
       external_send_role: 'admin',
       high_risk_role: 'owner',
     });
@@ -79,6 +81,7 @@ describe('ApprovalPolicyComponent', () => {
       money_out_owner_threshold: '25000',
       money_out_owner_role: 'owner',
       accounting_role: 'owner',
+      manual_journal_approval_threshold: '15000',
       money_in_role: 'manager',
       draft_role: 'manager',
       external_send_role: 'admin',

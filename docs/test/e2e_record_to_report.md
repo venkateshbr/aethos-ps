@@ -44,6 +44,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
 | 8b | Finance Ops Manager | `/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/inbox` task | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
 | 8c | Finance Ops Manager | `/accounting/journals` -> Post manual journal with business reason | Balanced manual journals require a business reason, store it on `journal_entries.reason`, and append `manual_journal.posted` audit evidence with actor role, line count, and debit total. |
+| 8d | Finance Ops Manager + Accounting approver | `/settings` threshold -> `/accounting/journals` high-value journal -> `/inbox` approval | Manual journals at or above the tenant threshold create a `draft_journal` Inbox task and post only after required Accounting-role approval. |
 
 ### §1.3 Reports
 
@@ -100,6 +101,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | §3.9 | Close blocker overridden without reason | 422 `close_override_reason_required`; period remains unlocked |
 | §3.10 | Lock attempted with unposted journal and no override | 409 `unposted_journals_pending`; response lists affected draft journals |
 | §3.11 | Manual journal submitted without business reason | 422 validation error; no journal entry or audit event is created |
+| §3.12 | High-value manual journal submitted by Manager without approval | 202 pending approval; no journal entry is posted until Inbox approval by required Accounting role |
 
 ---
 
@@ -110,7 +112,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | E1 | Period closed with cents of FX residual | Auto-route residual to `7900 Realized FX Gain/Loss` |
 | E2 | Year-end close (December 2026) | Roll P&L → Retained Earnings; net income = 0 going into Jan 2027 |
 | E3 | Voiding an invoice in a closed period | Allowed only via reversing entry dated in the open period |
-| E4 | Manual journal entry | Manager+ can post when balanced and reasoned; `accounting_guardian` validates balance/account/period and `manual_journal.posted` evidence is written. Threshold approval remains future depth. |
+| E4 | Manual journal entry | Manager+ can submit when balanced and reasoned; under-threshold entries post immediately, over-threshold entries route to Inbox, `accounting_guardian` validates balance/account/period on final posting, and `manual_journal.posted` evidence is written. |
 | E5 | Reports request a million-row range | API paginates; UI streams; no OOM |
 
 ---
@@ -182,16 +184,19 @@ Coverage: statement package comparison period schema, default prior-window
 comparison, explicit comparison period support, deterministic variances, and
 readable validation for incomplete comparison inputs.
 
-The #333 proof covers manual journal business reason and audit evidence:
+The #333/#335 proof covers manual journal business reason, threshold approval,
+and audit evidence:
 
 ```bash
-cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py tests/unit/test_inbox_journal_materialization.py -q
+cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py tests/unit/test_inbox_journal_materialization.py tests/unit/test_approval_policy.py tests/unit/test_approval_policy_api_contract.py -q
+cd frontend && npx ng test --watch=false --include src/app/features/settings/approval-policy.component.spec.ts
 cd frontend && npx tsc -p tsconfig.spec.json --noEmit
 ```
 
-Coverage: required reason validation, service-role posting with actor role,
+Coverage: required reason validation, tenant manual-journal threshold policy,
+over-threshold Inbox task creation, service-role posting with actor role,
 manual-journal immutable event metadata, Inbox compatibility for older AI draft
-journals, and Accounting UI reason capture/display.
+journals, Settings threshold editing, and Accounting UI pending-approval state.
 
 The #317 browser proof covers the scheduled Finance Ops Manager setup and
 review boundary:

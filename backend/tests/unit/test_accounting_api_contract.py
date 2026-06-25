@@ -13,7 +13,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.main import app
-from app.models.accounting import ManualJournalEntryResponse
+from app.models.accounting import ManualJournalApprovalTaskResponse, ManualJournalEntryResponse
 from app.services.close_package_service import ClosePackageService
 from app.services.close_reconciliation_service import (
     CloseReconciliationResult,
@@ -401,7 +401,7 @@ def test_manual_journal_create_uses_service_role_client(
     app.dependency_overrides[get_service_role_client] = lambda: fake_db
     posted_payloads: list[Any] = []
 
-    async def _post_manual_journal(
+    async def _submit_manual_journal(
         self: ManualJournalService,
         payload: Any,
     ) -> ManualJournalEntryResponse:
@@ -423,7 +423,7 @@ def test_manual_journal_create_uses_service_role_client(
             lines=[],
         )
 
-    monkeypatch.setattr(ManualJournalService, "post_manual_journal", _post_manual_journal)
+    monkeypatch.setattr(ManualJournalService, "submit_manual_journal", _submit_manual_journal)
 
     response = client.post(
         "/api/v1/accounting/journal-entries",
@@ -452,6 +452,62 @@ def test_manual_journal_create_uses_service_role_client(
     assert response.json()["id"] == JOURNAL_ID
     assert response.json()["reason"] == "Record approved finance adjustment for API contract test."
     assert len(posted_payloads) == 1
+
+
+def test_manual_journal_create_can_return_pending_approval(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    async def _submit_manual_journal(
+        self: ManualJournalService,
+        payload: Any,
+    ) -> ManualJournalApprovalTaskResponse:
+        assert self.db is fake_db
+        assert payload.reason == "Route high value adjustment through approval."
+        return ManualJournalApprovalTaskResponse(
+            task_id="hitl-task-1",
+            suggestion_id="suggestion-1",
+            required_approval_role="admin",
+            approval_policy_reason="manual_journal_above_approval_threshold",
+            total_debits="15000.00",
+            threshold="10000.00",
+            message="Manual journal routed to Inbox for approval before posting.",
+        )
+
+    monkeypatch.setattr(ManualJournalService, "submit_manual_journal", _submit_manual_journal)
+
+    response = client.post(
+        "/api/v1/accounting/journal-entries",
+        json={
+            "description": "Manual adjustment",
+            "reason": "Route high value adjustment through approval.",
+            "entry_date": "2026-06-22",
+            "lines": [
+                {
+                    "direction": "DR",
+                    "account_id": "55555555-5555-4555-8555-555555555555",
+                    "amount": "15000.00",
+                    "currency": "USD",
+                },
+                {
+                    "direction": "CR",
+                    "account_id": "66666666-6666-4666-8666-666666666666",
+                    "amount": "15000.00",
+                    "currency": "USD",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["status"] == "pending_approval"
+    assert body["task_id"] == "hitl-task-1"
+    assert body["required_approval_role"] == "admin"
 
 
 def test_recurring_journal_template_create_uses_service_role_client(

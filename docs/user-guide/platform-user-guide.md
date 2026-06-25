@@ -324,7 +324,9 @@ Current workflows:
 - Invoice and bill approvals post balanced journals through guarded paths.
 - Manual journals can be created from the Accounting area. Each manual journal
   requires a business reason, stores that reason on the journal entry, and
-  appends immutable `manual_journal.posted` evidence for audit review.
+  appends immutable `manual_journal.posted` evidence for audit review. Journals
+  whose total debits meet or exceed the tenant manual-journal approval threshold
+  route to Inbox and post only after Accounting-role approval.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained
@@ -359,10 +361,10 @@ in the period evidence.
 
 Remaining enterprise R2R depth after the #285/#300 first slices, #310 browser
 proof, #327 year-end close posting, #329 AI-routed year-end approval, #331
-comparative statement packages, and #333 manual-journal audit evidence:
+comparative statement packages, #333 manual-journal audit evidence, and #335
+manual-journal threshold approval:
 
-- Manual journal threshold approval, reversal workflow, and richer workpaper
-  orchestration.
+- Manual journal reversal workflow and richer workpaper orchestration.
 
 Scenario anchors: launch scenarios 8-10,
 `docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003,

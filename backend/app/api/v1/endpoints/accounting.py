@@ -37,7 +37,7 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app.core.auth import CurrentUser, get_current_user
@@ -46,6 +46,7 @@ from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.models.accounting import (
     JournalEntryListItem,
+    ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
     RecurringJournalTemplateCreate,
@@ -1066,20 +1067,23 @@ async def unlock_period(
 
 @router.post(
     "/journal-entries",
-    response_model=ManualJournalEntryResponse,
+    response_model=ManualJournalEntryResponse | ManualJournalApprovalTaskResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_manual_journal(
     payload: ManualJournalEntryIn,
+    response: Response,
     current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
-) -> ManualJournalEntryResponse:
-    """Post a manual GL journal entry.
+) -> ManualJournalEntryResponse | ManualJournalApprovalTaskResponse:
+    """Submit a manual GL journal entry.
 
-    All entries are gated by the accounting_guardian (L3 hard gate):
-    balance check, period lock, and account validity. The journal is
-    immutable once posted — corrections require reversing entries.
+    Under-threshold entries post immediately. Over-threshold entries route to
+    Inbox approval and post only after approval. Final posting is gated by the
+    accounting_guardian (L3 hard gate): balance check, period lock, and account
+    validity. The journal is immutable once posted — corrections require
+    reversing entries.
 
     RBAC: manager+ through the shared role hierarchy.
     """
@@ -1089,7 +1093,10 @@ async def create_manual_journal(
         user_id=current_user.user_id,
         actor_role=current_user.role,
     )
-    return await svc.post_manual_journal(payload)
+    result = await svc.submit_manual_journal(payload)
+    if isinstance(result, ManualJournalApprovalTaskResponse):
+        response.status_code = status.HTTP_202_ACCEPTED
+    return result
 
 
 @router.get("/journal-entries", response_model=list[JournalEntryListItem])

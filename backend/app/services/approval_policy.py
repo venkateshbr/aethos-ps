@@ -13,7 +13,9 @@ from typing import Any
 from app.core.rbac import ROLE_HIERARCHY, UserRole
 
 _OWNER_REVIEW_MONEY_OUT_THRESHOLD = Decimal("50000")
+_MANUAL_JOURNAL_APPROVAL_THRESHOLD = Decimal("10000")
 _ROLE_NAMES = {"manager", "admin", "owner"}
+_MANUAL_JOURNAL_KINDS = {"draft_journal", "create_journal", "create_manual_journal"}
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class ApprovalPolicySettings:
     money_out_owner_threshold: Decimal = _OWNER_REVIEW_MONEY_OUT_THRESHOLD
     money_out_owner_role: UserRole = UserRole.owner
     accounting_role: UserRole = UserRole.admin
+    manual_journal_approval_threshold: Decimal = _MANUAL_JOURNAL_APPROVAL_THRESHOLD
     money_in_role: UserRole = UserRole.manager
     draft_role: UserRole = UserRole.manager
     external_send_role: UserRole = UserRole.manager
@@ -52,6 +55,8 @@ class ApprovalPolicySettings:
         _assert_role_at_least(self.high_risk_role, UserRole.admin, "high_risk_role")
         if self.money_out_owner_threshold < 0:
             raise ValueError("money_out_owner_threshold must be >= 0")
+        if self.manual_journal_approval_threshold < 0:
+            raise ValueError("manual_journal_approval_threshold must be >= 0")
 
 
 def default_approval_policy_settings() -> ApprovalPolicySettings:
@@ -80,6 +85,10 @@ def approval_policy_settings_from_mapping(
             defaults.money_out_owner_role,
         ),
         accounting_role=_role_or_default(data.get("accounting_role"), defaults.accounting_role),
+        manual_journal_approval_threshold=_decimal_or_default(
+            data.get("manual_journal_approval_threshold"),
+            defaults.manual_journal_approval_threshold,
+        ),
         money_in_role=_role_or_default(data.get("money_in_role"), defaults.money_in_role),
         draft_role=_role_or_default(data.get("draft_role"), defaults.draft_role),
         external_send_role=_role_or_default(
@@ -143,6 +152,18 @@ class ApprovalPolicyMatrix:
             )
 
         if risk_class == "accounting":
+            if (
+                kind in _MANUAL_JOURNAL_KINDS
+                and amount is not None
+                and amount >= policy.manual_journal_approval_threshold
+            ):
+                return ApprovalPolicyDecision(
+                    required_role=policy.accounting_role,
+                    reason="manual_journal_above_approval_threshold",
+                    risk_class=risk_class,
+                    amount=amount,
+                    threshold=policy.manual_journal_approval_threshold,
+                )
             return ApprovalPolicyDecision(
                 required_role=policy.accounting_role,
                 reason=_role_review_reason("accounting", policy.accounting_role),
@@ -229,6 +250,7 @@ class ApprovalPolicyMatrix:
                 "amount",
                 "subtotal",
                 "net_income",
+                "total_debits",
             ):
                 value = source.get(key)
                 if value is None:
@@ -237,6 +259,18 @@ class ApprovalPolicyMatrix:
                     return Decimal(str(value))
                 except (InvalidOperation, ValueError):
                     continue
+            lines = source.get("lines")
+            if isinstance(lines, list):
+                total_debits = Decimal("0")
+                for line in lines:
+                    if not isinstance(line, dict) or line.get("direction") != "DR":
+                        continue
+                    try:
+                        total_debits += Decimal(str(line.get("amount") or "0"))
+                    except (InvalidOperation, ValueError):
+                        continue
+                if total_debits > 0:
+                    return total_debits
         return None
 
     @staticmethod

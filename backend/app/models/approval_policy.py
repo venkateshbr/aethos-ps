@@ -22,6 +22,10 @@ class ApprovalPolicyConfig(BaseModel):
     money_out_owner_threshold: Decimal = Field(default=Decimal("50000"), ge=Decimal("0"))
     money_out_owner_role: ApprovalRole = "owner"
     accounting_role: ApprovalRole = "admin"
+    manual_journal_approval_threshold: Decimal = Field(
+        default=Decimal("10000"),
+        ge=Decimal("0"),
+    )
     money_in_role: ApprovalRole = "manager"
     draft_role: ApprovalRole = "manager"
     external_send_role: ApprovalRole = "manager"
@@ -48,6 +52,10 @@ class ApprovalPolicyUpsert(BaseModel):
     money_out_owner_threshold: Decimal = Field(default=Decimal("50000"), ge=Decimal("0"))
     money_out_owner_role: ApprovalRole = "owner"
     accounting_role: ApprovalRole = "admin"
+    manual_journal_approval_threshold: Decimal = Field(
+        default=Decimal("10000"),
+        ge=Decimal("0"),
+    )
     money_in_role: ApprovalRole = "manager"
     draft_role: ApprovalRole = "manager"
     external_send_role: ApprovalRole = "manager"
