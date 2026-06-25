@@ -88,6 +88,9 @@ class CopilotAgent:
         "review task before posting the retained-earnings journal.\n"
         "When users ask for financial statements or a statement package, use the "
         "generate_financial_statement_package tool.\n"
+        "When users ask to compare financial statements or explain statement "
+        "variances, use generate_financial_statement_package with comparison "
+        "periods when the user provides them.\n"
         "When users ask about unbilled work or WIP, use get_wip.\n"
         "When users ask to log hours or time (e.g. 'log 3 hours on Nexus for today'), "
         "use the log_time_entry tool — match the project name from what the user says.\n"
@@ -495,6 +498,22 @@ class CopilotAgent:
                         "description": (
                             "Last accounting period in the package, YYYY-MM. "
                             "Defaults to period_start."
+                        ),
+                    },
+                    "comparison_period_start": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": (
+                            "Optional first accounting period for comparison, "
+                            "YYYY-MM. Defaults to the prior period window."
+                        ),
+                    },
+                    "comparison_period_end": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": (
+                            "Optional last accounting period for comparison, "
+                            "YYYY-MM. Defaults to comparison_period_start."
                         ),
                     },
                 },
@@ -1414,6 +1433,14 @@ class CopilotAgent:
             )
             if period_end < period_start:
                 raise ValueError("period_end must be the same as or after period_start")
+            comparison_period_start, comparison_period_end = (
+                self._comparison_period_window(
+                    period_start=period_start,
+                    period_end=period_end,
+                    comparison_period_start=args.get("comparison_period_start"),
+                    comparison_period_end=args.get("comparison_period_end"),
+                )
+            )
 
             from app.services.close_package_service import ClosePackageService
             from app.services.reports_service import ReportsService
@@ -1433,6 +1460,16 @@ class CopilotAgent:
             cash_flow = data["cash_flow"]
             retained_earnings = data["retained_earnings_roll_forward"]
             tax_summary = data["tax_summary"]
+            comparison_pack = await asyncio.to_thread(
+                lambda: ReportsService(
+                    self.deps.db_client,  # type: ignore[arg-type]
+                    self.deps.tenant_id,
+                ).statutory_reporting_pack(
+                    period_start=comparison_period_start,
+                    period_end=comparison_period_end,
+                )
+            )
+            comparison_data = comparison_pack.model_dump(mode="json")
             close_package = await asyncio.to_thread(
                 lambda: ClosePackageService(
                     self.deps.db_client,  # type: ignore[arg-type]
@@ -1447,6 +1484,8 @@ class CopilotAgent:
                 "generated_statement_package": True,
                 "period_start": period_start,
                 "period_end": period_end,
+                "comparison_period_start": comparison_period_start,
+                "comparison_period_end": comparison_period_end,
                 "as_of_period": data["as_of_period"],
                 "review_path": "/app/reports",
                 "close_review_path": "/app/accounting/journals",
@@ -1463,6 +1502,16 @@ class CopilotAgent:
                 },
                 "readiness_evidence": readiness_evidence,
                 "management_commentary": commentary[:10],
+                "comparative_statement_commentary": (
+                    self._statement_comparison_payload(
+                        current=data,
+                        comparison=comparison_data,
+                        current_period_start=period_start,
+                        current_period_end=period_end,
+                        comparison_period_start=comparison_period_start,
+                        comparison_period_end=comparison_period_end,
+                    )
+                ),
                 "summary": {
                     "trial_balance_balanced": data["trial_balance"]["is_balanced"],
                     "balance_sheet": {
@@ -2332,6 +2381,98 @@ class CopilotAgent:
         }
 
     @classmethod
+    def _statement_comparison_payload(
+        cls,
+        *,
+        current: dict,
+        comparison: dict,
+        current_period_start: str,
+        current_period_end: str,
+        comparison_period_start: str,
+        comparison_period_end: str,
+    ) -> dict:
+        current_summary = cls._statement_year_summary(current)
+        comparison_summary = cls._statement_year_summary(comparison)
+        current_label = cls._period_label(current_period_start, current_period_end)
+        comparison_label = cls._period_label(
+            comparison_period_start,
+            comparison_period_end,
+        )
+        return {
+            "available": True,
+            "current_period": {
+                "period_start": current_period_start,
+                "period_end": current_period_end,
+                "label": current_label,
+            },
+            "comparison_period": {
+                "period_start": comparison_period_start,
+                "period_end": comparison_period_end,
+                "label": comparison_label,
+            },
+            "current": current_summary,
+            "comparison": comparison_summary,
+            "variances": cls._statement_year_variances(
+                current_summary,
+                comparison_summary,
+            ),
+            "commentary": cls._statement_period_commentary(
+                current_label,
+                comparison_label,
+                current_summary,
+                comparison_summary,
+            ),
+        }
+
+    @classmethod
+    def _statement_period_commentary(
+        cls,
+        current_label: str,
+        comparison_label: str,
+        current: dict,
+        comparison: dict,
+    ) -> list[dict]:
+        from app.domain.money import serialise_money
+
+        labels = {
+            "total_revenue": "Revenue",
+            "total_expenses": "Expenses",
+            "net_income": "Net income",
+        }
+        commentary: list[dict] = []
+        for key, label in labels.items():
+            current_value = cls._money_decimal(current.get(key))
+            comparison_value = cls._money_decimal(comparison.get(key))
+            delta = current_value - comparison_value
+            if delta > Decimal("0"):
+                direction = "increased"
+            elif delta < Decimal("0"):
+                direction = "decreased"
+            else:
+                direction = "was unchanged"
+            amount = serialise_money(abs(delta)) or "0.00"
+            summary = (
+                f"{label} {direction} by {amount} versus {comparison_label}."
+                if delta
+                else f"{label} was unchanged versus {comparison_label}."
+            )
+            commentary.append(
+                {
+                    "code": f"{key}_period_comparison",
+                    "severity": "watch" if key == "net_income" and delta < 0 else "info",
+                    "summary": summary,
+                    "evidence": {
+                        "current_period": current_label,
+                        "comparison_period": comparison_label,
+                        "current": str(current.get(key) or "0"),
+                        "comparison": str(comparison.get(key) or "0"),
+                        "variance": serialise_money(delta) or "0.00",
+                    },
+                }
+            )
+        return commentary
+
+    @classmethod
     def _statement_year_commentary(
         cls,
         year: int,
@@ -2378,6 +2519,10 @@ class CopilotAgent:
                 }
             )
         return commentary
+
+    @staticmethod
+    def _period_label(period_start: str, period_end: str) -> str:
+        return period_start if period_start == period_end else f"{period_start} to {period_end}"
 
     @classmethod
     def _top_wip_projects(cls, rows: list[dict], limit: int) -> list[dict]:
@@ -2773,6 +2918,58 @@ class CopilotAgent:
             raise ValueError(f"{field_name} must be formatted as YYYY-MM") from exc
         if year < 1900 or month < 1 or month > 12:
             raise ValueError(f"{field_name} must be a valid accounting period")
+        return f"{year:04d}-{month:02d}"
+
+    @classmethod
+    def _comparison_period_window(
+        cls,
+        *,
+        period_start: str,
+        period_end: str,
+        comparison_period_start: object,
+        comparison_period_end: object,
+    ) -> tuple[str, str]:
+        if comparison_period_start:
+            start = cls._parse_period(
+                comparison_period_start,
+                "comparison_period_start",
+            )
+            end = cls._parse_period(
+                comparison_period_end or start,
+                "comparison_period_end",
+            )
+        elif comparison_period_end:
+            raise ValueError(
+                "comparison_period_start is required when comparison_period_end is set"
+            )
+        else:
+            start, end = cls._previous_period_window(period_start, period_end)
+        if end < start:
+            raise ValueError(
+                "comparison_period_end must be the same as or after "
+                "comparison_period_start"
+            )
+        return start, end
+
+    @classmethod
+    def _previous_period_window(cls, period_start: str, period_end: str) -> tuple[str, str]:
+        start_index = cls._period_index(period_start)
+        end_index = cls._period_index(period_end)
+        span = end_index - start_index + 1
+        previous_end = start_index - 1
+        previous_start = previous_end - span + 1
+        return cls._period_from_index(previous_start), cls._period_from_index(previous_end)
+
+    @staticmethod
+    def _period_index(period: str) -> int:
+        year = int(period[:4])
+        month = int(period[5:7])
+        return year * 12 + month - 1
+
+    @staticmethod
+    def _period_from_index(index: int) -> str:
+        year = index // 12
+        month = index % 12 + 1
         return f"{year:04d}-{month:02d}"
 
     @staticmethod

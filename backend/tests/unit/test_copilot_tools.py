@@ -547,6 +547,8 @@ def test_finance_ops_tool_schemas():
     assert "year" in year_end_close_schema["properties"]
     assert statements_schema["required"] == ["period_start"]
     assert "period_end" in statements_schema["properties"]
+    assert "comparison_period_start" in statements_schema["properties"]
+    assert "comparison_period_end" in statements_schema["properties"]
 
 
 def test_system_prompt_mentions_finance_ops_tools():
@@ -563,6 +565,7 @@ def test_system_prompt_mentions_finance_ops_tools():
     assert "year-end close" in prompt
     assert "retained earnings" in prompt
     assert "financial statement" in prompt
+    assert "statement variances" in prompt
 
 
 def test_execute_tool_dispatches_log_time_entry():
@@ -1231,10 +1234,16 @@ async def test_financial_statement_package_includes_close_commentary(
     agent, _db = _make_agent({})
 
     class _StatementPack:
+        def __init__(self, period: str, revenue: str, expenses: str, net_income: str) -> None:
+            self.period = period
+            self.revenue = revenue
+            self.expenses = expenses
+            self.net_income = net_income
+
         def model_dump(self, *, mode: str = "python") -> dict:
             assert mode == "json"
             return {
-                "as_of_period": "2026-06",
+                "as_of_period": self.period,
                 "trial_balance": {"is_balanced": True},
                 "balance_sheet": {
                     "total_assets": "1000.00",
@@ -1243,9 +1252,9 @@ async def test_financial_statement_package_includes_close_commentary(
                     "is_balanced": True,
                 },
                 "income_statement": {
-                    "total_revenue": "1200.00",
-                    "total_expenses": "800.00",
-                    "net_income": "400.00",
+                    "total_revenue": self.revenue,
+                    "total_expenses": self.expenses,
+                    "net_income": self.net_income,
                     "revenue_lines": [{"account": "4000"}],
                     "expense_lines": [{"account": "5000"}],
                 },
@@ -1263,9 +1272,11 @@ async def test_financial_statement_package_includes_close_commentary(
             }
 
     def _statutory_pack(self, *, period_start: str, period_end: str) -> _StatementPack:
-        assert period_start == "2026-06"
-        assert period_end == "2026-06"
-        return _StatementPack()
+        if (period_start, period_end) == ("2026-06", "2026-06"):
+            return _StatementPack("2026-06", "1200.00", "800.00", "400.00")
+        if (period_start, period_end) == ("2026-05", "2026-05"):
+            return _StatementPack("2026-05", "900.00", "700.00", "200.00")
+        raise AssertionError((period_start, period_end))
 
     def _close_package(self, period: str) -> dict:
         assert period == "2026-06"
@@ -1308,3 +1319,104 @@ async def test_financial_statement_package_includes_close_commentary(
     assert result["close_prerequisites"]["lock_blockers"] == ["close_reviews"]
     assert result["close_prerequisites"]["warnings"]
     assert result["management_commentary"][0]["evidence"]["source"] == "period_gl_summary"
+    comparison = result["comparative_statement_commentary"]
+    assert comparison["available"] is True
+    assert comparison["comparison_period"]["label"] == "2026-05"
+    assert comparison["variances"]["net_income"] == "200.00"
+    assert comparison["commentary"][0]["evidence"]["comparison_period"] == "2026-05"
+
+
+@pytest.mark.asyncio
+async def test_financial_statement_package_accepts_explicit_comparison_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Users can request a specific comparison period for statement packages."""
+    agent, _db = _make_agent({})
+    calls: list[tuple[str, str]] = []
+
+    class _StatementPack:
+        def __init__(self, period: str, revenue: str, expenses: str, net_income: str) -> None:
+            self.period = period
+            self.revenue = revenue
+            self.expenses = expenses
+            self.net_income = net_income
+
+        def model_dump(self, *, mode: str = "python") -> dict:
+            assert mode == "json"
+            return {
+                "as_of_period": self.period,
+                "trial_balance": {"is_balanced": True},
+                "balance_sheet": {
+                    "total_assets": "1000.00",
+                    "total_liabilities": "300.00",
+                    "total_equity": "700.00",
+                    "is_balanced": True,
+                },
+                "income_statement": {
+                    "total_revenue": self.revenue,
+                    "total_expenses": self.expenses,
+                    "net_income": self.net_income,
+                    "revenue_lines": [],
+                    "expense_lines": [],
+                },
+                "cash_flow": {
+                    "net_change_in_cash": "50.00",
+                    "ending_cash": "250.00",
+                },
+                "retained_earnings_roll_forward": {
+                    "ending_retained_earnings": "700.00",
+                },
+                "tax_summary": {
+                    "tax_label": "GST",
+                    "ledger_net_tax_payable": "30.00",
+                },
+            }
+
+    def _statutory_pack(self, *, period_start: str, period_end: str) -> _StatementPack:
+        calls.append((period_start, period_end))
+        if (period_start, period_end) == ("2026-04", "2026-06"):
+            return _StatementPack("2026-06", "3000.00", "2100.00", "900.00")
+        if (period_start, period_end) == ("2025-04", "2025-06"):
+            return _StatementPack("2025-06", "2500.00", "2000.00", "500.00")
+        raise AssertionError((period_start, period_end))
+
+    monkeypatch.setattr(
+        "app.services.reports_service.ReportsService.statutory_reporting_pack",
+        _statutory_pack,
+    )
+    monkeypatch.setattr(
+        "app.services.close_package_service.ClosePackageService.build_package",
+        lambda self, period: {
+            "close_status": {},
+            "readiness_evidence": {},
+            "variance_commentary": [],
+        },
+    )
+
+    result = await agent._generate_financial_statement_package(
+        {
+            "period_start": "2026-04",
+            "period_end": "2026-06",
+            "comparison_period_start": "2025-04",
+            "comparison_period_end": "2025-06",
+        }
+    )
+
+    assert calls == [("2026-04", "2026-06"), ("2025-04", "2025-06")]
+    assert result["comparative_statement_commentary"]["comparison_period"]["label"] == (
+        "2025-04 to 2025-06"
+    )
+    assert result["comparative_statement_commentary"]["variances"]["net_income"] == (
+        "400.00"
+    )
+
+
+@pytest.mark.asyncio
+async def test_financial_statement_package_rejects_comparison_end_without_start() -> None:
+    agent, _db = _make_agent({})
+
+    result = await agent._generate_financial_statement_package(
+        {"period_start": "2026-06", "comparison_period_end": "2026-05"}
+    )
+
+    assert "comparison_period_start is required" in result["error"]
