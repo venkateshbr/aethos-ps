@@ -119,7 +119,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Profile/change password | `/app/profile`, settings account controls | Access pass | Profile renders; change-password form validates current/new/confirm fields where exposed |
 | Payments list | `/app/payments` | 1-4, 7 | Payments page renders and reflects recorded invoice payments where the product exposes payment list data |
 | Multi-tenant isolation | Authenticated app routes | Access pass | Records created in one tenant do not appear in another tenant; direct URLs fail cleanly |
-| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; residual proof issues #309, #310, and #311 are linked |
+| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309 is automated and residual proof issues #310 and #311 are linked |
 
 ## Reports Coverage Checklist
 
@@ -548,9 +548,9 @@ Current implementation assessment:
 | AI vendor invoice exceptions | Implemented first slices in #284 and #299: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail now surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence | Full Playwright automation and deeper PO/service-order matching remain future P2P depth; payment remains a separate bill-pay approval flow | #284, #299 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
-| Enterprise approval policy | Implemented first slices in #280 and #296: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, and Settings now lets Admin/Owner users raise tenant approval roles for money-out, accounting, money-in, draft, external-send, and high-risk AI actions | Deeper finance-role taxonomy remains future enterprise controls | #280, #296 |
-| Enterprise decision audit | Implemented first slices in #281 and #297: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents now expose record-scoped decision timelines for bills, invoices, engagements, payment batches, journals, close periods, and document-driven rejection review | Full Playwright automation across approve, approve-with-edits, rejection, and read-only auditor personas remains future depth | #281, #297 |
-| Enterprise RBAC permission proof | Implemented first slices in #282 and #298: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, API tests prove viewer read-only boundaries, and Bills/AP disables restricted viewer actions | Dedicated finance-role enum expansion and full multi-persona Playwright matrix remain future depth | #282, #298 |
+| Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
+| Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
+| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, then automated in #309: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, and browser proof verifies Owner/Admin, Manager, and Viewer paths across Settings, Inbox, and Bill detail | Dedicated finance-role enum expansion and full multi-persona Playwright matrix remain future depth | #282, #298, #309 |
 | Enterprise ops hardening | Implemented first slices in #286 and #301: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Full Playwright automation for Operational Health and live multi-instance limiter proof remain future depth | #286, #301 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -761,11 +761,21 @@ Expected result:
   behind the existing tenant role gates.
 
 Implementation status:
-- First slice implemented under #282 and #298. The backend exposes
+- First slice implemented under #282 and #298, with browser/API proof added in
+  #309. The backend exposes
   `GET /api/v1/tenants/finance-personas`, Settings renders the catalog under
   Approval Controls, component tests cover manager/viewer persona compatibility,
-  and backend tests prove viewer readability plus existing role mapping. Full
-  browser automation across all personas remains pending.
+  backend tests prove viewer readability plus existing role mapping, and
+  Playwright verifies Owner/Admin visibility, Manager owner-required approval
+  denial, Viewer read-only Settings/Inbox/Bill-detail behavior, Inbox Done
+  decision history, and Bill decision timeline evidence. Full browser
+  automation across every named finance persona remains future depth.
+
+Automation:
+```bash
+cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts --project=chromium
+cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py tests/unit/test_inbox_api_contract.py tests/unit/test_financial_events_api_contract.py tests/unit/test_rbac.py -q
+```
 
 Evidence: Settings persona card, Copilot access explanation, disabled UI
 controls, API 403 responses, no console/API errors.
