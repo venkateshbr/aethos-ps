@@ -119,7 +119,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Profile/change password | `/app/profile`, settings account controls | Access pass | Profile renders; change-password form validates current/new/confirm fields where exposed |
 | Payments list | `/app/payments` | 1-4, 7 | Payments page renders and reflects recorded invoice payments where the product exposes payment list data |
 | Multi-tenant isolation | Authenticated app routes | Access pass | Records created in one tenant do not appear in another tenant; direct URLs fail cleanly |
-| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309, #310, and #311 are automated |
+| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309, #310, #311, and #317 are automated |
 
 ## Reports Coverage Checklist
 
@@ -539,7 +539,7 @@ Current implementation assessment:
 | --- | --- | --- | --- |
 | Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and #265 command-center synthesis/live E2E coverage | Manager-level action planning is covered separately by #272; specialist execution remains approval-gated | #265 |
 | AI command-center action plan | Implemented in #272, #274, and #276: Copilot turns the daily finance-ops check into a reviewable Inbox action plan; approval fans out child Inbox work items, and Plan Item approval dispatches mapped specialist workflows such as collections, bill-pay, and close prep through their existing HITL gates | Invoices, payments, journals, statements, and emails still require specialist approvals before final execution | #272, #274, #276 |
-| Scheduled AI Finance Ops Manager | Implemented first slices in #283 and #295: tenant cadence can be configured through Settings or the Agents API, the hourly worker creates a traceable `scheduled_finance_ops_manager` workflow run, routes a scheduled action plan to Inbox, suppresses duplicate open plans for the same cadence window, and creates separate escalation notices for stale/high-risk Inbox work | Full Playwright automation remains future work; scheduled execution still stops at reviewed plans/escalation notices | #283, #295 |
+| Scheduled AI Finance Ops Manager | Implemented first slices in #283 and #295, then automated in #317: tenant cadence can be configured through Settings or the Agents API, the hourly worker creates a traceable `scheduled_finance_ops_manager` workflow run, routes a scheduled action plan to Inbox, suppresses duplicate open plans for the same cadence window, and creates separate escalation notices for stale/high-risk Inbox work | Scheduled execution still stops at reviewed plans/escalation notices; live worker cadence smoke remains environment evidence | #283, #295, #317 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch | Export/send/settlement remain explicit downstream guarded steps | #262 |
 | AI month-end close controller | Implemented and browser-verified in #260, then hardened in #285/#300 and automated in #310: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons | Year-end close and retained-earnings depth remain future R2R work | #260, #285, #300, #310 |
@@ -572,7 +572,12 @@ Expected result:
 - The run ledger proves which tools ran and why review was required.
 
 Implementation status:
-- Implemented under #265, #272, #274, #276, and #283. The read-only daily command-center synthesis covers AR, AP, WIP, close readiness, action queue, and agent/workflow status. The follow-up action-plan workflow turns those findings into a `copilot_create_finance_ops_action_plan` Inbox task. Approval creates `finance_ops_action_item` child Inbox tasks for each review-required recommendation, and Plan Item approval dispatches the mapped specialist workflow without directly approving invoices, payments, journals, statements, or emails. Scheduled runs now create the same reviewed parent plan through the hourly Finance Ops Manager worker and record `scheduled_finance_ops_manager` workflow telemetry.
+- Implemented under #265, #272, #274, #276, and #283, with scheduled-manager browser proof automated in #317. The read-only daily command-center synthesis covers AR, AP, WIP, close readiness, action queue, and agent/workflow status. The follow-up action-plan workflow turns those findings into a `copilot_create_finance_ops_action_plan` Inbox task. Approval creates `finance_ops_action_item` child Inbox tasks for each review-required recommendation, and Plan Item approval dispatches the mapped specialist workflow without directly approving invoices, payments, journals, statements, or emails. Scheduled runs now create the same reviewed parent plan through the hourly Finance Ops Manager worker and record `scheduled_finance_ops_manager` workflow telemetry.
+
+Automation:
+```bash
+cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium
+```
 
 Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API errors.
 
@@ -856,6 +861,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/timesheet-e2e.spec.ts` | Time, approvals, portal, billing gate supplement | Includes deeper time approval lifecycle; verify whether any API setup is used before counting as browser-only |
 | `frontend/e2e/bills-list.spec.ts` | Bills render/filter supplement | Useful for P2P route regression |
 | `frontend/e2e/p2p-vendor-bill.spec.ts` | P2P render supplement | Covers bills, expenses, pay-bills, Copilot upload entry points |
+| `frontend/e2e/enterprise-scheduled-finance-ops.spec.ts` | #317 scheduled Finance Ops Manager proof | Covers Settings schedule save/read-only behavior, scheduled action-plan Inbox task, stale high-risk escalation notice, and `scheduled_finance_ops_manager` workflow telemetry |
 | `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` | #310 AI finance workflow proof | Covers business-language Copilot prompts, P2P AP exception review, duplicate reason approval, bill evidence, bill-pay proposal review, R2R close package/override, statement tabs, and Agent Run Ledger evidence |
 | `frontend/e2e/enterprise-ops-health.spec.ts` | #311 operational health proof | Covers Settings Operational Health runtime, table/migration, distributed limiter, request/background failure, agent/tool/workflow failure, routed alert, and secret-redaction evidence |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
