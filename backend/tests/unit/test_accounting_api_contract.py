@@ -23,6 +23,7 @@ from app.services.close_reconciliation_service import (
 )
 from app.services.close_status_service import CloseStatusService
 from app.services.manual_journal_service import ManualJournalService
+from app.services.year_end_close_service import YearEndCloseService
 
 pytestmark = pytest.mark.unit
 
@@ -581,6 +582,50 @@ def test_lock_period_requires_matching_override_for_reconciliation_blocker(
         "subledger_reconciliation"
     )
     assert fake_db.tables["period_locks"][0]["period"] == "2026-06"
+
+
+def test_year_end_close_route_uses_service_role_client(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+
+    def _post_year_end_close(self: YearEndCloseService, year: int) -> dict[str, Any]:
+        assert self.db is fake_db
+        assert self.tenant_id == TENANT_ID
+        assert self.user_id == "manager-1"
+        assert year == 2026
+        return {
+            "year": 2026,
+            "period": "2026-12",
+            "entry_date": "2026-12-31",
+            "journal_entry_id": "journal-year-end-2026",
+            "entry_number": "YE-2026",
+            "posted_at": "2026-12-31T23:59:00+00:00",
+            "net_income": "900.00",
+            "retained_earnings_direction": "CR",
+            "retained_earnings_amount": "900.00",
+            "retained_earnings_account": {
+                "id": "acct-3000",
+                "code": "3000",
+                "name": "Retained Earnings",
+            },
+            "revenue_closed": "1200.00",
+            "expenses_closed": "300.00",
+            "line_count": 3,
+        }
+
+    monkeypatch.setattr(YearEndCloseService, "post_year_end_close", _post_year_end_close)
+
+    response = client.post("/api/v1/accounting/years/2026/year-end-close")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["entry_number"] == "YE-2026"
+    assert body["retained_earnings_direction"] == "CR"
+    assert body["net_income"] == "900.00"
 
 
 def test_expense_accrual_proposal_uses_service_role_client(

@@ -52,7 +52,8 @@ agent ledger.
 | ENT-P2P-005 | Bill-pay batch follows approve, export, send, and settlement controls | Browser proof automated in #325 | #325 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
-| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310; year-end close remains future depth | #300, #310 |
+| ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310 | #300, #310 |
+| ENT-R2R-004 | Year-end close posts retained-earnings journal evidence | API/browser proof automated in #327 | #327 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -85,6 +86,12 @@ Run this when validating the #317 scheduled Finance Ops Manager browser proof:
 
 ```bash
 cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium
+```
+
+Run this when validating the #327 R2R year-end close browser proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-r2r-year-end-close.spec.ts --project=chromium
 ```
 
 Run these when validating the #311 operational health and distributed limiter proof:
@@ -834,6 +841,44 @@ Automation target:
 - Browser: #310 uses the business prompt `Run month-end close readiness for
   June 2026...` and verifies Reports Balance Sheet, Income Statement, Statutory
   Pack, and Settings Agent Run Ledger tool evidence.
+
+## ENT-R2R-004 - Year-End Close Retained-Earnings Posting
+
+Persona: Controller and Owner/Admin.
+
+Status: Implemented in #327. Accounting exposes a year-end close action that
+posts a balanced `year_end_close` journal for the selected fiscal year. The
+backend reverses posted revenue and expense balances for January through
+December, offsets net income or loss to seeded account `3000 Retained
+Earnings`, blocks duplicate closes, and refuses to post while any period in the
+target year is locked.
+
+Steps:
+
+1. Complete reviewed month-end activity for the fiscal year.
+2. Open Accounting > Journal Entries.
+3. In Month-end close, post the year-end close for the selected fiscal year.
+4. Inspect the resulting journal evidence and retained-earnings amount.
+5. Re-open Balance Sheet and retained-earnings roll-forward for the year-end
+   period.
+
+Expected result:
+
+- The closing journal is balanced and has `reference_type=year_end_close`.
+- Revenue and expense accounts are closed to zero for the fiscal year.
+- Net income credits Retained Earnings; net loss debits Retained Earnings.
+- Duplicate close attempts and locked-year attempts fail with readable errors.
+- The posted journal is visible in Accounting and ties to the retained-earnings
+  statement evidence.
+
+Automation target:
+
+- API: assert the service posts the expected revenue, expense, and retained
+  earnings lines for net income and net loss.
+- API: assert duplicate, missing-account, no-activity, and locked-period guards.
+- Browser: `frontend/e2e/enterprise-r2r-year-end-close.spec.ts` covers the
+  Accounting close panel action, retained-earnings evidence, and refreshed
+  journal list.
 
 ## ENT-OPS-001 - Rate-Limited Endpoint
 

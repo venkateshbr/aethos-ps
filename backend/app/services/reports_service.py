@@ -63,6 +63,7 @@ _TARGET_GROSS_MARGIN_PCT = Decimal("40")
 _SCOPE_CHANGE_DRIVER_CODES = {"budget_hours_burn", "cap_drawdown", "scope_creep"}
 _CASH_ACCOUNT_CODES = {"1100"}
 _CASH_ACCOUNT_KEYWORDS = {"bank", "cash"}
+_CLOSING_REFERENCE_TYPES = {"year_end_close"}
 _OPERATING_WORKING_CAPITAL_PREFIXES = ("12", "13", "15", "20", "21", "23")
 _ACTIVE_ENGAGEMENT_STATUSES = ["active", "on_hold"]
 _ACTIVE_PROJECT_STATUSES = ["planning", "active", "on_hold"]
@@ -602,7 +603,8 @@ class ReportsService:
         )
         income_statement = self.income_statement(period_start=period, period_end=period)
         net_income = Decimal(income_statement.net_income)
-        ending = beginning + activity + net_income
+        closes_year = self._has_year_end_close_activity(period)
+        ending = beginning + activity + (Decimal("0") if closes_year else net_income)
         return RetainedEarningsRollForwardReport(
             period=period,
             previous_period=previous_period,
@@ -623,6 +625,7 @@ class ReportsService:
         agg = self._ledger_account_totals(
             period_start=period_start,
             period_end=period_end,
+            exclude_closing_entries=True,
         )
         revenue_lines: list[FinancialStatementLine] = []
         expense_lines: list[FinancialStatementLine] = []
@@ -780,11 +783,13 @@ class ReportsService:
         as_of_period: str | None = None,
         period_start: str | None = None,
         period_end: str | None = None,
+        exclude_closing_entries: bool = False,
     ) -> dict[tuple[str, str, str], dict[str, Decimal]]:
         rows = self._posted_journal_lines(
             as_of_period=as_of_period,
             period_start=period_start,
             period_end=period_end,
+            exclude_closing_entries=exclude_closing_entries,
         )
         agg: dict[tuple[str, str, str], dict[str, Decimal]] = {}
 
@@ -815,12 +820,24 @@ class ReportsService:
             period_start=period_start,
             period_end=period_end,
         ).items():
-            if account_type != "equity":
-                continue
-            if code != "3000" and "retained earnings" not in name.lower():
+            if not _is_retained_earnings_account(code, name, account_type):
                 continue
             total += totals["CR"] - totals["DR"]
         return total
+
+    def _has_year_end_close_activity(self, period: str) -> bool:
+        for row in self._posted_journal_lines(period_start=period, period_end=period):
+            journal = row.get("journal_entries") or {}
+            account = row.get("accounts") or {}
+            if str(journal.get("reference_type") or "") not in _CLOSING_REFERENCE_TYPES:
+                continue
+            if _is_retained_earnings_account(
+                str(account.get("code") or ""),
+                str(account.get("name") or ""),
+                str(account.get("account_type") or ""),
+            ):
+                return True
+        return False
 
     def _posted_journal_lines(
         self,
@@ -828,6 +845,7 @@ class ReportsService:
         as_of_period: str | None = None,
         period_start: str | None = None,
         period_end: str | None = None,
+        exclude_closing_entries: bool = False,
     ) -> list[dict]:
         rows = (
             self.db.table("journal_lines")
@@ -845,6 +863,11 @@ class ReportsService:
         for row in rows:
             journal = row.get("journal_entries") or {}
             if not journal.get("posted_at"):
+                continue
+            if (
+                exclude_closing_entries
+                and str(journal.get("reference_type") or "") in _CLOSING_REFERENCE_TYPES
+            ):
                 continue
             period = str(journal.get("period") or "")
             if as_of_period and period > as_of_period:
@@ -4167,6 +4190,12 @@ def _is_cash_account_by_code_name(code: str, name: str) -> bool:
     lowered = name.lower()
     return code in _CASH_ACCOUNT_CODES or any(
         keyword in lowered for keyword in _CASH_ACCOUNT_KEYWORDS
+    )
+
+
+def _is_retained_earnings_account(code: str, name: str, account_type: str) -> bool:
+    return account_type == "equity" and (
+        code == "3000" or "retained earnings" in name.lower()
     )
 
 

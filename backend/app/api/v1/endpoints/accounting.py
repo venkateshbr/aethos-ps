@@ -7,6 +7,7 @@ Endpoints:
   GET    /api/v1/accounting/periods/{period}/close-readiness — pre-lock reconciliation
   GET    /api/v1/accounting/periods/{period}/close-overrides — list close overrides
   POST   /api/v1/accounting/periods/{period}/close-overrides — record close override reason
+  POST   /api/v1/accounting/years/{year}/year-end-close — post annual P&L close to retained earnings
   POST   /api/v1/accounting/periods/{period}/propose-wip-accrual — HITL accrual proposal
   POST   /api/v1/accounting/periods/{period}/propose-expense-accrual — HITL expense accrual
   POST   /api/v1/accounting/periods/{period}/propose-deferred-revenue-release — HITL revenue release
@@ -36,7 +37,7 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from app.core.auth import CurrentUser, get_current_user
@@ -66,6 +67,7 @@ from app.services.manual_journal_service import ManualJournalService
 from app.services.recurring_journal_templates_service import (
     RecurringJournalTemplateService,
 )
+from app.services.year_end_close_service import YearEndCloseError, YearEndCloseService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -191,6 +193,22 @@ class PeriodClosePackageResponse(BaseModel):
     wip: list[dict[str, Any]]
     service_line_margins: list[dict[str, Any]]
     variance_commentary: list[dict[str, Any]]
+
+
+class YearEndCloseResponse(BaseModel):
+    year: int
+    period: str
+    entry_date: str
+    journal_entry_id: str
+    entry_number: str
+    posted_at: str
+    net_income: str
+    retained_earnings_direction: str | None
+    retained_earnings_amount: str
+    retained_earnings_account: dict[str, Any]
+    revenue_closed: str
+    expenses_closed: str
+    line_count: int
 
 
 class CloseTaskResponse(BaseModel):
@@ -397,6 +415,39 @@ async def close_package(
         ) from exc
 
     return PeriodClosePackageResponse(**result)
+
+
+@router.post("/years/{year}/year-end-close", response_model=YearEndCloseResponse)
+async def post_year_end_close(
+    year: int = Path(..., ge=2000, le=2100),
+    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> YearEndCloseResponse:
+    """Post the annual closing journal from P&L into Retained Earnings."""
+    try:
+        result = YearEndCloseService(db, tenant_id, current_user.user_id).post_year_end_close(
+            year
+        )
+    except YearEndCloseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "Failed to post year-end close for tenant %s year %s",
+            tenant_id,
+            year,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred",
+        ) from exc
+
+    return YearEndCloseResponse(**result)
 
 
 @router.get("/periods/{period}/close-readiness", response_model=PeriodCloseReadinessResponse)

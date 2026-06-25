@@ -41,6 +41,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 6 | Controller | `/copilot` → "Prepare month-end close for April 2026" | Copilot routes a close package to Inbox. The package includes AR, AP, WIP, GL, approvals, unposted journals, incomplete close tasks, close blockers, and recorded override evidence. |
 | 7 | Owner/Admin | Reviews close package and resolves blockers | Sub-ledger, trial-balance, unposted-journal, close-review, and close-task blockers must be resolved or explicitly overridden with a reason and actor. |
 | 8 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
+| 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
 
 ### §1.3 Reports
 
@@ -142,9 +143,18 @@ cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts -
 
 Coverage: month-end close readiness prompt, close Inbox approval, close package
 AR/AP/WIP/GL evidence, named override reason capture, close approval timeline,
-financial statement tabs, and Settings Agent Run Ledger evidence. Year-end
-close, retained earnings rollover depth, and manual journal audit enhancements
-remain future R2R depth.
+financial statement tabs, and Settings Agent Run Ledger evidence.
+
+The #327 browser proof covers year-end retained-earnings posting:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-r2r-year-end-close.spec.ts --project=chromium
+```
+
+Coverage: Accounting close panel year-end action, `year_end_close` journal
+evidence, retained-earnings amount, and refreshed journal list. AI-orchestrated
+year-end close approval and manual journal audit enhancements remain future R2R
+depth.
 
 The #317 browser proof covers the scheduled Finance Ops Manager setup and
 review boundary:

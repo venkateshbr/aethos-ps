@@ -208,6 +208,45 @@ def test_income_statement_filters_period_range() -> None:
     assert [line.account_code for line in report.expense_lines] == ["5000"]
 
 
+def test_income_statement_excludes_year_end_close_lines() -> None:
+    svc = _service(
+        [
+            _journal_line(
+                "CR", "1000.00", "4000", "Revenue", "revenue", "2026-12", entry_id="je-rev"
+            ),
+            _journal_line(
+                "DR", "200.00", "5000", "Expenses", "expense", "2026-12", entry_id="je-exp"
+            ),
+            _journal_line(
+                "DR",
+                "1000.00",
+                "4000",
+                "Revenue",
+                "revenue",
+                "2026-12",
+                entry_id="je-year-end-close",
+                reference_type="year_end_close",
+            ),
+            _journal_line(
+                "CR",
+                "200.00",
+                "5000",
+                "Expenses",
+                "expense",
+                "2026-12",
+                entry_id="je-year-end-close",
+                reference_type="year_end_close",
+            ),
+        ]
+    )
+
+    report = svc.income_statement(period_start="2026-12", period_end="2026-12")
+
+    assert report.total_revenue == "1000.00"
+    assert report.total_expenses == "200.00"
+    assert report.net_income == "800.00"
+
+
 def test_retained_earnings_roll_forward_for_selected_period() -> None:
     svc = _service(
         [
@@ -257,6 +296,77 @@ def test_retained_earnings_roll_forward_for_selected_period() -> None:
     assert report.current_period_net_income == "600.00"
     assert report.retained_earnings_activity == "-100.00"
     assert report.ending_retained_earnings == "1500.00"
+
+
+def test_retained_earnings_roll_forward_does_not_double_count_year_end_close() -> None:
+    svc = _service(
+        [
+            _journal_line(
+                "CR",
+                "1000.00",
+                "3000",
+                "Retained Earnings",
+                "equity",
+                "2026-11",
+                entry_id="je-re-begin",
+            ),
+            _journal_line(
+                "CR",
+                "900.00",
+                "4000",
+                "Revenue",
+                "revenue",
+                "2026-12",
+                entry_id="je-revenue",
+            ),
+            _journal_line(
+                "DR",
+                "300.00",
+                "5000",
+                "Expenses",
+                "expense",
+                "2026-12",
+                entry_id="je-expense",
+            ),
+            _journal_line(
+                "DR",
+                "900.00",
+                "4000",
+                "Revenue",
+                "revenue",
+                "2026-12",
+                entry_id="je-year-end-close",
+                reference_type="year_end_close",
+            ),
+            _journal_line(
+                "CR",
+                "300.00",
+                "5000",
+                "Expenses",
+                "expense",
+                "2026-12",
+                entry_id="je-year-end-close",
+                reference_type="year_end_close",
+            ),
+            _journal_line(
+                "CR",
+                "600.00",
+                "3000",
+                "Retained Earnings",
+                "equity",
+                "2026-12",
+                entry_id="je-year-end-close",
+                reference_type="year_end_close",
+            ),
+        ]
+    )
+
+    report = svc.retained_earnings_roll_forward(period="2026-12")
+
+    assert report.beginning_retained_earnings == "1000.00"
+    assert report.current_period_net_income == "600.00"
+    assert report.retained_earnings_activity == "600.00"
+    assert report.ending_retained_earnings == "1600.00"
 
 
 def test_cash_flow_groups_cash_movements_by_statement_section() -> None:
