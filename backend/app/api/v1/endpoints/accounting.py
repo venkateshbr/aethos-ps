@@ -1030,7 +1030,7 @@ async def create_manual_journal(
     balance check, period lock, and account validity. The journal is
     immutable once posted — corrections require reversing entries.
 
-    RBAC: manager or owner only.
+    RBAC: manager+ through the shared role hierarchy.
     """
     svc = ManualJournalService(db=db, tenant_id=tenant_id, user_id=current_user.user_id)
     return await svc.post_manual_journal(payload)

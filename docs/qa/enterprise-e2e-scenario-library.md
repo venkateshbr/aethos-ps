@@ -56,7 +56,7 @@ agent ledger.
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
 | ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Browser/API proof automated in #309 | #296, #309 |
 | ENT-AUD-003 | Business record exposes immutable decision timeline | Browser/API proof automated in #309 | #297, #309 |
-| ENT-RBAC-002 | Finance-role personas are browser-proven | Browser/API proof automated in #309; full persona matrix remains future depth | #298, #309 |
+| ENT-RBAC-002 | Finance-role personas are browser-proven | Browser/API proof automated in #309; full persona matrix automated in #321 | #298, #309, #321 |
 
 ## Automated Proof Commands
 
@@ -65,6 +65,12 @@ Run these when validating the #309 controls, audit, and RBAC proof:
 ```bash
 cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts --project=chromium
 cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py tests/unit/test_inbox_api_contract.py tests/unit/test_financial_events_api_contract.py tests/unit/test_rbac.py -q
+```
+
+Run this when validating the #321 full finance persona matrix proof:
+
+```bash
+cd frontend && npx playwright test e2e/enterprise-finance-persona-matrix.spec.ts --project=chromium
 ```
 
 Run this when validating the #310 AI finance workflow browser proof:
@@ -391,14 +397,14 @@ Automation target:
 
 Persona: AP Lead, AR Lead, Controller, Auditor, Executive, and Owner/Admin.
 
-Status: First slice implemented. The backend exposes a viewer-readable
+Status: Full matrix browser proof implemented. The backend exposes a viewer-readable
 finance-persona catalog at `GET /api/v1/tenants/finance-personas`, maps
 product-facing finance labels onto existing enforced roles, and unit/API tests
 prove the mapping does not add new permissions. Settings now shows Finance role
 personas under Approval Controls and highlights the personas compatible with the
 current tenant role. #309 adds browser/API proof for Owner/Admin, Manager, and
-Viewer paths; full browser automation across every finance persona remains
-future depth.
+Viewer paths; #321 adds browser proof across Owner/Admin, Controller, AP Lead,
+AR Lead, Auditor, and Executive routes/actions.
 
 Steps:
 
@@ -419,14 +425,14 @@ Expected result:
 - Settings gives users a self-serve explanation of the finance persona mapping
   without exposing admin-only permission controls to viewer users.
 
-Automation target:
+Automation:
 
-- Browser: sign in as Owner/Admin, Manager, and Viewer; open Settings and verify
-  Owner/Admin maps to Owner/Admin/Controller/AP/AR, Manager maps to AP/AR, and
-  Viewer maps to Auditor/Executive.
-- Browser: for Viewer, open Bills/AP, Invoices/AR, Accounting, and Inbox; assert
-  approve, edit, create, convert, post, pay, send, lock, and settings mutation
-  controls are disabled or absent.
+- Browser: `frontend/e2e/enterprise-finance-persona-matrix.spec.ts` signs in as
+  each named finance persona through the current enforced-role mapping, opens
+  Settings, Inbox, Bills/AP, Invoices/AR, Accounting, and Reports, and verifies
+  persona-appropriate controls.
+- Browser: Auditor and Executive paths assert create, approve, post, pay, send,
+  close, and settings mutation controls are disabled or absent.
 - API: call `/api/v1/tenants/finance-personas` as Viewer and assert the catalog
   is readable; repeat restricted money/post/send/settings calls and assert 403.
 
