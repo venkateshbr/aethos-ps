@@ -5,12 +5,14 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.models.accounting import (
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
+    ManualJournalReversalIn,
 )
 from app.services.manual_journal_service import ManualJournalService
 
@@ -130,6 +132,130 @@ class _ThresholdDb:
         return _ThresholdQuery(self, name)
 
 
+class _ReversalQuery:
+    def __init__(self, db: _ReversalDb, table: str) -> None:
+        self.db = db
+        self.table = table
+        self._eq_filters: list[tuple[str, object]] = []
+        self._limit: int | None = None
+
+    def select(self, _columns: str = "*") -> _ReversalQuery:
+        return self
+
+    def eq(self, key: str, value: object) -> _ReversalQuery:
+        self._eq_filters.append((key, value))
+        return self
+
+    def limit(self, count: int) -> _ReversalQuery:
+        self._limit = count
+        return self
+
+    def execute(self) -> _Result:
+        rows = list(self.db.tables[self.table])
+        for key, value in self._eq_filters:
+            rows = [row for row in rows if str(row.get(key)) == str(value)]
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return _Result(rows)
+
+
+class _ReversalDb:
+    def __init__(
+        self,
+        *,
+        original_reference_type: str = "manual",
+        existing_reversal: bool = False,
+    ) -> None:
+        self.rpc_calls: list[tuple[str, dict]] = []
+        self.tables: dict[str, list[dict]] = {
+            "journal_entries": [
+                {
+                    "id": "journal-1",
+                    "tenant_id": "tenant-1",
+                    "entry_number": "JE-1",
+                    "description": "Month-end accrual",
+                    "reason": "Original accrual reason",
+                    "entry_date": "2026-06-22",
+                    "period": "2026-06",
+                    "reference_type": original_reference_type,
+                    "reference_id": None,
+                    "created_by": "user-1",
+                    "posted_at": "2026-06-22T00:00:00Z",
+                },
+                {
+                    "id": "journal-reversal",
+                    "tenant_id": "tenant-1",
+                    "entry_number": "JE-R1",
+                    "description": "Reversal of JE-1",
+                    "reason": "Reverse duplicate accrual after review.",
+                    "entry_date": "2026-06-23",
+                    "period": "2026-06",
+                    "reference_type": "manual_reversal",
+                    "reference_id": "journal-1",
+                    "created_by": "user-1",
+                    "posted_at": "2026-06-23T00:00:00Z",
+                },
+            ],
+            "journal_lines": [
+                {
+                    "id": "line-dr",
+                    "journal_entry_id": "journal-1",
+                    "direction": "DR",
+                    "account_id": "11111111-1111-1111-1111-111111111111",
+                    "amount": "100.00",
+                    "currency": "USD",
+                    "base_amount": "100.00",
+                    "description": "Debit",
+                },
+                {
+                    "id": "line-cr",
+                    "journal_entry_id": "journal-1",
+                    "direction": "CR",
+                    "account_id": "22222222-2222-2222-2222-222222222222",
+                    "amount": "100.00",
+                    "currency": "USD",
+                    "base_amount": "100.00",
+                    "description": "Credit",
+                },
+                {
+                    "id": "line-rev-cr",
+                    "journal_entry_id": "journal-reversal",
+                    "direction": "CR",
+                    "account_id": "11111111-1111-1111-1111-111111111111",
+                    "amount": "100.00",
+                    "currency": "USD",
+                    "base_amount": "100.00",
+                    "description": "Reversal credit",
+                },
+                {
+                    "id": "line-rev-dr",
+                    "journal_entry_id": "journal-reversal",
+                    "direction": "DR",
+                    "account_id": "22222222-2222-2222-2222-222222222222",
+                    "amount": "100.00",
+                    "currency": "USD",
+                    "base_amount": "100.00",
+                    "description": "Reversal debit",
+                },
+            ],
+        }
+        if not existing_reversal:
+            self.tables["journal_entries"] = [
+                row
+                for row in self.tables["journal_entries"]
+                if row["id"] != "journal-reversal"
+            ]
+
+    def table(self, name: str) -> _ReversalQuery:
+        if name not in self.tables:
+            raise AssertionError(f"unexpected table: {name}")
+        return _ReversalQuery(self, name)
+
+    def rpc(self, name: str, params: dict) -> _RpcQuery:
+        self.rpc_calls.append((name, params))
+        return _RpcQuery()
+
+
 def _payload(*, amount: str = "100.00") -> ManualJournalEntryIn:
     return ManualJournalEntryIn.model_validate(
         {
@@ -153,6 +279,15 @@ def _payload(*, amount: str = "100.00") -> ManualJournalEntryIn:
                     "description": "Credit",
                 },
             ],
+        }
+    )
+
+
+def _reversal_payload() -> ManualJournalReversalIn:
+    return ManualJournalReversalIn.model_validate(
+        {
+            "entry_date": "2026-06-23",
+            "reason": "Reverse duplicate accrual after controller review.",
         }
     )
 
@@ -293,6 +428,109 @@ async def test_submit_manual_journal_above_threshold_creates_inbox_task() -> Non
     assert task["payload"]["manual_journal_approval"]["source"] == (
         "manual_journal_threshold"
     )
+
+
+@pytest.mark.asyncio
+async def test_reverse_manual_journal_posts_flipped_lines_and_audit_event() -> None:
+    db = _ReversalDb()
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock(
+        return_value={
+            "id": "journal-reversal",
+            "entry_number": "JE-R1",
+            "description": "Reversal of JE-1",
+            "reason": "Reverse duplicate accrual after controller review.",
+            "entry_date": "2026-06-23",
+            "period": "2026-06",
+            "reference_type": "manual_reversal",
+            "reference_id": "journal-1",
+            "created_by": "user-1",
+            "posted_at": "2026-06-23T00:00:00Z",
+        }
+    )
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+    ):
+        response = await svc.reverse_manual_journal("journal-1", _reversal_payload())
+
+    assert response.id == "journal-reversal"
+    assert response.reference == "journal-1"
+    call = post_mock.call_args.kwargs
+    assert call["reference_type"] == "manual_reversal"
+    assert call["reference_id"] == "journal-1"
+    assert call["extra_entry_fields"]["reason"].startswith("Reverse duplicate")
+    assert [line.direction for line in call["lines"]] == ["CR", "DR"]
+    assert db.rpc_calls[0][0] == "append_financial_event"
+    event = db.rpc_calls[0][1]
+    assert event["p_event_type"] == "manual_journal.reversed"
+    assert event["p_entity_id"] == "journal-1"
+    assert event["p_source_id"] == "journal-reversal"
+    assert event["p_metadata"]["total_debits"] == "100.00"
+    assert event["p_metadata"]["reason"].startswith("Reverse duplicate")
+
+
+@pytest.mark.asyncio
+async def test_reverse_manual_journal_rejects_duplicate_reversal() -> None:
+    svc = ManualJournalService(
+        db=_ReversalDb(existing_reversal=True),  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.reverse_manual_journal("journal-1", _reversal_payload())
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reverse_manual_journal_rejects_non_manual_entry() -> None:
+    svc = ManualJournalService(
+        db=_ReversalDb(original_reference_type="invoice"),  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.reverse_manual_journal("journal-1", _reversal_payload())
+
+    assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reverse_manual_journal_rejects_locked_period() -> None:
+    svc = ManualJournalService(
+        db=_ReversalDb(),  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+
+    with (
+        patch(
+            "app.services.manual_journal_service.assert_period_open",
+            new=AsyncMock(side_effect=HTTPException(status_code=422, detail="locked")),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.reverse_manual_journal("journal-1", _reversal_payload())
+
+    assert exc_info.value.status_code == 422
 
 
 def test_manual_journal_requires_business_reason() -> None:

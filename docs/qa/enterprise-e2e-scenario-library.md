@@ -58,6 +58,7 @@ agent ledger.
 | ENT-R2R-006 | AI financial statement package includes comparative variance commentary | API/agent proof automated in #331 | #331 |
 | ENT-R2R-007 | Manual journal requires business reason and emits audit evidence | API/UI proof implemented in #333 | #333 |
 | ENT-R2R-008 | High-value manual journal routes to Inbox approval | API/UI proof implemented in #335 | #335 |
+| ENT-R2R-009 | Posted manual journal reverses through controlled audit path | API/UI proof implemented in #337 | #337 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -125,6 +126,14 @@ cd frontend && npx ng test --watch=false --include src/app/features/settings/app
 cd frontend && npx tsc -p tsconfig.spec.json --noEmit
 ```
 
+Run these when validating the #337 manual journal reversal proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py -q
+cd backend && uv run ruff check app/models/accounting.py app/services/manual_journal_service.py app/api/v1/endpoints/accounting.py tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py
+cd frontend && npx tsc -p tsconfig.spec.json --noEmit
+```
+
 Run these when validating the #311 operational health and distributed limiter proof:
 
 ```bash
@@ -185,6 +194,34 @@ Expected result:
 - Approval materializes through `ManualJournalService.post_manual_journal`, not a duplicate direct-post path.
 - `manual_journal.posted` financial-event evidence is written after approval.
 - Under-threshold journals continue to post immediately through the guarded direct path.
+
+## ENT-R2R-009 - Manual Journal Reversal Workflow
+
+Persona: Finance Ops Manager, Controller, CPA/auditor.
+
+Preconditions:
+
+- A posted original manual journal exists with at least two balanced lines.
+- The reversal entry date is in an open accounting period.
+- User role is Manager or higher.
+
+Steps:
+
+1. Open `/app/accounting/journals`.
+2. Expand the posted manual journal row.
+3. Choose Reverse, enter an open-period reversal date and business reason, and submit.
+4. Verify a new reversal journal appears with `reference_type=manual_reversal`.
+5. Expand the reversal and verify DR/CR are flipped from the original.
+6. Inspect the journal decision timeline/audit events.
+7. Attempt to reverse the same original journal again.
+
+Expected result:
+
+- Reversal posts as a new immutable journal and never edits original rows.
+- `accounting_guardian` validates the reversal journal.
+- `financial_events` contains `manual_journal.reversed` linking original and reversal ids, actor role, reason, line count, and debit total.
+- Duplicate reversal is blocked with a non-500 conflict.
+- Non-manual journals cannot use this manual-journal reversal path.
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 

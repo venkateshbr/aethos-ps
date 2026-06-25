@@ -75,6 +75,28 @@ class ManualJournalEntryIn(BaseModel):
         return reason
 
 
+class ManualJournalReversalIn(BaseModel):
+    """Request body for reversing a posted manual journal entry."""
+
+    reason: str = Field(
+        default="",
+        max_length=500,
+        validate_default=True,
+        description="Business reason/memo explaining why this reversal is needed.",
+    )
+    entry_date: date
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        reason = v.strip()
+        if len(reason) < 10:
+            raise ValueError(
+                "Reason is required for manual journal reversals and must be at least 10 characters"
+            )
+        return reason
+
+
 # ---------------------------------------------------------------------------
 # Manual Journal Entry — response models
 # ---------------------------------------------------------------------------
@@ -106,7 +128,7 @@ class ManualJournalEntryResponse(BaseModel):
             entry_date=str(je["entry_date"]),
             period=str(je["period"]),
             reference_type=str(je["reference_type"]),
-            reference=je.get("reference"),
+            reference=je.get("reference") or je.get("reference_id"),
             created_by=str(je["created_by"]),
             posted_at=str(je["posted_at"]),
             lines=[

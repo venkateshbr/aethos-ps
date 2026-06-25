@@ -20,6 +20,7 @@ Endpoints:
   GET    /api/v1/accounting/recurring-journal-templates — list recurring journal templates
   POST   /api/v1/accounting/recurring-journal-templates — create recurring journal template
   POST   /api/v1/accounting/journal-entries        — post a manual GL journal entry (manager+)
+  POST   /api/v1/accounting/journal-entries/{id}/reverse — reverse a manual GL journal entry
   GET    /api/v1/accounting/journal-entries        — list journal entries (viewer+)
 
 Period format: "YYYY-MM" (e.g. "2026-05").
@@ -49,6 +50,7 @@ from app.models.accounting import (
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
+    ManualJournalReversalIn,
     RecurringJournalTemplateCreate,
     RecurringJournalTemplateResponse,
 )
@@ -1097,6 +1099,28 @@ async def create_manual_journal(
     if isinstance(result, ManualJournalApprovalTaskResponse):
         response.status_code = status.HTTP_202_ACCEPTED
     return result
+
+
+@router.post(
+    "/journal-entries/{journal_entry_id}/reverse",
+    response_model=ManualJournalEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def reverse_manual_journal(
+    payload: ManualJournalReversalIn,
+    journal_entry_id: str = Path(..., description="Posted manual journal entry id"),
+    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> ManualJournalEntryResponse:
+    """Create a reversing journal for a posted manual journal entry."""
+    svc = ManualJournalService(
+        db=db,
+        tenant_id=tenant_id,
+        user_id=current_user.user_id,
+        actor_role=current_user.role,
+    )
+    return await svc.reverse_manual_journal(journal_entry_id, payload)
 
 
 @router.get("/journal-entries", response_model=list[JournalEntryListItem])

@@ -18,6 +18,8 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from fastapi import HTTPException, status
+
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
 from app.models.accounting import (
@@ -25,6 +27,7 @@ from app.models.accounting import (
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
+    ManualJournalReversalIn,
 )
 from app.services.approval_policy import ApprovalPolicyMatrix
 from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
@@ -66,6 +69,82 @@ class ManualJournalService:
                 threshold=policy.manual_journal_approval_threshold,
             )
         return await self.post_manual_journal(payload)
+
+    async def reverse_manual_journal(
+        self,
+        journal_entry_id: str,
+        payload: ManualJournalReversalIn,
+    ) -> ManualJournalEntryResponse:
+        """Create a reversing journal for a posted manual journal entry."""
+        await assert_period_open(self.db, self.tenant_id, payload.entry_date)
+        original = await self._fetch_journal_entry(journal_entry_id)
+        if original is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Manual journal entry not found",
+            )
+        if str(original.get("reference_type") or "") != "manual":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only original manual journal entries can be reversed here",
+            )
+        existing_reversal = await self._find_existing_reversal(journal_entry_id)
+        if existing_reversal is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Manual journal entry has already been reversed",
+            )
+
+        original_lines = await self._fetch_journal_lines(journal_entry_id)
+        if not original_lines:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Manual journal entry has no lines to reverse",
+            )
+
+        entry_number = str(original.get("entry_number") or journal_entry_id)
+        reversal_lines = [
+            JournalLineSpec(
+                direction="CR" if line.get("direction") == "DR" else "DR",
+                account_code="",
+                account_id=str(line["account_id"]),
+                amount=Decimal(str(line.get("amount") or "0")),
+                currency=str(line.get("currency") or "USD"),
+                description=f"Reversal of {entry_number}: {line.get('description') or ''}".strip(),
+                base_amount=Decimal(str(line.get("base_amount") or line.get("amount") or "0")),
+            )
+            for line in original_lines
+        ]
+
+        def _post() -> dict:
+            return post_journal(
+                db=self.db,
+                tenant_id=self.tenant_id,
+                created_by=self.user_id,
+                description=f"Reversal of {entry_number}",
+                entry_date=payload.entry_date.isoformat(),
+                reference_type="manual_reversal",
+                reference_id=journal_entry_id,
+                lines=reversal_lines,
+                extra_entry_fields={"reason": payload.reason},
+            )
+
+        try:
+            reversal = await asyncio.to_thread(_post)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc),
+            ) from exc
+
+        reversal_db_lines = await self._fetch_journal_lines(str(reversal["id"]))
+        await self._append_manual_journal_reversal_event(
+            original=original,
+            reversal=reversal,
+            lines=reversal_db_lines,
+            payload=payload,
+        )
+        return ManualJournalEntryResponse.from_db(reversal, reversal_db_lines)
 
     async def post_manual_journal(
         self, payload: ManualJournalEntryIn
@@ -120,8 +199,6 @@ class ManualJournalService:
             je = await asyncio.to_thread(_post)
         except ValueError as exc:
             # accounting_guardian rejected — bubble up as 422
-            from fastapi import HTTPException, status
-
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(exc),
@@ -207,6 +284,52 @@ class ManualJournalService:
             )
             for r in rows
         ]
+
+    async def _fetch_journal_entry(self, journal_entry_id: str) -> dict[str, Any] | None:
+        def _fetch() -> list[dict[str, Any]]:
+            return (
+                self.db.table("journal_entries")
+                .select("*")
+                .eq("tenant_id", self.tenant_id)
+                .eq("id", journal_entry_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+
+        rows = await asyncio.to_thread(_fetch)
+        return rows[0] if rows else None
+
+    async def _find_existing_reversal(self, journal_entry_id: str) -> dict[str, Any] | None:
+        def _fetch() -> list[dict[str, Any]]:
+            return (
+                self.db.table("journal_entries")
+                .select("id")
+                .eq("tenant_id", self.tenant_id)
+                .eq("reference_type", "manual_reversal")
+                .eq("reference_id", journal_entry_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+
+        rows = await asyncio.to_thread(_fetch)
+        return rows[0] if rows else None
+
+    async def _fetch_journal_lines(self, journal_entry_id: str) -> list[dict[str, Any]]:
+        def _fetch() -> list[dict[str, Any]]:
+            return (
+                self.db.table("journal_lines")
+                .select("*")
+                .eq("journal_entry_id", journal_entry_id)
+                .execute()
+                .data
+                or []
+            )
+
+        return await asyncio.to_thread(_fetch)
 
     async def _create_manual_journal_approval_task(
         self,
@@ -347,6 +470,63 @@ class ManualJournalService:
                     "p_after_state": after_state,
                     "p_metadata": metadata,
                     "p_idempotency_key": f"manual_journal.posted:{journal['id']}",
+                },
+            ).execute()
+        )
+
+    async def _append_manual_journal_reversal_event(
+        self,
+        *,
+        original: dict[str, Any],
+        reversal: dict[str, Any],
+        lines: list[dict[str, Any]],
+        payload: ManualJournalReversalIn,
+    ) -> None:
+        """Append reversal-specific evidence to the immutable event log."""
+        total_debits = sum(
+            Decimal(str(line.get("base_amount") or line.get("amount") or "0"))
+            for line in lines
+            if line.get("direction") == "DR"
+        )
+        metadata = {
+            "original_journal_entry_id": str(original.get("id") or ""),
+            "original_entry_number": str(original.get("entry_number") or ""),
+            "reversal_entry_number": str(reversal.get("entry_number") or ""),
+            "reason": payload.reason,
+            "line_count": len(lines),
+            "total_debits": serialise_money(total_debits),
+            "source": "manual_journal_service",
+        }
+        after_state = {
+            "original_journal_entry_id": str(original.get("id") or ""),
+            "reversal_journal_entry_id": str(reversal.get("id") or ""),
+            "reversal_entry_number": str(reversal.get("entry_number") or ""),
+            "reason": payload.reason,
+            "posted_at": str(reversal.get("posted_at") or ""),
+            "line_count": len(lines),
+            "total_debits": serialise_money(total_debits),
+        }
+
+        await asyncio.to_thread(
+            lambda: self.db.rpc(
+                "append_financial_event",
+                {
+                    "p_tenant_id": self.tenant_id,
+                    "p_event_type": "manual_journal.reversed",
+                    "p_entity_type": "journal_entry",
+                    "p_entity_id": str(original["id"]),
+                    "p_source_type": "manual_journal_reversal",
+                    "p_source_id": str(reversal["id"]),
+                    "p_actor_user_id": self.user_id,
+                    "p_actor_role": self.actor_role,
+                    "p_action": "reversed",
+                    "p_before_state": {
+                        "original_journal_entry_id": str(original.get("id") or ""),
+                        "entry_number": str(original.get("entry_number") or ""),
+                    },
+                    "p_after_state": after_state,
+                    "p_metadata": metadata,
+                    "p_idempotency_key": f"manual_journal.reversed:{original['id']}",
                 },
             ).execute()
         )
