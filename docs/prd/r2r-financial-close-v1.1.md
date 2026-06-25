@@ -100,7 +100,7 @@ Human-in-control, AI-doing-the-work.
 | Cash Flow Statement | Not implemented | Missing |
 | Financial Close Process | No structured close flow | Missing |
 | Year-End Close entries | Not implemented | Missing |
-| Manual Journal Audit Trail | Basic (posted_by, posted_at) | Incomplete — no reason field, no approval threshold |
+| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333 | Incomplete — no approval threshold, reversal workflow, or full state-change log |
 | Retained Earnings account | Not seeded | Missing — must be seeded at tenant creation |
 
 ---
@@ -420,6 +420,13 @@ Then net Income Summary balance:
 ## 9. Feature 5 — Manual Journal Audit Trail Enhancement
 
 *This feature enhances the existing manual journal capability (related to #204 / #208).*
+
+Implementation note 2026-06-25: #333 implements the first audit slice:
+`journal_entries.reason`, required service/API/UI reason capture for manual
+journals, immutable `manual_journal.posted` financial-event evidence, and Inbox
+compatibility for older AI draft-journal proposals. Threshold approval,
+rejection workflow, reversal workflow, and full state-transition audit remain
+future slices.
 
 ### 9.1 User Stories
 

@@ -1118,6 +1118,11 @@ class InboxService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Journal proposal payload must be an object",
             )
+        journal_payload = dict(journal_payload)
+        journal_payload["reason"] = self._journal_reason_from_proposal(
+            journal_payload,
+            proposal_payload=payload,
+        )
 
         from pydantic import ValidationError
 
@@ -1138,6 +1143,28 @@ class InboxService:
             user_id=user_id,
         ).post_manual_journal(journal)
         return {"entity_type": "journal_entry", "entity_id": posted.id}
+
+    @staticmethod
+    def _journal_reason_from_proposal(
+        journal_payload: dict,
+        *,
+        proposal_payload: dict,
+    ) -> str:
+        """Derive the audit reason for older AI draft-journal proposals."""
+        candidates = [
+            journal_payload.get("reason"),
+            journal_payload.get("rationale"),
+            journal_payload.get("business_reason"),
+            proposal_payload.get("reason"),
+            proposal_payload.get("rationale"),
+            proposal_payload.get("business_reason"),
+            journal_payload.get("description"),
+        ]
+        for candidate in candidates:
+            if isinstance(candidate, str) and len(candidate.strip()) >= 10:
+                return candidate.strip()
+        description = str(journal_payload.get("description") or "AI-approved journal proposal")
+        return f"Approved journal proposal: {description}".strip()
 
     async def _materialise_engagement(self, payload: dict) -> dict:
         import asyncio

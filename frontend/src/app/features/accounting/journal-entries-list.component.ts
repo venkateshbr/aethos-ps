@@ -41,6 +41,7 @@ interface JournalEntry {
   id: string;
   entry_number: string;
   description: string;
+  reason?: string | null;
   entry_date: string;
   reference?: string | null;
   reference_type: 'manual' | 'auto' | 'invoice' | 'bill' | 'payment' | 'year_end_close';
@@ -783,6 +784,12 @@ type FilterChip = 'all' | 'manual' | 'auto';
                   class="p-0 border-b border-border-default bg-surface-raised">
                 @if (expandedRow() === row.id) {
                   <div class="px-6 py-4">
+                    @if (row.reason) {
+                      <div class="mb-3 border-l-2 border-border-subtle bg-surface px-3 py-2">
+                        <p class="text-xs uppercase tracking-wide text-text-muted">Business reason</p>
+                        <p class="mt-1 text-sm text-text-primary">{{ row.reason }}</p>
+                      </div>
+                    }
                     @if (row.lines && row.lines.length > 0) {
                       <table class="w-full text-sm" [attr.aria-label]="'Journal lines for ' + row.entry_number">
                         <thead>
@@ -877,7 +884,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
         <!-- Panel body -->
         <form
           [formGroup]="journalForm"
-          (ngSubmit)="submitJournal()"
+          (ngSubmit)="formMode() === 'recurring' ? submitRecurringTemplate() : submitJournal()"
           class="flex-1 overflow-y-auto px-6 py-5 space-y-5"
           novalidate
         >
@@ -891,7 +898,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
               type="text"
               formControlName="description"
               class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
-              [placeholder]="formMode() === 'recurring' ? 'e.g. Monthly depreciation' : 'Reason for this entry (e.g. Month-end accrual)'"
+              [placeholder]="formMode() === 'recurring' ? 'e.g. Monthly depreciation' : 'e.g. Month-end payroll accrual'"
             />
             @if (journalForm.controls.description.touched && journalForm.controls.description.errors?.['required']) {
               <p class="text-xs text-confidence-low mt-1">{{ formMode() === 'recurring' ? 'Template name' : 'Description' }} is required.</p>
@@ -899,6 +906,26 @@ type FilterChip = 'all' | 'manual' | 'auto';
           </div>
 
           @if (formMode() === 'journal') {
+            <div>
+              <label for="jnl-reason" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                Business reason <span class="text-confidence-low">*</span>
+              </label>
+              <textarea
+                id="jnl-reason"
+                formControlName="reason"
+                rows="3"
+                maxlength="500"
+                class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm resize-y"
+                placeholder="Explain the business event, evidence reviewed, and why this manual journal is needed"
+              ></textarea>
+              @if (journalForm.controls.reason.touched && journalForm.controls.reason.errors?.['required']) {
+                <p class="text-xs text-confidence-low mt-1">Business reason is required.</p>
+              }
+              @if (journalForm.controls.reason.touched && journalForm.controls.reason.errors?.['minlength']) {
+                <p class="text-xs text-confidence-low mt-1">Use at least 10 characters.</p>
+              }
+            </div>
+
             <!-- Entry Date + Reference (side by side) -->
             <div class="grid grid-cols-2 gap-4">
               <div>
@@ -1293,6 +1320,7 @@ export class JournalEntriesListComponent implements OnInit {
   // Reactive form
   journalForm = this.fb.nonNullable.group({
     description: ['', [Validators.required, Validators.maxLength(255)]],
+    reason:      [''],
     entry_date:  ['', [Validators.required]],
     reference:   [''],
     start_period: ['', [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)]],
@@ -1532,6 +1560,7 @@ export class JournalEntriesListComponent implements OnInit {
     // Reset to 2 lines
     this.journalForm.reset({
       description: '',
+      reason: '',
       entry_date: today,
       reference: '',
       start_period: today.slice(0, 7),
@@ -1543,6 +1572,12 @@ export class JournalEntriesListComponent implements OnInit {
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
     this.linesArray.push(this.buildLine('DR'));
     this.linesArray.push(this.buildLine('CR'));
+    this.journalForm.controls.reason.setValidators([
+      Validators.required,
+      Validators.minLength(10),
+      Validators.maxLength(500),
+    ]);
+    this.journalForm.controls.reason.updateValueAndValidity();
 
     this.formError.set(null);
     this.drTotal.set('0.00');
@@ -1560,6 +1595,7 @@ export class JournalEntriesListComponent implements OnInit {
     const today = new Date().toISOString().split('T')[0];
     this.journalForm.reset({
       description: '',
+      reason: '',
       entry_date: today,
       reference: '',
       start_period: this.closePeriod(),
@@ -1570,6 +1606,8 @@ export class JournalEntriesListComponent implements OnInit {
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
     this.linesArray.push(this.buildLine('DR'));
     this.linesArray.push(this.buildLine('CR'));
+    this.journalForm.controls.reason.clearValidators();
+    this.journalForm.controls.reason.updateValueAndValidity();
 
     this.formError.set(null);
     this.drTotal.set('0.00');
@@ -1678,6 +1716,7 @@ export class JournalEntriesListComponent implements OnInit {
     const v = this.journalForm.getRawValue();
     const payload = {
       description: v.description,
+      reason:      v.reason.trim(),
       entry_date:  v.entry_date,
       reference:   v.reference || undefined,
       lines: v.lines.map(l => ({

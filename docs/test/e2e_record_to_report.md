@@ -43,6 +43,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 8 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
 | 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
 | 8b | Finance Ops Manager | `/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/inbox` task | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
+| 8c | Finance Ops Manager | `/accounting/journals` -> Post manual journal with business reason | Balanced manual journals require a business reason, store it on `journal_entries.reason`, and append `manual_journal.posted` audit evidence with actor role, line count, and debit total. |
 
 ### §1.3 Reports
 
@@ -98,6 +99,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | §3.8 | Account deleted that has historical entries | Block delete; allow "deactivate" only |
 | §3.9 | Close blocker overridden without reason | 422 `close_override_reason_required`; period remains unlocked |
 | §3.10 | Lock attempted with unposted journal and no override | 409 `unposted_journals_pending`; response lists affected draft journals |
+| §3.11 | Manual journal submitted without business reason | 422 validation error; no journal entry or audit event is created |
 
 ---
 
@@ -108,7 +110,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | E1 | Period closed with cents of FX residual | Auto-route residual to `7900 Realized FX Gain/Loss` |
 | E2 | Year-end close (December 2026) | Roll P&L → Retained Earnings; net income = 0 going into Jan 2027 |
 | E3 | Voiding an invoice in a closed period | Allowed only via reversing entry dated in the open period |
-| E4 | Manual journal entry (rare, owner-only) | Allowed; double approval (owner + admin); `accounting_guardian` still validates balance |
+| E4 | Manual journal entry | Manager+ can post when balanced and reasoned; `accounting_guardian` validates balance/account/period and `manual_journal.posted` evidence is written. Threshold approval remains future depth. |
 | E5 | Reports request a million-row range | API paginates; UI streams; no OOM |
 
 ---
@@ -122,7 +124,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | View trial balance | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Close period | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Reopen period | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Create manual journal | ✅ | ✅ (with second approver) | ❌ | ❌ | ❌ |
+| Create manual journal | ✅ | ✅ | ✅ | ❌ | ❌ |
 
 ---
 
@@ -133,6 +135,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 - `agent_suggestions`: `reporting_agent` rows for natural-language Q&A
 - `accounting_close_overrides`: close blocker code, reason, actor, timestamp, and blocker evidence for explicit overrides
 - `close_package.readiness_evidence`: AR/AP/WIP/GL/approval evidence and recorded overrides shown to the reviewer
+- `journal_entries.reason` and `financial_events.manual_journal.posted`: business reason, actor role, line count, and debit total for manual journal audit evidence
 
 ## §6.1 Automated Browser Proof
 
@@ -178,6 +181,17 @@ cd backend && uv run pytest tests/unit/test_copilot_tools.py -q
 Coverage: statement package comparison period schema, default prior-window
 comparison, explicit comparison period support, deterministic variances, and
 readable validation for incomplete comparison inputs.
+
+The #333 proof covers manual journal business reason and audit evidence:
+
+```bash
+cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py tests/unit/test_inbox_journal_materialization.py -q
+cd frontend && npx tsc -p tsconfig.spec.json --noEmit
+```
+
+Coverage: required reason validation, service-role posting with actor role,
+manual-journal immutable event metadata, Inbox compatibility for older AI draft
+journals, and Accounting UI reason capture/display.
 
 The #317 browser proof covers the scheduled Finance Ops Manager setup and
 review boundary:

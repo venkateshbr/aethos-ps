@@ -56,6 +56,7 @@ agent ledger.
 | ENT-R2R-004 | Year-end close posts retained-earnings journal evidence | API/browser proof automated in #327 | #327 |
 | ENT-R2R-005 | AI year-end close routes retained-earnings posting through Inbox | API/agent proof automated in #329 | #329 |
 | ENT-R2R-006 | AI financial statement package includes comparative variance commentary | API/agent proof automated in #331 | #331 |
+| ENT-R2R-007 | Manual journal requires business reason and emits audit evidence | API/UI proof implemented in #333 | #333 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -108,12 +109,45 @@ Run this when validating the #331 comparative statement package proof:
 cd backend && uv run pytest tests/unit/test_copilot_tools.py -q
 ```
 
+Run these when validating the #333 manual journal audit proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_manual_journal_service.py tests/unit/test_accounting_api_contract.py tests/unit/test_inbox_journal_materialization.py -q
+cd frontend && npx tsc -p tsconfig.spec.json --noEmit
+```
+
 Run these when validating the #311 operational health and distributed limiter proof:
 
 ```bash
 cd backend && uv run pytest tests/unit/test_ops_hardening.py -q
 cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium
 ```
+
+## ENT-R2R-007 - Manual Journal Reason And Audit Evidence
+
+Persona: Finance Ops Manager, Controller, CPA/auditor.
+
+Preconditions:
+
+- Chart of accounts has at least two active accounts.
+- Current accounting period is open.
+- User role is Manager or higher for manual journal posting.
+
+Steps:
+
+1. Open `/app/accounting/journals`.
+2. Create a balanced manual journal and provide a business reason of at least 10 characters.
+3. Expand the posted journal row and verify the business reason is visible.
+4. Query the decision/audit timeline for the journal entry.
+5. Attempt the same balanced journal without a business reason.
+
+Expected result:
+
+- Valid manual journal posts through `accounting_guardian`.
+- `journal_entries.reason` stores the business reason.
+- `financial_events` contains `manual_journal.posted` with reason, actor role, line count, and debit total metadata.
+- Missing or short reason is rejected with a non-500 validation error.
+- AI draft journals approved from Inbox derive a reason from proposal context if older payloads do not include one.
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 

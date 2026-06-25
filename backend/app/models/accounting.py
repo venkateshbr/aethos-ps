@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.domain.money import quantise_money
 
@@ -47,7 +47,13 @@ class ManualJournalLineIn(BaseModel):
 class ManualJournalEntryIn(BaseModel):
     """Request body for POST /api/v1/accounting/journal-entries."""
 
-    description: str  # Required: human-readable reason for the manual entry
+    description: str  # Required: short human-readable journal description
+    reason: str = Field(
+        default="",
+        max_length=500,
+        validate_default=True,
+        description="Business reason/memo explaining why this manual journal is needed.",
+    )
     entry_date: date
     lines: list[ManualJournalLineIn]
     reference: str | None = None  # Optional external ref (e.g. "Month-end accrual")
@@ -57,6 +63,16 @@ class ManualJournalEntryIn(BaseModel):
         if len(self.lines) < 2:
             raise ValueError("Journal entry requires at least 2 lines")
         return self
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        reason = v.strip()
+        if len(reason) < 10:
+            raise ValueError(
+                "Reason is required for manual journal entries and must be at least 10 characters"
+            )
+        return reason
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +86,7 @@ class ManualJournalEntryResponse(BaseModel):
     id: str
     entry_number: str
     description: str
+    reason: str | None = None
     entry_date: str  # ISO date "YYYY-MM-DD"
     period: str  # "YYYY-MM"
     reference_type: str  # always "manual"
@@ -85,6 +102,7 @@ class ManualJournalEntryResponse(BaseModel):
             id=str(je["id"]),
             entry_number=str(je["entry_number"]),
             description=str(je["description"]),
+            reason=str(je["reason"]) if je.get("reason") is not None else None,
             entry_date=str(je["entry_date"]),
             period=str(je["period"]),
             reference_type=str(je["reference_type"]),
@@ -117,6 +135,7 @@ class JournalEntryListItem(BaseModel):
     id: str
     entry_number: str
     description: str
+    reason: str | None = None
     entry_date: str
     period: str
     reference_type: str
