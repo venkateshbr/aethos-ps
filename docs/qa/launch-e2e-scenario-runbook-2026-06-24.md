@@ -157,7 +157,7 @@ Run these edge cases across the scenarios rather than as isolated smoke tests.
 | Duplicate/naming | Create records with similar names and verify list search/filtering distinguishes them; exact duplicates should either be allowed intentionally or rejected clearly |
 | Dates | End date before start date; due date before invoice date; service period outside contract; period-locked journal date; DST/timezone boundary time entry |
 | Amount precision | Zero amount, negative amount, extra decimal precision, very large amount, tax rounding residual, invoice/bill total recomputation |
-| Currency | USD base plus at least one GBP/SGD/INR/AUD scenario; unsupported currency rejection if a free-text field exists; same-currency payment batch guard |
+| Currency | USD base plus at least one GBP/SGD/INR/AUD scenario, including a manual journal or AI draft journal; unsupported currency rejection if a free-text field exists; same-currency payment batch guard |
 | Billing models | T&M, fixed fee, retainer, retainer draw/floor, milestone, capped T&M, mixed fixed plus T&M, per-unit payroll if UI exposes it |
 | Caps and budgets | Capped T&M over cap, budget hours overrun, low-margin project, missing rate, inactive service |
 | Approvals | Submitted/approved/rejected lifecycle; reject with blank reason; double-click approval; stale page approval after another user acted |
@@ -167,7 +167,7 @@ Run these edge cases across the scenarios rather than as isolated smoke tests.
 | Documents and AI | Valid upload, unsupported file type, extracted draft edit, low confidence, prompt injection, reject correction logged |
 | P2P matching | Exact PO match, quantity mismatch, price mismatch, missing PO, duplicate vendor invoice number, prepaid/service-period bill |
 | Payments | Partial payment, overpayment, duplicate payment attempt, settlement reversal if exposed, paid item excluded from aging |
-| Journals/R2R | Balanced manual journal with business reason accepted, high-value journal routed to Inbox approval, posted manual journal reversed with reason, imbalanced blocked, recurring template generated, close task waived with reason, close package loads, period lock readiness guard, journal audit event visible |
+| Journals/R2R | Balanced manual journal with business reason accepted, high-value journal routed to Inbox approval, posted manual journal reversed with reason, multi-currency manual journal stores base-currency amounts and remains balanced in reports, imbalanced blocked, recurring template generated, close task waived with reason, close package loads, period lock readiness guard, journal audit event visible |
 | Reports | Empty state, data state, refresh, period selector, tab switch, no stale skeletons, no console/API 500s |
 | Resilience | Browser refresh on detail pages, back/forward navigation, long names, long notes, narrow/mobile viewport for primary forms |
 
@@ -437,6 +437,7 @@ Expected result:
 - Manual journal posts only when balanced and a business reason of at least 10 characters is provided.
 - Posted manual journal detail shows the business reason and the immutable event log contains `manual_journal.posted` metadata with the same reason, actor, line count, and debit total.
 - Manual journal debit totals at or above the tenant manual-journal threshold route to Inbox approval instead of posting immediately. Inbox approval posts the journal once through the same guardian/audit path.
+- Multi-currency manual journal lines store both transaction `amount`/`currency` and converted tenant-base `base_amount`; Trial Balance and financial statements remain balanced in base currency.
 - Manual journal reversals create a new balanced `manual_reversal` entry, link back to the original journal, and append `manual_journal.reversed` audit evidence.
 - Close tasks can be bootstrapped and updated from the browser.
 - Agent proposals route through Inbox review before posting.
@@ -446,6 +447,7 @@ Additional checks:
 - Imbalanced rejection: attempt DR 15000 / CR 14000; UI must block or API error must be user-visible and non-500.
 - Missing reason rejection: attempt to post a balanced manual journal without a business reason; UI or API must reject it with a clear validation message.
 - Threshold approval: lower the Settings approval policy manual-journal threshold, submit a balanced journal above that amount, verify a pending Inbox task is created, approve it with the required Accounting role, and verify the journal then appears once.
+- Multi-currency AI journal: in `/app/copilot`, ask `Prepare a GBP 1,000 month-end payroll accrual journal for the current period. Route it to Inbox before posting and show the base-currency impact.` Approve through Inbox if routed, then verify the posted journal retains GBP transaction amounts, USD base amounts from the posting-date FX rate, and balanced Trial Balance totals.
 - Reversal control: reverse a posted manual journal with a reason, verify the reversal entry flips DR/CR, then attempt to reverse the original again and confirm duplicate reversal is blocked.
 - Recurring template: create a monthly depreciation or rent accrual template, request recurring-journal proposal, and verify generated task/proposal.
 - Close proposals: run WIP accrual, expense accrual, deferred revenue release, milestone recognition, percentage-completion recognition, prepaid amortization, and recurring journals where buttons are available.
@@ -958,7 +960,7 @@ Implemented during this validation pass:
 | 5. IT infrastructure procurement | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor/bills/pay-bills routes render and #323 covers line-level PO match lifecycle; run manual script for launch-demo data entry |
 | 6. Contractor service order | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor bill/procurement, service-period PO/SO match evidence, project-cost, AP Aging, and close proposal paths covered by automated suite; manual script validates named contractor scenario |
 | 7. Bill payment batch and settlement | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Pay Bills route and AP Aging checks pass; Copilot live proof verifies AI proposal, Inbox approval, and draft batch creation; #325 browser proof covers approve/export/mark-sent/settle lifecycle; bill payment/service tests cover settlement semantics |
-| 8. Month-end close | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, and Copilot close-task bootstrap all passed |
+| 8. Month-end close | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, Copilot close-task bootstrap, and backend multi-currency manual-journal FX proof all passed or are mapped to #347 |
 | 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, Copilot statement-package live proof, and #327 year-end retained-earnings posting proof passed |
 | 10. Management reports and action queues | Browser-capable | Browser + automated equivalent | Passed | Project Health, Capacity, Action Queue, report tabs, Inbox/HITL, agent run/workflow surfaces covered by full browser/backend suites |
 

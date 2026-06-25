@@ -333,7 +333,10 @@ Current workflows:
   task is rejected, the rejection reason is captured in `manual_journal.rejected`
   evidence without posting a journal. Posted manual journals can be reversed
   through Accounting by entering a reversal date and reason; the system creates
-  a new reversal journal rather than editing history.
+  a new reversal journal rather than editing history. For multi-currency manual
+  journals, transaction amounts keep their entered currency while base amounts
+  are converted to the tenant base currency at the posting-date FX rate before
+  financial statements read the journal.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained

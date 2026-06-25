@@ -58,6 +58,10 @@ class JournalLineSpec:
             self.base_amount = self.amount
 
 
+def journal_line_base_amount(line: JournalLineSpec) -> Decimal:
+    return line.base_amount if line.base_amount is not None else line.amount
+
+
 def validate_journal_balance(lines: list[JournalLineSpec]) -> bool:
     """Return True if the journal balances (debits == credits within 0.01).
 
@@ -70,8 +74,8 @@ def validate_journal_balance(lines: list[JournalLineSpec]) -> bool:
     Returns:
         True if |debits - credits| <= 0.01, False otherwise.
     """
-    debits = sum(line.amount for line in lines if line.direction == "DR")
-    credits = sum(line.amount for line in lines if line.direction == "CR")
+    debits = sum(journal_line_base_amount(line) for line in lines if line.direction == "DR")
+    credits = sum(journal_line_base_amount(line) for line in lines if line.direction == "CR")
     return abs(debits - credits) <= Decimal("0.01")
 
 
@@ -171,8 +175,18 @@ def post_journal(
         )
         fx_acct_id = fx_acct.data[0]["id"] if fx_acct.data else None
         residual: Decimal = result["fx_residual"]
-        debits = sum(line.amount for line in lines if line.direction == "DR")
-        credits = sum(line.amount for line in lines if line.direction == "CR")
+        base_currency = "USD"
+        tenant_result = (
+            db.table("tenants")
+            .select("base_currency")
+            .eq("id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+        if tenant_result.data:
+            base_currency = str(tenant_result.data[0].get("base_currency") or "USD").upper()
+        debits = sum(journal_line_base_amount(line) for line in lines if line.direction == "DR")
+        credits = sum(journal_line_base_amount(line) for line in lines if line.direction == "CR")
         direction = "CR" if debits > credits else "DR"
         je_lines.append(
             {
@@ -181,7 +195,7 @@ def post_journal(
                 "direction": direction,
                 "account_id": fx_acct_id,
                 "amount": str(residual),
-                "currency": "USD",
+                "currency": base_currency,
                 "base_amount": str(residual),
                 "description": "Realized FX Gain/Loss",
             }

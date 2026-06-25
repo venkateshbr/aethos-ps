@@ -127,6 +127,34 @@ def test_guardian_rejects_imbalanced_journal() -> None:
     assert result["fx_residual"] is None
 
 
+def test_guardian_rejects_base_amount_imbalance_when_transaction_amounts_match() -> None:
+    """Multi-currency journals must balance in tenant base currency."""
+    lines = [
+        JournalLineSpec(
+            direction="DR",
+            account_code="5000",
+            amount=Decimal("100.00"),
+            base_amount=Decimal("100.00"),
+            description="USD expense",
+        ),
+        JournalLineSpec(
+            direction="CR",
+            account_code="2000",
+            amount=Decimal("100.00"),
+            base_amount=Decimal("125.00"),
+            description="GBP payable",
+        ),
+    ]
+    db = MagicMock()
+
+    result = validate_journal(lines, "2026-05-01", "tenant-1", db)
+
+    assert result["action"] == "reject"
+    assert "imbalanced" in result["reason"].lower()
+    assert "DR=100.00 CR=125.00" in result["reason"]
+    assert result["fx_residual"] is None
+
+
 # ---------------------------------------------------------------------------
 # Test 3: locked period is rejected
 # ---------------------------------------------------------------------------
