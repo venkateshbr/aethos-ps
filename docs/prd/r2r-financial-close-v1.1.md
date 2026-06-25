@@ -100,7 +100,7 @@ Human-in-control, AI-doing-the-work.
 | Cash Flow Statement | Not implemented | Missing |
 | Financial Close Process | No structured close flow | Missing |
 | Year-End Close entries | Not implemented | Missing |
-| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335; reversal workflow implemented in #337; submitted/rejected lifecycle events implemented in #339 | Incomplete — editable draft/status-filter depth and created/edited timeline remain future product work |
+| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335; reversal workflow implemented in #337; submitted/rejected lifecycle events implemented in #339; same-user approval denial implemented in #341 | Incomplete — editable draft/status-filter depth and created/edited timeline remain future product work |
 | Retained Earnings account | Not seeded | Missing — must be seeded at tenant creation |
 
 ---
@@ -431,8 +431,10 @@ guardian/audit path. #337 implements controlled reversal: posted manual
 journals can create a new linked `manual_reversal` journal with
 `manual_journal.reversed` evidence. #339 implements threshold-proposal
 `manual_journal.submitted_for_approval` and `manual_journal.rejected` evidence.
-Editable draft journals, full created/edited state history, status filters, and
-stricter self-approval controls remain future product-depth slices.
+#341 blocks same-user approval for threshold manual journals and records
+`manual_journal.approval_denied` evidence. Editable draft journals, full
+created/edited state history, status filters, and dual-owner exception handling
+remain future product-depth slices.
 
 ### 9.1 User Stories
 
@@ -455,7 +457,8 @@ stricter self-approval controls remain future product-depth slices.
 - A `hitl_task` of kind `draft_journal` is created with `manual_journal_approval.source=manual_journal_threshold`.
 - `manual_journal.submitted_for_approval` is appended with task id, suggestion id, actor role, business reason, total debits, threshold, required role, and payload hash.
 - Approval materializes the journal through `ManualJournalService.post_manual_journal`.
-- Stricter self-approval or dual-owner exception controls remain future product-depth work.
+- Approval by the submitting user is denied with `manual_journal_self_approval_denied`, leaves the task open, and writes `manual_journal.approval_denied` evidence.
+- Dual-owner exception handling remains future product-depth work.
 
 **FR-MJ-04** Journals below the threshold are created in `status=draft` and can be self-posted by the submitter (if they have `role=admin` or higher).
 

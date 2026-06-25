@@ -374,6 +374,74 @@ def test_inbox_approval_denies_user_below_required_policy_role(
     assert event["metadata"]["policy"]["required_role"] == "owner"
 
 
+def test_inbox_denies_threshold_manual_journal_self_approval(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["tenant_users"][1]["role"] = "admin"
+    fake_db.tables["agent_suggestions"][0].update(
+        {
+            "agent_name": "manual_journal_service",
+            "action_type": "draft_journal",
+            "output_snapshot": {
+                "description": "Month-end accrual",
+                "reason": "Accrue June payroll based on approved payroll register.",
+                "entry_date": "2026-06-22",
+                "reference": "ACCRUAL-001",
+                "total_debits": "15000.00",
+                "lines": [
+                    {
+                        "direction": "DR",
+                        "amount": "15000.00",
+                        "currency": "USD",
+                    },
+                    {
+                        "direction": "CR",
+                        "amount": "15000.00",
+                        "currency": "USD",
+                    },
+                ],
+            },
+        }
+    )
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "draft_journal",
+            "payload": {
+                "manual_journal_approval": {
+                    "source": "manual_journal_threshold",
+                    "submitted_by": "user-1",
+                    "submitted_by_role": "manager",
+                    "threshold": "10000.00",
+                }
+            },
+        }
+    )
+
+    response = client.post("/api/v1/inbox/tasks/task-1/approve")
+
+    assert response.status_code == 403, response.text
+    assert "requires a different user" in response.json()["detail"]
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "pending"
+    generic_event = fake_db.tables["financial_events"][0]
+    assert generic_event["event_type"] == "hitl_task.approval_denied"
+    assert generic_event["action"] == "approve_denied"
+    assert generic_event["metadata"]["decision_result"] == "denied"
+    event = fake_db.tables["financial_events"][1]
+    assert event["event_type"] == "manual_journal.approval_denied"
+    assert event["action"] == "approve_denied"
+    assert event["entity_type"] == "hitl_task"
+    assert event["entity_id"] == "task-1"
+    assert event["source_id"] == "suggestion-1"
+    assert event["metadata"]["denial_reason"] == "manual_journal_self_approval_denied"
+    assert event["metadata"]["submitted_by"] == "user-1"
+    assert event["metadata"]["actor_role"] == "admin"
+    assert event["metadata"]["required_role"] == "admin"
+    assert event["metadata"]["total_debits"] == "15000.00"
+    assert event["after_state"]["task"]["status"] == "open"
+
+
 def test_inbox_approve_with_edits_evaluates_corrected_payload_policy(
     client: TestClient,
     fake_db: _FakeDb,
