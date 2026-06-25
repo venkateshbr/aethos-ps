@@ -25,7 +25,7 @@
 | 1 | Public visitor | Calls signup under the configured threshold | Request proceeds normally and includes rate-limit headers. |
 | 2 | Customer | Opens a valid public invoice link under the configured threshold | Public invoice lookup proceeds normally and includes rate-limit headers. |
 | 3 | Internal operator | Calls tenant health as admin | Response includes runtime shape, table checks, request/background failure counters, and agent/tool/workflow failure counts. |
-| 4 | Internal operator | Opens Settings -> Operational Health | Dashboard renders table checks, rate-limit backend, failure counters, and routed alerts. |
+| 4 | Internal operator | Opens Settings -> Operational Health | Dashboard renders table/migration checks, rate-limit backend, request/background failures, agent/tool/workflow failure counters, and routed alerts. |
 
 ## Abuse Paths
 
@@ -55,10 +55,21 @@
 ```text
 backend/tests/unit/test_ops_hardening.py::test_rate_limit_middleware_returns_safe_429_shape
 backend/tests/unit/test_ops_hardening.py::test_supabase_rate_limiter_uses_rpc_with_hashed_subject
+backend/tests/unit/test_ops_hardening.py::test_supabase_rate_limiter_shares_state_across_simulated_app_instances
 backend/tests/unit/test_ops_hardening.py::test_supabase_rate_limiter_falls_back_to_memory_when_rpc_fails
+backend/tests/unit/test_ops_hardening.py::test_supabase_rate_limiter_denies_safely_when_rpc_fails_without_fallback
 backend/tests/unit/test_ops_hardening.py::test_operational_telemetry_sanitises_paths_and_counts_failures
 backend/tests/unit/test_ops_hardening.py::test_tenant_health_summary_exposes_safe_operational_signals
 backend/tests/unit/test_ops_hardening.py::test_tenant_health_alerts_route_without_raw_sensitive_values
+backend/tests/unit/test_ops_hardening.py::test_tenant_health_routes_all_ops_alert_classes_without_secrets
 backend/tests/unit/test_ops_hardening.py::test_tenant_health_endpoint_returns_admin_scoped_safe_summary
 frontend/src/app/features/settings/tenant-health.component.spec.ts
+frontend/e2e/enterprise-ops-health.spec.ts
+```
+
+## Automated Browser Proof (#311)
+
+```bash
+cd backend && uv run pytest tests/unit/test_ops_hardening.py -q
+cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium
 ```

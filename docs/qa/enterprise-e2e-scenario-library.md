@@ -51,9 +51,9 @@ agent ledger.
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310; year-end close remains future depth | #300, #310 |
-| ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Implemented first slice; browser/API automation pending | #286 |
-| ENT-OPS-002 | Tenant health summary exposes safe operational signals | Implemented first slice; browser/API automation pending | #286 |
-| ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Implemented first slice; Playwright automation pending | #301 |
+| ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
+| ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
+| ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
 | ENT-CTRL-003 | Tenant-configured approval policy drives Inbox routing | Browser/API proof automated in #309 | #296, #309 |
 | ENT-AUD-003 | Business record exposes immutable decision timeline | Browser/API proof automated in #309 | #297, #309 |
 | ENT-RBAC-002 | Finance-role personas are browser-proven | Browser/API proof automated in #309; full persona matrix remains future depth | #298, #309 |
@@ -71,6 +71,13 @@ Run this when validating the #310 AI finance workflow browser proof:
 
 ```bash
 cd frontend && npx playwright test e2e/enterprise-ai-finance-workflows.spec.ts --project=chromium
+```
+
+Run these when validating the #311 operational health and distributed limiter proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_ops_hardening.py -q
+cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium
 ```
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
@@ -743,11 +750,11 @@ Automation target:
 
 Persona: Security reviewer.
 
-Status: First slice implemented. App-level in-process rate limiting protects
-signup and public invoice token reads. Excess traffic returns a safe `429`
-body with `Retry-After`, `X-RateLimit-Limit`, and
-`X-RateLimit-Remaining` headers. The limiter is path-scoped so normal
-authenticated workflows are not made flaky.
+Status: Browser/API proof automated in #311. App-level in-process and
+Supabase-backed rate limiting protects signup and public invoice token reads.
+Excess traffic returns a safe `429` body with `Retry-After`,
+`X-RateLimit-Limit`, and `X-RateLimit-Remaining` headers. The limiter is
+path-scoped so normal authenticated workflows are not made flaky.
 
 Steps:
 
@@ -773,10 +780,10 @@ Automation target:
 
 Persona: Internal operator.
 
-Status: First slice implemented. Tenant health summarizes runtime settings,
-table/migration reachability, sanitized request/background failure counters,
-and recent agent run, agent tool, and workflow failure counts. Output is scoped
-to the current tenant and safe for internal operators.
+Status: Browser/API proof automated in #311. Tenant health summarizes runtime
+settings, table/migration reachability, sanitized request/background failure
+counters, and recent agent run, agent tool, and workflow failure counts. Output
+is scoped to the current tenant and safe for internal operators.
 
 Steps:
 
@@ -802,13 +809,14 @@ Automation target:
 
 Persona: Internal operator and security reviewer.
 
-Status: First slice implemented. `RATE_LIMIT_BACKEND=supabase` activates a
-Postgres-backed limiter using hashed subjects and the same safe `429` response
-contract. If the distributed RPC is unavailable, the limiter falls back to
-in-memory mode by default and records a sanitized background failure. Settings
-now exposes an Operational Health dashboard backed by `/api/v1/tenants/health`,
-including table checks, rate-limit backend status, sanitized failure counters,
-and routed alert items. Full browser automation remains pending.
+Status: Browser/API proof automated in #311. `RATE_LIMIT_BACKEND=supabase`
+activates a Postgres-backed limiter using hashed subjects and the same safe
+`429` response contract. The backend proof exercises shared limiter state
+across simulated app instances, fallback-to-memory telemetry, and deny-safely
+mode when fallback is disabled. Settings exposes an Operational Health
+dashboard backed by `/api/v1/tenants/health`, including table/migration checks,
+rate-limit backend status, sanitized failure counters, agent/tool/workflow
+failure breakdowns, and routed alert items.
 
 Steps:
 
@@ -839,3 +847,10 @@ Automation target:
   checks, rate-limit backend, request failures, background failures, agent/tool
   failures, workflow failures, and routed alerts render without raw sensitive
   values.
+
+Automated proof:
+
+```bash
+cd backend && uv run pytest tests/unit/test_ops_hardening.py -q
+cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium
+```

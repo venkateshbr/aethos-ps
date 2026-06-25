@@ -114,6 +114,44 @@ class _BrokenRpcDb:
         raise RuntimeError("distributed store unavailable")
 
 
+class _SharedRpcStore:
+    def __init__(self) -> None:
+        self.counts: dict[tuple[str, str], int] = {}
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+
+class _SharedRpcDb:
+    def __init__(self, store: _SharedRpcStore) -> None:
+        self.store = store
+
+    def rpc(self, name: str, params: dict[str, Any]) -> _RpcQuery:
+        self.store.calls.append((name, params))
+        key = (str(params["p_rule_name"]), str(params["p_subject_hash"]))
+        max_requests = int(params["p_max_requests"])
+        current_count = self.store.counts.get(key, 0)
+        if current_count >= max_requests:
+            return _RpcQuery(
+                [
+                    {
+                        "allowed": False,
+                        "request_count": current_count,
+                        "retry_after_seconds": 60,
+                    }
+                ]
+            )
+        next_count = current_count + 1
+        self.store.counts[key] = next_count
+        return _RpcQuery(
+            [
+                {
+                    "allowed": True,
+                    "request_count": next_count,
+                    "retry_after_seconds": 0,
+                }
+            ]
+        )
+
+
 def test_supabase_rate_limiter_uses_rpc_with_hashed_subject() -> None:
     db = _RpcDb()
     limiter = SupabaseRateLimiter(db_factory=lambda: db, subject_salt="unit")
@@ -135,6 +173,40 @@ def test_supabase_rate_limiter_uses_rpc_with_hashed_subject() -> None:
     assert params["p_rule_name"] == "public_invoice"
     assert params["p_subject_hash"] != "203.0.113.12"
     assert len(params["p_subject_hash"]) == 64
+
+
+def test_supabase_rate_limiter_shares_state_across_simulated_app_instances() -> None:
+    store = _SharedRpcStore()
+    rule = RateLimitRule(
+        name="public_invoice",
+        method="GET",
+        path_prefix="/api/v1/public/invoices/",
+        max_requests=2,
+        window_seconds=60,
+    )
+    app_instance_a = SupabaseRateLimiter(
+        db_factory=lambda: _SharedRpcDb(store),
+        subject_salt="shared-test",
+    )
+    app_instance_b = SupabaseRateLimiter(
+        db_factory=lambda: _SharedRpcDb(store),
+        subject_salt="shared-test",
+    )
+
+    first = app_instance_a.check(rule=rule, subject="198.51.100.10")
+    second = app_instance_b.check(rule=rule, subject="198.51.100.10")
+    blocked = app_instance_a.check(rule=rule, subject="198.51.100.10")
+
+    assert first.allowed is True
+    assert first.backend == "supabase"
+    assert second.allowed is True
+    assert second.remaining == 0
+    assert blocked.allowed is False
+    assert blocked.backend == "supabase"
+    assert blocked.retry_after_seconds == 60
+    subject_hashes = {params["p_subject_hash"] for _, params in store.calls}
+    assert len(subject_hashes) == 1
+    assert "198.51.100.10" not in str(store.calls)
 
 
 def test_supabase_rate_limiter_falls_back_to_memory_when_rpc_fails() -> None:
@@ -165,6 +237,35 @@ def test_supabase_rate_limiter_falls_back_to_memory_when_rpc_fails() -> None:
         "worker_name": "rate_limit_distributed_backend",
         "count": 2,
     }
+
+
+def test_supabase_rate_limiter_denies_safely_when_rpc_fails_without_fallback() -> None:
+    global_telemetry.reset()
+    limiter = SupabaseRateLimiter(
+        db_factory=lambda: _BrokenRpcDb(),
+        fallback_enabled=False,
+    )
+    rule = RateLimitRule(
+        name="signup",
+        method="POST",
+        path_prefix="/api/v1/auth/signup",
+        max_requests=10,
+        window_seconds=60,
+    )
+
+    try:
+        decision = limiter.check(rule=rule, subject="127.0.0.1")
+        snapshot = global_telemetry.snapshot()
+    finally:
+        global_telemetry.reset()
+
+    assert decision.allowed is False
+    assert decision.backend == "supabase"
+    assert decision.fallback_used is False
+    assert decision.retry_after_seconds == 1
+    assert snapshot["background_failures"] == [
+        {"worker_name": "rate_limit_distributed_backend", "count": 1}
+    ]
 
 
 def test_operational_telemetry_sanitises_paths_and_counts_failures() -> None:
@@ -312,6 +413,52 @@ def test_tenant_health_alert_route_hides_configured_webhook_url(
     }
     assert webhook_url not in str(summary)
     assert "secret-token" not in str(summary)
+
+
+def test_tenant_health_routes_all_ops_alert_classes_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_url = "https://hooks.example.test/ops-secret-token"
+    raw_invoice_token = "token_1234567890abcdef"
+    monkeypatch.setattr(settings, "ops_alert_channel", "secops")
+    monkeypatch.setattr(settings, "ops_alert_webhook_url", webhook_url)
+    monkeypatch.setattr(settings, "ops_alert_rate_limit_threshold", 1)
+    monkeypatch.setattr(settings, "ops_alert_background_failure_threshold", 1)
+    monkeypatch.setattr(settings, "ops_alert_agent_failure_threshold", 1)
+    fake_db = _Db()
+    fake_db.tables["agent_workflow_runs"] = [
+        {"id": "workflow-1", "tenant_id": "tenant-1", "status": "failed"}
+    ]
+    global_telemetry.reset()
+    global_telemetry.record_request_failure(
+        method="GET",
+        path=f"/api/v1/public/invoices/{raw_invoice_token}",
+        status_code=429,
+    )
+    global_telemetry.record_background_failure("rate_limit_distributed_backend")
+
+    try:
+        summary = TenantHealthService(fake_db, "tenant-1").summary()  # type: ignore[arg-type]
+    finally:
+        global_telemetry.reset()
+
+    codes = {item["code"] for item in summary["alerts"]["items"]}
+    assert {
+        "tenant_health_degraded",
+        "public_endpoint_abuse",
+        "background_failure_spike",
+        "agent_failure_spike",
+    } <= codes
+    assert summary["alerts"]["route"] == {
+        "route_type": "webhook",
+        "channel": "secops",
+        "configured": True,
+    }
+    assert summary["telemetry"]["failed_workflow_runs_24h"] == 1
+    assert raw_invoice_token not in str(summary)
+    assert "ops-secret-token" not in str(summary)
+    assert "jwt" not in str(summary).lower()
+    assert "sk_live" not in str(summary).lower()
 
 
 def test_tenant_health_endpoint_returns_admin_scoped_safe_summary() -> None:
