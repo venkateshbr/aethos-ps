@@ -100,6 +100,10 @@ describe('TenantHealthComponent', () => {
     expect(text).toContain('agent_runs');
     expect(text).toContain('/api/v1/public/invoices/{token}');
     expect(text).toContain('rate_limit_distributed_backend');
+    expect(text).toContain('Agent runs');
+    expect(text).toContain('Tool invocations');
+    expect(text).toContain('Workflow runs');
+    expect(text).toContain('send_email');
     expect(text).toContain('Public Endpoint Abuse');
     expect(text).not.toContain('token_1234567890abcdef');
   });

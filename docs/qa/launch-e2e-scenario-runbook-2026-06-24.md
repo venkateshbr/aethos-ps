@@ -119,7 +119,7 @@ Every row below must be covered during the launch pass. If a UI route exists but
 | Profile/change password | `/app/profile`, settings account controls | Access pass | Profile renders; change-password form validates current/new/confirm fields where exposed |
 | Payments list | `/app/payments` | 1-4, 7 | Payments page renders and reflects recorded invoice payments where the product exposes payment list data |
 | Multi-tenant isolation | Authenticated app routes | Access pass | Records created in one tenant do not appear in another tenant; direct URLs fail cleanly |
-| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309 and #310 are automated and residual proof issue #311 is linked |
+| Documentation and prompt library | `docs/user-guide/platform-user-guide.md`, `docs/copilot/prompt-library.md`, `docs/qa/enterprise-e2e-scenario-library.md` | ENT-DOC-002 | Guide covers every major product surface; prompts do not require tool names; #309, #310, and #311 are automated |
 
 ## Reports Coverage Checklist
 
@@ -551,7 +551,7 @@ Current implementation assessment:
 | Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
 | Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
 | Enterprise RBAC permission proof | Implemented first slices in #282 and #298, then automated in #309: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, and browser proof verifies Owner/Admin, Manager, and Viewer paths across Settings, Inbox, and Bill detail | Dedicated finance-role enum expansion and full multi-persona Playwright matrix remain future depth | #282, #298, #309 |
-| Enterprise ops hardening | Implemented first slices in #286 and #301: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Full Playwright automation for Operational Health and live multi-instance limiter proof remain future depth | #286, #301 |
+| Enterprise ops hardening | Implemented first slices in #286 and #301, then automated in #311: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback/deny-safe behavior, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Deployed Supabase smoke validation remains environment evidence; deterministic browser/API proof is automated | #286, #301, #311 |
 
 ## Scenario 11 - AI Finance Department Command Center
 
@@ -795,6 +795,29 @@ cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py test
 Evidence: Settings persona card, Copilot access explanation, disabled UI
 controls, API 403 responses, no console/API errors.
 
+## Enterprise Ops Automation - Distributed Limiter And Operational Health
+
+Persona: Owner/Admin, Internal operator, Security reviewer.
+
+Implementation status:
+- Browser/API proof added under #311. Backend tests prove shared Supabase-style
+  limiter state across simulated app instances, safe fallback telemetry, and
+  deny-safe behavior when distributed fallback is disabled.
+- Settings -> Operational Health browser automation verifies runtime, queue,
+  table/migration, rate-limit, request/background failure,
+  agent/tool/workflow failure, and routed-alert signals without exposing
+  webhook URLs, raw invoice tokens, JWT-shaped values, API keys, document text,
+  or request payloads.
+
+Automation:
+```bash
+cd backend && uv run pytest tests/unit/test_ops_hardening.py -q
+cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium
+```
+
+Evidence: safe 429/fallback contract, sanitized tenant health response, Settings
+Operational Health panel, and routed alert rows.
+
 ## End-To-End Execution Schedule
 
 Run the launch pass in this order so every scenario builds on earlier browser-entered data.
@@ -834,6 +857,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/bills-list.spec.ts` | Bills render/filter supplement | Useful for P2P route regression |
 | `frontend/e2e/p2p-vendor-bill.spec.ts` | P2P render supplement | Covers bills, expenses, pay-bills, Copilot upload entry points |
 | `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` | #310 AI finance workflow proof | Covers business-language Copilot prompts, P2P AP exception review, duplicate reason approval, bill evidence, bill-pay proposal review, R2R close package/override, statement tabs, and Agent Run Ledger evidence |
+| `frontend/e2e/enterprise-ops-health.spec.ts` | #311 operational health proof | Covers Settings Operational Health runtime, table/migration, distributed limiter, request/background failure, agent/tool/workflow failure, routed alert, and secret-redaction evidence |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
 | `frontend/e2e/r2r-reports-render.spec.ts` and `frontend/e2e/trial-balance.spec.ts` | Reports render supplement | Proves report tabs mount; business tie-outs still come from scenarios |
 | `frontend/e2e/engagement-to-cash.spec.ts` | Deep API edge regression | Covers many edge cases, RBAC, FX, idempotency; mark as supplemental unless the step is browser-driven |

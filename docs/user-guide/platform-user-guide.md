@@ -393,7 +393,7 @@ Recommended report review prompts:
 - "Explain Balance Sheet and Cash Flow movement after the June close package."
 
 Scenario anchors: launch scenario 10, ENT-R2R-003, ENT-OPS-002, ENT-OPS-003,
-and #311 for live ops/health-dashboard proof.
+and #311 for automated ops/health-dashboard proof.
 
 ## 10. Settings, Agents, And Controls
 
@@ -427,7 +427,7 @@ Current guidance:
   failure, workflow failure, and routed-alert signals.
 - Keep production provider credentials and mail/payment setup validated outside demo-only environments.
 
-Ops/Security slices under #286 and #301:
+Ops/Security slices under #286, #301, and #311:
 
 - `POST /api/v1/auth/signup` and `GET /api/v1/public/invoices/{token}` are
   protected by app-level rate limits with safe `429` responses and retry
@@ -444,6 +444,11 @@ Ops/Security slices under #286 and #301:
   public-endpoint abuse, background failure spikes, and agent/tool/workflow
   failure spikes. If no webhook channel is configured, alerts route to the
   runbook queue in the health output.
+- #311 adds deterministic backend proof for shared distributed limiter state
+  across simulated app instances, fallback/deny-safe modes, and routed alert
+  classes, plus browser proof for Settings -> Operational Health redaction.
+- Proof commands: `cd backend && uv run pytest tests/unit/test_ops_hardening.py -q`
+  and `cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium`.
 - Health output is intended for internal operators and admins; it must not
   expose secrets, raw credentials, tokens, or customer document payloads.
 
@@ -473,7 +478,7 @@ The following work is tracked under parent issue #278:
 | #301 | Ops/Security | Distributed rate limiting, Operational Health dashboard, and safe alert routing, first slice implemented |
 | #309 | QA proof | Browser E2E implemented for controls, audit, and RBAC proof |
 | #310 | QA proof | Browser E2E implemented for AI finance workflows across P2P and R2R |
-| #311 | Ops proof | Live distributed limiter, alert, and health-dashboard proof |
+| #311 | Ops proof | Browser/API proof implemented for distributed limiter, alert, and Operational Health dashboard |
 | #312 | Docs and prompts | Full platform guide and prompt-library proof |
 
 ## 12. Scenario Crosswalk
@@ -486,8 +491,8 @@ The following work is tracked under parent issue #278:
 | Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
 | Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, launch scenarios 5-7 | #310 automated |
 | Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
-| Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 remains for live ops |
-| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #311 remains for live ops |
+| Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
+| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #311 automated for Operational Health |
 
 ## 13. Documentation And Test Definition Of Done
 

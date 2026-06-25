@@ -199,6 +199,31 @@ interface TenantHealthSummary {
                     <p class="mt-2 text-xs text-text-muted">None</p>
                   }
                 </div>
+                <div class="rounded border border-border-subtle px-3 py-2">
+                  <div class="text-xs uppercase text-text-disabled">Agent, tool, and workflow failures</div>
+                  <div class="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                    <div>
+                      <div class="text-text-muted">Agent runs</div>
+                      <div class="mt-1 font-semibold text-text-primary">{{ health()!.telemetry.failed_agent_runs_24h }}</div>
+                    </div>
+                    <div>
+                      <div class="text-text-muted">Tool invocations</div>
+                      <div class="mt-1 font-semibold text-text-primary">{{ health()!.telemetry.failed_tool_invocations_24h }}</div>
+                    </div>
+                    <div>
+                      <div class="text-text-muted">Workflow runs</div>
+                      <div class="mt-1 font-semibold text-text-primary">{{ health()!.telemetry.failed_workflow_runs_24h }}</div>
+                    </div>
+                  </div>
+                  @for (tool of health()!.telemetry.failed_tools_by_name_24h; track tool.tool_name) {
+                    <div class="mt-2 flex items-center justify-between gap-3 text-xs">
+                      <span class="font-mono text-text-secondary">{{ tool.tool_name }}</span>
+                      <span class="text-text-primary">{{ tool.count }}</span>
+                    </div>
+                  } @empty {
+                    <p class="mt-2 text-xs text-text-muted">No failed tools</p>
+                  }
+                </div>
               </div>
             </section>
           </div>
