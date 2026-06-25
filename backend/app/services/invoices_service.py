@@ -17,6 +17,7 @@ import stripe
 from fastapi import HTTPException
 
 from app.core.config import settings
+from app.domain.fx import FxRateNotFoundError
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
 from app.models.invoices import (
@@ -27,6 +28,8 @@ from app.models.invoices import (
 )
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services._validation import assert_belongs_to_tenant
+from app.services.fx_gain_loss_service import post_fx_gain_loss_if_needed
+from app.services.payment_fx_service import payment_fx_amounts
 from app.services.retainer_ledger_service import record_retainer_draw
 from supabase import Client
 
@@ -425,6 +428,22 @@ class InvoicesService:
         pay_currency = (currency or invoice_currency).upper()
         paid_at = paid_at_iso or _dt.now(tz=UTC).isoformat()
         invoice_number = row.get("invoice_number", invoice_id[:8])
+        try:
+            fx_amounts = await payment_fx_amounts(
+                db=self.db,
+                tenant_id=self.tenant_id,
+                amount=amount,
+                currency=pay_currency,
+                paid_at=paid_at,
+            )
+        except FxRateNotFoundError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Missing FX rate for payment: "
+                    f"{exc.from_currency} to {exc.to_currency} on {exc.rate_date}."
+                ),
+            ) from exc
 
         # 1. payments row
         payment_data: dict = {
@@ -432,9 +451,7 @@ class InvoicesService:
             "invoice_id": invoice_id,
             "amount": str(amount),
             "currency": pay_currency,
-            # FX conversion deferred to fx_refresh_worker — for same-currency
-            # base it's a passthrough.
-            "base_amount": str(amount),
+            "base_amount": str(fx_amounts.base_amount),
             "paid_at": paid_at,
         }
         if notes:
@@ -482,6 +499,7 @@ class InvoicesService:
                 description=f"Payment received for invoice {invoice_number}",
                 account_id=acct_map.get("1100"),
                 currency=pay_currency,
+                base_amount=fx_amounts.base_amount,
             ),
             JournalLineSpec(
                 direction="CR",
@@ -490,6 +508,7 @@ class InvoicesService:
                 description=f"Payment received for invoice {invoice_number}",
                 account_id=acct_map.get("1200"),
                 currency=pay_currency,
+                base_amount=fx_amounts.base_amount,
             ),
         ]
         try:
@@ -507,6 +526,24 @@ class InvoicesService:
             # accounting_guardian rejection — the payment row is already in,
             # surface a clear 422 so the caller knows the journal didn't land.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        try:
+            await post_fx_gain_loss_if_needed(
+                db=self.db,
+                tenant_id=self.tenant_id,
+                invoice=row,
+                payment_amount=amount,
+                payment_currency=pay_currency,
+                payment_base_amount=fx_amounts.base_amount,
+                base_currency=fx_amounts.base_currency,
+                payment_date=fx_amounts.rate_date,
+            )
+        except Exception:
+            logger.error(
+                "Failed to post FX gain/loss journal for manual payment",
+                exc_info=True,
+                extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
+            )
 
         updated = await self._repo.get_by_id(invoice_id)
         invoice_lines = await self._repo.list_lines(invoice_id)

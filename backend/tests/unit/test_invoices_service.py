@@ -9,6 +9,7 @@ All tests use unittest.mock — no network calls, no DB, no Stripe credentials.
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -62,6 +63,49 @@ def _draft_invoice(invoice_id: str, tenant_id: str, status: str = "draft") -> di
         "created_at": "2026-05-01T00:00:00+00:00",
         "updated_at": "2026-05-01T00:00:00+00:00",
     }
+
+
+class _Result:
+    def __init__(self, data: list[dict]) -> None:
+        self.data = data
+
+
+class _Query:
+    def __init__(self, db: _PaymentDb, table: str) -> None:
+        self.db = db
+        self.table = table
+        self.payload: dict | None = None
+
+    def insert(self, payload: dict) -> _Query:
+        self.payload = payload
+        self.db.inserts.setdefault(self.table, []).append(payload)
+        return self
+
+    def update(self, payload: dict) -> _Query:
+        self.payload = payload
+        self.db.updates.setdefault(self.table, []).append(payload)
+        return self
+
+    def select(self, _columns: str) -> _Query:
+        return self
+
+    def eq(self, _key: str, _value: str) -> _Query:
+        return self
+
+    def in_(self, _key: str, _values: list[str]) -> _Query:
+        return self
+
+    def execute(self) -> _Result:
+        return _Result([])
+
+
+class _PaymentDb:
+    def __init__(self) -> None:
+        self.inserts: dict[str, list[dict]] = {}
+        self.updates: dict[str, list[dict]] = {}
+
+    def table(self, name: str) -> _Query:
+        return _Query(self, name)
 
 
 @pytest.mark.asyncio
@@ -179,6 +223,114 @@ def test_send_invoice_returns_payment_link_url(
     update_payload = svc._repo.update.await_args.args[1]
     assert update_payload["status"] == "sent"
     assert update_payload["sent_at"]
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="sent"),
+        "currency": "GBP",
+        "total": "100.00",
+        "base_total": "120.00",
+    }
+    updated = {**invoice, "status": "paid", "paid_at": "2026-06-25T09:00:00+00:00"}
+    svc._repo.get_by_id = AsyncMock(side_effect=[invoice, updated])
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1100": "acct-bank", "1200": "acct-ar"}
+    )
+    svc._repo.list_lines = AsyncMock(return_value=[])
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("100.00"),
+        currency="GBP",
+        base_amount=Decimal("125.00"),
+        base_currency="USD",
+        rate=Decimal("1.25"),
+        rate_date=date(2026, 6, 25),
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ) as payment_fx,
+        patch("app.services.invoices_service.post_journal") as post_journal,
+        patch(
+            "app.services.invoices_service.post_fx_gain_loss_if_needed",
+            new=AsyncMock(),
+        ) as fx_gain_loss,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("100.00"),
+            currency="gbp",
+            paid_at_iso="2026-06-25T09:00:00+00:00",
+            notes="Wire received",
+            recorded_by="user-1",
+        )
+
+    payment_fx.assert_awaited_once()
+    payment = db.inserts["payments"][0]
+    assert payment["amount"] == "100.00"
+    assert payment["currency"] == "GBP"
+    assert payment["base_amount"] == "125.00"
+    lines = post_journal.call_args.kwargs["lines"]
+    assert [line.currency for line in lines] == ["GBP", "GBP"]
+    assert [line.base_amount for line in lines] == [
+        Decimal("125.00"),
+        Decimal("125.00"),
+    ]
+    fx_gain_loss.assert_awaited_once()
+    assert fx_gain_loss.await_args.kwargs["payment_base_amount"] == Decimal("125.00")
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_missing_fx_rate_rejects_before_insert(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.domain.fx import FxRateNotFoundError
+    from app.services.invoices_service import InvoicesService
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="sent"),
+        "currency": "GBP",
+        "total": "100.00",
+        "base_total": "120.00",
+    }
+    svc._repo.get_by_id = AsyncMock(return_value=invoice)
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(
+                side_effect=FxRateNotFoundError("GBP", "USD", date(2026, 6, 25))
+            ),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("100.00"),
+            currency="GBP",
+            paid_at_iso="2026-06-25T09:00:00+00:00",
+            notes=None,
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert db.inserts == {}
 
 
 # ---------------------------------------------------------------------------

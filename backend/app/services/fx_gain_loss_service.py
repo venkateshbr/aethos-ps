@@ -19,6 +19,7 @@ import logging
 from decimal import ROUND_HALF_DOWN, Decimal
 
 from app.domain.journal_helper import JournalLineSpec, post_journal
+from app.services.payment_fx_service import payment_fx_amounts, tenant_base_currency
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,9 @@ async def post_fx_gain_loss_if_needed(
     invoice: dict,
     payment_amount: Decimal,
     payment_currency: str,
+    payment_base_amount: Decimal | None = None,
+    base_currency: str | None = None,
+    payment_date: datetime.date | str | None = None,
 ) -> Decimal | None:
     """Post an FX gain/loss journal entry if the payment differs from invoice base.
 
@@ -59,20 +63,31 @@ async def post_fx_gain_loss_if_needed(
     -------
     The delta (Decimal) if a journal was posted, or None if skipped.
     """
-    invoice_currency: str = (invoice.get("currency") or "USD").upper()
     payment_currency = payment_currency.upper()
-
-    # Only relevant for cross-currency payments
-    if invoice_currency == payment_currency:
-        return None
 
     invoice_base_str = invoice.get("base_total") or invoice.get("total") or "0"
     invoice_base = Decimal(str(invoice_base_str))
+    invoice_currency: str = (invoice.get("currency") or payment_currency).upper()
+    if (
+        payment_base_amount is None
+        and invoice_currency == payment_currency
+        and invoice_base == payment_amount
+    ):
+        return None
 
-    # payment_amount is in payment_currency — treat as the base amount received.
-    # In practice the tenant's base currency == payment_currency for now
-    # (Stripe collects in the configured currency).
-    payment_base = payment_amount
+    if payment_base_amount is None:
+        fx_amounts = await payment_fx_amounts(
+            db=db,
+            tenant_id=tenant_id,
+            amount=payment_amount,
+            currency=payment_currency,
+            paid_at=payment_date,
+        )
+        payment_base = fx_amounts.base_amount
+        base_currency = fx_amounts.base_currency
+    else:
+        payment_base = payment_base_amount
+        base_currency = (base_currency or await tenant_base_currency(db, tenant_id)).upper()
     delta = compute_fx_delta(payment_base, invoice_base)
 
     if delta.copy_abs() < _IMMATERIAL_THRESHOLD:
@@ -126,7 +141,8 @@ async def post_fx_gain_loss_if_needed(
                 amount=delta,
                 description=f"FX gain on invoice {invoice_number}",
                 account_id=acct_map.get("1200"),
-                currency=payment_currency,
+                currency=base_currency,
+                base_amount=delta,
             ),
             JournalLineSpec(
                 direction="CR",
@@ -134,7 +150,8 @@ async def post_fx_gain_loss_if_needed(
                 amount=delta,
                 description=f"FX gain on invoice {invoice_number}",
                 account_id=acct_map.get("7900"),
-                currency=payment_currency,
+                currency=base_currency,
+                base_amount=delta,
             ),
         ]
         label = "gain"
@@ -148,7 +165,8 @@ async def post_fx_gain_loss_if_needed(
                 amount=abs_delta,
                 description=f"FX loss on invoice {invoice_number}",
                 account_id=acct_map.get("7900"),
-                currency=payment_currency,
+                currency=base_currency,
+                base_amount=abs_delta,
             ),
             JournalLineSpec(
                 direction="CR",
@@ -156,7 +174,8 @@ async def post_fx_gain_loss_if_needed(
                 amount=abs_delta,
                 description=f"FX loss on invoice {invoice_number}",
                 account_id=acct_map.get("1200"),
-                currency=payment_currency,
+                currency=base_currency,
+                base_amount=abs_delta,
             ),
         ]
         label = "loss"

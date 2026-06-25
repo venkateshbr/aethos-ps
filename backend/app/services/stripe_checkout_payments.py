@@ -15,6 +15,7 @@ from typing import Any
 
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.services.fx_gain_loss_service import post_fx_gain_loss_if_needed
+from app.services.payment_fx_service import payment_fx_amounts
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,13 @@ async def record_checkout_session_payment(
 
     currency = str(stripe_value(session, "currency", invoice.get("currency", "usd")) or "usd").upper()
     paid_at_iso = _paid_at_iso(session)
+    fx_amounts = await payment_fx_amounts(
+        db=db,
+        tenant_id=tenant_id,
+        amount=amount_received,
+        currency=currency,
+        paid_at=paid_at_iso,
+    )
 
     await _insert_payment(
         db=db,
@@ -127,6 +135,7 @@ async def record_checkout_session_payment(
         invoice_id=invoice_id,
         amount=amount_received,
         currency=currency,
+        base_amount=fx_amounts.base_amount,
         paid_at_iso=paid_at_iso,
         payment_intent_id=payment_intent_id,
         source=source,
@@ -149,6 +158,7 @@ async def record_checkout_session_payment(
             invoice_id=invoice_id,
             amount_received=amount_received,
             currency=currency,
+            base_amount=fx_amounts.base_amount,
             actor_uuid=actor_uuid,
             payment_intent_id=payment_intent_id,
         )
@@ -160,6 +170,9 @@ async def record_checkout_session_payment(
             invoice=invoice,
             payment_amount=amount_received,
             payment_currency=currency,
+            payment_base_amount=fx_amounts.base_amount,
+            base_currency=fx_amounts.base_currency,
+            payment_date=fx_amounts.rate_date,
         )
     except Exception:
         logger.error(
@@ -256,6 +269,7 @@ async def _insert_payment(
     invoice_id: str,
     amount: Decimal,
     currency: str,
+    base_amount: Decimal,
     paid_at_iso: str,
     payment_intent_id: str | None,
     source: str,
@@ -265,7 +279,7 @@ async def _insert_payment(
         "invoice_id": invoice_id,
         "amount": str(amount),
         "currency": currency,
-        "base_amount": str(amount),
+        "base_amount": str(base_amount),
         "paid_at": paid_at_iso,
         "notes": f"Recorded from {source}",
     }
@@ -335,6 +349,7 @@ async def _post_payment_journal(
     invoice_id: str,
     amount_received: Decimal,
     currency: str,
+    base_amount: Decimal,
     actor_uuid: str,
     payment_intent_id: str | None,
 ) -> bool:
@@ -348,6 +363,7 @@ async def _post_payment_journal(
             description=f"Payment received for invoice {invoice_number}",
             account_id=acct_map.get("1100"),
             currency=currency,
+            base_amount=base_amount,
         ),
         JournalLineSpec(
             direction="CR",
@@ -356,6 +372,7 @@ async def _post_payment_journal(
             description=f"Payment received for invoice {invoice_number}",
             account_id=acct_map.get("1200"),
             currency=currency,
+            base_amount=base_amount,
         ),
     ]
     try:

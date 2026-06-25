@@ -90,6 +90,8 @@ async def test_immaterial_delta_skipped() -> None:
         invoice=invoice,
         payment_amount=Decimal("1000.005"),
         payment_currency="USD",
+        payment_base_amount=Decimal("1000.005"),
+        base_currency="USD",
     )
     assert result is None
 
@@ -158,6 +160,8 @@ async def test_fx_gain_posts_journal() -> None:
             invoice=invoice,
             payment_amount=Decimal("1000.00"),
             payment_currency="USD",
+            payment_base_amount=Decimal("1000.00"),
+            base_currency="USD",
         )
 
     assert result == Decimal("10.00")
@@ -168,8 +172,12 @@ async def test_fx_gain_posts_journal() -> None:
     lines = call_kwargs["lines"]
     assert lines[0].direction == "DR"
     assert lines[0].account_code == "1200"
+    assert lines[0].currency == "USD"
+    assert lines[0].base_amount == Decimal("10.00")
     assert lines[1].direction == "CR"
     assert lines[1].account_code == "7900"
+    assert lines[1].currency == "USD"
+    assert lines[1].base_amount == Decimal("10.00")
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +232,8 @@ async def test_fx_loss_posts_journal() -> None:
             invoice=invoice,
             payment_amount=Decimal("1000.00"),
             payment_currency="USD",
+            payment_base_amount=Decimal("1000.00"),
+            base_currency="USD",
         )
 
     assert result == Decimal("-10.00")
@@ -231,5 +241,9 @@ async def test_fx_loss_posts_journal() -> None:
     lines = mock_post.call_args.kwargs["lines"]
     assert lines[0].direction == "DR"
     assert lines[0].account_code == "7900"
+    assert lines[0].currency == "USD"
+    assert lines[0].base_amount == Decimal("10.00")
     assert lines[1].direction == "CR"
     assert lines[1].account_code == "1200"
+    assert lines[1].currency == "USD"
+    assert lines[1].base_amount == Decimal("10.00")

@@ -46,6 +46,7 @@ agent ledger.
 | ENT-AIOPS-002 | Stale/high-risk Inbox work escalates to the right role | Browser proof automated in #317 | #283, #317 |
 | ENT-AIOPS-003 | Admin configures scheduled Finance Ops Manager from Settings | Browser proof automated in #317 | #295, #317 |
 | ENT-E2C-001 | Engagement-letter approval creates linked rate card from reviewed hints | API proof implemented in #345; browser proof target pending | #267, #345 |
+| ENT-E2C-002 | Non-base-currency AR payment stores base amount and realised FX | Backend proof implemented in #349; browser/Stripe proof target pending | #349 |
 | ENT-P2P-001 | Vendor invoice coding exception routes to Inbox and materializes after correction | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310 | #299, #310 |
@@ -752,6 +753,40 @@ Expected result:
 - Duplicate or malformed hint rows are ignored rather than blocking onboarding.
 - Inbox materialization evidence includes `rate_card_id` and
   `rate_card_line_count`.
+
+## ENT-E2C-002 - Multi-Currency AR Payment Settlement
+
+Persona: Billing Lead, Finance Ops Manager, Controller.
+
+Preconditions:
+
+- Tenant base currency is USD or another launch currency with seeded FX rates.
+- A sent or approved customer invoice exists in a non-base currency.
+- The invoice has `base_total` set from the invoice-date FX rate.
+
+Steps:
+
+1. Open `/app/copilot` or `/app/invoices`.
+2. Ask `Review the latest GBP customer payment. Confirm the transaction amount,
+   USD base amount, realised FX gain or loss, and whether AR Aging and Cash Flow
+   will update after settlement.`
+3. Record the payment through Stripe checkout/reconciliation or the manual
+   payment action.
+4. Open `/app/payments` and the paid invoice.
+5. Open Reports > AR Aging, Cash Flow, Trial Balance, and Income Statement.
+6. Repeat with a payment date/currency pair that has no FX rate.
+
+Expected result:
+
+- `payments.amount` and `payments.currency` retain the transaction receipt.
+- `payments.base_amount` stores tenant-base value at the payment-date FX rate.
+- The DR Bank / CR AR journal retains transaction currency and stores matching
+  base amounts.
+- Realised FX gain/loss uses `payment_base_amount - invoice.base_total`.
+- Missing payment FX rate rejects or aborts before an incorrect payment row is
+  inserted.
+- AR Aging, Cash Flow, Trial Balance, and Income Statement consume base amounts
+  consistently after settlement.
 
 ## ENT-P2P-001 - Vendor Invoice Coding Exception
 
