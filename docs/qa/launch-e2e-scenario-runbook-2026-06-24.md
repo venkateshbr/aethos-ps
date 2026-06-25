@@ -874,6 +874,15 @@ These tests can supplement the manual launch pass, but they do not replace brows
 
 ## Verification Matrix
 
+CI gate note for #319:
+
+- If GitHub Actions jobs fail in 1-4 seconds with `steps: []`, no logs, and no
+  runner assignment, follow
+  [`docs/qa/github-actions-billing-runbook.md`](github-actions-billing-runbook.md).
+  The observed #319 failure is a GitHub billing/spending-limit hold, not a
+  workflow YAML failure. CI is not considered launch-trusted again until jobs
+  produce normal checkout/setup/build/test logs.
+
 Final verification on 2026-06-24:
 
 - Primary UI launch walkthrough: `frontend/e2e/demo-v2-full-scenario.spec.ts` passed with `No gaps found` after fixes for contact profile fields, People classification fields, project budget/status entry, Copilot Log time quick action, manual journal account selection, and Trial Balance retry/active-tab checks.
