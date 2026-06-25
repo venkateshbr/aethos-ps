@@ -183,16 +183,18 @@ Steps:
 2. Open `/app/accounting/journals`.
 3. Submit a balanced manual journal with a business reason and total debits at or above the threshold.
 4. Verify the Accounting UI shows a pending-approval success state and does not append a posted journal row.
-5. Open `/app/inbox` as the required Accounting approver role.
-6. Approve the manual-journal review task.
-7. Return to `/app/accounting/journals` and verify the journal appears exactly once with reason and audit timeline.
-8. Repeat with another over-threshold manual journal and reject the Inbox task with a rejection reason.
+5. Attempt to approve the task as the same user who submitted it.
+6. Open `/app/inbox` as a different user with the required Accounting approver role.
+7. Approve the manual-journal review task.
+8. Return to `/app/accounting/journals` and verify the journal appears exactly once with reason and audit timeline.
+9. Repeat with another over-threshold manual journal and reject the Inbox task with a rejection reason.
 
 Expected result:
 
 - Direct submission creates `agent_suggestions` + `hitl_tasks` review rows with kind `draft_journal`.
 - The pending task shows required Accounting approval role and threshold metadata.
 - `financial_events` contains `manual_journal.submitted_for_approval` with task id, suggestion id, actor role, business reason, debit total, threshold, required role, and payload hash metadata.
+- Same-user approval is denied, leaves the task open, and writes `manual_journal.approval_denied` with `manual_journal_self_approval_denied`.
 - Approval materializes through `ManualJournalService.post_manual_journal`, not a duplicate direct-post path.
 - `manual_journal.posted` financial-event evidence is written after approval.
 - Rejection leaves no posted journal and writes both generic `hitl_task.rejected` evidence and manual-journal-specific `manual_journal.rejected` evidence with the rejection reason.

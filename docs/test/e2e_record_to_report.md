@@ -44,7 +44,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
 | 8b | Finance Ops Manager | `/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/inbox` task | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
 | 8c | Finance Ops Manager | `/accounting/journals` -> Post manual journal with business reason | Balanced manual journals require a business reason, store it on `journal_entries.reason`, and append `manual_journal.posted` audit evidence with actor role, line count, and debit total. |
-| 8d | Finance Ops Manager + Accounting approver | `/settings` threshold -> `/accounting/journals` high-value journal -> `/inbox` approval/rejection | Manual journals at or above the tenant threshold create a `draft_journal` Inbox task, append `manual_journal.submitted_for_approval`, post only after required Accounting-role approval, and append `manual_journal.rejected` when rejected. |
+| 8d | Finance Ops Manager + Accounting approver | `/settings` threshold -> `/accounting/journals` high-value journal -> `/inbox` approval/rejection | Manual journals at or above the tenant threshold create a `draft_journal` Inbox task, append `manual_journal.submitted_for_approval`, deny same-user approval, post only after different-user Accounting-role approval, and append `manual_journal.rejected` when rejected. |
 | 8e | Finance Ops Manager | `/accounting/journals` -> Reverse posted manual journal | Reversal creates a new `manual_reversal` journal with flipped lines, original-reference linkage, reason, and `manual_journal.reversed` audit evidence. |
 
 ### §1.3 Reports
@@ -115,7 +115,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | E1 | Period closed with cents of FX residual | Auto-route residual to `7900 Realized FX Gain/Loss` |
 | E2 | Year-end close (December 2026) | Roll P&L → Retained Earnings; net income = 0 going into Jan 2027 |
 | E3 | Voiding an invoice in a closed period | Allowed only via reversing entry dated in the open period |
-| E4 | Manual journal entry | Manager+ can submit when balanced and reasoned; under-threshold entries post immediately, over-threshold entries route to Inbox with submitted/rejected lifecycle evidence, `accounting_guardian` validates balance/account/period on final posting, `manual_journal.posted` evidence is written, and later corrections use reasoned reversal journals. |
+| E4 | Manual journal entry | Manager+ can submit when balanced and reasoned; under-threshold entries post immediately, over-threshold entries route to Inbox with submitted/rejected lifecycle evidence and same-user approval denial, `accounting_guardian` validates balance/account/period on final posting, `manual_journal.posted` evidence is written, and later corrections use reasoned reversal journals. |
 | E5 | Reports request a million-row range | API paginates; UI streams; no OOM |
 
 ---
@@ -140,7 +140,7 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 - `agent_suggestions`: `reporting_agent` rows for natural-language Q&A
 - `accounting_close_overrides`: close blocker code, reason, actor, timestamp, and blocker evidence for explicit overrides
 - `close_package.readiness_evidence`: AR/AP/WIP/GL/approval evidence and recorded overrides shown to the reviewer
-- `journal_entries.reason` and `financial_events`: `manual_journal.submitted_for_approval`, `manual_journal.posted`, `manual_journal.rejected`, and `manual_journal.reversed` evidence with reason, actor role, line count, debit total, threshold, and task/journal linkage where applicable
+- `journal_entries.reason` and `financial_events`: `manual_journal.submitted_for_approval`, `manual_journal.approval_denied`, `manual_journal.posted`, `manual_journal.rejected`, and `manual_journal.reversed` evidence with reason, actor role, line count, debit total, threshold, and task/journal linkage where applicable
 
 ## §6.1 Automated Browser Proof
 

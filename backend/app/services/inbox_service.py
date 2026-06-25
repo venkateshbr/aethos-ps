@@ -313,6 +313,43 @@ class InboxService:
         )
         user_role = await self._fetch_user_role(user_id)
         if ROLE_HIERARCHY[user_role] >= ROLE_HIERARCHY[decision.required_role]:
+            if _is_manual_journal_self_approval_attempt(payload, user_id):
+                denial_payload = {
+                    "decision_result": "denied",
+                    "denial_reason": "manual_journal_self_approval_denied",
+                    "current_user_id": user_id,
+                    "current_role": user_role.value,
+                    "submitted_by": _manual_journal_submitted_by(payload),
+                    "required_role": decision.required_role.value,
+                }
+                await self._record_decision_event(
+                    task,
+                    event_type="hitl_task.approval_denied",
+                    action=f"{action}_denied",
+                    actor_user_id=user_id,
+                    actor_role=user_role,
+                    decision=decision,
+                    before_payload=payload,
+                    after_payload=denial_payload,
+                    materialisation=None,
+                    idempotency_key=None,
+                )
+                await self._record_manual_journal_approval_denied_event(
+                    task,
+                    payload=payload,
+                    reason="manual_journal_self_approval_denied",
+                    actor_user_id=user_id,
+                    actor_role=user_role,
+                    decision=decision,
+                    action=action,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Manual journal approval requires a different user "
+                        "than the submitter"
+                    ),
+                )
             return ApprovalCheck(decision=decision, user_role=user_role, payload=payload)
 
         await self._record_decision_event(
@@ -489,6 +526,74 @@ class InboxService:
             after_state=after_state,
             metadata=metadata,
             idempotency_key=f"manual_journal.rejected:{task_id}",
+        )
+
+    async def _record_manual_journal_approval_denied_event(
+        self,
+        task: dict,
+        *,
+        payload: dict,
+        reason: str,
+        actor_user_id: str,
+        actor_role: UserRole,
+        decision: ApprovalPolicyDecision,
+        action: str,
+    ) -> None:
+        if not _is_manual_journal_threshold_payload(payload):
+            return
+
+        task_id = str(task.get("id") or "")
+        if not task_id:
+            return
+        suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
+        payload_summary = _manual_journal_payload_summary(payload)
+        before_state = {
+            "task": _task_audit_summary(task),
+            "payload": payload_summary,
+            "payload_hash": stable_payload_hash(payload),
+        }
+        after_state = {
+            "task": {
+                **_task_audit_summary(task),
+                "status": "open",
+            },
+            "payload": {
+                "decision_result": "denied",
+                "denial_reason": reason,
+                "current_user_id": actor_user_id,
+            },
+            "payload_hash": stable_payload_hash(
+                {
+                    "decision_result": "denied",
+                    "denial_reason": reason,
+                    "current_user_id": actor_user_id,
+                }
+            ),
+        }
+        metadata = {
+            **payload_summary,
+            "agent_suggestion_id": str(suggestion_id) if suggestion_id else None,
+            "task_id": task_id,
+            "policy": decision.to_metadata(),
+            "decision_result": "denied",
+            "denial_reason": reason,
+            "actor_role": actor_role.value,
+            "required_role": decision.required_role.value,
+            "approval_action": action,
+        }
+        await self._repo.append_financial_event(
+            event_type="manual_journal.approval_denied",
+            entity_type="hitl_task",
+            entity_id=task_id,
+            source_type="agent_suggestion" if suggestion_id else "hitl_task",
+            source_id=str(suggestion_id or task_id),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role.value,
+            action=f"{action}_denied",
+            before_state=before_state,
+            after_state=after_state,
+            metadata=metadata,
+            idempotency_key=None,
         )
 
     async def _fetch_user_role(self, user_id: str) -> UserRole:
@@ -1754,6 +1859,23 @@ def _is_manual_journal_threshold_payload(payload: dict | None) -> bool:
     if not isinstance(approval, dict):
         return False
     return approval.get("source") == "manual_journal_threshold"
+
+
+def _is_manual_journal_self_approval_attempt(
+    payload: dict | None,
+    user_id: str,
+) -> bool:
+    submitted_by = _manual_journal_submitted_by(payload)
+    return submitted_by is not None and submitted_by == user_id
+
+
+def _manual_journal_submitted_by(payload: dict | None) -> str | None:
+    if not _is_manual_journal_threshold_payload(payload):
+        return None
+    approval = payload.get("manual_journal_approval") if isinstance(payload, dict) else {}
+    if not isinstance(approval, dict):
+        return None
+    return _non_empty(approval.get("submitted_by"))
 
 
 def _manual_journal_payload_summary(payload: dict) -> dict[str, Any]:
