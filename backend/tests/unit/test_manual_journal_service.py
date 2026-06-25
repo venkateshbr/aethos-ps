@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app.domain.fx import FxRateNotFoundError
 from app.models.accounting import (
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
@@ -56,6 +59,23 @@ class _LinesQuery:
         )
 
 
+class _TenantQuery:
+    def __init__(self, base_currency: str) -> None:
+        self.base_currency = base_currency
+
+    def select(self, _columns: str) -> _TenantQuery:
+        return self
+
+    def eq(self, _key: str, _value: str) -> _TenantQuery:
+        return self
+
+    def limit(self, _count: int) -> _TenantQuery:
+        return self
+
+    def execute(self) -> _Result:
+        return _Result([{"base_currency": self.base_currency}])
+
+
 class _ForbiddenJournalEntriesQuery:
     def update(self, _payload: dict) -> _ForbiddenJournalEntriesQuery:
         raise AssertionError("posted manual journal must not update journal_entries.reference")
@@ -67,12 +87,15 @@ class _RpcQuery:
 
 
 class _FakeDb:
-    def __init__(self) -> None:
+    def __init__(self, *, base_currency: str = "USD") -> None:
         self.rpc_calls: list[tuple[str, dict]] = []
+        self.base_currency = base_currency
 
     def table(self, name: str) -> object:
         if name == "journal_lines":
             return _LinesQuery()
+        if name == "tenants":
+            return _TenantQuery(self.base_currency)
         if name == "journal_entries":
             return _ForbiddenJournalEntriesQuery()
         raise AssertionError(f"unexpected table: {name}")
@@ -261,7 +284,7 @@ class _ReversalDb:
         return _RpcQuery()
 
 
-def _payload(*, amount: str = "100.00") -> ManualJournalEntryIn:
+def _payload(*, amount: str = "100.00", currency: str = "USD") -> ManualJournalEntryIn:
     return ManualJournalEntryIn.model_validate(
         {
             "description": "Month-end accrual",
@@ -273,14 +296,14 @@ def _payload(*, amount: str = "100.00") -> ManualJournalEntryIn:
                     "direction": "DR",
                     "account_id": "11111111-1111-1111-1111-111111111111",
                     "amount": amount,
-                    "currency": "USD",
+                    "currency": currency,
                     "description": "Debit",
                 },
                 {
                     "direction": "CR",
                     "account_id": "22222222-2222-2222-2222-222222222222",
                     "amount": amount,
-                    "currency": "USD",
+                    "currency": currency,
                     "description": "Credit",
                 },
             ],
@@ -362,6 +385,116 @@ async def test_manual_journal_reference_does_not_update_posted_journal_entry() -
     assert event["p_actor_role"] == "manager"
     assert event["p_metadata"]["reason"] == reason
     assert event["p_metadata"]["total_debits"] == "100.00"
+
+
+@pytest.mark.asyncio
+async def test_manual_journal_same_currency_does_not_lookup_fx_rate() -> None:
+    db = _FakeDb(base_currency="USD")
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock(
+        return_value={
+            "id": "journal-1",
+            "entry_number": "JE-1",
+            "description": "Month-end accrual",
+            "reason": "Accrue June payroll based on approved payroll register.",
+            "entry_date": "2026-06-22",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference_id": None,
+            "created_by": "user-1",
+            "posted_at": "2026-06-22T00:00:00Z",
+        }
+    )
+    fx_mock = AsyncMock()
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+    ):
+        await svc.post_manual_journal(_payload())
+
+    fx_mock.assert_not_awaited()
+    lines = post_mock.call_args.kwargs["lines"]
+    assert [line.currency for line in lines] == ["USD", "USD"]
+    assert [line.base_amount for line in lines] == [
+        Decimal("100.00"),
+        Decimal("100.00"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_manual_journal_foreign_currency_converts_base_amount() -> None:
+    db = _FakeDb(base_currency="GBP")
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock(
+        return_value={
+            "id": "journal-1",
+            "entry_number": "JE-1",
+            "description": "Month-end accrual",
+            "reason": "Accrue June payroll based on approved payroll register.",
+            "entry_date": "2026-06-22",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference_id": None,
+            "created_by": "user-1",
+            "posted_at": "2026-06-22T00:00:00Z",
+        }
+    )
+    fx_mock = AsyncMock(return_value=Decimal("0.80"))
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+    ):
+        await svc.post_manual_journal(_payload(currency="usd"))
+
+    assert fx_mock.await_count == 2
+    fx_mock.assert_any_await("USD", "GBP", date(2026, 6, 22), db)
+    lines = post_mock.call_args.kwargs["lines"]
+    assert [line.currency for line in lines] == ["USD", "USD"]
+    assert [line.base_amount for line in lines] == [
+        Decimal("80.00"),
+        Decimal("80.00"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_manual_journal_missing_fx_rate_rejects_before_posting() -> None:
+    db = _FakeDb(base_currency="GBP")
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock()
+    fx_mock = AsyncMock(
+        side_effect=FxRateNotFoundError("USD", "GBP", date(2026, 6, 22))
+    )
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.get_fx_rate", fx_mock),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.post_manual_journal(_payload(currency="USD"))
+
+    assert exc_info.value.status_code == 422
+    assert "Missing FX rate" in str(exc_info.value.detail)
+    post_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

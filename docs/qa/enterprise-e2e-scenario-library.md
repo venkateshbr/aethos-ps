@@ -60,6 +60,7 @@ agent ledger.
 | ENT-R2R-007 | Manual journal requires business reason and emits audit evidence | API/UI proof implemented in #333 | #333 |
 | ENT-R2R-008 | High-value manual journal routes to Inbox approval | API/UI proof implemented in #335; lifecycle audit proof implemented in #339 | #335, #339 |
 | ENT-R2R-009 | Posted manual journal reverses through controlled audit path | API/UI proof implemented in #337 | #337 |
+| ENT-R2R-010 | Multi-currency manual journal stores tenant-base amounts and balances reports | Backend proof implemented in #347; browser/Copilot proof target pending | #347 |
 | ENT-OPS-001 | Rate-limited endpoint fails safely under abuse | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-002 | Tenant health summary exposes safe operational signals | Browser/API proof automated in #311 | #286, #311 |
 | ENT-OPS-003 | Distributed limiter, health dashboard, and alert routing work together | Browser/API proof automated in #311 | #301, #311 |
@@ -228,6 +229,43 @@ Expected result:
 - `financial_events` contains `manual_journal.reversed` linking original and reversal ids, actor role, reason, line count, and debit total.
 - Duplicate reversal is blocked with a non-500 conflict.
 - Non-manual journals cannot use this manual-journal reversal path.
+
+## ENT-R2R-010 - Multi-Currency Manual Journal FX Posting
+
+Persona: Finance Ops Manager, Controller, CPA/auditor.
+
+Preconditions:
+
+- Tenant base currency is USD or another launch currency with seeded FX rates.
+- Current accounting period is open.
+- Chart of accounts has valid payroll expense and accrued payroll accounts.
+- Manual-journal approval policy is configured so the test can exercise either
+  direct post or Inbox approval.
+
+Steps:
+
+1. Open `/app/copilot`.
+2. Ask `Prepare a GBP 1,000 month-end payroll accrual journal for June 2026.
+   Show the USD base-currency impact using the posting-date FX rate, route it
+   to Inbox before posting, and verify the Trial Balance remains balanced after
+   approval.`
+3. If routed, approve the Inbox task as a different required approver.
+4. Open `/app/accounting/journals` and expand the posted journal.
+5. Open Reports > Trial Balance and the close package for the same period.
+6. Repeat with a currency/date pair that has no FX rate available.
+
+Expected result:
+
+- Posted lines retain transaction `amount` and `currency`.
+- Posted lines store `base_amount` converted to tenant base currency at the
+  entry date FX rate.
+- `accounting_guardian` validates balance using base amounts, not just matching
+  transaction amounts.
+- Missing FX rate rejects the post with a non-500 validation error.
+- Trial Balance and financial statement reports remain balanced in tenant base
+  currency after the journal posts.
+- Audit evidence still includes manual-journal reason, actor role, line count,
+  and debit total.
 
 ## ENT-DOC-001 - Platform Guide And Scenario Baseline
 

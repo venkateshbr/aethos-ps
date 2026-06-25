@@ -20,8 +20,9 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.domain.fx import FxRateNotFoundError, get_fx_rate
 from app.domain.journal_helper import JournalLineSpec, post_journal
-from app.domain.money import serialise_money
+from app.domain.money import quantise_money, serialise_money
 from app.models.accounting import (
     JournalEntryListItem,
     ManualJournalApprovalTaskResponse,
@@ -168,18 +169,7 @@ class ManualJournalService:
 
         # 2. Build JournalLineSpec list
         # account_id is a UUID from Pydantic; convert to str for the guardian
-        lines = [
-            JournalLineSpec(
-                direction=line.direction,
-                account_code="",  # not required for manual entries (guardian uses account_id)
-                account_id=str(line.account_id),
-                amount=line.amount,
-                currency=line.currency,
-                description=line.description or "",
-                base_amount=line.amount,  # TODO: FX convert if currency != tenant base currency
-            )
-            for line in payload.lines
-        ]
+        lines = await self._build_manual_journal_lines(payload)
 
         # 3. Call post_journal (runs accounting_guardian → DB insert)
         # post_journal is synchronous (supabase-py is sync); run in thread
@@ -331,6 +321,65 @@ class ManualJournalService:
             )
 
         return await asyncio.to_thread(_fetch)
+
+    async def _tenant_base_currency(self) -> str:
+        def _fetch() -> str:
+            result = (
+                self.db.table("tenants")
+                .select("base_currency")
+                .eq("id", self.tenant_id)
+                .limit(1)
+                .execute()
+            )
+            row = result.data[0] if result.data else {}
+            return str(row.get("base_currency") or "USD").upper()
+
+        return await asyncio.to_thread(_fetch)
+
+    async def _build_manual_journal_lines(
+        self, payload: ManualJournalEntryIn
+    ) -> list[JournalLineSpec]:
+        base_currency = await self._tenant_base_currency()
+        lines: list[JournalLineSpec] = []
+        for line in payload.lines:
+            currency = line.currency.upper()
+            if currency == base_currency:
+                base_amount = line.amount
+            else:
+                try:
+                    rate = await get_fx_rate(
+                        currency,
+                        base_currency,
+                        payload.entry_date,
+                        self.db,
+                    )
+                except FxRateNotFoundError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail=(
+                            "Missing FX rate for manual journal line: "
+                            f"{exc.from_currency} to {exc.to_currency} on "
+                            f"{exc.rate_date}."
+                        ),
+                    ) from exc
+                base_amount = quantise_money(line.amount * rate)
+                if base_amount is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail="Manual journal line base amount could not be calculated.",
+                    )
+            lines.append(
+                JournalLineSpec(
+                    direction=line.direction,
+                    account_code="",  # not required for manual entries (guardian uses account_id)
+                    account_id=str(line.account_id),
+                    amount=line.amount,
+                    currency=currency,
+                    description=line.description or "",
+                    base_amount=base_amount,
+                )
+            )
+        return lines
 
     async def _create_manual_journal_approval_task(
         self,

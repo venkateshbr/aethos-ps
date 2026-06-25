@@ -27,7 +27,7 @@ import logging
 from decimal import Decimal
 from typing import TypedDict
 
-from app.domain.journal_helper import JournalLineSpec
+from app.domain.journal_helper import JournalLineSpec, journal_line_base_amount
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -66,8 +66,8 @@ def validate_journal(
     # ------------------------------------------------------------------
     # 1. Balance check
     # ------------------------------------------------------------------
-    debits = sum(line.amount for line in lines if line.direction == "DR")
-    credits = sum(line.amount for line in lines if line.direction == "CR")
+    debits = sum(journal_line_base_amount(line) for line in lines if line.direction == "DR")
+    credits = sum(journal_line_base_amount(line) for line in lines if line.direction == "CR")
     diff = abs(debits - credits)
 
     if diff > FX_TOLERANCE:

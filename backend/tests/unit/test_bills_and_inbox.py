@@ -83,6 +83,24 @@ def test_validate_journal_balance_rejects_02_gap() -> None:
     assert validate_journal_balance(lines) is False
 
 
+def test_validate_journal_balance_uses_base_amount_when_present() -> None:
+    lines = [
+        JournalLineSpec(
+            "DR",
+            "5000",
+            Decimal("100.00"),
+            base_amount=Decimal("100.00"),
+        ),
+        JournalLineSpec(
+            "CR",
+            "2000",
+            Decimal("100.00"),
+            base_amount=Decimal("125.00"),
+        ),
+    ]
+    assert validate_journal_balance(lines) is False
+
+
 def test_validate_journal_balance_multi_line() -> None:
     """Multiple debit lines balanced by one credit."""
     lines = [
