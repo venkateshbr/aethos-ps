@@ -8,7 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
-import { BillingRunsService, Bill } from '../../core/services/billing-runs.service';
+import { BillingRunsService, Bill, PaymentSettlement } from '../../core/services/billing-runs.service';
 import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
@@ -100,7 +100,7 @@ import { HttpClient } from '@angular/common/http';
             >Retry</button>
           </div>
         } @else {
-          <mat-stepper [linear]="true" orientation="horizontal" #stepper class="pay-bills-stepper bg-surface-raised rounded-xl border border-border-default p-6">
+          <mat-stepper [linear]="false" orientation="horizontal" #stepper class="pay-bills-stepper bg-surface-raised rounded-xl border border-border-default p-6">
 
             <!-- ── Step 1: Select Bills ─────────────────────────────────── -->
             <mat-step label="Select Bills" [completed]="step1Complete()">
@@ -232,16 +232,37 @@ import { HttpClient } from '@angular/common/http';
             <!-- ── Step 3: Export ─────────────────────────────────────── -->
             <mat-step label="Export">
               <div class="py-4">
-                <p class="text-sm text-text-secondary mb-1">Batch <span class="font-mono text-text-primary">{{ batchId() }}</span> created.</p>
-                <p class="text-xs text-text-disabled mb-6">Download your payment file before marking as sent.</p>
+                <p class="text-sm text-text-secondary mb-1">Batch <span class="font-mono text-text-primary">{{ batchId() || 'not created' }}</span></p>
+                <p class="text-xs text-text-disabled mb-6">Approve the batch, download the payment file, then mark it as sent.</p>
 
                 @if (batchId()) {
                   <app-decision-timeline entityType="bill_payment_batch" [entityId]="batchId()!" title="Payment approval timeline" />
                 }
 
+                <div class="mb-6 rounded-lg border border-border-default bg-surface-base/50 p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p class="text-xs uppercase tracking-wide text-text-muted">Batch status</p>
+                      <p class="mt-1 text-sm font-medium text-text-primary">{{ batchStatusLabel() }}</p>
+                    </div>
+                    @if (batchStatus() === 'draft') {
+                      <button
+                        [disabled]="approvingBatch()"
+                        (click)="approveBatch()"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                      >
+                        @if (approvingBatch()) { Approving... } @else { Approve Batch }
+                      </button>
+                    }
+                  </div>
+                  @if (approveError()) {
+                    <p class="mt-3 text-xs text-confidence-low" role="alert">Could not approve this batch. Please try again.</p>
+                  }
+                </div>
+
                 <div class="flex flex-col sm:flex-row gap-3 mb-8">
                   <button
-                    [disabled]="downloading()"
+                    [disabled]="downloading() || !canExport()"
                     (click)="downloadNacha()"
                     class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
@@ -250,7 +271,7 @@ import { HttpClient } from '@angular/common/http';
                   </button>
 
                   <button
-                    [disabled]="downloading()"
+                    [disabled]="downloading() || !canExport()"
                     (click)="downloadCsv()"
                     class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
@@ -258,11 +279,17 @@ import { HttpClient } from '@angular/common/http';
                     Download CSV
                   </button>
                 </div>
+                @if (exportLabel()) {
+                  <p class="mb-6 text-xs text-accent-light" role="status">{{ exportLabel() }}</p>
+                }
+                @if (exportError()) {
+                  <p class="mb-6 text-xs text-confidence-low" role="alert">Export failed. Please try again.</p>
+                }
 
                 <div class="border-t border-border-default pt-6">
                   <p class="text-xs text-text-muted mb-4">Once you have uploaded the file to your bank's portal, mark the batch as sent.</p>
                   <button
-                    [disabled]="markingSent()"
+                    [disabled]="markingSent() || !canMarkSent()"
                     (click)="markSent(stepper)"
                     class="px-6 py-2.5 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
@@ -276,23 +303,44 @@ import { HttpClient } from '@angular/common/http';
               </div>
             </mat-step>
 
-            <!-- ── Step 4: Complete ───────────────────────────────────── -->
-            <mat-step label="Complete">
+            <!-- ── Step 4: Settle ─────────────────────────────────────── -->
+            <mat-step label="Settle">
               <div class="py-8 flex flex-col items-center text-center">
                 <mat-icon
                   class="text-accent-light mb-4"
                   style="font-size:3rem;width:3rem;height:3rem;"
                   aria-hidden="true"
                 >check_circle</mat-icon>
-                <h2 class="text-xl font-semibold text-text-primary mb-2">Batch sent to bank</h2>
-                <p class="text-sm text-text-muted mb-6">Payment batch <span class="font-mono text-text-primary">{{ batchId() }}</span> has been marked as sent.</p>
+                @if (!settlement()) {
+                  <h2 class="text-xl font-semibold text-text-primary mb-2">Batch sent to bank</h2>
+                  <p class="text-sm text-text-muted mb-6">Payment batch <span class="font-mono text-text-primary">{{ batchId() }}</span> has been marked as sent.</p>
+                } @else {
+                  <h2 class="text-xl font-semibold text-text-primary mb-2">Batch settled</h2>
+                  <p class="text-sm text-text-muted mb-2">{{ settlement()!.settled_count }} bills settled.</p>
+                  @if (settlement()!.journal_entry_ids.length) {
+                    <p class="text-xs text-text-disabled mb-6">Journals: {{ settlement()!.journal_entry_ids.join(', ') }}</p>
+                  }
+                }
                 @if (batchId()) {
                   <app-decision-timeline entityType="bill_payment_batch" [entityId]="batchId()!" title="Payment approval timeline" />
                 }
-                <a
-                  routerLink="/app/expenses"
-                  class="text-sm text-indigo-400 hover:text-indigo-300 underline transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 rounded"
-                >Back to bills</a>
+                @if (!settlement()) {
+                  <button
+                    [disabled]="settlingBatch() || !canSettle()"
+                    (click)="settleBatch()"
+                    class="mt-6 px-6 py-2.5 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                  >
+                    @if (settlingBatch()) { Settling... } @else { Confirm Settlement }
+                  </button>
+                } @else {
+                  <a
+                    routerLink="/app/bills"
+                    class="mt-6 text-sm text-indigo-400 hover:text-indigo-300 underline transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 rounded"
+                  >Back to bills</a>
+                }
+                @if (settleError()) {
+                  <p class="mt-3 text-xs text-confidence-low" role="alert">Settlement failed. Please try again.</p>
+                }
               </div>
             </mat-step>
 
@@ -348,9 +396,14 @@ export class PayBillsComponent implements OnInit {
   billsError = signal(false);
   creatingBatch = signal(false);
   batchError = signal(false);
+  approvingBatch = signal(false);
+  approveError = signal(false);
   downloading = signal(false);
+  exportError = signal(false);
   markingSent = signal(false);
   markSentError = signal(false);
+  settlingBatch = signal(false);
+  settleError = signal(false);
 
   // ── Run Billing state (#239) ───────────────────────────────────────────
   loadingEngagements = signal(true);
@@ -363,6 +416,10 @@ export class PayBillsComponent implements OnInit {
   bills = signal<Bill[]>([]);
   selectedIds = signal<Set<string>>(new Set());
   batchId = signal<string | null>(null);
+  batchStatus = signal<string | null>(null);
+  exported = signal(false);
+  exportLabel = signal<string | null>(null);
+  settlement = signal<PaymentSettlement | null>(null);
 
   // Form values
   payDate = '';
@@ -371,6 +428,9 @@ export class PayBillsComponent implements OnInit {
   // Computed
   step1Complete = computed(() => this.selectedIds().size > 0);
   step2Complete = computed(() => this.batchId() !== null);
+  canExport = computed(() => this.batchStatus() === 'approved');
+  canMarkSent = computed(() => this.batchStatus() === 'approved' && this.exported());
+  canSettle = computed(() => this.batchStatus() === 'sent_to_bank');
 
   runningTotal = computed(() => {
     const ids = this.selectedIds();
@@ -422,7 +482,7 @@ export class PayBillsComponent implements OnInit {
     this.selectedIds.set(new Set());
   }
 
-  createBatch(stepper: { next: () => void }): void {
+  createBatch(stepper: { selectedIndex: number }): void {
     if (this.creatingBatch()) return;
     this.creatingBatch.set(true);
     this.batchError.set(false);
@@ -430,12 +490,35 @@ export class PayBillsComponent implements OnInit {
     this.svc.createBatch(ids, this.payDate || undefined, this.bankLabel).subscribe({
       next: batch => {
         this.batchId.set(batch.id);
+        this.batchStatus.set(batch.status ?? 'draft');
+        this.exported.set(false);
+        this.exportLabel.set(null);
+        this.settlement.set(null);
         this.creatingBatch.set(false);
-        stepper.next();
+        setTimeout(() => {
+          stepper.selectedIndex = 2;
+        });
       },
       error: () => {
         this.batchError.set(true);
         this.creatingBatch.set(false);
+      },
+    });
+  }
+
+  approveBatch(): void {
+    const id = this.batchId();
+    if (!id || this.approvingBatch()) return;
+    this.approvingBatch.set(true);
+    this.approveError.set(false);
+    this.svc.approveBatch(id).subscribe({
+      next: batch => {
+        this.batchStatus.set(batch.status ?? 'approved');
+        this.approvingBatch.set(false);
+      },
+      error: () => {
+        this.approveError.set(true);
+        this.approvingBatch.set(false);
       },
     });
   }
@@ -447,10 +530,13 @@ export class PayBillsComponent implements OnInit {
     this.svc.exportBatch(id, 'nacha').subscribe({
       next: blob => {
         this.downloadFile(blob, 'batch.txt');
+        this.exported.set(true);
+        this.exportLabel.set('NACHA export downloaded and recorded.');
+        this.exportError.set(false);
         this.downloading.set(false);
       },
       error: () => {
-        console.error('NACHA export failed');
+        this.exportError.set(true);
         this.downloading.set(false);
       },
     });
@@ -463,30 +549,65 @@ export class PayBillsComponent implements OnInit {
     this.svc.exportBatch(id, 'csv').subscribe({
       next: blob => {
         this.downloadFile(blob, 'batch.csv');
+        this.exported.set(true);
+        this.exportLabel.set('CSV export downloaded and recorded.');
+        this.exportError.set(false);
         this.downloading.set(false);
       },
       error: () => {
-        console.error('CSV export failed');
+        this.exportError.set(true);
         this.downloading.set(false);
       },
     });
   }
 
-  markSent(stepper: { next: () => void }): void {
+  markSent(stepper: { selectedIndex: number }): void {
     const id = this.batchId();
     if (!id || this.markingSent()) return;
     this.markingSent.set(true);
     this.markSentError.set(false);
     this.svc.markSent(id).subscribe({
-      next: () => {
+      next: batch => {
+        this.batchStatus.set(batch.status ?? 'sent_to_bank');
         this.markingSent.set(false);
-        stepper.next();
+        setTimeout(() => {
+          stepper.selectedIndex = 3;
+        });
       },
       error: () => {
         this.markSentError.set(true);
         this.markingSent.set(false);
       },
     });
+  }
+
+  settleBatch(): void {
+    const id = this.batchId();
+    if (!id || this.settlingBatch()) return;
+    this.settlingBatch.set(true);
+    this.settleError.set(false);
+    this.svc.settleBatch(id).subscribe({
+      next: result => {
+        this.settlement.set(result);
+        this.batchStatus.set(result.status);
+        this.settlingBatch.set(false);
+      },
+      error: () => {
+        this.settleError.set(true);
+        this.settlingBatch.set(false);
+      },
+    });
+  }
+
+  batchStatusLabel(): string {
+    if (!this.batchId()) return 'Create a batch first';
+    const labels: Record<string, string> = {
+      draft: 'Draft - approval required',
+      approved: 'Approved - ready to export',
+      sent_to_bank: 'Sent to bank',
+      settled: 'Settled',
+    };
+    return labels[this.batchStatus() ?? 'draft'] ?? (this.batchStatus() ?? 'Draft');
   }
 
   // ── Run Billing methods (#239) ─────────────────────────────────────────
