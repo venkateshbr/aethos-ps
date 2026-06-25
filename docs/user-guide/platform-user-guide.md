@@ -326,9 +326,12 @@ Current workflows:
   requires a business reason, stores that reason on the journal entry, and
   appends immutable `manual_journal.posted` evidence for audit review. Journals
   whose total debits meet or exceed the tenant manual-journal approval threshold
-  route to Inbox and post only after Accounting-role approval. Posted manual
-  journals can be reversed through Accounting by entering a reversal date and
-  reason; the system creates a new reversal journal rather than editing history.
+  route to Inbox, append `manual_journal.submitted_for_approval`, and post only
+  after Accounting-role approval. If the Inbox task is rejected, the rejection
+  reason is captured in `manual_journal.rejected` evidence without posting a
+  journal. Posted manual journals can be reversed through Accounting by entering
+  a reversal date and reason; the system creates a new reversal journal rather
+  than editing history.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained

@@ -203,7 +203,11 @@ class InboxService:
         kind = task.get("kind", "")
         user_role = await self._fetch_user_role(user_id)
         payload = self._task_materialisation_payload(task)
-        decision = ApprovalPolicyMatrix.decision_for_task(kind, payload)
+        decision = ApprovalPolicyMatrix.decision_for_task(
+            kind,
+            payload,
+            settings=await self._approval_policy_settings(),
+        )
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "rejected", user_id)
@@ -229,6 +233,14 @@ class InboxService:
             after_payload={"reason": _truncate(reason, 500)},
             materialisation=None,
             idempotency_key=f"hitl_task.rejected:{task_id}",
+        )
+        await self._record_manual_journal_rejected_event(
+            task,
+            payload=payload,
+            reason=reason,
+            actor_user_id=user_id,
+            actor_role=user_role,
+            decision=decision,
         )
 
         return RejectResponse(rejected=True, task_id=task_id)
@@ -421,6 +433,63 @@ class InboxService:
                     entity_id=target_id,
                 ),
             )
+
+    async def _record_manual_journal_rejected_event(
+        self,
+        task: dict,
+        *,
+        payload: dict,
+        reason: str,
+        actor_user_id: str,
+        actor_role: UserRole,
+        decision: ApprovalPolicyDecision,
+    ) -> None:
+        if not _is_manual_journal_threshold_payload(payload):
+            return
+
+        task_id = str(task.get("id") or "")
+        if not task_id:
+            return
+        suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
+        payload_summary = _manual_journal_payload_summary(payload)
+        rejection_reason = _truncate(reason, 500)
+        before_state = {
+            "task": _task_audit_summary(task),
+            "payload": payload_summary,
+            "payload_hash": stable_payload_hash(payload),
+        }
+        after_state = {
+            "task": {
+                **_task_audit_summary(task),
+                "status": "done",
+            },
+            "payload": {"reason": rejection_reason},
+            "payload_hash": stable_payload_hash({"reason": rejection_reason}),
+        }
+        metadata = {
+            **payload_summary,
+            "agent_suggestion_id": str(suggestion_id) if suggestion_id else None,
+            "task_id": task_id,
+            "policy": decision.to_metadata(),
+            "decision_result": "rejected",
+            "actor_role": actor_role.value,
+            "required_role": decision.required_role.value,
+            "rejection_reason": rejection_reason,
+        }
+        await self._repo.append_financial_event(
+            event_type="manual_journal.rejected",
+            entity_type="hitl_task",
+            entity_id=task_id,
+            source_type="agent_suggestion" if suggestion_id else "hitl_task",
+            source_id=str(suggestion_id or task_id),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role.value,
+            action="rejected",
+            before_state=before_state,
+            after_state=after_state,
+            metadata=metadata,
+            idempotency_key=f"manual_journal.rejected:{task_id}",
+        )
 
     async def _fetch_user_role(self, user_id: str) -> UserRole:
         try:
@@ -1676,6 +1745,58 @@ def _safe_payload_summary(payload: dict | None) -> dict[str, Any]:
     if redacted:
         summary["redacted_fields"] = sorted(redacted)
     return summary
+
+
+def _is_manual_journal_threshold_payload(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    approval = payload.get("manual_journal_approval")
+    if not isinstance(approval, dict):
+        return False
+    return approval.get("source") == "manual_journal_threshold"
+
+
+def _manual_journal_payload_summary(payload: dict) -> dict[str, Any]:
+    approval = payload.get("manual_journal_approval") or {}
+    if not isinstance(approval, dict):
+        approval = {}
+    lines = payload.get("lines") or []
+    line_count = len(lines) if isinstance(lines, list) else 0
+    total_debits = _non_empty(payload.get("total_debits"))
+    if total_debits is None:
+        total_debits = _manual_journal_total_debits(lines)
+    return {
+        "description": _truncate(str(payload.get("description") or ""), 200),
+        "reason": _truncate(str(payload.get("reason") or ""), 500),
+        "entry_date": str(payload.get("entry_date") or ""),
+        "reference": _non_empty(payload.get("reference")),
+        "line_count": line_count,
+        "total_debits": total_debits,
+        "threshold": _non_empty(approval.get("threshold")),
+        "source": approval.get("source", "manual_journal_threshold"),
+        "submitted_by": _non_empty(approval.get("submitted_by")),
+        "submitted_by_role": _non_empty(approval.get("submitted_by_role")),
+    }
+
+
+def _manual_journal_total_debits(lines: Any) -> str | None:
+    if not isinstance(lines, list):
+        return None
+    total = Decimal("0")
+    found = False
+    for line in lines:
+        if not isinstance(line, dict):
+            continue
+        if str(line.get("direction") or "").upper() != "DR":
+            continue
+        try:
+            total += Decimal(str(line.get("amount") or "0"))
+            found = True
+        except Exception:
+            continue
+    if not found:
+        return None
+    return f"{total:.2f}"
 
 
 def _summarise_mapping(

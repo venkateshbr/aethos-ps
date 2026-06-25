@@ -485,6 +485,77 @@ def test_inbox_reject_writes_decision_audit_event(
     assert document_event["metadata"]["source_hitl_task_id"] == "task-1"
 
 
+def test_inbox_reject_threshold_manual_journal_writes_lifecycle_event(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["agent_suggestions"][0].update(
+        {
+            "agent_name": "manual_journal_service",
+            "action_type": "draft_journal",
+            "output_snapshot": {
+                "description": "Month-end accrual",
+                "reason": "Accrue June payroll based on approved payroll register.",
+                "entry_date": "2026-06-22",
+                "reference": "ACCRUAL-001",
+                "total_debits": "15000.00",
+                "lines": [
+                    {
+                        "direction": "DR",
+                        "amount": "15000.00",
+                        "currency": "USD",
+                    },
+                    {
+                        "direction": "CR",
+                        "amount": "15000.00",
+                        "currency": "USD",
+                    },
+                ],
+            },
+        }
+    )
+    fake_db.tables["hitl_tasks"][0].update(
+        {
+            "kind": "draft_journal",
+            "title": "Review high-value manual journal: Month-end accrual",
+            "payload": {
+                "manual_journal_approval": {
+                    "source": "manual_journal_threshold",
+                    "submitted_by": "submitter-1",
+                    "submitted_by_role": "manager",
+                    "threshold": "10000.00",
+                }
+            },
+        }
+    )
+
+    response = client.post(
+        "/api/v1/inbox/tasks/task-1/reject",
+        json={"reason": "Payroll register was not final."},
+    )
+
+    assert response.status_code == 200, response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "done"
+    assert fake_db.tables["agent_suggestions"][0]["status"] == "rejected"
+    generic_event = fake_db.tables["financial_events"][0]
+    assert generic_event["event_type"] == "hitl_task.rejected"
+    event = fake_db.tables["financial_events"][1]
+    assert event["event_type"] == "manual_journal.rejected"
+    assert event["entity_type"] == "hitl_task"
+    assert event["entity_id"] == "task-1"
+    assert event["source_type"] == "agent_suggestion"
+    assert event["source_id"] == "suggestion-1"
+    assert event["action"] == "rejected"
+    assert event["metadata"]["reason"].startswith("Accrue June payroll")
+    assert event["metadata"]["rejection_reason"] == "Payroll register was not final."
+    assert event["metadata"]["total_debits"] == "15000.00"
+    assert event["metadata"]["threshold"] == "10000.00"
+    assert event["metadata"]["submitted_by"] == "submitter-1"
+    assert event["metadata"]["required_role"] == "admin"
+    assert event["after_state"]["payload"]["reason"] == "Payroll register was not final."
+    assert event["idempotency_key"] == "manual_journal.rejected:task-1"
+
+
 def test_inbox_done_task_detail_exposes_decision_history(
     client: TestClient,
     fake_db: _FakeDb,

@@ -100,7 +100,7 @@ Human-in-control, AI-doing-the-work.
 | Cash Flow Statement | Not implemented | Missing |
 | Financial Close Process | No structured close flow | Missing |
 | Year-End Close entries | Not implemented | Missing |
-| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335; reversal workflow implemented in #337 | Incomplete — no full state-change log for draft/edit/reject lifecycle |
+| Manual Journal Audit Trail | Partial — reason field and `manual_journal.posted` event evidence implemented in #333; high-value Inbox approval implemented in #335; reversal workflow implemented in #337; submitted/rejected lifecycle events implemented in #339 | Incomplete — editable draft/status-filter depth and created/edited timeline remain future product work |
 | Retained Earnings account | Not seeded | Missing — must be seeded at tenant creation |
 
 ---
@@ -429,8 +429,10 @@ manual-journal threshold approval: over-threshold direct submissions create
 Inbox `draft_journal` tasks, and approval posts once through the same
 guardian/audit path. #337 implements controlled reversal: posted manual
 journals can create a new linked `manual_reversal` journal with
-`manual_journal.reversed` evidence. Rejection workflow and full state-transition
-audit remain future slices.
+`manual_journal.reversed` evidence. #339 implements threshold-proposal
+`manual_journal.submitted_for_approval` and `manual_journal.rejected` evidence.
+Editable draft journals, full created/edited state history, status filters, and
+stricter self-approval controls remain future product-depth slices.
 
 ### 9.1 User Stories
 
@@ -446,17 +448,18 @@ audit remain future slices.
 
 **FR-MJ-01** `journal_entries` with `source=manual` require a non-empty `reason` field (max 500 characters) on the POST request. The API returns 422 if reason is absent or blank.
 
-**FR-MJ-02** A new `manual_journal_audit_log` table records every state change to a manual journal entry (see §10 for schema). Events recorded: `created`, `edited`, `submitted_for_approval`, `approved`, `rejected`, `posted`, `reversed`, `close_override`.
+**FR-MJ-02** Manual journal lifecycle evidence is recorded in the immutable `financial_events` ledger. Implemented events include `manual_journal.submitted_for_approval`, `manual_journal.posted`, `manual_journal.rejected`, and `manual_journal.reversed`. A separate `manual_journal_audit_log` table remains optional future work only if product needs a dedicated draft/edit status model outside the shared event ledger.
 
-**FR-MJ-03** Approval threshold: if a manual journal's total debit amount exceeds `tenants.manual_journal_approval_threshold` (default 10,000.00 in tenant base currency), then:
-- The journal is created in `status=pending_approval`.
-- A `hitl_task` of kind `approve_manual_journal` is created, assigned to users with `role=admin` or `role=owner`.
-- The submitting user cannot self-approve.
-- If the submitter is already `role=owner`, approval is still required from a second `role=owner` if one exists, or the system logs a single-approver exception.
+**FR-MJ-03** Approval threshold: if a manual journal's total debit amount meets or exceeds the tenant manual-journal threshold configured in Approval Policy Settings, then:
+- No journal is posted immediately.
+- A `hitl_task` of kind `draft_journal` is created with `manual_journal_approval.source=manual_journal_threshold`.
+- `manual_journal.submitted_for_approval` is appended with task id, suggestion id, actor role, business reason, total debits, threshold, required role, and payload hash.
+- Approval materializes the journal through `ManualJournalService.post_manual_journal`.
+- Stricter self-approval or dual-owner exception controls remain future product-depth work.
 
 **FR-MJ-04** Journals below the threshold are created in `status=draft` and can be self-posted by the submitter (if they have `role=admin` or higher).
 
-**FR-MJ-05** Rejected manual journals: the approver must supply a rejection reason (required). The journal moves to `status=rejected` and the submitter is notified in-app.
+**FR-MJ-05** Rejected threshold manual journals: the approver must supply a rejection reason. The Inbox task is resolved without posting a journal, generic `hitl_task.rejected` evidence is written, and `manual_journal.rejected` captures the manual-journal business reason, rejection reason, threshold, actor role, and task/suggestion linkage. Submitter notification remains future product-depth work.
 
 **FR-MJ-06** The Journal Entry detail screen shows a full timeline: created by X at T1, submitted for approval at T2, approved by Y at T3, posted at T4. Each event shows the user's display name and timestamp.
 

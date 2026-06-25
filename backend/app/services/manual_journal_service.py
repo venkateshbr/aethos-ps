@@ -29,6 +29,7 @@ from app.models.accounting import (
     ManualJournalEntryResponse,
     ManualJournalReversalIn,
 )
+from app.services.agent_run_ledger import stable_payload_hash
 from app.services.approval_policy import ApprovalPolicyMatrix
 from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
 from app.services.period_lock_service import assert_period_open
@@ -408,6 +409,16 @@ class ManualJournalService:
             )
 
         suggestion_id, task_id = await asyncio.to_thread(_insert_task)
+        if task_id:
+            await self._append_manual_journal_submitted_for_approval_event(
+                journal_payload=journal_payload,
+                suggestion_id=suggestion_id,
+                task_id=task_id,
+                total_debits=total_debits,
+                threshold=threshold,
+                required_role=decision.required_role.value,
+                policy_reason=decision.reason,
+            )
         return ManualJournalApprovalTaskResponse(
             task_id=task_id,
             suggestion_id=suggestion_id,
@@ -418,6 +429,75 @@ class ManualJournalService:
             message=(
                 "Manual journal routed to Inbox for approval before posting."
             ),
+        )
+
+    async def _append_manual_journal_submitted_for_approval_event(
+        self,
+        *,
+        journal_payload: dict[str, Any],
+        suggestion_id: str | None,
+        task_id: str,
+        total_debits: Decimal,
+        threshold: Decimal,
+        required_role: str,
+        policy_reason: str,
+    ) -> None:
+        """Append proposal lifecycle evidence for threshold-routed journals."""
+        approval_payload = journal_payload.get("manual_journal_approval") or {}
+        metadata = {
+            "task_id": task_id,
+            "agent_suggestion_id": suggestion_id,
+            "submitted_by": self.user_id,
+            "submitted_by_role": self.actor_role,
+            "required_role": required_role,
+            "policy_reason": policy_reason,
+            "reason": str(journal_payload.get("reason") or ""),
+            "entry_date": str(journal_payload.get("entry_date") or ""),
+            "line_count": len(journal_payload.get("lines") or []),
+            "total_debits": serialise_money(total_debits),
+            "threshold": serialise_money(threshold),
+            "payload_hash": stable_payload_hash(journal_payload),
+            "source": approval_payload.get("source", "manual_journal_threshold"),
+        }
+        after_state = {
+            "task": {
+                "id": task_id,
+                "kind": "draft_journal",
+                "status": "open",
+            },
+            "payload": {
+                "description": str(journal_payload.get("description") or ""),
+                "reason": str(journal_payload.get("reason") or ""),
+                "entry_date": str(journal_payload.get("entry_date") or ""),
+                "reference": journal_payload.get("reference"),
+                "line_count": len(journal_payload.get("lines") or []),
+                "total_debits": serialise_money(total_debits),
+                "threshold": serialise_money(threshold),
+            },
+            "payload_hash": stable_payload_hash(journal_payload),
+        }
+
+        await asyncio.to_thread(
+            lambda: self.db.rpc(
+                "append_financial_event",
+                {
+                    "p_tenant_id": self.tenant_id,
+                    "p_event_type": "manual_journal.submitted_for_approval",
+                    "p_entity_type": "hitl_task",
+                    "p_entity_id": task_id,
+                    "p_source_type": "agent_suggestion" if suggestion_id else "hitl_task",
+                    "p_source_id": suggestion_id or task_id,
+                    "p_actor_user_id": self.user_id,
+                    "p_actor_role": self.actor_role,
+                    "p_action": "submitted_for_approval",
+                    "p_before_state": {},
+                    "p_after_state": after_state,
+                    "p_metadata": metadata,
+                    "p_idempotency_key": (
+                        f"manual_journal.submitted_for_approval:{task_id}"
+                    ),
+                },
+            ).execute()
         )
 
     async def _append_manual_journal_event(
