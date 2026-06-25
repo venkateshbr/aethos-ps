@@ -43,7 +43,7 @@ interface JournalEntry {
   description: string;
   entry_date: string;
   reference?: string | null;
-  reference_type: 'manual' | 'auto' | 'invoice' | 'bill' | 'payment';
+  reference_type: 'manual' | 'auto' | 'invoice' | 'bill' | 'payment' | 'year_end_close';
   posted_by?: string | null;
   total_dr: string;
   lines?: JournalLine[];
@@ -76,6 +76,26 @@ interface CloseProposalResponse {
   proposal_count: number;
   created_count: number;
   skipped_duplicates: number;
+}
+
+interface YearEndCloseResponse {
+  year: number;
+  period: string;
+  entry_date: string;
+  journal_entry_id: string;
+  entry_number: string;
+  posted_at: string;
+  net_income: string;
+  retained_earnings_direction: 'DR' | 'CR' | null;
+  retained_earnings_amount: string;
+  retained_earnings_account: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  revenue_closed: string;
+  expenses_closed: string;
+  line_count: number;
 }
 
 interface CloseVarianceComment {
@@ -179,7 +199,13 @@ const CLOSE_OVERRIDE_LABELS: Record<string, string> = {
 };
 
 // ─── Type guard for API error shape ───────────────────────────────────────────
-type ApiErrorDetail = string | { code?: string; period?: string; message?: string };
+type ApiErrorDetail = string | {
+  code?: string;
+  period?: string;
+  message?: string;
+  locked_periods?: string[];
+  entry_number?: string;
+};
 
 function isApiError(err: unknown): err is { error?: { detail?: ApiErrorDetail } } {
   return typeof err === 'object' && err !== null;
@@ -192,6 +218,22 @@ function journalErrorMessage(err: unknown): string | null {
   if (detail?.code === 'period_locked') {
     const period = detail.period ? ` ${detail.period}` : '';
     return `Accounting period${period} is locked. Choose an open entry date or unlock the period before posting.`;
+  }
+  if (detail?.message) return detail.message;
+  return null;
+}
+
+function yearEndCloseErrorMessage(err: unknown): string | null {
+  if (!isApiError(err)) return null;
+  const detail = err.error?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail?.code === 'year_end_close_period_locked') {
+    const periods = detail.locked_periods?.join(', ') || 'one or more periods';
+    return `Unlock ${periods} before posting year-end close.`;
+  }
+  if (detail?.code === 'year_end_close_already_posted') {
+    const entry = detail.entry_number ? ` (${detail.entry_number})` : '';
+    return `Year-end close is already posted${entry}.`;
   }
   if (detail?.message) return detail.message;
   return null;
@@ -453,6 +495,51 @@ type FilterChip = 'all' | 'manual' | 'auto';
               <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">repeat</mat-icon>
               Recurring journals
             </button>
+          </div>
+          <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 class="text-xs font-semibold text-text-primary uppercase tracking-wide">Year-end close</h3>
+                <p class="text-xs text-text-muted mt-0.5">
+                  Fiscal year {{ closeYear() }} · Revenue and Expense to Retained Earnings
+                </p>
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-1.5 rounded bg-accent px-3 py-2 text-xs font-medium text-accent-on transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                [disabled]="yearEndCloseAction()"
+                (click)="postYearEndClose()"
+              >
+                <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">account_balance</mat-icon>
+                {{ yearEndCloseAction() ? 'Posting close' : 'Post year-end close' }}
+              </button>
+            </div>
+            @if (yearEndCloseError()) {
+              <p class="mt-2 text-xs text-confidence-low" role="alert">{{ yearEndCloseError() }}</p>
+            }
+            @if (yearEndCloseResult()) {
+              <div class="mt-3 grid gap-2 md:grid-cols-4">
+                <div class="border-l-2 border-emerald-500 bg-surface px-3 py-2">
+                  <p class="text-xs uppercase tracking-wide text-text-muted">Journal</p>
+                  <p class="mt-1 text-sm font-medium text-text-primary">{{ yearEndCloseResult()!.entry_number }}</p>
+                </div>
+                <div class="border-l-2 border-border-subtle bg-surface px-3 py-2">
+                  <p class="text-xs uppercase tracking-wide text-text-muted">Net income</p>
+                  <p class="mt-1 text-sm font-mono text-text-primary">{{ yearEndCloseResult()!.net_income | money }}</p>
+                </div>
+                <div class="border-l-2 border-border-subtle bg-surface px-3 py-2">
+                  <p class="text-xs uppercase tracking-wide text-text-muted">Retained earnings</p>
+                  <p class="mt-1 text-sm font-mono text-text-primary">
+                    {{ yearEndCloseResult()!.retained_earnings_direction || 'None' }}
+                    {{ yearEndCloseResult()!.retained_earnings_amount | money }}
+                  </p>
+                </div>
+                <div class="border-l-2 border-border-subtle bg-surface px-3 py-2">
+                  <p class="text-xs uppercase tracking-wide text-text-muted">Closed lines</p>
+                  <p class="mt-1 text-sm font-mono text-text-primary">{{ yearEndCloseResult()!.line_count }}</p>
+                </div>
+              </div>
+            }
           </div>
           <div class="px-4 py-3 border-b border-border-default bg-surface-base/40">
             <div class="flex items-center justify-between gap-3 mb-3">
@@ -1126,11 +1213,15 @@ export class JournalEntriesListComponent implements OnInit {
   closePackage = signal<ClosePackage | null>(null);
   closePackageLoading = signal(false);
   closePackageError = signal<string | null>(null);
+  yearEndCloseAction = signal(false);
+  yearEndCloseResult = signal<YearEndCloseResponse | null>(null);
+  yearEndCloseError = signal<string | null>(null);
   closeOverrideAction = signal(false);
   closeOverrideError = signal<string | null>(null);
   recurringTemplates = signal<RecurringJournalTemplate[]>([]);
   recurringTemplatesLoading = signal(false);
   recurringTemplatesError = signal<string | null>(null);
+  closeYear = computed(() => this.closePeriod().slice(0, 4));
   completedCloseTasks = computed(() =>
     this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
   );
@@ -1393,6 +1484,31 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.closeTasksError.set(userMessageForError(err, label));
         this.closeProposalAction.set(null);
+      },
+    });
+  }
+
+  postYearEndClose(): void {
+    const year = this.closeYear();
+    this.yearEndCloseAction.set(true);
+    this.yearEndCloseError.set(null);
+    this.http.post<YearEndCloseResponse>(
+      `/api/v1/accounting/years/${year}/year-end-close`,
+      {},
+    ).subscribe({
+      next: (res) => {
+        this.yearEndCloseResult.set(res);
+        this.yearEndCloseAction.set(false);
+        this.successToast.set(`Year-end close ${res.entry_number} posted to retained earnings.`);
+        setTimeout(() => this.successToast.set(null), 5000);
+        this.loadEntries();
+        if (this.closePackage()) this.loadClosePackage();
+      },
+      error: (err: unknown) => {
+        this.yearEndCloseError.set(
+          yearEndCloseErrorMessage(err) ?? userMessageForError(err, 'Year-end Close'),
+        );
+        this.yearEndCloseAction.set(false);
       },
     });
   }
@@ -1778,6 +1894,7 @@ export class JournalEntriesListComponent implements OnInit {
       case 'invoice': return 'bg-blue-500/20 text-blue-300';
       case 'bill':    return 'bg-amber-500/20 text-amber-300';
       case 'payment': return 'bg-emerald-500/20 text-emerald-300';
+      case 'year_end_close': return 'bg-cyan-500/20 text-cyan-300';
       default:        return 'bg-surface text-text-muted';
     }
   }

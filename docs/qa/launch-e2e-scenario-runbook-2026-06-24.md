@@ -542,8 +542,8 @@ Current implementation assessment:
 | Scheduled AI Finance Ops Manager | Implemented first slices in #283 and #295, then automated in #317: tenant cadence can be configured through Settings or the Agents API, the hourly worker creates a traceable `scheduled_finance_ops_manager` workflow run, routes a scheduled action plan to Inbox, suppresses duplicate open plans for the same cadence window, and creates separate escalation notices for stale/high-risk Inbox work | Scheduled execution still stops at reviewed plans/escalation notices; live worker cadence smoke remains environment evidence | #283, #295, #317 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch. #325 exposes the downstream Pay Bills lifecycle: draft batch approval, CSV/NACHA export state, mark-sent, and settlement confirmation with returned journal evidence | Native bank-provider submission remains future payment depth; current export uses operator-controlled files and explicit settlement confirmation | #262, #325 |
-| AI month-end close controller | Implemented and browser-verified in #260, then hardened in #285/#300 and automated in #310: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons | Year-end close and retained-earnings depth remain future R2R work | #260, #285, #300, #310 |
-| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence | Deeper comparative commentary remains future command-center depth | #261, #300, #310 |
+| AI month-end close controller | Implemented and browser-verified in #260, then hardened in #285/#300 and automated in #310: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons. #327 adds the controller-facing year-end close posting action that rolls P&L to Retained Earnings through a balanced `year_end_close` journal | AI-orchestrated year-end close approval remains future command-center depth; direct controller posting is implemented | #260, #285, #300, #310, #327 |
+| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence. #327 adds retained-earnings posting evidence for year-end statement tie-out | Deeper comparative commentary remains future command-center depth | #261, #300, #310, #327 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | AI semantic PO selection and project coding from source documents remain broader P2P coverage | #264 |
 | AI vendor invoice exceptions | Implemented first slices in #284/#299 and automated in #310: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence. #323 adds line-level PO/service-order match evidence: linked bills compare bill lines to approved PO/SO lines for description, quantity, unit price, amount, and service period where applicable; mismatches record `line_exceptions`, show in Bills list/detail, and block approval through the existing AP gate | Payment remains a separate bill-pay approval flow; fuzzy/semantic AI PO selection remains future P2P depth | #284, #299, #310, #323 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, and first project records | Automatic rate-card creation from extracted hints remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267 |
@@ -747,13 +747,15 @@ Browser steps:
 1. Complete invoice, bill, payment, and close activity for the period.
 2. `/app/copilot`: ask `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, and management commentary.`
 3. Verify Copilot uses posted journal/report data and flags any missing close prerequisites.
-4. `/app/reports`: cross-check each statement tab against Copilot's package summary.
-5. Ask Copilot to explain material variances, open risks, and next actions.
-6. Verify the package does not claim final/locked status unless the period is actually ready or locked.
+4. For fiscal-year close validation, `/app/accounting/journals`: post the year-end close and verify a `YE-YYYY` retained-earnings journal appears.
+5. `/app/reports`: cross-check each statement tab against Copilot's package summary.
+6. Ask Copilot to explain material variances, open risks, and next actions.
+7. Verify the package does not claim final/locked status unless the period is actually ready or locked.
 
 Expected result:
 - AI assembles and explains statements from real accounting data.
 - The package is traceable to report tabs and posted journals.
+- Year-end close posts a balanced retained-earnings journal when fiscal-year activity is ready.
 - Missing close work is surfaced as blockers, not hidden.
 
 Implementation status:
@@ -761,6 +763,9 @@ Implementation status:
 - Browser automation under #310 covers business-language statement commentary
   generation, Reports tab tie-out, and Agent Run Ledger tool evidence without
   requiring tool names in the user prompt.
+- #327 adds year-end close retained-earnings posting through Accounting, with
+  backend guardrails and browser proof in
+  `frontend/e2e/enterprise-r2r-year-end-close.spec.ts`.
 
 Evidence: Copilot package, report tabs, variance commentary, close readiness status.
 
@@ -878,6 +883,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/enterprise-ai-finance-workflows.spec.ts` | #310 AI finance workflow proof | Covers business-language Copilot prompts, P2P AP exception review, duplicate reason approval, bill evidence, bill-pay proposal review, R2R close package/override, statement tabs, and Agent Run Ledger evidence |
 | `frontend/e2e/enterprise-p2p-line-match-evidence.spec.ts` | #323 P2P line-match proof | Covers Bills list/detail PO/SO line exceptions for linked bills, including readable mismatch labels and line evidence |
 | `frontend/e2e/enterprise-bill-pay-lifecycle.spec.ts` | #325 bill-pay lifecycle proof | Covers approved-bills response normalization, draft batch approval, CSV export, mark-sent, and settlement confirmation |
+| `frontend/e2e/enterprise-r2r-year-end-close.spec.ts` | #327 R2R year-end close proof | Covers Accounting year-end close posting, retained-earnings evidence, and refreshed journal-list proof |
 | `frontend/e2e/enterprise-ops-health.spec.ts` | #311 operational health proof | Covers Settings Operational Health runtime, table/migration, distributed limiter, request/background failure, agent/tool/workflow failure, routed alert, and secret-redaction evidence |
 | `frontend/e2e/enterprise-finance-persona-matrix.spec.ts` | #321 full finance persona matrix proof | Covers Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive compatibility mappings plus Settings, Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and viewer mutation guards |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
@@ -936,7 +942,7 @@ Implemented during this validation pass:
 | 6. Contractor service order | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor bill/procurement, service-period PO/SO match evidence, project-cost, AP Aging, and close proposal paths covered by automated suite; manual script validates named contractor scenario |
 | 7. Bill payment batch and settlement | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Pay Bills route and AP Aging checks pass; Copilot live proof verifies AI proposal, Inbox approval, and draft batch creation; #325 browser proof covers approve/export/mark-sent/settle lifecycle; bill payment/service tests cover settlement semantics |
 | 8. Month-end close | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, and Copilot close-task bootstrap all passed |
-| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, and Copilot statement-package live proof passed |
+| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, Copilot statement-package live proof, and #327 year-end retained-earnings posting proof passed |
 | 10. Management reports and action queues | Browser-capable | Browser + automated equivalent | Passed | Project Health, Capacity, Action Queue, report tabs, Inbox/HITL, agent run/workflow surfaces covered by full browser/backend suites |
 
 ## Gaps To Record As Issues

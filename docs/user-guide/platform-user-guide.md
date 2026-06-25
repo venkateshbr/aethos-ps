@@ -323,6 +323,10 @@ Current workflows:
 - Invoice and bill approvals post balanced journals through guarded paths.
 - Manual journals can be created from the Accounting area.
 - Month-end close preparation can be requested through Copilot and routed to Inbox.
+- Admin/Owner users can post year-end close from Accounting. The system closes
+  posted revenue and expense balances to seeded account `3000 Retained
+  Earnings` through a balanced `year_end_close` journal and blocks duplicate or
+  locked-year attempts.
 - Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.
 - Copilot can generate a financial statement package summary from report data,
   close readiness, and management commentary.
@@ -344,15 +348,16 @@ The Accounting close package panel also lets Admin/Owner users record named
 override reasons for supported blockers and immediately shows those overrides
 in the period evidence.
 
-Remaining enterprise R2R depth after the #285/#300 first slices and #310
-browser proof:
+Remaining enterprise R2R depth after the #285/#300 first slices, #310 browser
+proof, and #327 year-end close posting:
 
-- Year-end close and retained earnings depth.
+- AI-orchestrated year-end close approval and comparative statement commentary.
 - Manual journal audit enhancements.
 
 Scenario anchors: launch scenarios 8-10,
-`docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, and
-#310 for automated AI finance workflow proof.
+`docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003,
+ENT-R2R-004, #310 for automated AI finance workflow proof, and #327 for
+year-end retained-earnings posting proof.
 
 ## 8. Documents
 
@@ -496,6 +501,7 @@ The following work is tracked under parent issue #278:
 | #321 | RBAC proof | Browser E2E implemented for the full finance persona matrix |
 | #323 | P2P proof | Line-level PO/service-order match evidence and approval blocking implemented |
 | #325 | P2P proof | Pay Bills approve/export/send/settle lifecycle implemented |
+| #327 | R2R proof | Year-end close retained-earnings posting implemented |
 
 ## 12. Scenario Crosswalk
 
@@ -506,7 +512,7 @@ The following work is tracked under parent issue #278:
 | Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321 |
 | Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
 | Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-004, ENT-P2P-005, launch scenarios 5-7 | #310 automated; #323 automated for line-level PO/SO match evidence; #325 automated for bill-pay lifecycle |
-| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
+| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, ENT-R2R-004, launch scenarios 8-10 | #310 automated; #327 automated for year-end retained-earnings posting |
 | Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
 | Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #311 automated for Operational Health; #317 automated for scheduled manager |
 
