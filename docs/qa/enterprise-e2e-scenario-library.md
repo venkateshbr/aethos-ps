@@ -49,6 +49,7 @@ agent ledger.
 | ENT-P2P-002 | Duplicate or mismatched vendor invoice requires explicit review | Browser proof automated in #310 | #284, #310 |
 | ENT-P2P-003 | Browser AP exception card supports full vendor invoice review | Browser proof automated in #310 | #299, #310 |
 | ENT-P2P-004 | Line-level PO/SO match evidence blocks mismatched bill approval | API/browser proof automated in #323 | #323 |
+| ENT-P2P-005 | Bill-pay batch follows approve, export, send, and settlement controls | Browser proof automated in #325 | #325 |
 | ENT-R2R-001 | Close evidence package shows AR/AP/WIP/GL readiness | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-002 | Close override requires reason and is audit-visible | Browser proof automated in #310 | #285, #310 |
 | ENT-R2R-003 | Close override wizard produces statement commentary with evidence | Browser proof automated in #310; year-end close remains future depth | #300, #310 |
@@ -700,6 +701,36 @@ Automation target:
 
 - API/unit: `cd backend && uv run pytest tests/unit/test_bills_api_contract.py -q`
 - Browser: `cd frontend && npx playwright test e2e/enterprise-p2p-line-match-evidence.spec.ts --project=chromium`
+
+## ENT-P2P-005 - Bill-Pay Lifecycle Controls
+
+Persona: Controller and AP Lead.
+
+Status: Implemented in #325. Pay Bills now consumes the approved-bills API
+response reliably, creates a draft batch, requires explicit approval before
+export, records CSV/NACHA export state before mark-sent, and exposes settlement
+confirmation with settled-count and journal evidence from the existing
+bill-payment settlement endpoint.
+
+Steps:
+
+1. Open `/app/billing-runs` with at least one approved unpaid bill.
+2. Select approved bills and create a payment batch.
+3. Approve the draft batch.
+4. Download CSV or NACHA export and verify the UI records export state.
+5. Mark the batch sent to bank.
+6. Confirm settlement.
+
+Expected result:
+
+- Draft/unapproved batches cannot be exported from the UI.
+- A batch cannot be marked sent until an export has completed.
+- Settlement remains a separate explicit confirmation after sent-to-bank.
+- Settlement displays count and returned journal IDs.
+
+Automation target:
+
+- Browser: `cd frontend && npx playwright test e2e/enterprise-bill-pay-lifecycle.spec.ts --project=chromium`
 
 ## ENT-R2R-001 - Close Evidence Package
 

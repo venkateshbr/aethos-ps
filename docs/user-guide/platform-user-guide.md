@@ -62,7 +62,7 @@ result and the approval boundary.
 | People | `/app/people` | Admins, managers | Maintain staff, rates, targets, and delivery context for billing/reporting | Launch scenarios 1-4, 10 |
 | Engagements and projects | `/app/engagements`, `/app/projects` | Engagement managers, project managers | Set billing terms, organize delivery, connect WIP to invoices and project health | Launch scenarios 1-4 |
 | Invoices and public invoice | `/app/invoices`, `/p/:token` | AR lead, Controller, client recipient | Draft/review invoices, send/collect, inspect public invoice status | Engagement to Cash guide |
-| Bills and pay bills | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003 |
+| Bills and pay bills | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare, approve, export, send, and settle guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-005 |
 | Accounting and close | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
 | Reports | `/app/reports` | Executives, managers, auditors | Explain AR/AP/WIP/revenue/project/accounting results and tie AI recommendations to source reports | Launch scenario 10 |
 | Documents | `/app/documents` | AP, AR, engagement teams, auditors | Track uploaded source documents, extraction status, and resulting decisions | ENT-P2P-001, ENT-AUD-003 |
@@ -268,12 +268,14 @@ Typical workflow:
 4. Approve the bill when ready.
 5. Ask Copilot to prepare a bill-pay run or use the Pay Bills UI.
 6. Review and approve the proposed payment batch.
-7. Export or process the payment batch through the supported downstream path.
+7. Export the approved batch, mark it sent to bank, and confirm settlement.
 8. Review AP Aging and Cash Flow impact.
 
 Current implementation supports vendor invoice upload, AI-assisted exception
 evidence, bill creation after Inbox approval, bill-pay proposals, and
-payment-batch UI visibility.
+payment-batch UI visibility. Pay Bills now carries the batch through explicit
+approval, CSV/NACHA export state, sent-to-bank state, and settlement
+confirmation with returned journal evidence.
 
 Vendor invoice review now carries AI evidence into Inbox:
 
@@ -298,17 +300,19 @@ linked order or bill evidence is corrected.
 
 Invoice intake/coding approval and payment approval are separate guarded steps:
 approving the vendor invoice creates the reviewed bill, while payment still
-requires a bill-pay proposal and payment-batch approval. Remaining enterprise
-P2P depth is planned under later advanced P2P work: AI semantic PO selection
-from source documents, recurring bills, and native bank formats. Browser
-automation for the AP exception-review path and separate bill-pay proposal
-review is implemented under #310; line-level PO/SO match evidence is covered
-under #323.
+requires a bill-pay proposal and payment-batch approval. Payment file export,
+bank-send acknowledgement, and settlement confirmation remain explicit operator
+steps. Remaining enterprise P2P depth is planned under later advanced P2P work:
+AI semantic PO selection from source documents, recurring bills, and native
+bank-provider submission. Browser automation for the AP exception-review path
+and separate bill-pay proposal review is implemented under #310; line-level
+PO/SO match evidence is covered under #323; bill-pay lifecycle proof is covered
+under #325.
 
 Scenario anchors: launch scenarios 5-7 and 9,
 `docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003,
-ENT-P2P-004, #310 for automated AI finance workflow proof, and #323 for
-line-level PO/SO match proof.
+ENT-P2P-004, ENT-P2P-005, #310 for automated AI finance workflow proof, #323
+for line-level PO/SO match proof, and #325 for bill-pay lifecycle proof.
 
 ## 7. Record To Report
 
@@ -491,6 +495,7 @@ The following work is tracked under parent issue #278:
 | #317 | QA proof | Browser E2E implemented for scheduled Finance Ops Manager schedule, Inbox output, escalation, and workflow telemetry |
 | #321 | RBAC proof | Browser E2E implemented for the full finance persona matrix |
 | #323 | P2P proof | Line-level PO/service-order match evidence and approval blocking implemented |
+| #325 | P2P proof | Pay Bills approve/export/send/settle lifecycle implemented |
 
 ## 12. Scenario Crosswalk
 
@@ -500,7 +505,7 @@ The following work is tracked under parent issue #278:
 | Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 automated |
 | Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321 |
 | Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
-| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-004, launch scenarios 5-7 | #310 automated; #323 automated for line-level PO/SO match evidence |
+| Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-004, ENT-P2P-005, launch scenarios 5-7 | #310 automated; #323 automated for line-level PO/SO match evidence; #325 automated for bill-pay lifecycle |
 | Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, launch scenarios 8-10 | #310 automated |
 | Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
 | Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #311 automated for Operational Health; #317 automated for scheduled manager |
