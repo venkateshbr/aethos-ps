@@ -84,7 +84,7 @@ interface ClientSummary {
           @if (contacts().length === 0) {
             <p class="text-text-secondary font-medium">No contacts yet</p>
             <p class="text-text-disabled text-sm mt-1 max-w-md">
-              Add a contact manually or upload an engagement letter via Copilot and Aethos will create one for you.
+              Add a contact manually or process an engagement letter through Aethos Atlas.
             </p>
             <button
               type="button"

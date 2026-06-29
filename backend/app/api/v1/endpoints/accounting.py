@@ -320,7 +320,7 @@ def _reconciliation_blocker_codes(result: Any) -> set[str]:
 def _unposted_journals(db: Client, tenant_id: str, period: str) -> list[dict[str, Any]]:
     return (
         db.table("journal_entries")
-        .select("id, entry_number, description, entry_date, reference_type, reference")
+        .select("id, entry_number, description, entry_date, reference_type, reference_id")
         .eq("tenant_id", tenant_id)
         .eq("period", period)
         .is_("posted_at", "null")

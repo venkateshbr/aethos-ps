@@ -40,7 +40,7 @@ interface EditField {
 }
 
 const CURRENCIES = ['USD', 'GBP', 'SGD', 'INR', 'AUD'];
-const BILLING_ARRANGEMENTS = ['time_and_materials', 'fixed_fee', 'retainer', 'retainer_draw', 'milestone', 'capped_tm'];
+const BILLING_ARRANGEMENTS = ['time_and_materials', 'fixed_fee', 'retainer', 'retainer_draw', 'milestone', 'capped_tm', 'mixed'];
 const EXPENSE_CATEGORIES = ['meals_and_entertainment', 'transport', 'accommodation', 'software', 'other'];
 
 /** Editable fields per task kind, driving the edit drawer form (#146). */
@@ -51,6 +51,10 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
     { key: 'billing_arrangement', label: 'Billing arrangement', type: 'select', options: BILLING_ARRANGEMENTS },
     { key: 'currency', label: 'Currency', type: 'select', options: CURRENCIES },
     { key: 'total_value', label: 'Total value', type: 'number' },
+    { key: 'fixed_fee_amount', label: 'Fixed fee amount', type: 'number' },
+    { key: 'retainer_monthly_amount', label: 'Monthly retainer', type: 'number' },
+    { key: 'milestone_total', label: 'Milestone total', type: 'number' },
+    { key: 'cap_amount', label: 'Cap amount', type: 'number' },
     { key: 'start_date', label: 'Start date', type: 'date' },
     { key: 'end_date', label: 'End date', type: 'date' },
     { key: 'first_project_name', label: 'First project', type: 'text' },
@@ -978,6 +982,8 @@ export class InboxComponent implements OnInit {
         'billing_arrangement',
         'currency',
         'total_value',
+        'fixed_fee_amount',
+        'retainer_monthly_amount',
         'start_date',
         'end_date',
         'rate_card_summary',

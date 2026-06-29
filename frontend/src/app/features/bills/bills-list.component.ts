@@ -250,7 +250,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
         <app-empty-state
           icon="upload_file"
           heading="No bills yet"
-          message="Drop a vendor invoice in Copilot to get started — AI will extract the details automatically."
+          message="Attach a vendor invoice in Aethos Atlas, then send a processing prompt to create the review draft."
         />
       }
 

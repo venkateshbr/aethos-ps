@@ -26,9 +26,13 @@ out/
 # --- Environment / secrets ---
 .env
 .env.local
+.env.hostinger
+.env.production
+.env.runtime
 .env.*.local
 *.pem
 *.key
+demo_credentials.json
 
 # --- IDE / OS ---
 .idea/

@@ -160,6 +160,33 @@ def test_engagement_onboarding_output_includes_first_project_and_rates() -> None
     assert output["rate_card_summary"] == "Senior Consultant: USD 350/hr; Analyst: USD 175/hr"
 
 
+def test_engagement_onboarding_output_normalises_nexus_mixed_terms() -> None:
+    from app.workers.document_extraction import _normalise_engagement_onboarding_output
+
+    output = _normalise_engagement_onboarding_output(
+        {
+            "client_name": "Nexus Capital Partners LP",
+            "engagement_name": "Nexus Capital Partners - Engagement Letter",
+            "billing_arrangement": "fixed_fee",
+            "currency": "GBP",
+            "start_date": "2026-01-01",
+            "end_date": "2026-12-31",
+            "scope_summary": (
+                "Mixed service order: Group consolidation accounts GBP 42,000 fixed fee; "
+                "Monthly management accounts GBP 8,500 per month; "
+                "CFO advisory services GBP 350 per hour."
+            ),
+            "rate_card_hints": [{"role": "CFO Advisory Partner", "rate": "350"}],
+        }
+    )
+
+    assert output["billing_arrangement"] == "mixed"
+    assert output["fixed_fee_amount"] == "42000.00"
+    assert output["retainer_monthly_amount"] == "8500.00"
+    assert output["total_value"] == "144000.00"
+    assert output["rate_card_summary"] == "CFO Advisory Partner: GBP 350/hr"
+
+
 # ---------------------------------------------------------------------------
 # File size guard
 # ---------------------------------------------------------------------------

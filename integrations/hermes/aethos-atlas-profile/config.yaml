@@ -1,0 +1,60 @@
+model:
+  provider: openrouter
+  default: google/gemma-4-31b-it:free
+  base_url: ''
+  api_mode: chat_completions
+  max_tokens: 2048
+
+provider_routing:
+  order: []
+  require_parameters: true
+  data_collection: "deny"
+
+tool_loop_guardrails:
+  hard_stop_enabled: true
+  hard_stop_after:
+    exact_failure: 5
+    idempotent_no_progress: 5
+
+skills:
+  auto_load:
+    - aethos-finance-ops-manager
+    - aethos-engagement-letter-intake
+    - aethos-o2c-invoice-to-cash
+    - aethos-p2p-procure-to-pay
+    - aethos-r2r-close-controller
+    - aethos-collections
+    - aethos-audit-evidence
+
+mcp_servers:
+  aethos:
+    command: "python"
+    args: ["/opt/aethos/aethos_mcp_server.py"]
+    env:
+      AETHOS_INTERNAL_API_URL: "http://api:8080"
+      AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN}"
+      AETHOS_TOOL_TIMEOUT_SECONDS: "30"
+    timeout: 45
+    connect_timeout: 15
+    supports_parallel_tool_calls: true
+    tools:
+      include:
+        - aethos_engagements_list
+        - aethos_finance_ar_aging
+        - aethos_finance_ap_aging
+        - aethos_finance_wip
+        - aethos_finance_ops_snapshot
+        - aethos_finance_ops_control_room
+        - aethos_approval_controls_read_pack
+        - aethos_finance_ops_create_action_plan
+        - aethos_o2c_draft_invoice
+        - aethos_o2c_collections_read_pack
+        - aethos_collections_draft_reminders
+        - aethos_p2p_payment_risk_read_pack
+        - aethos_p2p_propose_bill_payment_batch
+        - aethos_r2r_prepare_month_end_close
+        - aethos_r2r_prepare_year_end_close
+        - aethos_r2r_generate_financial_statement_package
+        - aethos_r2r_management_pack_read_pack
+      resources: false
+      prompts: false

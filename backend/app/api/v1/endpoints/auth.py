@@ -337,6 +337,8 @@ async def signup(
                     "tenant_id": tenant_id,
                     "user_id": user_id,
                     "role": "owner",
+                    "email": str(payload.email).lower(),
+                    "display_name": payload.email.split("@")[0],
                 }
             )
         except Exception as exc:

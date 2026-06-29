@@ -35,9 +35,9 @@ from app.agents.base import (
     build_document_content,
     make_async_llm_client,
     mask_registration_number,
+    resolve_model_chain,
 )
 from app.agents.schemas import BillDraft, GLSuggestion, VendorMatchResult
-from app.core.config import settings
 from app.domain.tax_id_validator import validate_tax_id
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,6 @@ logger = logging.getLogger(__name__)
 # Model constants
 # ---------------------------------------------------------------------------
 
-# Fast/cheap model for vendor match + GL suggestion
-_HAIKU_MODEL = "anthropic/claude-haiku-4-5"
 # Complex-reasoning model (available as fallback or explicit override)
 _SONNET_MODEL = "anthropic/claude-sonnet-4-6"
 
@@ -317,9 +315,17 @@ async def resolve_vendor_identity(
     )
 
     try:
-        client = make_async_llm_client()
+        client = make_async_llm_client(
+            agent_name="vendor_invoice_agent",
+            tenant_id=deps.tenant_id,
+            user_id=deps.user_id,
+            tags=["stage:vendor_match"],
+            metadata={"stage": "vendor_match"},
+        )
+        model_chain = await resolve_model_chain(deps.db, deps.tenant_id)
         completion = await client.chat.completions.create(
-            model=_HAIKU_MODEL,
+            model=model_chain[0],
+            extra_body={"models": model_chain},
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
@@ -418,9 +424,17 @@ async def suggest_gl_account(
     )
 
     try:
-        client = make_async_llm_client()
+        client = make_async_llm_client(
+            agent_name="vendor_invoice_agent",
+            tenant_id=deps.tenant_id,
+            user_id=deps.user_id,
+            tags=["stage:gl_suggestion"],
+            metadata={"stage": "gl_suggestion"},
+        )
+        model_chain = await resolve_model_chain(deps.db, deps.tenant_id)
         completion = await client.chat.completions.create(
-            model=_HAIKU_MODEL,
+            model=model_chain[0],
+            extra_body={"models": model_chain},
             max_tokens=128,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
@@ -485,10 +499,18 @@ async def run_vendor_invoice_agent(
     Gracefully degrades: on any exception the caller is expected to catch and
     update the document status to 'failed'.
     """
-    client = make_async_llm_client()
+    client = make_async_llm_client(
+        agent_name="vendor_invoice_agent",
+        tenant_id=deps.tenant_id,
+        user_id=deps.user_id,
+        session_id=document_id,
+        tags=["stage:extraction"],
+        metadata={"document_id": document_id, "document_mime_type": mime_type, "stage": "extraction"},
+    )
     schema = BillDraft.model_json_schema()
 
     prompt = VENDOR_INVOICE_PROMPT.format(schema=json.dumps(schema, indent=2))
+    model_chain = await resolve_model_chain(deps.db, deps.tenant_id)
     content = build_document_content(prompt, document_bytes, mime_type)
 
     logger.info(
@@ -496,7 +518,7 @@ async def run_vendor_invoice_agent(
         extra={
             "document_id": document_id,
             "tenant_id": deps.tenant_id,
-            "models": settings.agent_models,
+            "models": model_chain,
             "mime_type": mime_type,
         },
     )
@@ -505,8 +527,8 @@ async def run_vendor_invoice_agent(
     # Step 1: Primary LLM extraction
     # ------------------------------------------------------------------
     completion = await client.chat.completions.create(
-        model=settings.agent_models[0],
-        extra_body={"models": settings.agent_models},
+        model=model_chain[0],
+        extra_body={"models": model_chain},
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
         response_format={"type": "json_object"},

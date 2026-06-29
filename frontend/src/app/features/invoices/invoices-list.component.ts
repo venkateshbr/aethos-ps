@@ -185,7 +185,7 @@ type InvoiceListResponse = InvoiceSummary[];
                 <div class="flex flex-wrap items-center gap-2">
                   @if (row.status === 'draft') {
                     <button
-                      (click)="approveInvoice(row)"
+                      (click)="$event.stopPropagation(); approveInvoice(row)"
                       [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-accent-light border-accent/40 hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -198,7 +198,7 @@ type InvoiceListResponse = InvoiceSummary[];
                   }
                   @if (row.status === 'approved') {
                     <button
-                      (click)="sendInvoice(row)"
+                      (click)="$event.stopPropagation(); sendInvoice(row)"
                       [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -214,6 +214,7 @@ type InvoiceListResponse = InvoiceSummary[];
                       [href]="row.payment_link_url"
                       target="_blank"
                       rel="noopener noreferrer"
+                      (click)="$event.stopPropagation()"
                       class="inline-flex items-center gap-1 text-xs text-accent-light hover:text-accent-light transition-colors"
                       [attr.aria-label]="'Open payment link for ' + (row.invoice_number)"
                     >
@@ -223,7 +224,7 @@ type InvoiceListResponse = InvoiceSummary[];
                   }
                   @if (row.status === 'approved' || row.status === 'sent') {
                     <button
-                      (click)="openMarkPaid(row)"
+                      (click)="$event.stopPropagation(); openMarkPaid(row)"
                       [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

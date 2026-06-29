@@ -159,7 +159,16 @@ async def generate_alert_narrative(anomaly_type: str, context: dict) -> str:
     template = FALLBACK_TEMPLATES.get(anomaly_type, "{entity_name}: anomaly detected.")
 
     try:
-        client = make_async_llm_client()
+        client = make_async_llm_client(
+            agent_name="intelligence_agent",
+            tenant_id=str(context.get("tenant_id") or ""),
+            user_id=str(context.get("user_id") or "") or None,
+            tags=[f"anomaly:{anomaly_type}"],
+            metadata={
+                "anomaly_type": anomaly_type,
+                "entity_id": str(context.get("entity_id") or ""),
+            },
+        )
         prompt = (
             f"Write a single concise sentence (max 25 words) for a financial alert card.\n"
             f"Anomaly type: {anomaly_type}\n"

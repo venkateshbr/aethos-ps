@@ -1767,7 +1767,10 @@ export class JournalEntriesListComponent implements OnInit {
   loadAccounts(): void {
     if (this.accounts().length > 0) return;
     this.http.get<Account[]>('/api/v1/accounts').subscribe({
-      next: (data) => this.accounts.set(data ?? []),
+      next: (data) => {
+        this.accounts.set(data ?? []);
+        this.refreshPendingAccountSearch();
+      },
       error: () => { /* non-blocking — user sees no suggestions */ },
     });
   }
@@ -1798,6 +1801,24 @@ export class JournalEntriesListComponent implements OnInit {
 
   // ── Account search ──────────────────────────────────────────────────
   onAccountSearch(index: number): void {
+    this.refreshAccountSuggestions(index);
+  }
+
+  private refreshPendingAccountSearch(): void {
+    const activeLine = this.activeSuggestionLine();
+    if (activeLine !== null) {
+      this.refreshAccountSuggestions(activeLine);
+      return;
+    }
+
+    const pendingLine = this.linesArray.controls.findIndex(ctrl => {
+      const term = (ctrl.get('account_search')?.value as string ?? '').trim();
+      return term && !ctrl.get('account_id')?.value;
+    });
+    if (pendingLine >= 0) this.refreshAccountSuggestions(pendingLine);
+  }
+
+  private refreshAccountSuggestions(index: number): void {
     const term = (this.getLineControl(index, 'account_search').value as string ?? '').toLowerCase().trim();
     if (!term) {
       this.filteredAccounts.set([]);

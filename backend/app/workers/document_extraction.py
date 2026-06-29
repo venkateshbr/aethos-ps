@@ -26,6 +26,9 @@ The real document-type classifier lives in Week 4 (copilot_agent router).
 from __future__ import annotations
 
 import logging
+import re
+from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from app.agents.base import AgentDeps
 from app.agents.engagement_letter_agent import run_engagement_letter_agent
@@ -34,6 +37,7 @@ from app.agents.schemas import BillDraft, EngagementDraft, ProjectExpenseDraft
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.agents.vendor_invoice_agent import run_vendor_invoice_agent
 from app.core.config import settings
+from app.domain.money import serialise_money
 from app.workers.procrastinate_app import app
 from supabase import create_client
 
@@ -45,6 +49,50 @@ DOCUMENTS_BUCKET = "documents"
 # Default autonomy level — L2 (suggest) per PLAN §6.5
 DEFAULT_AUTONOMY_LEVEL = 2
 CONFIDENCE_THRESHOLD = 0.90
+
+_BILLING_ARRANGEMENTS = {
+    "time_and_materials",
+    "fixed_fee",
+    "retainer",
+    "retainer_draw",
+    "milestone",
+    "capped_tm",
+    "mixed",
+}
+_BILLING_ALIASES = {
+    "t&m": "time_and_materials",
+    "tm": "time_and_materials",
+    "time_and_materials": "time_and_materials",
+    "time_and_material": "time_and_materials",
+    "time_materials": "time_and_materials",
+    "time_material": "time_and_materials",
+    "time_and_materials_basis": "time_and_materials",
+    "fixed": "fixed_fee",
+    "fixed_fee": "fixed_fee",
+    "fixed_price": "fixed_fee",
+    "retainer": "retainer",
+    "monthly_retainer": "retainer",
+    "retainer_draw": "retainer_draw",
+    "drawdown_retainer": "retainer_draw",
+    "milestone": "milestone",
+    "milestones": "milestone",
+    "capped_tm": "capped_tm",
+    "capped_t&m": "capped_tm",
+    "capped_time_and_materials": "capped_tm",
+    "mixed": "mixed",
+}
+_BILLING_TERM_MONEY_KEYS = (
+    "fixed_fee_amount",
+    "milestone_total",
+    "retainer_monthly_amount",
+    "retainer_floor",
+    "cap_amount",
+)
+_AMOUNT_RE = re.compile(
+    r"(?:(?:USD|GBP|SGD|INR|AUD|EUR|\$|£|S\$|A\$|₹)\s*)?"
+    r"(?P<amount>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
 
 
 def _classify_document_type(filename: str) -> str:
@@ -78,11 +126,194 @@ def _get_mime_type(filename: str) -> str:
     return "text/plain"
 
 
+def _normalise_money(value: object) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    raw = (
+        raw.replace(",", "")
+        .replace("S$", "")
+        .replace("A$", "")
+        .replace("£", "")
+        .replace("$", "")
+        .replace("₹", "")
+        .strip()
+    )
+    raw = re.sub(r"^(USD|GBP|SGD|INR|AUD|EUR)\s+", "", raw, flags=re.IGNORECASE)
+    try:
+        return serialise_money(Decimal(raw))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _engagement_text(output: dict) -> str:
+    parts: list[str] = []
+    for key in (
+        "billing_arrangement",
+        "engagement_name",
+        "scope_summary",
+        "first_project_name",
+        "first_project_description",
+        "rate_card_summary",
+    ):
+        value = output.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    for hint in output.get("rate_card_hints") or []:
+        if not isinstance(hint, dict):
+            continue
+        role = hint.get("role")
+        rate = hint.get("rate")
+        if role:
+            parts.append(str(role))
+        if rate:
+            parts.append(f"{rate} per hour")
+    return " ".join(parts)
+
+
+def _has_rate_card_hints(output: dict) -> bool:
+    hints = output.get("rate_card_hints")
+    return isinstance(hints, list) and any(
+        isinstance(hint, dict) and hint.get("rate") for hint in hints
+    )
+
+
+def _looks_like_mixed_billing(output: dict) -> bool:
+    text = _engagement_text(output).lower()
+    if "mixed" in text:
+        return True
+    has_fixed = any(token in text for token in ("fixed fee", "fixed_fee", "fixed price"))
+    has_retainer = any(token in text for token in ("retainer", "per month", "monthly"))
+    has_tm = (
+        any(
+            token in text
+            for token in (
+                "time and materials",
+                "time_and_materials",
+                "t&m",
+                "per hour",
+                "/hr",
+                "hourly",
+            )
+        )
+        or _has_rate_card_hints(output)
+    )
+    return has_fixed and (has_retainer or has_tm)
+
+
+def _normalise_billing_arrangement(output: dict) -> str:
+    if _looks_like_mixed_billing(output):
+        return "mixed"
+    raw = str(output.get("billing_arrangement") or "").strip().lower()
+    raw = raw.replace(" ", "_").replace("-", "_").replace("/", "_")
+    if raw in _BILLING_ALIASES:
+        return _BILLING_ALIASES[raw]
+    if raw in _BILLING_ARRANGEMENTS:
+        return raw
+    return "time_and_materials"
+
+
+def _extract_billing_terms(output: dict) -> dict[str, str]:
+    terms: dict[str, str] = {}
+    nested_terms = output.get("billing_terms") if isinstance(output.get("billing_terms"), dict) else {}
+    for key in _BILLING_TERM_MONEY_KEYS:
+        value = output.get(key)
+        if value in (None, "") and isinstance(nested_terms, dict):
+            value = nested_terms.get(key)
+        normalised = _normalise_money(value)
+        if normalised is not None:
+            terms[key] = normalised
+
+    text = _engagement_text(output)
+    lower = text.lower()
+    for match in _AMOUNT_RE.finditer(text):
+        raw_amount = match.group("amount")
+        amount = _normalise_money(raw_amount)
+        if amount is None:
+            continue
+        before = lower[max(0, match.start() - 50) : match.start()]
+        after = lower[match.end() : min(len(text), match.end() + 50)]
+        direct_after = after[:30]
+        context = f"{before[-40:]} {direct_after}"
+        if "%" in context or "percent" in context:
+            continue
+        if any(token in direct_after for token in ("per hour", "/hr", "hourly", "hour ")):
+            continue
+        if (
+            any(token in context for token in ("fixed fee", "fixed_fee", "fixed price"))
+            and "fixed_fee_amount" not in terms
+        ):
+            terms["fixed_fee_amount"] = amount
+        elif "milestone" in context and "milestone_total" not in terms:
+            terms["milestone_total"] = amount
+        elif any(token in context for token in ("cap", "capped")) and "cap_amount" not in terms:
+            terms["cap_amount"] = amount
+        elif (
+            any(token in context for token in ("per month", "monthly", "retainer"))
+            and "retainer_monthly_amount" not in terms
+        ):
+            terms["retainer_monthly_amount"] = amount
+    return terms
+
+
+def _inclusive_month_count(start: object, end: object) -> int | None:
+    try:
+        start_date = date.fromisoformat(str(start))
+        end_date = date.fromisoformat(str(end))
+    except (TypeError, ValueError):
+        return None
+    if end_date < start_date:
+        return None
+    return (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+
+
+def _retainer_month_count(output: dict) -> int | None:
+    months = _inclusive_month_count(output.get("start_date"), output.get("end_date"))
+    if months:
+        return months
+    match = re.search(r"\b(\d{1,2})\s+months?\b", _engagement_text(output), re.IGNORECASE)
+    if not match:
+        return None
+    count = int(match.group(1))
+    return count if 1 <= count <= 60 else None
+
+
+def _infer_total_value(output: dict, terms: dict[str, str]) -> str | None:
+    existing = _normalise_money(output.get("total_value"))
+    if existing is not None:
+        return existing
+
+    total = Decimal("0")
+    for key in ("fixed_fee_amount", "milestone_total", "cap_amount"):
+        if terms.get(key):
+            total += Decimal(terms[key])
+
+    monthly_retainer = terms.get("retainer_monthly_amount")
+    months = _retainer_month_count(output)
+    if monthly_retainer and months:
+        total += Decimal(monthly_retainer) * Decimal(months)
+
+    if total <= Decimal("0"):
+        return None
+    return serialise_money(total)
+
+
 def _normalise_engagement_onboarding_output(output: dict) -> dict:
     """Ensure engagement-letter HITL payloads contain the full onboarding proposal."""
     result = dict(output)
     client_name = str(result.get("client_name") or "").strip() or "Unknown Client"
     scope_summary = str(result.get("scope_summary") or "").strip()
+    result["billing_arrangement"] = _normalise_billing_arrangement(result)
+
+    terms = _extract_billing_terms(result)
+    for key, value in terms.items():
+        result[key] = value
+
+    inferred_total_value = _infer_total_value(result, terms)
+    if inferred_total_value is not None:
+        result["total_value"] = inferred_total_value
 
     engagement_name = str(result.get("engagement_name") or "").strip()
     if not engagement_name:

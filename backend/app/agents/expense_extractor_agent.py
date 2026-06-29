@@ -15,9 +15,13 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from app.agents.base import AgentDeps, build_document_content, make_async_llm_client
+from app.agents.base import (
+    AgentDeps,
+    build_document_content,
+    make_async_llm_client,
+    resolve_model_chain,
+)
 from app.agents.schemas import ProjectExpenseDraft
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +74,17 @@ async def run_expense_extractor_agent(
     Gracefully degrades: on any exception the caller is expected to catch and
     update the document status to 'failed'.
     """
-    client = make_async_llm_client()
+    client = make_async_llm_client(
+        agent_name="expense_extractor_agent",
+        tenant_id=deps.tenant_id,
+        user_id=deps.user_id,
+        session_id=document_id,
+        metadata={"document_id": document_id, "document_mime_type": mime_type},
+    )
     schema = ProjectExpenseDraft.model_json_schema()
 
     prompt = EXPENSE_EXTRACTOR_PROMPT.format(schema=json.dumps(schema, indent=2))
+    model_chain = await resolve_model_chain(deps.db, deps.tenant_id)
 
     content = build_document_content(prompt, document_bytes, mime_type)
 
@@ -82,14 +93,14 @@ async def run_expense_extractor_agent(
         extra={
             "document_id": document_id,
             "tenant_id": deps.tenant_id,
-            "models": settings.agent_models,
+            "models": model_chain,
             "mime_type": mime_type,
         },
     )
 
     completion = await client.chat.completions.create(
-        model=settings.agent_models[0],
-        extra_body={"models": settings.agent_models},
+        model=model_chain[0],
+        extra_body={"models": model_chain},
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
         response_format={"type": "json_object"},

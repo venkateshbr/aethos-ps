@@ -30,7 +30,12 @@ from app.models.agents import (
     AgentRunSummary,
     AgentWorkflowRunListResponse,
     AgentWorkflowRunSummary,
+    ApprovalControlsReadPackResponse,
+    FinanceOpsControlRoomResponse,
     FinanceOpsScheduleResponse,
+    O2CCollectionsReadPackResponse,
+    P2PPaymentRiskReadPackResponse,
+    R2RManagementPackReadPackResponse,
     SetAgentControlRequest,
     SetAgentL3PolicyRequest,
     SetAgentLevelRequest,
@@ -38,6 +43,9 @@ from app.models.agents import (
     SetFinanceOpsScheduleRequest,
 )
 from app.services.agents_service import AgentAutonomyError, AgentsService
+from app.services.o2c_read_service import O2CReadService
+from app.services.p2p_read_service import P2PReadService
+from app.services.r2r_read_service import R2RReadService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -64,6 +72,34 @@ def _write_service(
     return AgentsService(db, tenant_id)
 
 
+def _ops_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> AgentsService:
+    return AgentsService(db, tenant_id)
+
+
+def _o2c_read_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> O2CReadService:
+    return O2CReadService(db, tenant_id)
+
+
+def _p2p_read_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> P2PReadService:
+    return P2PReadService(db, tenant_id)
+
+
+def _r2r_read_service(
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> R2RReadService:
+    return R2RReadService(db, tenant_id)
+
+
 # ---------------------------------------------------------------------------
 # GET /agents/finance-ops/schedule
 # ---------------------------------------------------------------------------
@@ -80,6 +116,161 @@ def get_finance_ops_schedule(
 ) -> FinanceOpsScheduleResponse:
     """Return the configured cadence or seeded default for this tenant."""
     return FinanceOpsScheduleResponse(**svc.get_finance_ops_schedule())
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/finance-ops/control-room
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/finance-ops/control-room",
+    response_model=FinanceOpsControlRoomResponse,
+    summary="AI Finance Ops Manager control-room status",
+)
+def get_finance_ops_control_room(
+    workflow_limit: int = Query(default=10, ge=1, le=25),
+    task_limit: int = Query(default=10, ge=1, le=25),
+    svc: AgentsService = Depends(_ops_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+) -> FinanceOpsControlRoomResponse:
+    """Return scheduled run, pending work, workflow, and health signals."""
+    return FinanceOpsControlRoomResponse(
+        **svc.get_finance_ops_control_room(
+            workflow_limit=workflow_limit,
+            task_limit=task_limit,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/approval-controls/read-pack
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/approval-controls/read-pack",
+    response_model=ApprovalControlsReadPackResponse,
+    summary="Role-aware approval controls, persona, and Inbox risk read pack",
+)
+def get_approval_controls_read_pack(
+    inbox_limit: int = Query(default=10, ge=1, le=50),
+    svc: AgentsService = Depends(_ops_service),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> ApprovalControlsReadPackResponse:
+    """Return user-safe approval policy, persona, and pending-risk state."""
+    try:
+        result = svc.get_approval_controls_read_pack(
+            user_id=current_user.user_id,
+            fallback_role=current_user.role,
+            inbox_limit=inbox_limit,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    return ApprovalControlsReadPackResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/o2c/collections/read-pack
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/o2c/collections/read-pack",
+    response_model=O2CCollectionsReadPackResponse,
+    summary="Read-only O2C collections and invoice drilldown pack",
+)
+def get_o2c_collections_read_pack(
+    invoice_id: str | None = None,
+    invoice_number: str | None = None,
+    client_id: str | None = None,
+    client_name: str | None = None,
+    invoice_status: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=25, ge=1, le=100),
+    svc: O2CReadService = Depends(_o2c_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> O2CCollectionsReadPackResponse:
+    """Return customer and invoice collections state for Atlas drilldowns."""
+    return O2CCollectionsReadPackResponse(
+        **svc.collections_read_pack(
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+            client_id=client_id,
+            client_name=client_name,
+            status=invoice_status,
+            limit=limit,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/p2p/payment-risk/read-pack
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/p2p/payment-risk/read-pack",
+    response_model=P2PPaymentRiskReadPackResponse,
+    summary="Read-only P2P vendor bill and payment-risk drilldown pack",
+)
+def get_p2p_payment_risk_read_pack(
+    bill_id: str | None = None,
+    bill_number: str | None = None,
+    vendor_id: str | None = None,
+    vendor_name: str | None = None,
+    bill_status: str | None = Query(default=None, alias="status"),
+    due_within_days: int = Query(default=10, ge=0, le=365),
+    limit: int = Query(default=25, ge=1, le=100),
+    svc: P2PReadService = Depends(_p2p_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> P2PPaymentRiskReadPackResponse:
+    """Return vendor bill evidence, blockers, and payment-readiness state."""
+    return P2PPaymentRiskReadPackResponse(
+        **svc.payment_risk_read_pack(
+            bill_id=bill_id,
+            bill_number=bill_number,
+            vendor_id=vendor_id,
+            vendor_name=vendor_name,
+            status=bill_status,
+            due_within_days=due_within_days,
+            limit=limit,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /agents/r2r/management-pack/read-pack
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/r2r/management-pack/read-pack",
+    response_model=R2RManagementPackReadPackResponse,
+    summary="Read-only R2R management reporting and close drilldown pack",
+)
+def get_r2r_management_pack_read_pack(
+    period: str = Query(..., min_length=1),
+    comparison_period: str | None = Query(default=None, min_length=1),
+    limit: int = Query(default=10, ge=1, le=25),
+    svc: R2RReadService = Depends(_r2r_read_service),  # noqa: B008
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+) -> R2RManagementPackReadPackResponse:
+    """Return management pack, variances, source drilldowns, and blockers."""
+    try:
+        result = svc.management_pack_read_pack(
+            period=period,
+            comparison_period=comparison_period,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return R2RManagementPackReadPackResponse(**result)
 
 
 # ---------------------------------------------------------------------------

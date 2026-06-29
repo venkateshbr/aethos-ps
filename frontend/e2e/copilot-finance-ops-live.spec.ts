@@ -1178,6 +1178,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       buffer: Buffer.from(invoiceText, 'utf-8'),
     });
     await expect(page.getByText(filename)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Attached.*send to process/i)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('link', { name: /^documents$/i })).toBeVisible({ timeout: 90_000 });
 
     let documentId = '';
@@ -1187,8 +1188,25 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
         documentId = doc?.id ?? '';
         return doc?.status ?? '';
       }, {
+        timeout: 45_000,
+        message: 'attached document should stay uploaded until the user sends a processing prompt',
+      })
+      .toBe('uploaded');
+
+    await page.getByLabel('Message input').fill(
+      'Process this vendor invoice, create the bill draft evidence, and send it to Inbox for review.'
+    );
+    await page.getByRole('button', { name: /send message/i }).click();
+    await expect(page.getByText(/Processing.*from your prompt/i)).toBeVisible({ timeout: 30_000 });
+
+    await expect
+      .poll(async () => {
+        const doc = await findDocumentByFilename(request, config!, auth!.tenantId, filename);
+        documentId = doc?.id ?? documentId;
+        return doc?.status ?? '';
+      }, {
         timeout: 150_000,
-        message: 'uploaded document should be extracted',
+        message: 'prompt-triggered document processing should extract the vendor invoice',
       })
       .toBe('extracted');
 
@@ -1263,6 +1281,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       buffer: Buffer.from(letterText, 'utf-8'),
     });
     await expect(page.getByText(filename)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Attached.*send to process/i)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('link', { name: /^documents$/i })).toBeVisible({ timeout: 90_000 });
 
     let documentId = '';
@@ -1272,8 +1291,25 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
         documentId = doc?.id ?? '';
         return `${doc?.document_type ?? ''}:${doc?.status ?? ''}`;
       }, {
+        timeout: 45_000,
+        message: 'attached engagement letter should be classified but not extracted until prompted',
+      })
+      .toBe('engagement_letter:uploaded');
+
+    await page.getByLabel('Message input').fill(
+      'Process this engagement letter, create the onboarding draft, and send it to Inbox for review.'
+    );
+    await page.getByRole('button', { name: /send message/i }).click();
+    await expect(page.getByText(/Processing.*from your prompt/i)).toBeVisible({ timeout: 30_000 });
+
+    await expect
+      .poll(async () => {
+        const doc = await findDocumentByFilename(request, config!, auth!.tenantId, filename);
+        documentId = doc?.id ?? documentId;
+        return `${doc?.document_type ?? ''}:${doc?.status ?? ''}`;
+      }, {
         timeout: 150_000,
-        message: 'uploaded engagement letter should be classified and extracted',
+        message: 'prompt-triggered document processing should extract the engagement letter',
       })
       .toBe('engagement_letter:extracted');
 

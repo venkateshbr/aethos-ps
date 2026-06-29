@@ -11,6 +11,7 @@ from importlib import reload
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 pytestmark = pytest.mark.unit
 
@@ -162,4 +163,68 @@ def test_agent_models_default_when_unset() -> None:
         reload(cfg)
         s = cfg.Settings()
         assert len(s.agent_models) == 3
+        assert s.agent_models[0] == "google/gemma-4-31b-it:free"
+        assert s.agent_models[1] == "openrouter/free"
         assert s.agent_models[-1] == "anthropic/claude-haiku-4.5"
+
+
+def test_atlas_ai_runtime_defaults_to_aethos_basic() -> None:
+    with patch.dict(os.environ, _REQUIRED_ENV, clear=False):
+        os.environ.pop("ATLAS_AI_RUNTIME", None)
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.atlas_ai_runtime == "aethos_basic"
+        assert s.atlas_hermes_api_base_url == "http://hermes:8642"
+        assert s.atlas_hermes_timeout_seconds == 90.0
+        assert s.atlas_hide_tool_events is True
+        assert s.atlas_hermes_fallback_to_basic is False
+        assert s.aethos_hermes_tool_token == ""
+        assert s.atlas_context_signing_secret == ""
+        assert s.atlas_basic_openrouter_api_key == ""
+        assert s.atlas_basic_openrouter_base_url == ""
+
+
+def test_atlas_ai_runtime_accepts_hermes_agent() -> None:
+    env = {**_REQUIRED_ENV, "ATLAS_AI_RUNTIME": "hermes_agent"}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.atlas_ai_runtime == "hermes_agent"
+
+
+def test_atlas_hermes_timeout_seconds_parses_from_env() -> None:
+    env = {**_REQUIRED_ENV, "ATLAS_HERMES_TIMEOUT_SECONDS": "120"}
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.atlas_hermes_timeout_seconds == 120.0
+
+
+def test_atlas_basic_openrouter_override_parses_from_env() -> None:
+    env = {
+        **_REQUIRED_ENV,
+        "ATLAS_BASIC_OPENROUTER_API_KEY": "fallback-key",
+        "ATLAS_BASIC_OPENROUTER_BASE_URL": "https://fallback.example/v1",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        reload(cfg)
+        s = cfg.Settings()
+        assert s.atlas_basic_openrouter_api_key == "fallback-key"
+        assert s.atlas_basic_openrouter_base_url == "https://fallback.example/v1"
+
+
+def test_atlas_ai_runtime_rejects_unknown_value() -> None:
+    env = {**_REQUIRED_ENV, "ATLAS_AI_RUNTIME": "unknown"}
+    import app.core.config as cfg
+
+    with patch.dict(os.environ, env, clear=False):
+        with pytest.raises(ValidationError):
+            cfg.Settings()

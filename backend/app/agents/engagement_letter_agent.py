@@ -15,9 +15,13 @@ import re
 
 from pydantic import ValidationError
 
-from app.agents.base import AgentDeps, build_document_content, make_async_llm_client
+from app.agents.base import (
+    AgentDeps,
+    build_document_content,
+    make_async_llm_client,
+    resolve_model_chain,
+)
 from app.agents.schemas import EngagementDraft
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +66,14 @@ Extract the following information and return it as JSON matching this schema exa
 {schema}
 
 Rules:
-- billing_arrangement must be exactly one of: time_and_materials, fixed_fee, retainer, retainer_draw, milestone, capped_tm
+- billing_arrangement must be exactly one of: time_and_materials, fixed_fee, retainer, retainer_draw, milestone, capped_tm, mixed
+- Use billing_arrangement="mixed" when the same engagement letter contains more than one billing model, such as fixed fee plus monthly retainer, fixed fee plus time and materials, or retainer plus time and materials.
 - currency must be a 3-letter ISO code (USD, GBP, SGD, INR, AUD)
 - confidence is your confidence in the extraction (0.0 to 1.0)
 - If information is missing, omit the field or use null
 - rate is always in the engagement's currency per hour
+- total_value is the known contract value. For mixed terms, sum fixed/milestone amounts plus any recurring retainer over the engagement period; do not include uncapped hourly time-and-materials estimates unless the document states a committed budget.
+- fixed_fee_amount, milestone_total, retainer_monthly_amount, retainer_floor, and cap_amount are billing-term money fields in the engagement's currency when present.
 - engagement_name: concise engagement/SOW title when present
 - first_project_name: the first project/workstream to create; use a concise name from the scope when present
 - first_project_description: one sentence describing the first project's work
@@ -91,10 +98,17 @@ async def run_engagement_letter_agent(
     Gracefully degrades: on any exception, returns a low-confidence EngagementDraft
     with client_name="unknown" so the caller can still write a failed suggestion.
     """
-    client = make_async_llm_client()
+    client = make_async_llm_client(
+        agent_name="engagement_letter_agent",
+        tenant_id=deps.tenant_id,
+        user_id=deps.user_id,
+        session_id=document_id,
+        metadata={"document_id": document_id, "document_mime_type": mime_type},
+    )
     schema = EngagementDraft.model_json_schema()
 
     prompt = ENGAGEMENT_LETTER_PROMPT.format(schema=json.dumps(schema, indent=2))
+    model_chain = await resolve_model_chain(deps.db, deps.tenant_id)
 
     # Build message content — PDFs sent natively, images via vision, text inline.
     content = build_document_content(prompt, document_bytes, mime_type)
@@ -104,14 +118,14 @@ async def run_engagement_letter_agent(
         extra={
             "document_id": document_id,
             "tenant_id": deps.tenant_id,
-            "models": settings.agent_models,
+            "models": model_chain,
             "mime_type": mime_type,
         },
     )
 
     completion = await client.chat.completions.create(
-        model=settings.agent_models[0],
-        extra_body={"models": settings.agent_models},  # OpenRouter fallback chain
+        model=model_chain[0],
+        extra_body={"models": model_chain},  # OpenRouter fallback chain
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
         response_format={"type": "json_object"},

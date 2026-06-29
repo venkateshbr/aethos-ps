@@ -12,6 +12,8 @@ import { FinanceOpsScheduleComponent } from './finance-ops-schedule.component';
 import { ApprovalPolicyComponent } from './approval-policy.component';
 import { FinancePersonasComponent } from './finance-personas.component';
 import { TenantHealthComponent } from './tenant-health.component';
+import { TenantUsersComponent } from './tenant-users.component';
+import { AiSettingsComponent } from './ai-settings.component';
 
 @Component({
   selector: 'app-settings',
@@ -30,6 +32,8 @@ import { TenantHealthComponent } from './tenant-health.component';
     ApprovalPolicyComponent,
     FinancePersonasComponent,
     TenantHealthComponent,
+    TenantUsersComponent,
+    AiSettingsComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -55,7 +59,10 @@ import { TenantHealthComponent } from './tenant-health.component';
           <h2 id="account-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Account &amp; security
           </h2>
-          <app-change-password />
+          <div class="space-y-4">
+            <app-change-password />
+            <app-tenant-users />
+          </div>
         </section>
 
         <!-- Integrations section -->
@@ -100,6 +107,7 @@ import { TenantHealthComponent } from './tenant-health.component';
             Agent Autonomy
           </h2>
           <div class="space-y-4">
+            <app-ai-settings />
             <app-finance-ops-schedule />
             <app-autonomy />
           </div>

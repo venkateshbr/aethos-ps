@@ -1,0 +1,240 @@
+# Aethos PS production deployment for Hostinger VPS behind an existing Traefik.
+#
+# Public routing:
+#   https://aethos.ishirock.tech           -> frontend:80
+#   https://timesheet.aethos.ishirock.tech -> timesheet:80
+#
+# The API is not published through Traefik directly. Both nginx web containers
+# proxy /api/* to the private api service on the internal Docker network.
+
+x-api-environment: &api-environment
+  PORT: "8080"
+  ENVIRONMENT: "${ENVIRONMENT:-production}"
+  DEBUG: "${DEBUG:-false}"
+  FRONTEND_BASE_URL: "${FRONTEND_BASE_URL:-https://aethos.ishirock.tech}"
+  CORS_ORIGINS: "${CORS_ORIGINS:-https://aethos.ishirock.tech,https://timesheet.aethos.ishirock.tech}"
+
+  SUPABASE_URL: "${SUPABASE_URL:-}"
+  SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY:-}"
+  SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
+  SUPABASE_JWT_SECRET: "${SUPABASE_JWT_SECRET:-}"
+
+  STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+  STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+  STRIPE_CONNECT_CLIENT_ID: "${STRIPE_CONNECT_CLIENT_ID:-}"
+  STRIPE_PRICE_STARTER_MONTHLY_USD: "${STRIPE_PRICE_STARTER_MONTHLY_USD:-}"
+  STRIPE_PRICE_STARTER_MONTHLY_GBP: "${STRIPE_PRICE_STARTER_MONTHLY_GBP:-}"
+  STRIPE_PRICE_STARTER_MONTHLY_SGD: "${STRIPE_PRICE_STARTER_MONTHLY_SGD:-}"
+  STRIPE_PRICE_STARTER_MONTHLY_INR: "${STRIPE_PRICE_STARTER_MONTHLY_INR:-}"
+  STRIPE_PRICE_STARTER_MONTHLY_AUD: "${STRIPE_PRICE_STARTER_MONTHLY_AUD:-}"
+  STRIPE_PRICE_STARTER_ANNUAL_USD: "${STRIPE_PRICE_STARTER_ANNUAL_USD:-}"
+  STRIPE_PRICE_STARTER_ANNUAL_GBP: "${STRIPE_PRICE_STARTER_ANNUAL_GBP:-}"
+  STRIPE_PRICE_STARTER_ANNUAL_SGD: "${STRIPE_PRICE_STARTER_ANNUAL_SGD:-}"
+  STRIPE_PRICE_STARTER_ANNUAL_INR: "${STRIPE_PRICE_STARTER_ANNUAL_INR:-}"
+  STRIPE_PRICE_STARTER_ANNUAL_AUD: "${STRIPE_PRICE_STARTER_ANNUAL_AUD:-}"
+  STRIPE_PRICE_GROWTH_MONTHLY_USD: "${STRIPE_PRICE_GROWTH_MONTHLY_USD:-}"
+  STRIPE_PRICE_GROWTH_MONTHLY_GBP: "${STRIPE_PRICE_GROWTH_MONTHLY_GBP:-}"
+  STRIPE_PRICE_GROWTH_MONTHLY_SGD: "${STRIPE_PRICE_GROWTH_MONTHLY_SGD:-}"
+  STRIPE_PRICE_GROWTH_MONTHLY_INR: "${STRIPE_PRICE_GROWTH_MONTHLY_INR:-}"
+  STRIPE_PRICE_GROWTH_MONTHLY_AUD: "${STRIPE_PRICE_GROWTH_MONTHLY_AUD:-}"
+  STRIPE_PRICE_GROWTH_ANNUAL_USD: "${STRIPE_PRICE_GROWTH_ANNUAL_USD:-}"
+  STRIPE_PRICE_GROWTH_ANNUAL_GBP: "${STRIPE_PRICE_GROWTH_ANNUAL_GBP:-}"
+  STRIPE_PRICE_GROWTH_ANNUAL_SGD: "${STRIPE_PRICE_GROWTH_ANNUAL_SGD:-}"
+  STRIPE_PRICE_GROWTH_ANNUAL_INR: "${STRIPE_PRICE_GROWTH_ANNUAL_INR:-}"
+  STRIPE_PRICE_GROWTH_ANNUAL_AUD: "${STRIPE_PRICE_GROWTH_ANNUAL_AUD:-}"
+  STRIPE_PRICE_PRO_MONTHLY_USD: "${STRIPE_PRICE_PRO_MONTHLY_USD:-}"
+  STRIPE_PRICE_PRO_MONTHLY_GBP: "${STRIPE_PRICE_PRO_MONTHLY_GBP:-}"
+  STRIPE_PRICE_PRO_MONTHLY_SGD: "${STRIPE_PRICE_PRO_MONTHLY_SGD:-}"
+  STRIPE_PRICE_PRO_MONTHLY_INR: "${STRIPE_PRICE_PRO_MONTHLY_INR:-}"
+  STRIPE_PRICE_PRO_MONTHLY_AUD: "${STRIPE_PRICE_PRO_MONTHLY_AUD:-}"
+  STRIPE_PRICE_PRO_ANNUAL_USD: "${STRIPE_PRICE_PRO_ANNUAL_USD:-}"
+  STRIPE_PRICE_PRO_ANNUAL_GBP: "${STRIPE_PRICE_PRO_ANNUAL_GBP:-}"
+  STRIPE_PRICE_PRO_ANNUAL_SGD: "${STRIPE_PRICE_PRO_ANNUAL_SGD:-}"
+  STRIPE_PRICE_PRO_ANNUAL_INR: "${STRIPE_PRICE_PRO_ANNUAL_INR:-}"
+  STRIPE_PRICE_PRO_ANNUAL_AUD: "${STRIPE_PRICE_PRO_ANNUAL_AUD:-}"
+
+  OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+  OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+  ATLAS_BASIC_OPENROUTER_API_KEY: "${ATLAS_BASIC_OPENROUTER_API_KEY:-}"
+  ATLAS_BASIC_OPENROUTER_BASE_URL: "${ATLAS_BASIC_OPENROUTER_BASE_URL:-}"
+  AGENT_MODELS: "${AGENT_MODELS:-google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5}"
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+  ATLAS_AI_RUNTIME: "${ATLAS_AI_RUNTIME:-aethos_basic}"
+  ATLAS_HERMES_API_BASE_URL: "${ATLAS_HERMES_API_BASE_URL:-http://hermes:8642}"
+  ATLAS_HERMES_API_SERVER_KEY: "${ATLAS_HERMES_API_SERVER_KEY:-}"
+  ATLAS_HERMES_TIMEOUT_SECONDS: "${ATLAS_HERMES_TIMEOUT_SECONDS:-90}"
+  ATLAS_HIDE_TOOL_EVENTS: "${ATLAS_HIDE_TOOL_EVENTS:-true}"
+  ATLAS_HERMES_FALLBACK_TO_BASIC: "${ATLAS_HERMES_FALLBACK_TO_BASIC:-false}"
+  AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN:-}"
+  ATLAS_CONTEXT_SIGNING_SECRET: "${ATLAS_CONTEXT_SIGNING_SECRET:-}"
+  LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+  LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+  LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
+
+  DATABASE_URL: "${DATABASE_URL:-}"
+  QUEUE_REQUIRED: "${QUEUE_REQUIRED:-false}"
+  EXTRACTION_MODE: "${EXTRACTION_MODE:-sync}"
+  UPSTASH_REDIS_URL: "${UPSTASH_REDIS_URL:-}"
+
+  RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+  RATE_LIMIT_BACKEND: "${RATE_LIMIT_BACKEND:-memory}"
+  RATE_LIMIT_DISTRIBUTED_FALLBACK_TO_MEMORY: "${RATE_LIMIT_DISTRIBUTED_FALLBACK_TO_MEMORY:-true}"
+  RATE_LIMIT_WINDOW_SECONDS: "${RATE_LIMIT_WINDOW_SECONDS:-60}"
+  RATE_LIMIT_SIGNUP_MAX_REQUESTS: "${RATE_LIMIT_SIGNUP_MAX_REQUESTS:-60}"
+  RATE_LIMIT_PUBLIC_INVOICE_MAX_REQUESTS: "${RATE_LIMIT_PUBLIC_INVOICE_MAX_REQUESTS:-300}"
+
+  OPS_ALERT_CHANNEL: "${OPS_ALERT_CHANNEL:-runbook}"
+  OPS_ALERT_WEBHOOK_URL: "${OPS_ALERT_WEBHOOK_URL:-}"
+  OPS_ALERT_RATE_LIMIT_THRESHOLD: "${OPS_ALERT_RATE_LIMIT_THRESHOLD:-10}"
+  OPS_ALERT_BACKGROUND_FAILURE_THRESHOLD: "${OPS_ALERT_BACKGROUND_FAILURE_THRESHOLD:-3}"
+  OPS_ALERT_AGENT_FAILURE_THRESHOLD: "${OPS_ALERT_AGENT_FAILURE_THRESHOLD:-1}"
+
+  OPENEXCHANGERATES_APP_ID: "${OPENEXCHANGERATES_APP_ID:-}"
+  RESEND_API_KEY: "${RESEND_API_KEY:-}"
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: "aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment: *api-environment
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - aethos-internal
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    image: "aethos-ps-frontend:${AETHOS_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aethos.rule=Host(`${HOSTINGER_APP_DOMAIN:-aethos.ishirock.tech}`)"
+      - "traefik.http.routers.aethos.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.aethos.service=aethos"
+      - "traefik.http.routers.aethos.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.services.aethos.loadbalancer.server.port=80"
+    networks:
+      - aethos-internal
+
+  worker:
+    image: "aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    profiles:
+      - worker
+    command: >
+      python -m procrastinate
+      --app=app.workers.procrastinate_app.app
+      worker
+      --queues=default,extractions,billing,fx
+      --concurrency=4
+    environment: *api-environment
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import psycopg, os; psycopg.connect(os.environ['DATABASE_URL']).close()",
+        ]
+      interval: 60s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - aethos-internal
+
+  hermes:
+    build:
+      context: ./integrations/hermes
+      dockerfile: Dockerfile
+    image: "aethos-ps-hermes:${AETHOS_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    profiles:
+      - hermes
+    expose:
+      - "8642"
+    environment:
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: "0.0.0.0"
+      API_SERVER_PORT: "8642"
+      API_SERVER_KEY: "${HERMES_API_SERVER_KEY:-}"
+      API_SERVER_MODEL_NAME: "Aethos Atlas"
+      HERMES_DASHBOARD: "${HERMES_DASHBOARD:-0}"
+      AETHOS_HERMES_REFRESH_PROFILE: "${AETHOS_HERMES_REFRESH_PROFILE:-true}"
+      AETHOS_INTERNAL_API_URL: "http://api:8080"
+      AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN:-}"
+      OPENROUTER_API_KEY: "${HERMES_OPENROUTER_API_KEY:-${OPENROUTER_API_KEY:-}}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    volumes:
+      - hermes-data:/opt/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, urllib.request; req=urllib.request.Request('http://localhost:8642/health', headers={'Authorization':'Bearer '+os.environ.get('API_SERVER_KEY','')}); urllib.request.urlopen(req)",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - aethos-internal
+
+  timesheet:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.timesheet.prod
+    image: "aethos-ps-timesheet:${AETHOS_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aethos-timesheet.rule=Host(`${HOSTINGER_TIMESHEET_DOMAIN:-timesheet.aethos.ishirock.tech}`)"
+      - "traefik.http.routers.aethos-timesheet.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.aethos-timesheet.service=aethos-timesheet"
+      - "traefik.http.routers.aethos-timesheet.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.services.aethos-timesheet.loadbalancer.server.port=80"
+    networks:
+      - aethos-internal
+
+networks:
+  aethos-internal:
+    name: "${AETHOS_INTERNAL_NETWORK:-aethos-ps-internal}"
+    driver: bridge
+
+volumes:
+  hermes-data:

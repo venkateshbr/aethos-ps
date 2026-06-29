@@ -34,7 +34,13 @@ The operational scenarios should be executed primarily as a tenant admin or owne
 | Controller | Rachel Kim | Can post journals, work close tasks, review financial statements, and inspect statutory reports |
 | Viewer/Auditor | Read-only QA user | Can view permitted data, Bills/AP mutation buttons are disabled, direct Inbox/Bills/Procurement/Financial Events mutations fail cleanly |
 
-If role-auth users are not already available, create the initial auth accounts using the approved backend/admin path, then create all ERP employee/persona records through `/app/people`.
+If role-auth users are not already available, create ERP login users from
+`/app/settings` -> Tenant Users. Owner/admin users can invite
+`owner`/`admin`/`manager`/`member`/`viewer` accounts, with owner-only guardrails
+for owner/admin assignment and deactivation. Create staff delivery records,
+rates, managers, and timesheet-only employees separately through `/app/people`.
+Record generated demo credentials in the secure credential file only; do not
+paste passwords into the runbook, screenshots, or issue comments.
 
 ## Test Firm Context
 
@@ -548,12 +554,13 @@ Current implementation assessment:
 | Capability | Current implementation | Product gap | Tracking |
 | --- | --- | --- | --- |
 | Copilot reads finance data and logs time | Implemented with read tools, time logging, rate updates, policy/HITL, and #265 command-center synthesis/live E2E coverage | Manager-level action planning is covered separately by #272; specialist execution remains approval-gated | #265 |
+| Hermes-powered Atlas orchestration | Runtime seam, Hermes adapter, signed context broker, Tool Broker, and Hermes MCP bridge are implemented for document intake/audit read packs, engagement list, engagement structure, engagement draft review, time logging, resource delivery readback, AR aging, AP aging, WIP, finance-ops snapshot, finance action-plan creation, invoice draft, O2C collections readback, collections reminder drafts, P2P payment-risk readback, bill-pay proposal, R2R management-pack readback, accounting decision trails, operational health, close preparation, year-end close preparation, and statement package generation | Live Hermes container/browser parity proof remains pending after deploy; tool architecture is documented in `docs/architecture/atlas-hermes-ai-agent-architecture.md` | `docs/prd/aethos-atlas-powered-by-hermes-migration-plan.md` |
 | AI command-center action plan | Implemented in #272, #274, and #276: Copilot turns the daily finance-ops check into a reviewable Inbox action plan; approval fans out child Inbox work items, and Plan Item approval dispatches mapped specialist workflows such as collections, bill-pay, and close prep through their existing HITL gates | Invoices, payments, journals, statements, and emails still require specialist approvals before final execution | #272, #274, #276 |
 | Scheduled AI Finance Ops Manager | Implemented first slices in #283 and #295, then automated in #317: tenant cadence can be configured through Settings or the Agents API, the hourly worker creates a traceable `scheduled_finance_ops_manager` workflow run, routes a scheduled action plan to Inbox, suppresses duplicate open plans for the same cadence window, and creates separate escalation notices for stale/high-risk Inbox work | Scheduled execution still stops at reviewed plans/escalation notices; live worker cadence smoke remains environment evidence | #283, #295, #317 |
 | AI invoice drafting from Copilot | Implemented and browser-verified: Copilot drafts invoice lines, creates an Inbox review task, and materialises the reviewed payload as a draft invoice | Keep invoice approval, send, and payment as separate guarded flows | #263 |
 | AI bill-pay run | Implemented and browser-verified: Copilot proposes approved-bill payment batches through Inbox, then approval materialises a draft payment batch. #325 exposes the downstream Pay Bills lifecycle: draft batch approval, CSV/NACHA export state, mark-sent, and settlement confirmation with returned journal evidence | Native bank-provider submission remains future payment depth; current export uses operator-controlled files and explicit settlement confirmation | #262, #325 |
 | AI month-end/year-end close controller | Implemented and browser-verified in #260, then hardened in #285/#300 and automated in #310: Copilot routes close preparation to Inbox, approval runs the close workflow and bootstraps close tasks, close packages include AR/AP/WIP/GL/approval readiness evidence, period lock can only bypass blockers through recorded reasoned overrides, and the Accounting close panel can record named override reasons. #327 adds the controller-facing year-end close posting action, #329 adds Copilot `prepare_year_end_close` routing through Inbox before any retained-earnings journal is posted, #333 adds manual-journal business reasons plus immutable `manual_journal.posted` evidence, #335 routes high-value manual journals through Inbox approval, and #337 adds controlled manual-journal reversal | Direct close locking remains approval-gated; native close calendar/workpaper orchestration remains future depth | #260, #285, #300, #310, #327, #329, #333, #335, #337 |
-| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence. #327 adds retained-earnings posting evidence for year-end statement tie-out, #329 adds current-vs-prior year commentary to the year-end close approval payload, and #331 adds comparative statement package variance commentary for default prior-period and explicit comparison windows | Board-pack export/PDF generation remains future reporting depth | #261, #300, #310, #327, #329, #331 |
+| AI financial statement package | Implemented and browser-verified in #261, then enriched in #300 and automated in #310: Copilot generates a read-only statement package summary from posted journal/report services with close-readiness warnings and evidence-backed management commentary, and browser proof ties the package to Reports tabs plus Agent Run Ledger evidence. #327 adds retained-earnings posting evidence for year-end statement tie-out, #329 adds current-vs-prior year commentary to the year-end close approval payload, #331 adds comparative statement package variance commentary for default prior-period and explicit comparison windows, and #357 adds a read-only management-pack drilldown for variances, project margin, utilization, AR/AP movement, journals, locked periods, missing close tasks, and blockers | Board-pack export/PDF generation remains future reporting depth | #261, #300, #310, #327, #329, #331, #357 |
 | AI document intake | Implemented and browser-verified for vendor invoice upload to Inbox approval to bill creation with source-document linkage | AI semantic PO selection and project coding from source documents remain broader P2P coverage | #264 |
 | AI vendor invoice exceptions | Implemented first slices in #284/#299 and automated in #310: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence. #323 adds line-level PO/service-order match evidence: linked bills compare bill lines to approved PO/SO lines for description, quantity, unit price, amount, and service period where applicable; mismatches record `line_exceptions`, show in Bills list/detail, and block approval through the existing AP gate | Payment remains a separate bill-pay approval flow; fuzzy/semantic AI PO selection remains future P2P depth | #284, #299, #310, #323 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267, then deepened in #345: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, first project, and a linked rate card when reviewed rate hints are present | Broader admin reporting around segmented price books remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267, #345 |
@@ -590,6 +597,49 @@ cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts 
 ```
 
 Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API errors.
+
+### Scenario 11A - Hermes-Powered Atlas Runtime Smoke
+
+Persona: Maya Rao, Owner/Admin. AI role: Finance Ops Manager.
+
+Preconditions:
+1. Run with `COMPOSE_PROFILES=worker,hermes`.
+2. Set `ATLAS_AI_RUNTIME=hermes_agent`.
+3. Set `HERMES_API_SERVER_KEY`, `ATLAS_HERMES_API_SERVER_KEY`, and `AETHOS_HERMES_TOOL_TOKEN`.
+4. Keep `ATLAS_HERMES_FALLBACK_TO_BASIC=false` for the first pass, then repeat with `true` for rollback proof.
+
+Browser steps:
+1. `/app/copilot`: start a new chat.
+2. Ask: `Run today's finance ops check. Use live Aethos data for AR, AP, WIP, and active engagements. Do not create any records.`
+3. Ask: `Show the Nexus engagement structure with active projects, billing terms, rate-card state, source document state, and anything missing before billing.`
+4. Upload an engagement letter or use seeded document data, then ask: `Read the document extraction results and linked Inbox task for nexus_engagement_letter.pdf. Summarize the extracted client, billing model, first project, rate hints, and review boundary.`
+5. Ask: `Show Alice Chen's June delivery data for Nexus: approved time, pending time, billable expenses, utilization, WIP, and invoice-ready entries.`
+6. Ask: `Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling.`
+7. Ask: `Create the next recommended finance ops work items for this month. Route the action plan to Inbox and do not approve invoices, payments, journals, statements, or emails directly.`
+8. Ask one guarded workflow prompt, for example: `Draft an invoice for the largest active engagement for June 2026 and route the draft to Inbox before creating an invoice.`
+9. Ask: `Show the latest decision trail with Inbox task, actor role, decision type, timestamp, before/after summary, and journal context.`
+10. Ask: `Show operational health including degraded health, public endpoint abuse, background failures, agent/tool/workflow failures, Langfuse status, and alert routing. Do not expose logs, traces, or secrets.`
+11. Verify every response is business language only: no tool names, no `context_ref`, no raw JSON, no traces, no stack traces.
+12. Cross-check the AR/AP/WIP figures against Reports.
+13. `/app/inbox`: verify the finance ops action plan and guarded workflow task appear as review tasks.
+14. Navigate away from Atlas, return to `/app/copilot`, reopen the same thread, and verify the prior messages reload before asking a follow-up.
+15. Stop Hermes or point `ATLAS_HERMES_API_BASE_URL` to an unavailable host, set `ATLAS_HERMES_FALLBACK_TO_BASIC=true`, and repeat the prompt to prove Basic fallback still answers.
+
+Expected result:
+- Atlas answers through Hermes when configured.
+- Hermes uses Aethos live data through the private Tool Broker/MCP bridge.
+- Hermes can read document extraction results, engagement/workstream structure,
+  resource delivery data, accounting decision trails, and operational health
+  through Aethos-owned tools.
+- Action-plan and guarded workflow requests create Inbox review work instead of executing downstream specialist actions directly.
+- The user never sees MCP, tool-call, context-token, or trace details.
+- Prior thread messages reload so a user can ask Atlas to retry or clarify an extraction in context.
+- With fallback enabled, Basic Atlas handles a Hermes outage without changing the frontend route.
+
+Implementation status:
+- Backend/unit proof is implemented for read-only tools and the first current Atlas workflow parity tools. Live browser proof remains pending until a Docker environment can build and run the Hermes image.
+
+Evidence: Atlas chat transcript, Reports cross-checks, API logs showing `/api/v1/atlas-tools/execute`, no console/API errors, and no leaked internals.
 
 ## Scenario 12 - AI Client Onboarding From Engagement Letter
 
@@ -756,17 +806,20 @@ Persona: Owner/Admin and Controller. AI role: Finance Ops Manager with reporting
 
 Browser steps:
 1. Complete invoice, bill, payment, and close activity for the period.
-2. `/app/copilot`: ask `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and management commentary. Compare it to May 2026 and show the variances.`
-3. Verify Copilot uses posted journal/report data and flags any missing close prerequisites.
-4. For fiscal-year close validation, `/app/copilot`: ask `Prepare year-end close for fiscal year 2026. Check retained earnings setup, duplicate close risk, locked periods, P&L activity, and comparative statement movement. Route the posting to Inbox for approval.`
-5. `/app/inbox`: inspect the `copilot_prepare_year_end_close` task and approve it as Admin/Owner.
-6. `/app/accounting/journals`: verify a `YE-YYYY` retained-earnings journal appears.
-7. `/app/reports`: cross-check each statement tab against Copilot's package summary.
-8. Ask Copilot to explain material variances, open risks, and next actions.
-9. Verify the package does not claim final/locked status unless the period is actually ready or locked.
+2. `/app/copilot`: ask `Give me the June 2026 month-end management pack. Explain major variances versus May 2026 and list remaining close blockers. Then drill into revenue, expenses, project margin, utilization, AR/AP movement, journals, and close task blockers with source data. Do not post journals or lock the period.`
+3. Verify Atlas normalizes `June 2026` and `May 2026`, uses posted journal/report data, shows AR/AP period movement separately from aging, lists draft journals and close blockers, and creates no Inbox task, journal, or lock.
+4. `/app/copilot`: ask `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and management commentary. Compare it to May 2026 and show the variances.`
+5. Verify Copilot uses posted journal/report data and flags any missing close prerequisites.
+6. For fiscal-year close validation, `/app/copilot`: ask `Prepare year-end close for fiscal year 2026. Check retained earnings setup, duplicate close risk, locked periods, P&L activity, and comparative statement movement. Route the posting to Inbox for approval.`
+7. `/app/inbox`: inspect the `copilot_prepare_year_end_close` task and approve it as Admin/Owner.
+8. `/app/accounting/journals`: verify a `YE-YYYY` retained-earnings journal appears.
+9. `/app/reports`: cross-check each statement tab against Copilot's package summary.
+10. Ask Copilot to explain material variances, open risks, and next actions.
+11. Verify the package does not claim final/locked status unless the period is actually ready or locked.
 
 Expected result:
 - AI assembles and explains statements from real accounting data.
+- AI can answer the management-pack readback before any write workflow and can drill into revenue, expenses, project margin, utilization, AR/AP movement, journals, and close blockers.
 - The package is traceable to report tabs and posted journals.
 - Year-end close posts a balanced retained-earnings journal when fiscal-year activity is ready.
 - Missing close work is surfaced as blockers, not hidden.
@@ -784,8 +837,12 @@ Implementation status:
   year-end close review payload.
 - #331 adds structured comparative statement package commentary for default
   prior-period and explicit comparison windows.
+- #357 adds the read-only R2R management-pack read path for period-normalized
+  comparative statements, variance rows, AR/AP movement, project margin,
+  utilization, draft journals, locked-period state, missing close tasks, and
+  close blockers.
 
-Evidence: Copilot package, report tabs, variance commentary, close readiness status.
+Evidence: Copilot management pack, report tabs, journal list, variance commentary, close readiness status.
 
 ## Scenario 19 - Finance Role Persona And Permission Proof
 
@@ -793,16 +850,19 @@ Persona: Owner/Admin, AP Lead, AR Lead, Controller, Auditor, and Executive.
 AI role: Finance Ops Manager as access explainer only.
 
 Browser steps:
-1. `/app/settings`: open Approval Controls and verify the Finance role personas card shows the current enforced role.
-2. As Owner/Admin, Manager, and Viewer sessions, verify compatible persona chips:
+1. `/app/settings`: open Tenant Users and confirm Owner/Admin can invite an ERP
+   manager or viewer, the invited user can log into the main app independently,
+   and invite/role/deactivation audit events are visible.
+2. `/app/settings`: open Approval Controls and verify the Finance role personas card shows the current enforced role.
+3. As Owner/Admin, Manager, and Viewer sessions, verify compatible persona chips:
    Owner/Admin should include Owner/Admin, Controller, AP Lead, and AR Lead;
    Manager should include AP Lead and AR Lead; Viewer should include Auditor
    and Executive.
-3. `/app/copilot`: ask `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.`
-4. As Viewer, open Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and Settings.
-5. Attempt restricted finance actions: approve, edit, create, convert, post, pay,
+4. `/app/copilot`: ask `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.`
+5. As Viewer, open Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and Settings.
+6. Attempt restricted finance actions: approve, edit, create, convert, post, pay,
    send, lock, and settings mutation.
-6. Repeat direct API calls for the same restricted paths.
+7. Repeat direct API calls for the same restricted paths.
 
 Expected result:
 - Finance persona labels are understandable to users but remain mapped to the
@@ -813,6 +873,8 @@ Expected result:
   without gaining admin/owner approval rights.
 - Owner/Admin and Controller mappings keep final approval and settings authority
   behind the existing tenant role gates.
+- Tenant Users is the authoritative ERP access surface; People remains the
+  delivery/staff/timesheet surface.
 
 Implementation status:
 - First slice implemented under #282 and #298, with browser/API proof added in
@@ -826,6 +888,11 @@ Implementation status:
   in as Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive through
   the current enforced-role compatibility model and verifies Settings, Inbox,
   Bills/AP, Invoices/AR, Accounting, Reports, and read-only mutation guards.
+- Tenant-user invite and role administration first slice implemented under
+  #364: Settings exposes Tenant Users, `/api/v1/tenant-users` supports list,
+  invite, role update, deactivation, and audit events, and the production
+  scenario-library run creates one ERP manager per tenant through the product
+  API before validating independent login.
 
 Automation:
 ```bash
@@ -904,6 +971,7 @@ These tests can supplement the manual launch pass, but they do not replace brows
 | `frontend/e2e/enterprise-r2r-year-end-close.spec.ts` | #327 R2R year-end close proof | Covers Accounting year-end close posting, retained-earnings evidence, and refreshed journal-list proof |
 | Backend Copilot year-end close unit suite | #329 AI-routed year-end close proof | Covers `prepare_year_end_close` tool schema, accounting HITL routing, Inbox materialisation, Finance Ops Plan Item dispatch, preview blockers, and comparative statement commentary |
 | Backend Copilot comparative statement unit suite | #331 comparative statement proof | Covers statement package comparison periods, default prior-window comparison, deterministic variances, and readable comparison input validation |
+| Backend Agents/Atlas R2R management-pack contract suite | #357 R2R management-pack read proof | Covers period normalization, comparative statements, variance rows, AR/AP period movement, project margin, utilization, locked period, missing close tasks, draft journals, and cross-tenant isolation |
 | `frontend/e2e/enterprise-ops-health.spec.ts` | #311 operational health proof | Covers Settings Operational Health runtime, table/migration, distributed limiter, request/background failure, agent/tool/workflow failure, routed alert, and secret-redaction evidence |
 | `frontend/e2e/enterprise-finance-persona-matrix.spec.ts` | #321 full finance persona matrix proof | Covers Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive compatibility mappings plus Settings, Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and viewer mutation guards |
 | `frontend/e2e/accounting-journals.spec.ts` | Journal UI supplement | Covers page render and journal form basics |
@@ -962,7 +1030,7 @@ Implemented during this validation pass:
 | 6. Contractor service order | Browser-capable entry points | Browser + automated equivalent | Passed | Vendor bill/procurement, service-period PO/SO match evidence, project-cost, AP Aging, and close proposal paths covered by automated suite; manual script validates named contractor scenario |
 | 7. Bill payment batch and settlement | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Pay Bills route and AP Aging checks pass; Copilot live proof verifies AI proposal, Inbox approval, and draft batch creation; #325 browser proof covers approve/export/mark-sent/settle lifecycle; bill payment/service tests cover settlement semantics |
 | 8. Month-end close | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Manual journal UI, imbalanced rejection, period-lock guard, close package/service tests, Copilot close-task bootstrap, and backend multi-currency manual-journal FX proof all passed or are mapped to #347 |
-| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, Copilot statement-package live proof, and #327 year-end retained-earnings posting proof passed |
+| 9. Quarter close and statements | Browser-capable | Browser + automated equivalent + Copilot live proof | Passed | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, financial statement unit/report tests, Copilot statement-package live proof, #327 year-end retained-earnings posting proof, and #357 R2R management-pack backend proof passed |
 | 10. Management reports and action queues | Browser-capable | Browser + automated equivalent | Passed | Project Health, Capacity, Action Queue, report tabs, Inbox/HITL, agent run/workflow surfaces covered by full browser/backend suites |
 
 ## Gaps To Record As Issues

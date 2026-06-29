@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.domain.money import serialise_money
 from app.models.inbox import (
     ApproveResponse,
     EscalateResponse,
@@ -1376,7 +1377,7 @@ class InboxService:
             or f"{client_name} Engagement"
         )
         total_value = (
-            str(Decimal(str(payload["total_value"])))
+            serialise_money(Decimal(str(payload["total_value"])))
             if payload.get("total_value")
             else None
         )
@@ -1388,24 +1389,34 @@ class InboxService:
         eng_row = await asyncio.to_thread(
             lambda: self._db.table("engagements")
             .insert(
-                {
-                    "tenant_id": self._tenant_id,
-                    "client_id": client_id,
-                    "name": engagement_name,
-                    "billing_arrangement": payload.get("billing_arrangement", "time_and_materials"),
-                    "currency": engagement_currency,
-                    "total_value": total_value,
-                    "description": _non_empty(payload.get("scope_summary")),
-                    "start_date": _non_empty(payload.get("start_date")),
-                    "end_date": _non_empty(payload.get("end_date")),
-                    "status": "draft",
-                    "rate_card_id": rate_card_id,
-                    "source_document_id": self._source_document_id(payload),  # #127
-                }
+                _without_none(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "client_id": client_id,
+                        "name": engagement_name,
+                        "billing_arrangement": payload.get(
+                            "billing_arrangement",
+                            "time_and_materials",
+                        ),
+                        "currency": engagement_currency,
+                        "total_value": total_value,
+                        "description": _non_empty(payload.get("scope_summary")),
+                        "start_date": _non_empty(payload.get("start_date")),
+                        "end_date": _non_empty(payload.get("end_date")),
+                        "status": "draft",
+                        "rate_card_id": rate_card_id,
+                        "service_line": _non_empty(payload.get("service_line")),
+                        "source_document_id": self._source_document_id(payload),  # #127
+                    }
+                )
             )
             .execute()
         )
         engagement_id = str(eng_row.data[0]["id"])
+        billing_terms_created = await self._create_engagement_billing_terms(
+            engagement_id,
+            payload,
+        )
 
         # Auto-create the reviewed first project so the user can log time
         # against the engagement immediately, without a manual project-create
@@ -1447,11 +1458,40 @@ class InboxService:
             "entity_type": "engagement",
             "entity_id": engagement_id,
             "client_id": str(client_id),
+            "client_name": client_name,
+            "engagement_name": engagement_name,
+            "billing_arrangement": payload.get("billing_arrangement", "time_and_materials"),
+            "currency": engagement_currency,
+            "total_value": total_value,
             "project_id": project_id,
             "project_name": project_name,
             "rate_card_id": rate_card_id,
             "rate_card_line_count": rate_card_line_count,
+            "billing_terms_created": billing_terms_created,
         }
+
+    async def _create_engagement_billing_terms(
+        self,
+        engagement_id: str,
+        payload: dict,
+    ) -> bool:
+        import asyncio
+
+        terms = _engagement_billing_terms_from_payload(payload)
+        if not terms:
+            return False
+        await asyncio.to_thread(
+            lambda: self._db.table("engagement_billing_terms")
+            .insert(
+                {
+                    "tenant_id": self._tenant_id,
+                    "engagement_id": engagement_id,
+                    **terms,
+                }
+            )
+            .execute()
+        )
+        return True
 
     async def _create_rate_card_from_hints(
         self,
@@ -1742,6 +1782,63 @@ def _non_empty(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _without_none(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+_ENGAGEMENT_BILLING_TERM_MONEY_KEYS = (
+    "fixed_fee_amount",
+    "milestone_total",
+    "retainer_monthly_amount",
+    "retainer_floor",
+    "cap_amount",
+)
+
+
+def _money_or_none(value: object) -> str | None:
+    text = _non_empty(value)
+    if text is None:
+        return None
+    try:
+        return serialise_money(Decimal(text.replace(",", "")))
+    except Exception:
+        return None
+
+
+def _bool_or_none(value: object) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _engagement_billing_terms_from_payload(payload: dict) -> dict[str, Any]:
+    nested = payload.get("billing_terms") if isinstance(payload.get("billing_terms"), dict) else {}
+    result: dict[str, Any] = {}
+    for key in _ENGAGEMENT_BILLING_TERM_MONEY_KEYS:
+        value = payload.get(key)
+        if value in (None, "") and isinstance(nested, dict):
+            value = nested.get(key)
+        money = _money_or_none(value)
+        if money is not None:
+            result[key] = money
+
+    rollover = payload.get("retainer_rollover")
+    if rollover is None and isinstance(nested, dict):
+        rollover = nested.get("retainer_rollover")
+    rollover_bool = _bool_or_none(rollover)
+    if rollover_bool is not None:
+        result["retainer_rollover"] = rollover_bool
+
+    return result
 
 
 def _row_to_summary(

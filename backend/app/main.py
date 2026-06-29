@@ -81,6 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             pass
 
+    try:
+        from app.agents.base import flush_langfuse
+
+        flush_langfuse()
+    except Exception:
+        pass
+
 
 app = FastAPI(
     title="Aethos PS API",

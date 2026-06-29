@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -116,7 +117,35 @@ class _ReadDb(_DbBase):
                         "updated_at": "2026-06-22T01:00:00+00:00",
                         "deleted_at": None,
                     }
-                ]
+                ],
+                "chat_messages": [
+                    {
+                        "id": "message-1",
+                        "tenant_id": TENANT_ID,
+                        "thread_id": "thread-1",
+                        "role": "user",
+                        "content": "What needs billing?",
+                        "tool_name": None,
+                        "finish_reason": None,
+                        "model": None,
+                        "usage_input_tokens": None,
+                        "usage_output_tokens": None,
+                        "created_at": "2026-06-22T00:05:00+00:00",
+                    },
+                    {
+                        "id": "message-2",
+                        "tenant_id": TENANT_ID,
+                        "thread_id": "thread-1",
+                        "role": "assistant",
+                        "content": "Nexus has WIP to review.",
+                        "tool_name": None,
+                        "finish_reason": "stop",
+                        "model": "test-model",
+                        "usage_input_tokens": None,
+                        "usage_output_tokens": None,
+                        "created_at": "2026-06-22T00:06:00+00:00",
+                    },
+                ],
             }
         )
 
@@ -124,6 +153,26 @@ class _ReadDb(_DbBase):
 class _WriteDb(_DbBase):
     def __init__(self) -> None:
         super().__init__({"chat_threads": []})
+
+
+class _ChatWriteDb(_DbBase):
+    def __init__(self) -> None:
+        super().__init__(
+            {
+                "chat_threads": [
+                    {
+                        "id": "thread-1",
+                        "tenant_id": TENANT_ID,
+                        "user_id": USER_ID,
+                        "title": "Runtime thread",
+                        "created_at": "2026-06-22T00:00:00+00:00",
+                        "updated_at": "2026-06-22T01:00:00+00:00",
+                        "deleted_at": None,
+                    }
+                ],
+                "chat_messages": [],
+            }
+        )
 
 
 class _ForbiddenDb:
@@ -175,3 +224,82 @@ def test_chat_thread_create_uses_service_role_client() -> None:
     assert response.json()["id"] == "thread-created"
     assert write_db.tables["chat_threads"][0]["tenant_id"] == TENANT_ID
     assert write_db.tables["chat_threads"][0]["user_id"] == USER_ID
+
+
+def test_chat_message_list_uses_rls_client_and_returns_history() -> None:
+    _install_common_overrides()
+    app.dependency_overrides[get_user_rls_client] = lambda: _ReadDb()
+    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/chat/threads/thread-1/messages?limit=10")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert [row["role"] for row in rows] == ["user", "assistant"]
+    assert rows[0]["content"] == "What needs billing?"
+    assert rows[1]["content"] == "Nexus has WIP to review."
+
+
+def test_chat_messages_authenticated_read_rls_scopes_to_owned_threads() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase/migrations/0092_chat_messages_authenticated_read_rls.sql"
+    )
+    sql = migration.read_text()
+
+    assert 'CREATE POLICY "authenticated_owner_read" ON chat_messages' in sql
+    assert "FOR SELECT" in sql
+    assert "TO authenticated" in sql
+    assert "public.is_tenant_member(auth.uid(), tenant_id)" in sql
+    assert "chat_threads.id = chat_messages.thread_id" in sql
+    assert "chat_threads.tenant_id = chat_messages.tenant_id" in sql
+    assert "chat_threads.user_id = auth.uid()" in sql
+    assert "chat_threads.deleted_at IS NULL" in sql
+
+
+def test_chat_message_stream_uses_runtime_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.v1.endpoints.chat as chat_module
+
+    write_db = _ChatWriteDb()
+
+    class _Runtime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "hello Atlas"
+            assert thread_id == "thread-1"
+            yield 'data: {"delta":"Runtime reply"}\n\n'
+            yield 'data: {"done":true,"finish_reason":"stop"}\n\n'
+
+    def _build_runtime(**kwargs: Any) -> _Runtime:
+        assert kwargs["tenant_id"] == TENANT_ID
+        assert kwargs["user_id"] == USER_ID
+        assert kwargs["db_client"] is write_db
+        return _Runtime()
+
+    monkeypatch.setattr(chat_module, "build_atlas_runtime", _build_runtime)
+
+    _install_common_overrides()
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={"content": "hello Atlas"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert "Runtime reply" in response.text
+    messages = write_db.tables["chat_messages"]
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "hello Atlas"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "Runtime reply"

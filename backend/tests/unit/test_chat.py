@@ -7,6 +7,9 @@ All tests here are pure-Python with no I/O: no DB, no Anthropic API calls.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # SSE frame format
@@ -202,3 +205,368 @@ def test_router_py_includes_chat_line():
     assert 'prefix="/chat"' in source or "prefix='/chat'" in source, (
         "router.py must include chat router with prefix='/chat'"
     )
+
+
+# ---------------------------------------------------------------------------
+# Atlas runtime seam
+# ---------------------------------------------------------------------------
+
+
+def _patch_ai_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    runtime: str,
+    model_chain: list[str] | None = None,
+) -> None:
+    from app.services import atlas_runtime
+
+    class FakeAiSettingsService:
+        def __init__(self, db_client: object, tenant_id: str) -> None:
+            self.db_client = db_client
+            self.tenant_id = tenant_id
+
+        async def get_effective_settings(self):
+            return SimpleNamespace(
+                atlas_runtime=runtime,
+                model_chain=model_chain
+                or [
+                    "google/gemma-4-31b-it:free",
+                    "openrouter/free",
+                    "anthropic/claude-haiku-4.5",
+                ],
+            )
+
+    monkeypatch.setattr(atlas_runtime, "AiSettingsService", FakeAiSettingsService)
+
+
+@pytest.mark.asyncio
+async def test_atlas_runtime_factory_defaults_to_basic(monkeypatch: pytest.MonkeyPatch):
+    from app.services import atlas_runtime
+
+    _patch_ai_settings(monkeypatch, runtime="aethos_basic")
+
+    adapter = await atlas_runtime.build_atlas_runtime(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        db_client=object(),
+    )
+
+    assert isinstance(adapter, atlas_runtime.AethosBasicRuntimeAdapter)
+    assert adapter.name == "aethos_basic"
+
+
+@pytest.mark.asyncio
+async def test_atlas_runtime_factory_uses_tenant_model_chain(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.services import atlas_runtime
+
+    _patch_ai_settings(
+        monkeypatch,
+        runtime="aethos_basic",
+        model_chain=["openrouter/free", "anthropic/claude-haiku-4.5"],
+    )
+
+    adapter = await atlas_runtime.build_atlas_runtime(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        db_client=object(),
+    )
+
+    assert isinstance(adapter, atlas_runtime.AethosBasicRuntimeAdapter)
+    assert adapter.deps.llm_models == ["openrouter/free", "anthropic/claude-haiku-4.5"]
+
+
+@pytest.mark.asyncio
+async def test_atlas_runtime_factory_can_enable_hermes_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.services import atlas_runtime
+
+    _patch_ai_settings(monkeypatch, runtime="hermes_agent")
+    monkeypatch.setattr(atlas_runtime.settings, "atlas_hermes_fallback_to_basic", True)
+
+    adapter = await atlas_runtime.build_atlas_runtime(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        db_client=object(),
+    )
+
+    assert isinstance(adapter, atlas_runtime.HermesAgentRuntimeAdapter)
+    assert isinstance(adapter.fallback_runtime, atlas_runtime.AethosBasicRuntimeAdapter)
+
+
+@pytest.mark.asyncio
+async def test_atlas_runtime_factory_passes_hermes_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.services import atlas_runtime
+
+    seen: dict[str, object] = {}
+
+    class FakeHermesClient:
+        def __init__(self, **kwargs) -> None:
+            seen.update(kwargs)
+
+    _patch_ai_settings(monkeypatch, runtime="hermes_agent")
+    monkeypatch.setattr(atlas_runtime.settings, "atlas_hermes_api_base_url", "http://hermes")
+    monkeypatch.setattr(atlas_runtime.settings, "atlas_hermes_api_server_key", "key")
+    monkeypatch.setattr(atlas_runtime.settings, "atlas_hermes_timeout_seconds", 123.0)
+    monkeypatch.setattr(atlas_runtime, "HermesClient", FakeHermesClient)
+
+    adapter = await atlas_runtime.build_atlas_runtime(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        db_client=object(),
+    )
+
+    assert isinstance(adapter, atlas_runtime.HermesAgentRuntimeAdapter)
+    assert seen["timeout_seconds"] == 123.0
+
+
+@pytest.mark.asyncio
+async def test_atlas_basic_runtime_uses_separate_provider_override(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.services import atlas_runtime
+
+    _patch_ai_settings(monkeypatch, runtime="aethos_basic")
+    monkeypatch.setattr(atlas_runtime.settings, "atlas_basic_openrouter_api_key", "basic-key")
+    monkeypatch.setattr(
+        atlas_runtime.settings,
+        "atlas_basic_openrouter_base_url",
+        "https://basic.example/v1",
+    )
+
+    adapter = await atlas_runtime.build_atlas_runtime(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        db_client=object(),
+    )
+
+    assert isinstance(adapter, atlas_runtime.AethosBasicRuntimeAdapter)
+    assert adapter.deps.llm_api_key == "basic-key"
+    assert adapter.deps.llm_base_url == "https://basic.example/v1"
+
+
+def test_atlas_runtime_factory_rejects_unknown_value():
+    from app.services.atlas_runtime import normalise_atlas_runtime_name
+
+    with pytest.raises(ValueError):
+        normalise_atlas_runtime_name("unknown")
+
+
+@pytest.mark.asyncio
+async def test_basic_runtime_adapter_delegates_to_copilot(monkeypatch: pytest.MonkeyPatch):
+    from app.agents.copilot.graph import CopilotDeps
+    from app.services import atlas_runtime
+
+    class FakeCopilotAgent:
+        def __init__(self, deps: CopilotDeps) -> None:
+            self.deps = deps
+
+        async def run_stream(self, *, user_message: str, thread_id: str):
+            yield f"data: {json.dumps({'delta': f'{thread_id}:{user_message}'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+
+    monkeypatch.setattr(atlas_runtime, "CopilotAgent", FakeCopilotAgent)
+
+    adapter = atlas_runtime.AethosBasicRuntimeAdapter(
+        deps=CopilotDeps(tenant_id="tenant-1", user_id="user-1", db_client=object())
+    )
+
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert frames[0] == f"data: {json.dumps({'delta': 'thread-1:hello'})}\n\n"
+    assert json.loads(frames[1][6:].strip())["done"] is True
+
+
+@pytest.mark.asyncio
+async def test_hermes_runtime_adapter_streams_visible_text(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.services import atlas_context
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    monkeypatch.setattr(atlas_context.settings, "atlas_context_signing_secret", "secret")
+
+    class FakeHermesClient:
+        async def create_response(self, **kwargs):
+            assert kwargs["conversation"] == "aethos:tenant-1:user-1:thread-1"
+            assert "context_ref" in kwargs["instructions"]
+            return {
+                "output": [
+                    {"type": "function_call", "name": "internal_tool"},
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Visible reply"}],
+                    },
+                ]
+            }
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=FakeHermesClient(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert len(frames) == 2
+    payload = json.loads(frames[0][6:].strip())
+    assert payload["delta"] == "Visible reply"
+    assert json.loads(frames[1][6:].strip())["done"] is True
+
+
+@pytest.mark.asyncio
+async def test_hermes_runtime_adapter_hides_provider_error_text():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class ProviderErrorHermesClient:
+        async def create_response(self, **kwargs):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "HTTP 403: Key limit exceeded. Manage it using https://openrouter.ai/workspaces/example",
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=ProviderErrorHermesClient(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert len(frames) == 1
+    payload = json.loads(frames[0][6:].strip())
+    assert payload["error"] == "Atlas is temporarily unavailable. Please try again shortly."
+    assert "openrouter" not in json.dumps(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_hermes_provider_error_can_fallback_to_basic():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class ProviderErrorHermesClient:
+        async def create_response(self, **kwargs):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "HTTP 402: This request requires more credits.",
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    class FallbackRuntime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "hello"
+            assert thread_id == "thread-1"
+            yield f"data: {json.dumps({'delta': 'Basic reply'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=ProviderErrorHermesClient(),
+        fallback_runtime=FallbackRuntime(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert json.loads(frames[0][6:].strip())["delta"] == "Basic reply"
+    assert json.loads(frames[1][6:].strip())["done"] is True
+
+
+@pytest.mark.asyncio
+async def test_hermes_runtime_adapter_degrades_safely():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class FailingHermesClient:
+        async def create_response(self, **kwargs):
+            raise RuntimeError("Hermes is down")
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=FailingHermesClient(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert len(frames) == 1
+    payload = json.loads(frames[0][6:].strip())
+    assert payload["error"] == "Hermes Agent runtime is unavailable"
+
+
+@pytest.mark.asyncio
+async def test_hermes_runtime_adapter_can_fallback_to_basic():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class FailingHermesClient:
+        async def create_response(self, **kwargs):
+            raise RuntimeError("Hermes is down")
+
+    class FallbackRuntime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "hello"
+            assert thread_id == "thread-1"
+            yield f"data: {json.dumps({'delta': 'Basic reply'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=FailingHermesClient(),
+        fallback_runtime=FallbackRuntime(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert json.loads(frames[0][6:].strip())["delta"] == "Basic reply"
+    assert json.loads(frames[1][6:].strip())["done"] is True

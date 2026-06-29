@@ -231,14 +231,23 @@ def _draft_invoice_inner(
         lines = _draft_milestone_lines(billing)
 
     elif arrangement == "mixed":
-        # Mixed model (#176): fixed base fee + T&M overage on one invoice.
-        # The fixed base comes from billing_terms.fixed_fee_amount; then any
-        # unbilled time entries/expenses above the base are added as T&M lines.
+        # Mixed model (#176): fixed base fee, recurring retainer, and T&M lines
+        # can coexist on one invoice when the engagement terms include them.
         fixed_amount = Decimal(str(billing.get("fixed_fee_amount") or "0"))
         if fixed_amount > Decimal("0"):
             lines = [_draft_fixed_fee_line(eng, billing, label="Fixed fee")]
         else:
             lines = []
+        retainer_amount = Decimal(str(billing.get("retainer_monthly_amount") or "0"))
+        if retainer_amount > Decimal("0"):
+            period_label = period_start.strftime("%B %Y") if period_start else "Current Period"
+            lines.append(
+                InvoiceLineItem(
+                    description=f"Monthly Retainer — {period_label}",
+                    unit_price=retainer_amount,
+                    amount=retainer_amount,
+                )
+            )
         # Append T&M lines for any unbilled work in the period
         lines.extend(_draft_tm_lines(eng, deps, period_start, period_end))
 

@@ -81,19 +81,39 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Optional separate credential for the built-in Atlas fallback runtime. When
+    # empty, the fallback uses OPENROUTER_API_KEY.
+    atlas_basic_openrouter_api_key: str = ""
+    atlas_basic_openrouter_base_url: str = ""
     # Ordered model fallback chain. OpenRouter tries the first; if it errors or
-    # rate-limits, it transparently falls back to the next. Keep a paid Haiku at
-    # the tail so the product still works when the free tier is exhausted.
+    # rate-limits, it transparently falls back to the next. Keep OpenRouter's
+    # free router after the preferred free model, then a paid Haiku at the tail
+    # so the product still works when the free tier is exhausted.
     # NoDecode → bypass pydantic-settings' built-in JSON decoder for complex types,
     # so the field_validator below sees the raw env string and can accept either
     # JSON list ("[a,b,c]") or comma-separated ("a,b,c"). See #96.
     agent_models: Annotated[list[str], NoDecode] = [
         "google/gemma-4-31b-it:free",
-        "google/gemma-4-26b-a4b-it:free",
+        "openrouter/free",
         "anthropic/claude-haiku-4.5",
     ]
     # Legacy — kept so older test configs don't fail to load. Unused.
     anthropic_api_key: str = ""
+
+    # ------------------------------------------------------------------
+    # Atlas AI runtime
+    # ------------------------------------------------------------------
+    # aethos_basic keeps the current built-in Atlas/Copilot agent path.
+    # hermes_agent is the future advanced runtime powered by a private Hermes
+    # service and Aethos tool broker.
+    atlas_ai_runtime: str = "aethos_basic"
+    atlas_hermes_api_base_url: str = "http://hermes:8642"
+    atlas_hermes_api_server_key: str = ""
+    atlas_hermes_timeout_seconds: float = 90.0
+    atlas_hide_tool_events: bool = True
+    atlas_hermes_fallback_to_basic: bool = False
+    aethos_hermes_tool_token: str = ""
+    atlas_context_signing_secret: str = ""
 
     @field_validator("agent_models", "cors_origins", mode="before")
     @classmethod
@@ -121,11 +141,24 @@ class Settings(BaseSettings):
             return [item.strip().strip('"').strip("'") for item in s.split(",") if item.strip()]
         return v
 
+    @field_validator("atlas_ai_runtime", mode="before")
+    @classmethod
+    def _validate_atlas_ai_runtime(cls, v: object) -> str:
+        value = str(v or "").strip().lower()
+        if value not in {"aethos_basic", "hermes_agent"}:
+            raise ValueError(
+                "ATLAS_AI_RUNTIME must be 'aethos_basic' or 'hermes_agent'"
+            )
+        return value
+
     # ------------------------------------------------------------------
     # Langfuse (optional — disabled when empty)
     # ------------------------------------------------------------------
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_tracing_enabled: bool = True
+    langfuse_sample_rate: float = 1.0
 
     # ------------------------------------------------------------------
     # FX Rates (Open Exchange Rates — free tier works without an app_id)

@@ -49,9 +49,15 @@ class EngagementDraft(_DropNoneForDefaults):
 
     client_name: str = ""
     engagement_name: str | None = None
-    billing_arrangement: str = "time_and_materials"  # time_and_materials / fixed_fee / retainer / retainer_draw / milestone / capped_tm
+    billing_arrangement: str = "time_and_materials"  # time_and_materials / fixed_fee / retainer / retainer_draw / milestone / capped_tm / mixed
     currency: str = "USD"
     total_value: Decimal | None = None
+    fixed_fee_amount: Decimal | None = None
+    milestone_total: Decimal | None = None
+    retainer_monthly_amount: Decimal | None = None
+    retainer_floor: Decimal | None = None
+    retainer_rollover: bool | None = None
+    cap_amount: Decimal | None = None
     start_date: str | None = None  # ISO date string
     end_date: str | None = None
     first_project_name: str | None = None
