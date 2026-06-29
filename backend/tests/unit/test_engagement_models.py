@@ -141,6 +141,7 @@ def test_engagement_from_db_with_total_value() -> None:
         "id": "eng-123",
         "tenant_id": "tenant-abc",
         "client_id": "client-xyz",
+        "clients": {"name": "Acme Corp"},
         "name": "Acme Retainer",
         "billing_arrangement": "retainer",
         "currency": "USD",
@@ -148,16 +149,19 @@ def test_engagement_from_db_with_total_value() -> None:
         "status": "active",
         "description": "Monthly retained advisory",
         "rate_card_id": "rate-card-1",
+        "source_document_id": "document-1",
         "start_date": "2026-01-01",
         "end_date": None,
         "created_at": "2026-05-19T10:00:00+00:00",
     }
     resp = EngagementResponse.from_db(row)
     assert resp.id == "eng-123"
+    assert resp.client_name == "Acme Corp"
     assert resp.total_value == "12000.00"
     assert isinstance(resp.total_value, str)
     assert resp.description == "Monthly retained advisory"
     assert resp.rate_card_id == "rate-card-1"
+    assert resp.source_document_id == "document-1"
     assert resp.billing_terms is None
 
 

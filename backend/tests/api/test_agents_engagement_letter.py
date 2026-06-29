@@ -88,6 +88,7 @@ def test_engagement_letter_agent_extracts_plausible_draft() -> None:
             "retainer_draw",
             "milestone",
             "capped_tm",
+            "mixed",
         )
 
 

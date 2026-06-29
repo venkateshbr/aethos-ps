@@ -19,6 +19,7 @@ from __future__ import annotations
 import calendar
 import logging
 import time
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -29,7 +30,16 @@ from app.agents.tool_registry import (
     risk_class_for_action,
     risk_class_for_tool,
 )
+from app.core.finance_personas import finance_persona_catalog, persona_ids_for_role
+from app.core.rbac import ROLE_HIERARCHY, UserRole
 from app.services.agent_run_ledger import safe_snapshot, stable_payload_hash
+from app.services.approval_policy import (
+    ApprovalPolicyDecision,
+    ApprovalPolicyMatrix,
+    ApprovalPolicySettings,
+    approval_policy_settings_from_mapping,
+    default_approval_policy_settings,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -193,6 +203,22 @@ _FINANCE_OPS_SCHEDULE_DEFAULTS: dict[str, Any] = {
     "stale_after_hours": 24,
     "high_risk_stale_after_hours": 4,
     "escalation_enabled": True,
+}
+_FINANCE_OPS_WORKFLOW_NAME = "scheduled_finance_ops_manager"
+_FINANCE_OPS_ACTION_PLAN_KIND = "copilot_create_finance_ops_action_plan"
+_FINANCE_OPS_ACTION_ITEM_KIND = "finance_ops_action_item"
+_FINANCE_OPS_ESCALATION_KIND = "finance_ops_escalation"
+_FINANCE_OPS_TASK_KINDS = (
+    _FINANCE_OPS_ACTION_PLAN_KIND,
+    _FINANCE_OPS_ACTION_ITEM_KIND,
+    _FINANCE_OPS_ESCALATION_KIND,
+)
+_OPEN_INBOX_STATUSES = ("open", "in_progress")
+_HIGH_RISK_APPROVAL_CLASSES = {
+    "write_money_out",
+    "accounting",
+    "external_send",
+    "high_risk",
 }
 
 
@@ -469,6 +495,132 @@ class AgentsService:
             row or {"tenant_id": self.tenant_id, **_FINANCE_OPS_SCHEDULE_DEFAULTS},
             is_seeded_default=row is None,
         )
+
+    def get_finance_ops_control_room(
+        self,
+        *,
+        workflow_limit: int = 10,
+        task_limit: int = 10,
+    ) -> dict:
+        """Return the safe Finance Ops Manager command-center state.
+
+        This deliberately omits raw traces, replay pointers, context refs,
+        stack traces, and tool internals. It is meant for Atlas and manager
+        dashboards, not low-level debugging.
+        """
+        generated_at = datetime.now(UTC)
+        schedule = self.get_finance_ops_schedule()
+        capped_workflow_limit = max(1, min(workflow_limit, 25))
+        capped_task_limit = max(1, min(task_limit, 25))
+        recent_scheduled = self.list_agent_workflow_runs(
+            workflow_name=_FINANCE_OPS_WORKFLOW_NAME,
+            limit=capped_workflow_limit,
+        )["workflow_runs"]
+        recent_all = self.list_agent_workflow_runs(limit=capped_workflow_limit)[
+            "workflow_runs"
+        ]
+        open_tasks = self._fetch_open_finance_ops_tasks(limit=capped_task_limit)
+
+        return {
+            "tenant_id": self.tenant_id,
+            "generated_at": generated_at.isoformat(),
+            "schedule": schedule,
+            "next_run_at": self._next_finance_ops_run_at(schedule, now=generated_at),
+            "latest_scheduled_run": (
+                self._workflow_control_room_summary(recent_scheduled[0])
+                if recent_scheduled
+                else None
+            ),
+            "recent_scheduled_runs": [
+                self._workflow_control_room_summary(row) for row in recent_scheduled
+            ],
+            "recent_workflow_status_counts": dict(
+                Counter(str(row.get("status") or "unknown") for row in recent_all)
+            ),
+            "waiting_on_human_workflows": [
+                self._workflow_control_room_summary(row)
+                for row in recent_all
+                if row.get("status") == "waiting_on_human"
+            ],
+            "failed_or_skipped_workflows": [
+                self._workflow_control_room_summary(row)
+                for row in recent_all
+                if row.get("status") in {"failed", "skipped", "cancelled"}
+            ],
+            "open_action_plans": [
+                self._finance_ops_task_summary(row)
+                for row in open_tasks
+                if row.get("kind") == _FINANCE_OPS_ACTION_PLAN_KIND
+            ],
+            "open_plan_items": [
+                self._finance_ops_task_summary(row)
+                for row in open_tasks
+                if row.get("kind") == _FINANCE_OPS_ACTION_ITEM_KIND
+            ],
+            "open_escalations": [
+                self._finance_ops_task_summary(row)
+                for row in open_tasks
+                if row.get("kind") == _FINANCE_OPS_ESCALATION_KIND
+            ],
+            "operational_health": self._safe_operational_health(),
+        }
+
+    def get_approval_controls_read_pack(
+        self,
+        *,
+        user_id: str,
+        fallback_role: str | None = None,
+        inbox_limit: int = 10,
+    ) -> dict:
+        """Return role-aware approval controls, persona, and Inbox-risk state."""
+        generated_at = datetime.now(UTC)
+        user_role = self._resolve_tenant_user_role(
+            user_id,
+            fallback_role=fallback_role,
+        )
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[UserRole.viewer]:
+            raise PermissionError("Approval controls read pack requires viewer or higher")
+
+        settings, policy_source = self._effective_approval_policy_settings()
+        capped_limit = max(1, min(inbox_limit, 50))
+        inbox_items = [
+            self._approval_controls_inbox_item(
+                row,
+                settings=settings,
+                user_role=user_role,
+            )
+            for row in self._fetch_open_inbox_tasks(limit=capped_limit)
+        ]
+        high_risk_items = [
+            item for item in inbox_items if self._is_high_risk_inbox_item(item)
+        ]
+        higher_role_items = [
+            item for item in inbox_items if not item["current_user_can_approve"]
+        ]
+        policy_rules = self._approval_controls_policy_rules(
+            settings,
+            user_role=user_role,
+        )
+        matched_persona_ids = persona_ids_for_role(user_role)
+
+        return {
+            "tenant_id": self.tenant_id,
+            "generated_at": generated_at.isoformat(),
+            "current_user_role": user_role.value,
+            "policy_source": policy_source,
+            "matched_persona_ids": matched_persona_ids,
+            "personas": self._approval_controls_personas(
+                matched_persona_ids=matched_persona_ids,
+            ),
+            "policy_rules": policy_rules,
+            "visible_open_inbox_item_count": len(inbox_items),
+            "pending_high_risk_inbox": high_risk_items,
+            "pending_items_requiring_higher_role": higher_role_items,
+            "denied_action_explanations": self._denied_action_explanations(
+                user_role=user_role,
+                policy_rules=policy_rules,
+            ),
+        }
 
     def set_finance_ops_schedule(
         self,
@@ -916,6 +1068,372 @@ class AgentsService:
         rows = result.data or []
         return rows[0] if rows else None
 
+    def _fetch_open_finance_ops_tasks(self, *, limit: int) -> list[dict]:
+        try:
+            result = (
+                self.db.table("hitl_tasks")
+                .select("id,tenant_id,kind,priority,title,payload,status,created_at,updated_at")
+                .eq("tenant_id", self.tenant_id)
+                .in_("kind", list(_FINANCE_OPS_TASK_KINDS))
+                .in_("status", ["open", "in_progress"])
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+        except Exception:
+            logger.warning(
+                "finance_ops_control_room_open_tasks_failed",
+                exc_info=True,
+                extra={"tenant_id": self.tenant_id},
+            )
+            return []
+        return result.data or []
+
+    def _resolve_tenant_user_role(
+        self,
+        user_id: str,
+        *,
+        fallback_role: str | None,
+    ) -> UserRole:
+        try:
+            result = (
+                self.db.table("tenant_users")
+                .select("role")
+                .eq("tenant_id", self.tenant_id)
+                .eq("user_id", user_id)
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            if rows:
+                return _user_role_or_default(rows[0].get("role"), UserRole.viewer)
+        except Exception:
+            logger.warning(
+                "approval_controls_role_lookup_failed",
+                exc_info=True,
+                extra={"tenant_id": self.tenant_id, "user_id": user_id},
+            )
+
+        if fallback_role is not None:
+            return _user_role_or_default(fallback_role, UserRole.viewer)
+        return UserRole.employee
+
+    def _effective_approval_policy_settings(
+        self,
+    ) -> tuple[ApprovalPolicySettings, str]:
+        row = self._fetch_tenant_approval_policy()
+        if row is None:
+            return default_approval_policy_settings(), "system_default"
+        return (
+            approval_policy_settings_from_mapping(
+                row,
+                policy_source="tenant_default",
+            ),
+            "tenant_default",
+        )
+
+    def _fetch_tenant_approval_policy(self) -> dict | None:
+        try:
+            result = (
+                self.db.table("tenant_approval_policies")
+                .select("*")
+                .eq("tenant_id", self.tenant_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception:
+            logger.warning(
+                "approval_controls_policy_lookup_failed",
+                exc_info=True,
+                extra={"tenant_id": self.tenant_id},
+            )
+            return None
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def _fetch_open_inbox_tasks(self, *, limit: int) -> list[dict]:
+        try:
+            result = (
+                self.db.table("hitl_tasks")
+                .select(
+                    "id,tenant_id,kind,priority,title,payload,status,created_at,updated_at,"
+                    "agent_suggestions(agent_name,confidence,output_snapshot,action_type)"
+                )
+                .eq("tenant_id", self.tenant_id)
+                .in_("status", list(_OPEN_INBOX_STATUSES))
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+        except Exception:
+            logger.warning(
+                "approval_controls_open_inbox_lookup_failed",
+                exc_info=True,
+                extra={"tenant_id": self.tenant_id},
+            )
+            return []
+        return result.data or []
+
+    def _approval_controls_policy_rules(
+        self,
+        settings: ApprovalPolicySettings,
+        *,
+        user_role: UserRole,
+    ) -> list[dict]:
+        return [
+            self._approval_policy_rule(
+                rule_id="draft_low_risk",
+                label="Draft and low-risk changes",
+                required_role=settings.draft_role,
+                user_role=user_role,
+                explanation=(
+                    "Draft invoices, low-risk record preparation, and reviewed "
+                    "work items require Manager review before materialising."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="money_in",
+                label="Money-in actions",
+                required_role=settings.money_in_role,
+                user_role=user_role,
+                explanation=(
+                    "Customer invoices and other money-in changes require "
+                    "review before the finance record changes."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="external_send",
+                label="External communications",
+                required_role=settings.external_send_role,
+                user_role=user_role,
+                explanation=(
+                    "Customer or vendor emails are drafted by AI but require "
+                    "review before any external send path."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="money_out_default",
+                label="Money-out actions",
+                required_role=settings.money_out_default_role,
+                user_role=user_role,
+                explanation=(
+                    "Vendor payment proposals and other money-out work require "
+                    "the configured money-out approver."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="money_out_owner_threshold",
+                label="High-value money-out actions",
+                required_role=settings.money_out_owner_role,
+                user_role=user_role,
+                threshold=str(settings.money_out_owner_threshold),
+                explanation=(
+                    "Money-out at or above the owner threshold requires Owner "
+                    "approval even if the default money-out role is lower."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="accounting",
+                label="Accounting and close actions",
+                required_role=settings.accounting_role,
+                user_role=user_role,
+                explanation=(
+                    "Journals, close preparation, and accounting workflows "
+                    "require the configured accounting approver."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="manual_journal_threshold",
+                label="High-value manual journals",
+                required_role=settings.accounting_role,
+                user_role=user_role,
+                threshold=str(settings.manual_journal_approval_threshold),
+                explanation=(
+                    "Manual journals at or above the threshold route to Inbox "
+                    "and must be approved by a different permitted approver."
+                ),
+            ),
+            self._approval_policy_rule(
+                rule_id="high_risk_ai_action",
+                label="High-risk AI actions",
+                required_role=settings.high_risk_role,
+                user_role=user_role,
+                explanation=(
+                    "High-risk AI-recommended finance actions require the "
+                    "configured elevated approver."
+                ),
+            ),
+        ]
+
+    def _approval_policy_rule(
+        self,
+        *,
+        rule_id: str,
+        label: str,
+        required_role: UserRole,
+        user_role: UserRole,
+        explanation: str,
+        threshold: str | None = None,
+    ) -> dict:
+        return {
+            "id": rule_id,
+            "label": label,
+            "required_role": required_role.value,
+            "current_user_can_approve": _role_allows(user_role, required_role),
+            "threshold": threshold,
+            "explanation": explanation,
+        }
+
+    def _approval_controls_personas(
+        self,
+        *,
+        matched_persona_ids: list[str],
+    ) -> list[dict]:
+        matched = set(matched_persona_ids)
+        return [
+            {
+                "id": str(persona["id"]),
+                "label": str(persona["label"]),
+                "description": str(persona["description"]),
+                "matched_current_role": str(persona["id"]) in matched,
+                "read_only": bool(persona["read_only"]),
+                "mapped_roles": [str(role) for role in persona["mapped_roles"]],
+                "areas": [str(area) for area in persona["areas"]],
+                "allowed_actions": [
+                    str(action) for action in persona["allowed_actions"]
+                ],
+                "restricted_actions": [
+                    str(action) for action in persona["restricted_actions"]
+                ],
+            }
+            for persona in finance_persona_catalog()
+        ]
+
+    def _approval_controls_inbox_item(
+        self,
+        row: dict,
+        *,
+        settings: ApprovalPolicySettings,
+        user_role: UserRole,
+    ) -> dict:
+        payload = _combined_inbox_payload(row)
+        decision = ApprovalPolicyMatrix.decision_for_task(
+            str(row.get("kind") or ""),
+            payload,
+            settings=settings,
+        )
+        return {
+            "id": str(row.get("id") or ""),
+            "kind": str(row.get("kind") or ""),
+            "priority": str(row.get("priority") or "normal"),
+            "title": str(row.get("title") or ""),
+            "status": str(row.get("status") or "open"),
+            "created_at": str(row.get("created_at") or ""),
+            "risk_category": _risk_category_label(decision.risk_class),
+            "required_approval_role": decision.required_role.value,
+            "current_user_can_approve": _role_allows(
+                user_role,
+                decision.required_role,
+            ),
+            "business_reason": _approval_business_reason(decision),
+            "amount": _decimal_text(decision.amount),
+            "threshold": _decimal_text(decision.threshold),
+        }
+
+    def _is_high_risk_inbox_item(self, item: dict) -> bool:
+        return (
+            item.get("risk_category")
+            in {
+                "Money out",
+                "Accounting",
+                "External send",
+                "High-risk AI action",
+            }
+            or item.get("required_approval_role") in {"admin", "owner"}
+            or str(item.get("priority") or "").lower() in {"high", "critical", "urgent"}
+        )
+
+    def _denied_action_explanations(
+        self,
+        *,
+        user_role: UserRole,
+        policy_rules: list[dict],
+    ) -> list[str]:
+        explanations: list[str] = []
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[UserRole.manager]:
+            explanations.append(
+                "Your current role can inspect permitted tenant records and "
+                "decision evidence, but cannot approve, edit, reject, post, "
+                "pay, send, lock, or change settings."
+            )
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[UserRole.admin]:
+            explanations.append(
+                "Approval policy changes and elevated finance operations "
+                "require Admin or Owner."
+            )
+
+        for rule in policy_rules:
+            if rule["current_user_can_approve"]:
+                continue
+            explanations.append(
+                f"{rule['label']} require {str(rule['required_role']).title()} "
+                "or higher approval."
+            )
+
+        return list(dict.fromkeys(explanations))
+
+    def _safe_operational_health(self) -> dict:
+        from app.services.operational_telemetry import TenantHealthService
+
+        try:
+            summary = TenantHealthService(self.db, self.tenant_id).summary()
+        except Exception:
+            logger.warning(
+                "finance_ops_control_room_health_failed",
+                exc_info=True,
+                extra={"tenant_id": self.tenant_id},
+            )
+            return {
+                "status": "unknown",
+                "failure_counts": {},
+                "alerts": {"route": {}, "count": 0, "items": []},
+            }
+
+        telemetry = summary.get("telemetry") or {}
+        request_failures = telemetry.get("request_failures") or []
+        background_failures = telemetry.get("background_failures") or []
+        alerts = summary.get("alerts") or {}
+        runtime = summary.get("runtime") or {}
+        return {
+            "status": summary.get("status") or "unknown",
+            "runtime": {
+                "environment": runtime.get("environment"),
+                "queue_configured": runtime.get("queue_configured"),
+                "queue_required": runtime.get("queue_required"),
+                "extraction_mode": runtime.get("extraction_mode"),
+            },
+            "rate_limit": summary.get("rate_limit") or {},
+            "failure_counts": {
+                "request_failures": sum(int(row.get("count") or 0) for row in request_failures),
+                "background_failures": sum(
+                    int(row.get("count") or 0) for row in background_failures
+                ),
+                "failed_agent_runs_24h": int(telemetry.get("failed_agent_runs_24h") or 0),
+                "failed_tool_invocations_24h": int(
+                    telemetry.get("failed_tool_invocations_24h") or 0
+                ),
+                "failed_workflow_runs_24h": int(
+                    telemetry.get("failed_workflow_runs_24h") or 0
+                ),
+            },
+            "alerts": {
+                "route": alerts.get("route") or {},
+                "count": len(alerts.get("items") or []),
+                "items": alerts.get("items") or [],
+            },
+        }
+
     def _assert_l3_promotion_allowed(self, agent_name: str, action_type: str) -> None:
         row = self._fetch_control_row(agent_name, action_type) or {}
         if not row.get("l3_opt_in"):
@@ -1105,6 +1623,107 @@ class AgentsService:
             "completed_at": str(row["completed_at"]) if row.get("completed_at") else None,
             "created_at": str(row["created_at"]),
             "updated_at": str(row["updated_at"]),
+        }
+
+    @staticmethod
+    def _next_finance_ops_run_at(schedule: dict, *, now: datetime) -> str | None:
+        if not bool(schedule.get("is_enabled", True)):
+            return None
+
+        run_hour = _int_or_default(schedule.get("run_hour_utc"), 7)
+        candidate = now.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+        cadence = str(schedule.get("cadence") or "daily")
+        if cadence == "weekly":
+            target_weekday = _int_or_default(schedule.get("run_weekday_utc"), 0)
+            days_ahead = (target_weekday - candidate.weekday()) % 7
+            candidate = candidate + timedelta(days=days_ahead)
+            if candidate <= now:
+                candidate = candidate + timedelta(days=7)
+            return candidate.isoformat()
+
+        if candidate <= now:
+            candidate = candidate + timedelta(days=1)
+        return candidate.isoformat()
+
+    @classmethod
+    def _workflow_control_room_summary(cls, row: dict) -> dict:
+        return {
+            "id": str(row["id"]),
+            "workflow_name": str(row.get("workflow_name") or ""),
+            "status": str(row.get("status") or "unknown"),
+            "owner_agent_name": row.get("owner_agent_name"),
+            "current_step": row.get("current_step"),
+            "period": cls._workflow_period(row),
+            "started_at": str(row.get("started_at") or row.get("created_at") or ""),
+            "completed_at": str(row["completed_at"]) if row.get("completed_at") else None,
+            "updated_at": str(row.get("updated_at") or row.get("created_at") or ""),
+            "has_error": bool(row.get("error_message")),
+            "business_summary": cls._workflow_business_summary(row),
+        }
+
+    @staticmethod
+    def _workflow_period(row: dict) -> str | None:
+        for snapshot_name in ("state_snapshot", "goal_snapshot"):
+            snapshot = row.get(snapshot_name)
+            if not isinstance(snapshot, dict):
+                continue
+            for key in ("period", "period_start", "month", "schedule_key"):
+                value = snapshot.get(key)
+                if value:
+                    return str(value)
+        return None
+
+    @staticmethod
+    def _workflow_business_summary(row: dict) -> str:
+        status_value = str(row.get("status") or "unknown")
+        workflow_name = str(row.get("workflow_name") or "workflow").replace("_", " ")
+        step = str(row.get("current_step") or "").replace("_", " ")
+        if status_value == "waiting_on_human":
+            return f"{workflow_name} is waiting for human review at {step or 'review'}."
+        if status_value == "failed":
+            return f"{workflow_name} failed and needs operator review."
+        if status_value == "cancelled":
+            return f"{workflow_name} was cancelled before completion."
+        if status_value == "skipped":
+            return f"{workflow_name} skipped because no eligible work was due."
+        if status_value == "running":
+            return f"{workflow_name} is currently running."
+        if status_value == "succeeded":
+            return f"{workflow_name} completed successfully."
+        return f"{workflow_name} is {status_value.replace('_', ' ')}."
+
+    @staticmethod
+    def _finance_ops_task_summary(row: dict) -> dict:
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        source_action = payload.get("source_plan_action")
+        source_action = source_action if isinstance(source_action, dict) else {}
+        return {
+            "id": str(row["id"]),
+            "kind": str(row.get("kind") or ""),
+            "priority": str(row.get("priority") or "normal"),
+            "title": str(row.get("title") or "Finance Ops work item"),
+            "status": str(row.get("status") or "open"),
+            "period": (
+                str(payload.get("period"))
+                if payload.get("period")
+                else str(source_action.get("period")) if source_action.get("period") else None
+            ),
+            "action_count": _optional_int(payload.get("action_count")),
+            "source_schedule_key": (
+                str(payload.get("source_schedule_key"))
+                if payload.get("source_schedule_key")
+                else None
+            ),
+            "risk_class": (
+                str(payload.get("risk_class")) if payload.get("risk_class") else None
+            ),
+            "required_approval_role": (
+                str(payload.get("required_approval_role"))
+                if payload.get("required_approval_role")
+                else None
+            ),
+            "created_at": str(row.get("created_at") or ""),
+            "updated_at": str(row["updated_at"]) if row.get("updated_at") else None,
         }
 
     @staticmethod
@@ -1467,6 +2086,87 @@ def _int_or_default(value: object, default: int) -> int:
         return int(value) if value is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _role_allows(user_role: UserRole, required_role: UserRole) -> bool:
+    return ROLE_HIERARCHY.get(user_role, 0) >= ROLE_HIERARCHY.get(required_role, 999)
+
+
+def _user_role_or_default(value: object, default: UserRole) -> UserRole:
+    try:
+        return UserRole(str(value))
+    except ValueError:
+        return default
+
+
+def _combined_inbox_payload(row: dict) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    suggestion = row.get("agent_suggestions")
+    if isinstance(suggestion, list):
+        suggestion = suggestion[0] if suggestion else {}
+    if isinstance(suggestion, dict):
+        output_snapshot = suggestion.get("output_snapshot")
+        if isinstance(output_snapshot, dict):
+            payload.update(output_snapshot)
+    task_payload = row.get("payload")
+    if isinstance(task_payload, dict):
+        payload.update(task_payload)
+    return payload
+
+
+def _risk_category_label(risk_class: str) -> str:
+    labels = {
+        "read_only": "Read only",
+        "draft": "Draft",
+        "write_low_risk": "Low-risk write",
+        "write_money_in": "Money in",
+        "write_money_out": "Money out",
+        "accounting": "Accounting",
+        "external_send": "External send",
+        "high_risk": "High-risk AI action",
+    }
+    return labels.get(risk_class, "Review required")
+
+
+def _approval_business_reason(decision: ApprovalPolicyDecision) -> str:
+    amount = _decimal_text(decision.amount)
+    threshold = _decimal_text(decision.threshold)
+    if decision.reason == "money_out_above_owner_review_threshold":
+        return (
+            f"Money-out amount {amount} is at or above the Owner review "
+            f"threshold {threshold}."
+        )
+    if decision.reason == "manual_journal_above_approval_threshold":
+        return (
+            f"Manual journal total {amount} is at or above the accounting "
+            f"approval threshold {threshold}."
+        )
+    if decision.reason == "external_send_requires_review":
+        return "External communications require human review before sending."
+    if decision.risk_class == "write_money_out":
+        return "Money-out work requires the configured elevated approver."
+    if decision.risk_class == "accounting":
+        return "Accounting and close work requires the configured accounting approver."
+    if decision.risk_class == "write_money_in":
+        return "Money-in changes require Manager-or-higher review."
+    if decision.risk_class == "high_risk":
+        return "High-risk AI action requires elevated review."
+    if decision.risk_class in {"draft", "write_low_risk"}:
+        return "Draft or low-risk work requires Manager-or-higher review."
+    return "Inbox work requires human review before materialising."
+
+
+def _decimal_text(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _circuit_is_open(value: object) -> bool:

@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -33,8 +34,26 @@ export interface ChatMessage {
 
 export interface ChatThread {
   id: string;
-  title: string;
+  title: string | null;
   created_at: string;
+}
+
+interface PersistedChatMessage {
+  id: string;
+  role: string;
+  content: string | null;
+  tool_name?: string | null;
+  created_at: string;
+}
+
+interface DocumentStatusResponse {
+  id: string;
+  status: string;
+}
+
+interface AttachedDocument {
+  id: string;
+  name: string | null;
 }
 
 @Component({
@@ -75,17 +94,17 @@ export interface ChatThread {
             <p class="px-3 py-2 text-xs text-text-muted">No conversations yet.</p>
           }
           @for (thread of threads(); track thread.id) {
-            <button
+              <button
               class="w-full text-left px-3 py-2 text-xs text-text-muted hover:text-text-primary hover:bg-surface-raised
                      truncate transition-colors focus-visible:outline-none focus-visible:bg-surface-raised"
               [class.bg-surface-raised]="currentThreadId() === thread.id"
               [class.text-text-primary]="currentThreadId() === thread.id"
               (click)="selectThread(thread)"
-              [attr.aria-label]="'Open conversation: ' + thread.title"
+              [attr.aria-label]="'Open conversation: ' + threadTitle(thread)"
               [attr.aria-current]="currentThreadId() === thread.id ? 'true' : null"
               role="listitem"
             >
-              {{ thread.title }}
+              {{ threadTitle(thread) }}
             </button>
           }
         </div>
@@ -107,7 +126,7 @@ export interface ChatThread {
           <div class="w-7 h-7 rounded-full bg-surface-raised flex items-center justify-center">
             <mat-icon class="text-accent-light text-base leading-none">auto_awesome</mat-icon>
           </div>
-          <h1 class="text-sm font-semibold text-text-primary">Aethos Copilot</h1>
+          <h1 class="text-sm font-semibold text-text-primary">Aethos Atlas</h1>
         </div>
 
         <!-- Message list -->
@@ -124,7 +143,7 @@ export interface ChatThread {
               <div class="w-14 h-14 rounded-full bg-accent/15 border border-accent/40 flex items-center justify-center mb-5">
                 <mat-icon class="text-accent-light" style="font-size:1.75rem;width:1.75rem;height:1.75rem;">auto_awesome</mat-icon>
               </div>
-              <p class="text-text-primary font-semibold text-base mb-2">Welcome to Aethos</p>
+              <p class="text-text-primary font-semibold text-base mb-2">Welcome to Aethos Atlas</p>
               <p class="text-text-muted text-sm text-center max-w-xs leading-relaxed mb-6">
                 Drop your most recent engagement letter or invoice and I'll set up your first client.
               </p>
@@ -237,7 +256,7 @@ export interface ChatThread {
                 @if (msg.content || msg.streaming) {
                   <div
                     class="bg-surface border border-border-strong text-text-primary rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
-                    [attr.aria-label]="'Aethos: ' + msg.content"
+                    [attr.aria-label]="'Atlas: ' + msg.content"
                   >
                     {{ msg.content }}@if (msg.streaming) {
                       <span
@@ -272,6 +291,9 @@ export interface ChatThread {
               @if (uploadStatus() === 'uploading' || uploadStatus() === 'extracting') {
                 <span class="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin flex-none"></span>
               }
+              @if (uploadStatus() === 'attached') {
+                <mat-icon class="text-xs leading-none">attach_file</mat-icon>
+              }
               @if (uploadStatus() === 'done') {
                 <mat-icon class="text-xs leading-none">check_circle</mat-icon>
               }
@@ -300,7 +322,7 @@ export interface ChatThread {
             </div>
           }
 
-          <div class="mb-2 flex flex-wrap gap-2" role="group" aria-label="Copilot quick actions">
+          <div class="mb-2 flex flex-wrap gap-2" role="group" aria-label="Atlas quick actions">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-default text-xs text-text-muted
@@ -354,7 +376,7 @@ export interface ChatThread {
               (focus)="composerFocused.set(true)"
               (blur)="composerFocused.set(false)"
               rows="1"
-              placeholder="Message Aethos…"
+              placeholder="Message Atlas…"
               class="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-disabled
                      resize-none outline-none leading-relaxed min-h-[1.5rem] max-h-36 overflow-y-auto"
               [disabled]="streaming()"
@@ -405,28 +427,33 @@ export class CopilotComponent implements OnInit {
   composerFocused = signal(false);
   composerText = signal('');
 
-  canSend = computed(() => this.composerText().trim().length > 0 && !this.streaming());
+  canSend = computed(() =>
+    this.composerText().trim().length > 0 && !this.streaming() && !this.uploading()
+  );
 
   // --- Document upload ---
   uploading     = signal(false);
-  uploadStatus  = signal<'uploading' | 'extracting' | 'done' | 'error' | null>(null);
+  uploadStatus  = signal<'attached' | 'uploading' | 'extracting' | 'done' | 'error' | null>(null);
   uploadDocumentId = signal<string | null>(null);
   uploadDocumentName = signal<string | null>(null);
+  pendingDocumentId = signal<string | null>(null);
 
   uploadStatusMessage = computed(() => {
     const name = this.uploadDocumentName();
     const suffix = name ? `: ${name}` : '';
     switch (this.uploadStatus()) {
+      case 'attached':    return `Attached${suffix} - add instructions and send to process.`;
       case 'uploading':   return `Uploading${suffix}…`;
-      case 'extracting':  return `Extracting${suffix} — this may take up to 30 seconds…`;
-      case 'done':        return `Extracted${suffix} — review the resulting task in Inbox.`;
-      case 'error':       return `Upload failed${suffix}. Please check the file type/size and try again.`;
+      case 'extracting':  return `Processing${suffix} from your prompt - this may take up to 30 seconds...`;
+      case 'done':        return `Processed${suffix} - review the resulting task in Inbox.`;
+      case 'error':       return `Document action failed${suffix}. Please check the file and try again.`;
       default:            return '';
     }
   });
 
   uploadStatusClass = computed(() => {
     switch (this.uploadStatus()) {
+      case 'attached':   return 'bg-surface-raised border border-border-default text-text-secondary';
       case 'uploading':
       case 'extracting': return 'bg-confidence-med/10 border border-confidence-med/30 text-confidence-med';
       case 'done':       return 'bg-accent/10 border border-accent/30 text-accent-light';
@@ -436,6 +463,7 @@ export class CopilotComponent implements OnInit {
   });
 
   private auth = inject(AuthService);
+  private pendingThreadCreate: Promise<string | null> | null = null;
 
   /**
    * Headers for the raw fetch() calls below. SSE streaming forces fetch over
@@ -469,24 +497,76 @@ export class CopilotComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    // Thread created lazily on first message send.
+    void this.loadThreads();
   }
 
   // --- Thread management ---
 
   async newThread(): Promise<void> {
-    const id = await this.createThread();
-    if (id) {
+    this.currentThreadId.set(null);
+    this.messages.set([]);
+    this.error.set(null);
+
+    const pending = this.createThread();
+    this.pendingThreadCreate = pending;
+    const id = await pending;
+
+    if (this.pendingThreadCreate === pending) {
+      this.pendingThreadCreate = null;
+    }
+
+    if (id && this.currentThreadId() === null && this.messages().length === 0) {
       this.currentThreadId.set(id);
-      this.messages.set([]);
-      this.error.set(null);
     }
   }
 
   selectThread(thread: ChatThread): void {
     this.currentThreadId.set(thread.id);
-    this.messages.set([]);
     this.error.set(null);
+    void this.loadMessages(thread.id);
+  }
+
+  private async loadThreads(): Promise<void> {
+    try {
+      const res = await fetch('/api/v1/chat/threads?limit=20', {
+        method: 'GET',
+        headers: this.apiHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as ChatThread[];
+      this.threads.set(data);
+      if (data.length > 0 && this.currentThreadId() === null) {
+        this.currentThreadId.set(data[0].id);
+        await this.loadMessages(data[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load Atlas threads:', err);
+    }
+  }
+
+  private async loadMessages(threadId: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/v1/chat/threads/${threadId}/messages?limit=100`, {
+        method: 'GET',
+        headers: this.apiHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as PersistedChatMessage[];
+      this.messages.set(
+        data
+          .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+          .map(msg => ({
+            id: msg.id,
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content ?? '',
+            toolName: msg.tool_name ?? undefined,
+            toolDone: !!msg.tool_name,
+          }))
+      );
+    } catch (err) {
+      console.error('Failed to load Atlas messages:', err);
+      this.error.set('Could not load this conversation. Please try again.');
+    }
   }
 
   private async createThread(): Promise<string | null> {
@@ -517,9 +597,13 @@ export class CopilotComponent implements OnInit {
     this.composerText.set('Log time for today: 2 hours on ');
   }
 
+  threadTitle(thread: ChatThread): string {
+    return thread.title?.trim() || 'New conversation';
+  }
+
   sendFromComposer(): void {
     const text = this.composerText().trim();
-    if (!text || this.streaming()) return;
+    if (!text || this.streaming() || this.uploading()) return;
     this.composerText.set('');
     void this.sendMessage(text);
   }
@@ -539,10 +623,15 @@ export class CopilotComponent implements OnInit {
 
   async sendMessage(content: string): Promise<void> {
     this.error.set(null);
+    if (this.uploading()) return;
 
     let threadId = this.currentThreadId();
     if (!threadId) {
-      threadId = await this.createThread();
+      const pending = this.pendingThreadCreate;
+      threadId = pending ? await pending : await this.createThread();
+      if (pending && this.pendingThreadCreate === pending) {
+        this.pendingThreadCreate = null;
+      }
       if (!threadId) {
         this.error.set('Could not start a conversation. Please try again.');
         return;
@@ -550,11 +639,29 @@ export class CopilotComponent implements OnInit {
       this.currentThreadId.set(threadId);
     }
 
+    const pendingDocument = this.pendingDocumentId()
+      ? { id: this.pendingDocumentId() as string, name: this.uploadDocumentName() }
+      : null;
+    const visibleContent = pendingDocument?.name
+      ? `${content}\n\nAttachment: ${pendingDocument.name}`
+      : content;
+
     const userMsgId = crypto.randomUUID();
     this.messages.update(msgs => [
       ...msgs,
-      { id: userMsgId, role: 'user', content },
+      { id: userMsgId, role: 'user', content: visibleContent },
     ]);
+
+    const processedAttachment = pendingDocument
+      ? await this.processPendingDocumentForPrompt()
+      : null;
+    if (pendingDocument && !processedAttachment) {
+      return;
+    }
+
+    const contentForAgent = processedAttachment
+      ? `${content}\n\n[Attached document processed: ${processedAttachment.name ?? 'document'}; document_id=${processedAttachment.id}. The document extraction workflow has created or queued any required Inbox review task. Tell the user to review Inbox if appropriate.]`
+      : content;
 
     const assistantId = crypto.randomUUID();
     this.messages.update(msgs => [
@@ -566,7 +673,7 @@ export class CopilotComponent implements OnInit {
     try {
       const response = await fetch(
         `/api/v1/chat/threads/${threadId}/messages`,
-        { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content }) }
+        { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content: contentForAgent }) }
       );
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -641,6 +748,18 @@ export class CopilotComponent implements OnInit {
             );
           }
 
+          if (typeof payload['error'] === 'string') {
+            const safeMessage = 'Atlas is temporarily unavailable. Please try again.';
+            this.error.set(safeMessage);
+            this.messages.update(msgs =>
+              msgs.map(m =>
+                m.id === assistantId
+                  ? { ...m, content: safeMessage, streaming: false }
+                  : m
+              )
+            );
+          }
+
           if (payload['done'] === true) {
             this.messages.update(msgs =>
               msgs.map(m => m.id === assistantId ? { ...m, streaming: false } : m)
@@ -650,7 +769,7 @@ export class CopilotComponent implements OnInit {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Copilot send error:', message);
+      console.error('Atlas send error:', message);
       this.error.set('Something went wrong. Please try again.');
       this.messages.update(msgs => {
         const assistantMsg = msgs.find(m => m.id === assistantId);
@@ -673,10 +792,8 @@ export class CopilotComponent implements OnInit {
 
   /**
    * Handle file selection from the hidden <input type="file">.
-   * POSTs as FormData to /api/v1/documents/upload — Angular's HttpClient
-   * lets the interceptor attach Authorization + X-Tenant-ID automatically.
-   * The sync extraction on the backend takes 5-30 s; we poll status via
-   * the upload 201 response and surface a Done banner when finished.
+   * Atlas attachments are uploaded with process=false so selecting a file does
+   * not create Inbox work until the user sends instructions in the composer.
    */
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -689,23 +806,18 @@ export class CopilotComponent implements OnInit {
     this.uploading.set(true);
     this.uploadStatus.set('uploading');
     this.uploadDocumentId.set(null);
+    this.pendingDocumentId.set(null);
     this.uploadDocumentName.set(file.name);
 
     const fd = new FormData();
     fd.append('file', file, file.name);
+    fd.append('process', 'false');
 
-    this.http.post<{ id: string; status: string }>('/api/v1/documents/upload', fd).subscribe({
+    this.http.post<DocumentStatusResponse>('/api/v1/documents/upload', fd).subscribe({
       next: (doc) => {
         this.uploadDocumentId.set(doc.id);
-        // Backend returns 201 with status 'extracting' (sync extraction) or
-        // 'extracted' (if it completed synchronously).
-        if (doc.status === 'extracted') {
-          this.uploadStatus.set('done');
-        } else {
-          this.uploadStatus.set('extracting');
-          // Poll once after 15 s for the extracted status
-          this.pollDocumentStatus(doc.id);
-        }
+        this.pendingDocumentId.set(doc.id);
+        this.uploadStatus.set('attached');
         this.uploading.set(false);
       },
       error: (err: { status?: number }) => {
@@ -720,33 +832,63 @@ export class CopilotComponent implements OnInit {
     });
   }
 
-  /** Poll /api/v1/documents/:id after a short delay for the extracted status. */
-  private pollDocumentStatus(docId: string, attempt = 0): void {
-    const delay = attempt === 0 ? 15000 : 10000;
-    const maxAttempts = 5;
-    setTimeout(() => {
-      this.http.get<{ status: string }>(`/api/v1/documents/${docId}`).subscribe({
-        next: (doc) => {
-          if (doc.status === 'extracted') {
-            this.uploadStatus.set('done');
-          } else if (doc.status === 'failed') {
-            this.uploadStatus.set('error');
-            setTimeout(() => {
-              if (this.uploadStatus() === 'error') this.uploadStatus.set(null);
-            }, 10000);
-          } else if (attempt < maxAttempts) {
-            this.pollDocumentStatus(docId, attempt + 1);
-          } else {
-            // Give up polling — show done (user can check Documents page)
-            this.uploadStatus.set('done');
-          }
-        },
-        error: () => {
-          // Network error during polling — don't surface an error, just stop
-          this.uploadStatus.set(null);
-        },
-      });
-    }, delay);
+  private async processPendingDocumentForPrompt(): Promise<AttachedDocument | null> {
+    const documentId = this.pendingDocumentId();
+    if (!documentId) return null;
+
+    const name = this.uploadDocumentName();
+    this.uploading.set(true);
+    this.uploadStatus.set('extracting');
+
+    try {
+      const triggered = await firstValueFrom(
+        this.http.post<DocumentStatusResponse>(`/api/v1/documents/${documentId}/extract`, {})
+      );
+
+      if (triggered.status === 'failed') {
+        throw new Error('Document extraction failed');
+      }
+
+      const extracted = triggered.status === 'extracted'
+        || await this.waitForDocumentExtracted(documentId);
+
+      if (!extracted) {
+        throw new Error('Document extraction timed out');
+      }
+
+      this.uploadStatus.set('done');
+      this.pendingDocumentId.set(null);
+      return { id: documentId, name };
+    } catch (err) {
+      console.error('Document processing failed:', err);
+      this.uploadStatus.set('error');
+      this.error.set('Could not process the attached document. Please try again.');
+      setTimeout(() => {
+        if (this.uploadStatus() === 'error') this.uploadStatus.set(null);
+      }, 10000);
+      return null;
+    } finally {
+      this.uploading.set(false);
+    }
+  }
+
+  private async waitForDocumentExtracted(docId: string): Promise<boolean> {
+    const delaysMs = [3000, 5000, 10000, 10000, 10000];
+
+    for (const delayMs of delaysMs) {
+      await this.sleep(delayMs);
+      const doc = await firstValueFrom(
+        this.http.get<DocumentStatusResponse>(`/api/v1/documents/${docId}`)
+      );
+      if (doc.status === 'extracted') return true;
+      if (doc.status === 'failed') return false;
+    }
+
+    return false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // --- Card actions ---

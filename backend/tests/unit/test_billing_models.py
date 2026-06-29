@@ -210,7 +210,7 @@ def test_billing_run_worker_counts_created_only_for_actual_new_runs() -> None:
 
 
 def test_mixed_model_produces_fixed_fee_and_tm_lines() -> None:
-    """Mixed billing produces a fixed-fee base line plus T&M overage lines."""
+    """Mixed billing produces fixed-fee, retainer, and T&M-compatible lines."""
     from app.agents.base import AgentDeps
     from app.agents.invoice_drafter_agent import _draft_invoice_inner
 
@@ -225,7 +225,10 @@ def test_mixed_model_produces_fixed_fee_and_tm_lines() -> None:
         "currency": "USD",
         "rate_card_id": None,
         "client_id": "client-001",
-        "engagement_billing_terms": {"fixed_fee_amount": "5000.00"},
+        "engagement_billing_terms": {
+            "fixed_fee_amount": "5000.00",
+            "retainer_monthly_amount": "1200.00",
+        },
         "clients": {"id": "client-001", "name": "Acme Corp"},
     }
 
@@ -262,6 +265,9 @@ def test_mixed_model_produces_fixed_fee_and_tm_lines() -> None:
     fixed_lines = [ln for ln in draft.lines if "Fixed fee" in ln.description]
     assert len(fixed_lines) == 1
     assert fixed_lines[0].amount == Decimal("5000.00")
+    retainer_lines = [ln for ln in draft.lines if "Monthly Retainer" in ln.description]
+    assert len(retainer_lines) == 1
+    assert retainer_lines[0].amount == Decimal("1200.00")
 
 
 # ---------------------------------------------------------------------------

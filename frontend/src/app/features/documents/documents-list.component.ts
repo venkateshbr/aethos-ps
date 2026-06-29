@@ -1,7 +1,7 @@
 /**
  * DocumentsListComponent — uploaded-document inventory.
  *
- * Shows every document the tenant has uploaded via the Copilot composer with
+ * Shows every document the tenant has uploaded via the Aethos Atlas composer with
  * its extraction status. Documents are grouped by type (engagement letters /
  * invoices / receipts) with filter tabs, and can be deleted (#146).
  */
@@ -54,7 +54,7 @@ const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'expense'];
         <a
           routerLink="/app/copilot"
           class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          aria-label="Upload a new document via Copilot"
+          aria-label="Upload a new document via Aethos Atlas"
         >
           <mat-icon class="text-base leading-none">upload_file</mat-icon>
           Upload document
@@ -100,15 +100,15 @@ const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'expense'];
           </div>
           <p class="text-text-primary font-medium mb-1">No documents yet</p>
           <p class="text-text-muted text-sm max-w-xs">
-            Upload an engagement letter, invoice, or receipt via the Copilot
-            and Aethos will extract the details for you.
+            Attach an engagement letter, invoice, or receipt in Aethos Atlas,
+            then send a processing prompt to start extraction.
           </p>
           <a
             routerLink="/app/copilot"
             class="mt-5 inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <mat-icon class="text-base leading-none">auto_awesome</mat-icon>
-            Go to Copilot
+            Go to Atlas
           </a>
         </div>
       }

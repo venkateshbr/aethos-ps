@@ -12,7 +12,9 @@ from app.api.v1.endpoints import (
     accounting,
     accounts,
     agents,
+    ai_settings,
     approval_policy,
+    atlas_tools,
     auth,
     bill_payments,
     billing,
@@ -41,6 +43,7 @@ from app.api.v1.endpoints import (
     service_catalogue,
     stripe_connect,
     tax_rates,
+    tenant_users,
     tenants,
     time_entries,
     timesheet,
@@ -68,6 +71,7 @@ api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(inbox.router, prefix="/inbox", tags=["inbox"])
 api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 api_router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
+api_router.include_router(ai_settings.router, prefix="/ai-settings", tags=["ai-settings"])
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
 api_router.include_router(employees.router, prefix="/employees", tags=["employees"])
 api_router.include_router(time_entries.router, prefix="/time-entries", tags=["time-entries"])
@@ -85,6 +89,8 @@ api_router.include_router(webhook_events.router, prefix="/webhook-events", tags=
 api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["billing-runs"])
 api_router.include_router(fx_rates.router, prefix="/fx-rates", tags=["fx-rates"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
+api_router.include_router(tenant_users.router, prefix="/tenant-users", tags=["tenant-users"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
+api_router.include_router(atlas_tools.router, prefix="/atlas-tools", tags=["atlas-tools"])
 api_router.include_router(service_catalogue.router, prefix="/services", tags=["services"])
 api_router.include_router(tax_rates.router, prefix="/tax-rates", tags=["tax-rates"])

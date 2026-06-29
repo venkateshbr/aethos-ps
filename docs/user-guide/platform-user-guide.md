@@ -6,7 +6,8 @@ update the relevant workflow, control, and testing notes.
 
 Related docs:
 
-- Copilot prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
+- Aethos Atlas prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
+- Atlas/Hermes technical architecture: [`docs/architecture/atlas-hermes-ai-agent-architecture.md`](../architecture/atlas-hermes-ai-agent-architecture.md)
 - Launch QA runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](../qa/launch-e2e-scenario-runbook-2026-06-24.md)
 - Enterprise E2E scenarios: [`docs/qa/enterprise-e2e-scenario-library.md`](../qa/enterprise-e2e-scenario-library.md)
 - Engagement to Cash test guide: [`docs/test/e2e_engagement_to_cash.md`](../test/e2e_engagement_to_cash.md)
@@ -22,10 +23,10 @@ Aethos PS is built around four surfaces:
 
 | Surface | What users do there | Enterprise control point |
 | --- | --- | --- |
-| Copilot | Ask AI to analyze, draft, upload, prepare, and coordinate finance work | AI tools are policy-classified; sensitive work routes to Inbox |
+| Aethos Atlas | Ask AI to analyze, draft, upload, prepare, and coordinate finance work | AI tools are policy-classified; sensitive work routes to Inbox |
 | Inbox | Review, approve, edit, reject, and route AI or workflow recommendations | Human-in-the-loop approval for money, accounting, external sends, and governance |
 | ERP modules | Manage clients, vendors, engagements, projects, time, invoices, bills, journals, documents, and reports | Business records remain source-of-truth after approval |
-| Settings and telemetry | Configure firm data, tax rates, agent controls, run ledger, and workflow status | Admins inspect autonomy, agent activity, and operational evidence |
+| Settings and telemetry | Configure firm data, tax rates, tenant users, agent controls, run ledger, and workflow status | Admins inspect autonomy, access, agent activity, and operational evidence |
 
 The intended user experience is one AI Finance Ops Manager coordinating work
 across specialist workflows. Users should not need internal tool names. They
@@ -37,9 +38,9 @@ on the audit trail to explain what happened.
 Aethos PS should feel like an AI-run finance department with human control
 points. Most workflows follow the same loop:
 
-1. Ask Copilot for a business outcome, such as draft invoices, review vendor
+1. Ask Aethos Atlas for a business outcome, such as draft invoices, review vendor
    invoices, prepare bill pay, prepare close, or explain operational blockers.
-2. Copilot performs read-only analysis directly where safe.
+2. Aethos Atlas performs read-only analysis directly where safe.
 3. Any sensitive write, money movement, accounting, external-send, or settings
    change becomes an Inbox review task.
 4. The reviewer approves, edits, or rejects the task according to the approval
@@ -56,7 +57,7 @@ result and the approval boundary.
 
 | Module | Route | Primary users | How AI should help | Scenario anchors |
 | --- | --- | --- | --- | --- |
-| Copilot | `/app/copilot` | All finance users | Analyze, draft, upload, prepare, and explain work in business language | ENT-AIOPS-001, ENT-P2P-001, ENT-R2R-001 |
+| Aethos Atlas | `/app/copilot` | All finance users | Analyze, draft, upload, prepare, and explain work in business language | ENT-AIOPS-001, ENT-P2P-001, ENT-R2R-001 |
 | Inbox | `/app/inbox` | Managers, AP/AR leads, Controller, Owner/Admin | Review AI proposals, approve with edits, reject, dispatch plan items, inspect decision history | ENT-CTRL-001, ENT-AUD-001, ENT-AUD-002 |
 | Clients and vendors | `/app/clients` | Engagement managers, AP/AR leads | Create and inspect customers/vendors, link AR/AP history, support document intake | Launch scenarios 1-7 |
 | People | `/app/people` | Admins, managers | Maintain staff, rates, targets, and delivery context for billing/reporting | Launch scenarios 1-4, 10 |
@@ -66,7 +67,7 @@ result and the approval boundary.
 | Accounting and close | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
 | Reports | `/app/reports` | Executives, managers, auditors | Explain AR/AP/WIP/revenue/project/accounting results and tie AI recommendations to source reports | Launch scenario 10 |
 | Documents | `/app/documents` | AP, AR, engagement teams, auditors | Track uploaded source documents, extraction status, and resulting decisions | ENT-P2P-001, ENT-AUD-003 |
-| Settings | `/app/settings` | Admins, Owner, operators, auditors where read-only | Configure services, tax, autonomy, approval policy, personas, schedules, and inspect health/run ledgers | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 |
+| Settings | `/app/settings` | Admins, Owner, operators, auditors where read-only | Configure services, tax, tenant users, autonomy, approval policy, personas, schedules, and inspect health/run ledgers | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 |
 
 ## 2. Roles And Responsibilities
 
@@ -85,6 +86,59 @@ later without weakening the existing approval gates.
 | Staff / Consultant | `member` or Timesheet `employee` | Participate in delivery workflows such as time/expense where exposed | Cannot approve finance, accounting, payment, settings, or agent-control actions |
 | Auditor | `viewer` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and record-scoped decision evidence | Cannot create, approve, edit, reject, convert, post, pay, send, lock, change settings, or export admin-only audit events |
 | Executive | `viewer` | Read dashboards, management reports, operational status, and AI Finance Ops Manager summaries | Same read-only mutation restrictions as auditor |
+
+### Tenant user administration
+
+Owner and admin users manage internal Aethos ERP users from
+Settings -> Tenant Users. This is separate from the People module: People stores
+staff, rates, utilization, managers, and timesheet context; Tenant Users stores
+login access and ERP authorization for the main Aethos app.
+
+Current ERP roles that can be assigned from Tenant Users are:
+
+| Role | Typical use | Current behavior |
+| --- | --- | --- |
+| `owner` | Firm owner, managing partner, tenant administrator | Full tenant authority, including owner-threshold approvals and high-risk settings |
+| `admin` | Controller, senior finance admin | Broad finance/settings access, below owner-only controls |
+| `manager` | Finance ops manager, AP/AR lead, engagement manager | Can prepare and review manager-threshold work; cannot bypass admin/owner gates |
+| `member` | Staff user or operator | Can participate in permitted operational workflows without approval authority |
+| `viewer` | Auditor, executive, read-only reviewer | Can inspect permitted records and evidence; mutation actions remain blocked |
+
+Tenant user invite workflow:
+
+1. Go to Settings -> Tenant Users.
+2. Enter the user's email, display name, and ERP role.
+3. Send the invite. Aethos creates the login user and shows the temporary
+   password or set-password link for the operator running the invite.
+4. Give the credential to the user through a secure channel outside the product
+   demo notes.
+5. The invited user logs into the main Aethos app and lands in the same tenant
+   with the assigned role.
+6. Owner/admin users can later update the display name, change the role, or
+   deactivate access from the same Settings surface.
+
+Server-side guardrails:
+
+- Owner/admin access is required for tenant-user administration.
+- Only owners can grant `owner` or `admin`.
+- Only owners can change or deactivate users who currently hold `owner` or
+  `admin`.
+- Users cannot change their own role or deactivate themselves.
+- Deactivation preserves historical audit evidence while removing active
+  access.
+- Tenant-user audit events record invite, role update, and deactivation details
+  with actor and target user context.
+
+For production validation tenants, generated credentials are stored locally in
+`demo_credentials.json` under
+`production_scenario_library_latest.tenants[]`. Each tenant entry contains
+`owner`, `erp_manager`, and `timesheet_employee` credentials. Treat that file as
+secret material and do not paste passwords into shared docs or screenshots.
+
+The user who registers a new tenant is the tenant administrator in product
+terms. Internally this maps to the existing `owner` role so all current
+Owner/Admin approval and settings gates continue to work. The Settings UI labels
+that role as Tenant Admin / Owner.
 
 The Bills/AP UI now disables read-only users from creating bills or procurement
 documents, approving procurement, converting purchase requests, or opening Pay
@@ -116,15 +170,37 @@ required role. The API enforces the same policy at approval time, including
 approve-with-edits, so a corrected payload cannot bypass a higher approval
 threshold.
 
-## 3. Copilot And AI Finance Ops Manager
+Users can ask Aethos Atlas for the role-aware approval controls read pack:
 
-Use Copilot for chat-first finance operations:
+> "What am I allowed to approve, what requires Owner approval, and which Inbox
+> items are high risk? Include my finance personas, effective thresholds,
+> pending high-risk tasks, and why each item needs review. Do not show tool
+> names, policy reason codes, raw payloads, traces, logs, or context IDs."
+
+The read pack resolves the caller's tenant role, maps it to finance personas,
+summarizes effective approval thresholds, flags visible high-risk Inbox work,
+and explains which pending items need a higher approver. It is read-only and
+must not expose raw task payloads, internal reason codes, tool calls, traces,
+logs, or context references.
+
+## 3. Aethos Atlas And AI Finance Ops Manager
+
+Use Aethos Atlas for chat-first finance operations:
 
 - Upload engagement letters, SOWs, vendor invoices, receipts, and supporting documents.
 - Ask for daily finance checks across AR, AP, WIP, close, approvals, and agent runs.
 - Ask for reviewed work plans that route sensitive tasks to Inbox.
 - Draft invoices, collections reminders, bill-pay proposals, month-end/year-end
   close preparation, and financial statement packages.
+- Read uploaded document extraction results, engagement/project structure,
+  resource delivery data, accounting decision trails, and operational health
+  through Aethos-owned tools.
+
+When attaching a document in Aethos Atlas, file selection only stages the source
+document. Extraction and any Inbox task creation start after the user sends a
+business prompt such as "process this vendor invoice" or "review this engagement
+letter." The Documents page may show the staged file as `uploaded` until that
+prompt is submitted.
 
 Good prompts include the business period, customer/vendor/engagement name,
 desired outcome, and approval boundary. See the prompt library for examples.
@@ -139,9 +215,13 @@ Recommended prompt pattern:
 4. Ask for evidence: "show source records, blockers, and why each action is
    safe or needs review."
 
-Users do not need to specify tool names in chat. Copilot should infer the
+Users do not need to specify tool names in chat. Aethos Atlas should infer the
 correct internal capability from the business request. QA specs may still pin a
 tool name when they need deterministic run-ledger assertions.
+
+Engineering details for runtime selection, Hermes MCP wiring, tool broker
+dispatch, database tables, and UI screen ownership are documented in
+[`Atlas And Hermes AI Agent Architecture`](../architecture/atlas-hermes-ai-agent-architecture.md).
 
 ### Current AI approval boundary
 
@@ -157,6 +237,9 @@ tool name when they need deterministic run-ledger assertions.
 | Financial statement package | Generates read-only summary from report/journal data |
 | Vendor invoice upload | Extracts to Inbox review, then creates bill after approval |
 | Engagement-letter upload | Extracts to Inbox review, then creates client, engagement, first project, and reviewed rate card after approval |
+| Time logging | Uses the time-entry tool path and respects project/employee resolution |
+| Engagement creation by prompt | Resolves client names and routes engagement drafts to Inbox rather than asking users for internal IDs |
+| Operational health | Returns safe health, rate-limit, background failure, agent/tool/workflow failure, and observability status without logs or secrets |
 
 ### Scheduled Finance Ops Manager
 
@@ -168,7 +251,7 @@ use a seeded default: daily at 07:00 UTC, current-month review, 10-row lookback,
 The scheduled worker runs hourly and only acts when the tenant cadence is due.
 For each due tenant it:
 
-1. runs the same read-only command-center analysis used by Copilot;
+1. runs the same read-only command-center analysis used by Aethos Atlas;
 2. creates one `copilot_create_finance_ops_action_plan` Inbox task for manager review;
 3. suppresses duplicate open scheduled plans for the same tenant/cadence window;
 4. creates non-destructive `finance_ops_escalation` Inbox notices for stale or high-risk tasks; and
@@ -178,13 +261,25 @@ Approval boundary: approving the scheduled action plan only fans out reviewed
 Plan Items. Approving an escalation notice acknowledges the escalation; the
 source Inbox task still requires its own approval, rejection, or correction.
 
+Managers and above can ask Aethos Atlas for a consolidated control-room readback:
+
+> "Show me the Finance Ops Manager control room. Include the current schedule,
+> next run, latest scheduled run, failed or skipped workflows, open action
+> plans, open Plan Items, stale approval escalations, and operational health.
+> Do not show tool names, traces, logs, context IDs, or raw system details."
+
+The control-room response is read-only. It combines the tenant schedule,
+scheduled workflow status, open Finance Ops Inbox work, and redacted operational
+health. It should not expose raw tool calls, traces, logs, stack traces, or
+internal context references to business users.
+
 Browser proof command: `cd frontend && npx playwright test e2e/enterprise-scheduled-finance-ops.spec.ts --project=chromium`
 
 ### Recommended daily operating rhythm
 
 | Time | User | Action | Evidence to inspect |
 | --- | --- | --- | --- |
-| Morning | Owner/Admin or Controller | Ask Copilot for the daily finance ops check or inspect the scheduled Finance Ops Manager output | Inbox action plan, Settings workflow runs, agent run ledger |
+| Morning | Owner/Admin or Controller | Ask Aethos Atlas for the daily finance ops check or Finance Ops Manager control room | Inbox action plan, Settings workflow runs, Operational Health, agent run ledger |
 | Midday | AP/AR leads | Review vendor invoice exceptions, collections reminders, bill-pay proposals, and draft invoices | Inbox required-role chips, AP/AR records, decision history |
 | Afternoon | Engagement managers | Review WIP, project health, utilization, and billing recommendations | Reports, engagement/project detail, draft invoice tasks |
 | Close cycle | Controller | Prepare close, review blockers, record permitted overrides, and generate statement commentary | Close package, journals, financial statements, audit timeline |
@@ -241,8 +336,8 @@ Typical workflow:
 1. Create or import a client.
 2. Create an engagement with billing terms: time and materials, fixed fee, milestone, retainer, capped, or mixed.
 3. Create projects and assign work.
-4. Log time and billable expenses manually or through Copilot.
-5. Ask Copilot to draft an invoice or use the invoice UI.
+4. Log time and billable expenses manually or through Aethos Atlas.
+5. Ask Aethos Atlas to draft an invoice or use the invoice UI.
 6. Review AI-created invoice drafts in Inbox.
 7. Approve, send, and collect payment through the normal invoice lifecycle.
 8. Review AR Aging, WIP, revenue, project P&L, and financial statements.
@@ -254,6 +349,46 @@ Current safeguards:
 - Journal posting is guarded by accounting validation.
 - Reports should tie back to posted business records.
 
+Current implementation details to document in demos and tests:
+
+- Engagement-letter or SOW approval can create a customer, engagement, first
+  project, and linked rate card when reviewed rate hints are present.
+- Service catalogue, tax rates, people, rate cards, time entries, and expenses
+  are source records for billing and project economics.
+- Time and billable expenses should be approved or clearly eligible before they
+  become invoice lines; non-billable work remains visible for margin/utilization
+  but is excluded from invoice drafting.
+- Public invoice pages expose only customer-safe invoice data. Internal
+  comments, source documents, Inbox history, agent runs, and approval evidence
+  remain authenticated.
+- Stripe payment links are generated when Stripe Connect is available. If a
+  tenant is not connected, operators can still send the invoice without a
+  payment link and settle through the manual record-payment path.
+- AR payments store transaction amount, currency, tenant-base amount, FX rate
+  provenance, and realised FX adjustment when payment-date base value differs
+  from invoice-date base value.
+- Aethos Atlas can answer O2C collections read prompts before drafting any
+  reminder: customer balances, invoice status, due dates, aging buckets,
+  payment status, public invoice/payment-link state, reminder history,
+  collections policy stage, blockers, and recommended next action.
+- Collections reminders are drafted into Inbox with invoice, customer,
+  recipient, tone, subject, body, confidence, and eligibility rationale. Email
+  is not sent before approval.
+
+O2C edge cases and controls:
+
+| Edge case | Expected behavior |
+| --- | --- |
+| Missing tax setup | Invoice draft or posting is blocked with a clear path to Settings -> Tax Rates |
+| Locked accounting period | Backdated invoice posting is rejected; user must date the invoice in an open period or reopen through permitted controls |
+| Read-only user attempts mutation | Viewer/auditor can inspect permitted records but cannot approve, send, void, or record payment |
+| Public invoice abuse | Public invoice token endpoint is rate-limited and telemetry stores sanitized paths, not raw tokens |
+| Disputed or collections-hold invoice | Atlas flags the blocker and recommends no reminder until the dispute/hold is resolved |
+| Partially paid invoice | Atlas reports paid amount, balance due, and recommends collecting only the remaining balance |
+| Draft, paid, or voided invoice | Atlas explains why collections follow-up is not appropriate |
+| LLM unavailable for drafting | User can continue through ERP invoice forms and source records; AI is not the only path |
+| FX rate missing for non-base currency | Posting is refused until a valid FX rate exists rather than guessing |
+
 Scenario anchors: launch scenarios 1-4, `docs/test/e2e_engagement_to_cash.md`,
 ENT-CTRL-001, ENT-AUD-003, and #309 for automated control/audit/RBAC proof.
 
@@ -264,10 +399,10 @@ Procure to Pay covers vendors, bills, approvals, and payment batches.
 Typical workflow:
 
 1. Create or import a vendor.
-2. Upload a vendor invoice through Copilot or create a bill manually.
+2. Upload a vendor invoice through Aethos Atlas or create a bill manually.
 3. Review extracted vendor, invoice number, lines, tax, project/account coding, and source document.
 4. Approve the bill when ready.
-5. Ask Copilot to prepare a bill-pay run or use the Pay Bills UI.
+5. Ask Aethos Atlas to prepare a bill-pay run or use the Pay Bills UI.
 6. Review and approve the proposed payment batch.
 7. Export the approved batch, mark it sent to bank, and confirm settlement.
 8. Review AP Aging and Cash Flow impact.
@@ -310,6 +445,35 @@ and separate bill-pay proposal review is implemented under #310; line-level
 PO/SO match evidence is covered under #323; bill-pay lifecycle proof is covered
 under #325.
 
+Aethos Atlas can answer read-only P2P payment-risk prompts before creating a
+payment proposal: vendor balances, bill status, due dates, coding status,
+source-document availability, duplicate signals, PO/service-order match state,
+payment readiness, existing safe batch state, blockers, and recommended next
+action. The read pack does not expose raw bank details, export hashes, raw
+payloads, traces, logs, or context references.
+
+P2P edge cases and controls:
+
+| Edge case | Expected behavior |
+| --- | --- |
+| Duplicate vendor invoice | Draft cannot be approved as-is; reviewer must approve with edits and provide a duplicate-review reason |
+| PO/service-order mismatch | Line-level match summary is persisted; quantity, price, unmatched-line, or service-period exceptions keep the bill in draft until corrected or justified |
+| Missing source or coding evidence | Atlas flags payment readiness as blocked until source document and coding evidence are resolved |
+| Existing payment batch | Atlas shows draft/approved/sent/settled batch state without raw bank details or export hashes |
+| Paid or voided bill | Atlas explains that no payment action is appropriate |
+| High-value payment batch | Approval policy routes money-out work to Admin or Owner based on configured threshold |
+| Missing vendor bank details | Bill can remain in AP, but payment execution is blocked until bank/payment details are resolved |
+| Viewer attempts AP mutation | UI hides or disables mutation controls and API returns 403 for create/approve/export/send/settle attempts |
+| Payment file already exported | Export/send/settle lifecycle is explicit so operators can see whether a file has already been generated or sent |
+| Payment settlement | Settlement confirmation posts DR Accounts Payable / CR Bank and updates AP Aging and Cash Flow |
+
+P2P demo proof should always show four separate gates:
+
+1. source invoice extraction and exception review;
+2. bill approval and AP journal evidence;
+3. payment batch approval and required role;
+4. export/send/settle lifecycle and settlement journal.
+
 Scenario anchors: launch scenarios 5-7 and 9,
 `docs/test/e2e_procure_to_pay.md`, ENT-P2P-001, ENT-P2P-002, ENT-P2P-003,
 ENT-P2P-004, ENT-P2P-005, #310 for automated AI finance workflow proof, #323
@@ -337,19 +501,25 @@ Current workflows:
   journals, transaction amounts keep their entered currency while base amounts
   are converted to the tenant base currency at the posting-date FX rate before
   financial statements read the journal.
-- Month-end close preparation can be requested through Copilot and routed to Inbox.
+- Month-end close preparation can be requested through Aethos Atlas and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained
   Earnings` through a balanced `year_end_close` journal and blocks duplicate or
   locked-year attempts.
-- Copilot can prepare year-end close through Inbox. The review task includes
+- Aethos Atlas can prepare year-end close through Inbox. The review task includes
   retained-earnings posting preview, readiness blockers, P&L activity, and
   current-vs-prior year statement commentary; approval posts through the same
   year-end close service used by Accounting.
 - Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.
-- Copilot can generate a financial statement package summary from report data,
+- Aethos Atlas can produce a read-only R2R management pack for a named period.
+  The pack normalizes prompts such as `June 2026` or `2026-06-30` to the same
+  accounting period, compares to a named or previous period, and explains major
+  revenue, expense, net income, cash, project margin, utilization, AR/AP movement,
+  journal, close-task, and close-blocker signals from Aethos records. This
+  readback does not create Inbox tasks, post journals, or lock periods.
+- Aethos Atlas can generate a financial statement package summary from report data,
   close readiness, management commentary, and current-vs-comparison period
-  variance commentary. If the user does not name a comparison period, Copilot
+  variance commentary. If the user does not name a comparison period, Aethos Atlas
   compares against the immediately preceding period window.
 
 Close evidence now includes:
@@ -360,27 +530,59 @@ Close evidence now includes:
 - Recorded close overrides with blocker code, reason, actor, role, timestamp,
   and blocker evidence.
 
+R2R management-pack edge cases:
+
+- If the period has no posted GL, project margin, or utilization activity, Atlas
+  labels the response as no activity rather than inventing commentary.
+- If no close task checklist has been bootstrapped, Atlas calls that out as a
+  close-task setup blocker even if other close gates look ready.
+- If the period is locked, Atlas treats the pack as review-only and recommends a
+  controlled unlock path for any changes.
+- Draft journals are shown as blockers until posted, rejected, or documented.
+- Cross-tenant rows are not included in the pack even if an ID from another
+  tenant is mentioned in the prompt.
+
 Period lock remains blocked while required gates fail unless the matching close
 override has been recorded. Overrides require a reason of at least 10 characters
-and are included in the close package for controller/CPA review. Copilot close
+and are included in the close package for controller/CPA review. Aethos Atlas close
 preparation surfaces blocker counts, override counts, and readiness evidence
 before creating close tasks through Inbox.
 The Accounting close package panel also lets Admin/Owner users record named
 override reasons for supported blockers and immediately shows those overrides
 in the period evidence.
 
+R2R edge cases and controls:
+
+| Edge case | Expected behavior |
+| --- | --- |
+| Manual journal without business reason | Rejected with validation error; no journal or audit event is posted |
+| Imbalanced manual journal | Rejected by accounting validation; no partial posting |
+| High-value manual journal | Routes to Inbox, records submitted-for-approval evidence, and posts only after approval by a different permitted accounting approver |
+| Same-user high-value approval | Denied, task remains open, and approval-denial evidence is recorded |
+| Rejected journal task | Captures rejection reason and posts no journal |
+| Posted manual journal reversal | Creates a new reversal journal with flipped lines and reason; original remains immutable |
+| Duplicate manual reversal | Blocked with a clear conflict; first reversal remains the correction record |
+| Non-manual reversal through manual path | Rejected; user must use the relevant sub-ledger correction path |
+| Close blocker without override | Period lock remains blocked until resolved or a named reasoned override is recorded |
+| Statement package generation | Read-only; numbers come from report/journal services and do not mutate records |
+| Missing FX rate for foreign-currency posting | Posting is refused rather than silently estimating base amounts |
+
 Remaining enterprise R2R depth after the #285/#300 first slices, #310 browser
 proof, #327 year-end close posting, #329 AI-routed year-end approval, #331
 comparative statement packages, #333 manual-journal audit evidence, #335
-manual-journal threshold approval, and #337 manual-journal reversal:
+manual-journal threshold approval, #337 manual-journal reversal, #339
+submitted/rejected lifecycle evidence, #341 same-user approval denial, #347
+multi-currency base amounts, and #351 FX provenance:
 
 - Richer workpaper orchestration.
 
 Scenario anchors: launch scenarios 8-10,
 `docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003,
-ENT-R2R-004, ENT-R2R-005, #310 for automated AI finance workflow proof, #327
-for year-end retained-earnings posting proof, and #329 for AI-routed year-end
-close approval proof.
+ENT-R2R-004, ENT-R2R-005, ENT-R2R-006, ENT-R2R-007, ENT-R2R-008,
+ENT-R2R-009, ENT-R2R-010, #310 for automated AI finance workflow proof, #327
+for year-end retained-earnings posting proof, #329 for AI-routed year-end close
+approval proof, #333/#335/#337/#339/#341 for manual-journal lifecycle proof,
+and #347/#351 for multi-currency journal proof.
 
 ## 8. Documents
 
@@ -388,18 +590,46 @@ Documents are part of the audit trail for AI-assisted work.
 
 Users can:
 
-- Upload documents through Copilot.
+- Upload documents through Aethos Atlas.
 - Track extraction status from document cards.
 - Review extracted payloads in Inbox.
 - Preserve source-document linkage into materialized bills or engagements where supported.
+- Ask Atlas to read document intake context after upload: source filename,
+  extraction status, extracted payload, linked Inbox task, and materialized
+  business record.
 
 Recommended practice:
 
 - Treat extracted values as proposals, not facts, until reviewed.
 - Use approve-with-edits when document data is structurally correct but needs correction.
 - Keep source documents attached for audit evidence.
-- Ask Copilot to summarize document evidence, but approve the reviewed business
+- Ask Aethos Atlas to summarize document evidence, but approve the reviewed business
   record from Inbox before relying on it in AP, AR, engagement, or close flows.
+
+Document evidence should be visible across the workflow:
+
+| Source document | Expected lineage |
+| --- | --- |
+| Engagement letter or SOW | Document attach -> prompt-triggered extraction -> engagement draft -> Inbox approval -> client, engagement, first project, and linked rate card where rate hints exist |
+| Vendor invoice | Document attach -> prompt-triggered extraction -> bill draft with vendor/coding/duplicate/PO evidence -> Inbox approval -> bill and bill-line review evidence |
+| Receipt or project expense | Document attach -> prompt-triggered extraction -> project expense with billable/non-billable treatment and source link |
+| Dividend notice or accounting support | Document attach -> prompt-triggered extraction -> journal packet or manual journal support -> Inbox/accounting approval -> posted journal evidence |
+| COSEC instruction | Document attach -> prompt-triggered extraction -> project milestone, billing event, or engagement support record where configured |
+
+Atlas should not ask a user to retype fields already present in the extraction
+payload or linked Inbox task. If the extracted payload is incomplete, Atlas
+should say which field is missing and route the risk through Inbox or
+approve-with-edits.
+
+Document and audit edge cases:
+
+- Low-confidence extraction routes to Inbox rather than silently creating records.
+- Prompt-injection text inside a document is treated as untrusted document
+  content and should be surfaced as risk evidence, not executed as instruction.
+- Viewer/auditor users can inspect permitted source evidence and record-scoped
+  decision timelines without create/edit/delete permissions.
+- Deleted or unauthorized document access follows tenant/RBAC controls and
+  should not leak whether another tenant's object exists.
 
 Scenario anchors: ENT-P2P-001, ENT-P2P-003, ENT-AUD-002, ENT-AUD-003, and the
 document rows in the launch runbook coverage matrix.
@@ -440,9 +670,11 @@ and #311 for automated ops/health-dashboard proof.
 Settings are used for:
 
 - Firm and tenant configuration.
+- Tenant user invite, role update, deactivation, and access audit review.
 - Tax rates and market setup.
 - Agent autonomy configuration.
 - Scheduled Finance Ops Manager cadence through Settings and the Agents API.
+- AI inference runtime and OpenRouter model routing.
 - Approval policy thresholds for AI-created finance actions.
 - Finance role persona mapping for RBAC compatibility and user education.
 - Agent run ledger and workflow telemetry.
@@ -455,17 +687,48 @@ Current guidance:
 - Promote autonomy only after enough successful reviewed outcomes.
 - Use Settings -> Agent Autonomy -> Finance Ops Manager Schedule to enable,
   pause, or tune scheduled action-plan cadence and stale-approval escalation.
+- Ask Aethos Atlas for the Finance Ops Manager control room to inspect schedule,
+  next run, failed or skipped workflows, open Inbox work, and redacted
+  operational health from one business prompt.
+- Use Settings -> Agent Autonomy -> AI Inference Settings to choose the tenant
+  Atlas runtime and model-routing order. The default OpenRouter chain is
+  `google/gemma-4-31b-it:free` -> `openrouter/free` ->
+  `anthropic/claude-haiku-4.5`.
+- The AI settings chain applies to Aethos Basic, the built-in Atlas fallback,
+  and tenant-scoped document/reporting agents. Hermes uses the mounted Atlas
+  profile for its primary model until the Hermes runtime supports dynamic
+  per-tenant model selection.
 - Use Settings -> Approval Controls -> Approval Policy Matrix to raise review
   roles for money-out, accounting, money-in, draft, external-send, and
   high-risk AI actions.
 - Use Settings -> Approval Controls -> Finance role personas to explain which
   product-facing finance personas map to the current tenant role and what each
   persona can or cannot do through existing approval gates.
-- Use run ledger details to inspect tool execution and risk class.
+- Use Settings -> Tenant Users to invite ERP users, assign owner/admin/manager/
+  member/viewer roles, test independent login, change roles, deactivate access,
+  and inspect the tenant-user audit trail.
+- Use run ledger details to inspect action evidence and risk class.
 - Use Settings -> Operational Health for support-safe runtime, table/migration,
   rate-limit backend, request-failure, background-failure, agent failure, tool
   failure, workflow failure, and routed-alert signals.
 - Keep production provider credentials and mail/payment setup validated outside demo-only environments.
+
+Settings demo checklist:
+
+| Settings surface | What to verify |
+| --- | --- |
+| Services | Active service catalogue maps to engagements, invoice lines, and reporting |
+| Tax Rates | Market tax setup exists before invoice/bill posting |
+| Collections Policy | Reminder cadence and tone are configured before email tasks are approved |
+| Stripe Connect | Payment-link readiness or manual-payment fallback is clear |
+| Tenant Users | Owner/admin can invite ERP users, assigned users can log into the main app, role changes/deactivation are audited, and self-demotion/self-deactivation is blocked |
+| AI Inference Settings | Tenant Admin / Owner can choose Hermes vs Aethos Basic and verify the effective model chain: Gemma 4 31B free, OpenRouter free router, Claude Haiku fallback |
+| Agent Autonomy | Scheduled Finance Ops Manager cadence, work-item limit, stale escalation windows, and Atlas control-room readback are visible |
+| Approval Controls | Required roles and high-value thresholds are visible and enforced by Inbox/API |
+| Finance Role Personas | Product-facing personas map to current tenant roles and explain allowed/blocked actions |
+| Agent Runs | Prompt, actions, evidence snapshots, risk class, and replay-safe validation are inspectable |
+| Workflow Runs | Scheduled manager, close, and specialist workflow status are visible |
+| Operational Health | Runtime/table/limiter/failure/alert signals are redacted and safe for support |
 
 Ops/Security slices under #286, #301, and #311:
 
@@ -491,6 +754,17 @@ Ops/Security slices under #286, #301, and #311:
   and `cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium`.
 - Health output is intended for internal operators and admins; it must not
   expose secrets, raw credentials, tokens, or customer document payloads.
+
+Ops and abuse-path checks:
+
+| Check | Expected behavior |
+| --- | --- |
+| Signup or public invoice endpoint exceeds limit | Safe 429 response with retry headers |
+| Public invoice token abuse | Telemetry records sanitized method/path/status, not raw tokens |
+| Tenant health without permission | RBAC denies access |
+| Distributed limiter unavailable | Health shows fallback/deny-safe state without exposing credentials |
+| Agent/tool/workflow failures | Counts and names are visible; payload snapshots and secrets are not |
+| Alert routing | Output shows channel/runbook metadata only, never webhook URLs or secret values |
 
 Scenario anchors: `docs/test/e2e_ops_security.md`, ENT-OPS-001, ENT-OPS-002,
 ENT-OPS-003, and #311 for distributed/live-alert proof.
@@ -527,19 +801,34 @@ The following work is tracked under parent issue #278:
 | #327 | R2R proof | Year-end close retained-earnings posting implemented |
 | #329 | R2R proof | AI-routed year-end close approval implemented |
 | #331 | Reporting proof | Comparative AI financial statement package commentary implemented |
+| #333 | R2R proof | Manual-journal business reason and immutable posting evidence implemented |
+| #335 | R2R proof | High-value manual journals route through Inbox threshold approval |
+| #337 | R2R proof | Posted manual journals reverse through controlled reversal journals |
+| #339 | R2R proof | Manual-journal submitted/rejected lifecycle evidence implemented |
+| #341 | R2R proof | Same-user high-value manual-journal approval denial implemented |
+| #345 | Engagement proof | Engagement/SOW approval materializes linked rate cards from reviewed hints |
+| #347 | R2R proof | Multi-currency manual journals store tenant-base amounts and remain balanced |
+| #349 | O2C proof | Non-base-currency AR payments store base amounts and realised FX impact |
+| #351 | O2C/R2R proof | FX rate provenance is stored on payments and journal lines |
+| #353 | AI Ops proof | Finance Ops Manager control-room read pack implemented |
+| #354 | Controls proof | Role-aware approval controls and Inbox-risk read pack implemented |
+| #355 | O2C proof | Customer collections and invoice drilldown read pack implemented |
+| #356 | P2P proof | Vendor bill and payment-risk drilldown read pack implemented |
+| #357 | R2R proof | Management-pack reporting and close drilldown read pack implemented |
+| #364 | RBAC/user admin proof | Tenant-user invite, role update, deactivation, audit events, Settings UI, and production ERP-manager login validation implemented as first slice |
 
 ## 12. Scenario Crosswalk
 
 | Guide area | User-facing proof | Automation/proof backlog |
 | --- | --- | --- |
-| Operating model, Copilot, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310 automated for P2P/R2R AI finance workflows; #317 automated for scheduled Finance Ops Manager; #312 docs proof |
+| Operating model, Aethos Atlas, and Inbox | ENT-DOC-001, ENT-DOC-002, ENT-AIOPS-001, ENT-AIOPS-002 | #310 automated for P2P/R2R AI finance workflows; #317 automated for scheduled Finance Ops Manager; #312 docs proof |
 | Approval policy and decision evidence | ENT-CTRL-001, ENT-CTRL-002, ENT-CTRL-003, ENT-AUD-001, ENT-AUD-002, ENT-AUD-003 | #309 automated |
-| Roles and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321 |
-| Order to Cash | Launch scenarios 1-4, Engagement to Cash guide | Future depth beyond #310 |
+| Roles, tenant users, and read-only personas | ENT-RBAC-001, ENT-RBAC-002 | #309 automated; full persona matrix automated in #321; tenant-user invite and production ERP-manager login validated in #364 |
+| Order to Cash | Launch scenarios 1-4, Engagement to Cash guide, ENT-E2C-001, ENT-E2C-002 | #345 automated for linked rate cards; #349/#351 automated for AR payment base amounts, realised FX, and FX provenance |
 | Procure to Pay | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-004, ENT-P2P-005, launch scenarios 5-7 | #310 automated; #323 automated for line-level PO/SO match evidence; #325 automated for bill-pay lifecycle |
-| Record to Report | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003, ENT-R2R-004, ENT-R2R-005, ENT-R2R-006, launch scenarios 8-10 | #310 automated; #327 automated for year-end retained-earnings posting; #329 automated for AI-routed year-end close approval; #331 automated for comparative statement package commentary |
+| Record to Report | ENT-R2R-001 through ENT-R2R-010, launch scenarios 8-10 | #310 automated; #327 automated for year-end retained-earnings posting; #329 automated for AI-routed year-end close approval; #331 automated for comparative statement package commentary; #333/#335/#337/#339/#341 automated for manual-journal reason, approval, rejection, same-user denial, and reversal; #347/#351 automated for multi-currency base amounts and FX provenance |
 | Reports, management cockpit, and documents | Launch scenario 10, ENT-AUD-003, ENT-OPS-002 | #310 automated for statement tabs and ledger evidence; #311 automated for ops-health evidence |
-| Settings, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #311 automated for Operational Health; #317 automated for scheduled manager |
+| Settings, tenant users, agent schedule, approval controls, personas, and health | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 | #309 automated for approval/persona controls; #321 automated for full finance persona matrix; #364 validates tenant-user invite/login; #311 automated for Operational Health; #317 automated for scheduled manager |
 
 ## 13. Documentation And Test Definition Of Done
 
@@ -548,9 +837,9 @@ Every enterprise implementation slice should update:
 1. This user guide if user behavior, roles, controls, or workflows change.
 2. The enterprise E2E scenario library with the browser/API behavior that should
    be automated later.
-3. The relevant domain test doc when it touches O2C, P2P, R2R, onboarding, or Copilot.
+3. The relevant domain test doc when it touches O2C, P2P, R2R, onboarding, or Aethos Atlas.
 4. The launch runbook when evidence or implementation status changes.
-5. The prompt library when user-facing Copilot behavior changes.
+5. The prompt library when user-facing Aethos Atlas behavior changes.
 
 Do not document internal tool names as required user behavior unless the target
 reader is an engineer or QA author. Business users should describe the finance

@@ -27,7 +27,7 @@
  *   cd frontend && npx playwright test e2e/demo-v2-full-scenario.spec.ts --reporter=list
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Locator, Page } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -124,6 +124,81 @@ async function navReady(page: Page): Promise<void> {
   await expect(
     page.getByRole('link', { name: 'Engagements' }),
   ).toBeVisible({ timeout: 20_000 });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function isInViewport(page: Page, locator: Locator): Promise<boolean> {
+  const box = await locator.boundingBox().catch(() => null);
+  const viewport = page.viewportSize();
+  if (!box || !viewport) return false;
+  return box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height;
+}
+
+async function waitForReportTabAnimation(page: Page): Promise<void> {
+  await page
+    .locator('.mat-mdc-tab-body-animating')
+    .waitFor({ state: 'hidden', timeout: 5_000 })
+    .catch(() => {
+      /* no active tab animation */
+    });
+  await page.waitForTimeout(350);
+}
+
+async function clickReportTab(page: Page, label: string): Promise<boolean> {
+  const tab = page.getByRole('tab', { name: new RegExp(`^${escapeRegExp(label)}$`) }).first();
+
+  await waitForReportTabAnimation(page);
+  for (let i = 0; i < 30; i++) {
+    if (await tab.isVisible({ timeout: 500 }).catch(() => false) && await isInViewport(page, tab)) {
+      await tab.click({ timeout: 1_000 });
+      await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 5_000 });
+      await waitForReportTabAnimation(page);
+      return true;
+    }
+
+    const nextPage = page
+      .locator('.mat-mdc-tab-header-pagination-after:not(.mat-mdc-tab-header-pagination-disabled)')
+      .first();
+    if (!(await nextPage.isVisible({ timeout: 500 }).catch(() => false))) break;
+    await nextPage.click({ timeout: 1_000 });
+    await page.waitForTimeout(150);
+  }
+
+  if (await tab.count()) {
+    await tab.evaluate((el) => (el as HTMLElement).click());
+    await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 5_000 });
+    await waitForReportTabAnimation(page);
+    return true;
+  }
+
+  return false;
+}
+
+async function waitForReportTabContent(page: Page, label: string): Promise<boolean> {
+  const activeTabPanel = page
+    .locator('mat-tab-body.mat-mdc-tab-body-active, [role="tabpanel"]:not([aria-hidden="true"])')
+    .last();
+  const markers: Record<string, RegExp> = {
+    'AR Aging': /customer|current|total/i,
+    'AP Aging': /vendor|current|total/i,
+    'Project P&L': /project|gross margin|revenue/i,
+    Utilization: /employee|util|billable/i,
+    WIP: /unbilled hours|wip value/i,
+    Revenue: /total invoiced/i,
+    'Trial Balance': /trial balance|account|debits|credits|balanced/i,
+  };
+  const marker = markers[label];
+  if (marker) {
+    return await activeTabPanel
+      .getByText(marker)
+      .first()
+      .isVisible({ timeout: 10_000 })
+      .catch(() => false);
+  }
+  return true;
 }
 
 // ─── Gap tracker ──────────────────────────────────────────────────────────────
@@ -617,18 +692,21 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
 
       const composer = page.getByPlaceholder(/message aethos/i);
       await expect(composer).toBeVisible({ timeout: 10_000 });
-      await composer.fill(
-        `I just created a T&M engagement called "${ENG_NAME}" for Nexus Consulting. How many active engagements does the firm have right now?`,
-      );
+      const copilotPrompt = `I just created a T&M engagement called "${ENG_NAME}" for Nexus Consulting. How many active engagements does the firm have right now?`;
+      await composer.click();
+      await composer.pressSequentially(copilotPrompt, { delay: 1 });
       await shot(page, '22-copilot-query');
 
-      await page.keyboard.press('Enter');
+      const sendButton = page.getByRole('button', { name: /send message/i });
+      await expect(sendButton).toBeEnabled({ timeout: 10_000 });
+      await sendButton.click();
+      await expect(page.getByLabel(`You: ${copilotPrompt}`)).toBeVisible({ timeout: 10_000 });
 
       // Wait for assistant reply or visible tool progress. Some local runs have
       // LLM/tool dependencies disabled, so record that as a demo gap instead
       // of failing the rest of the walkthrough.
       const assistantOutput = page
-        .locator('[aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
+        .locator('[aria-label^="Atlas:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
         .last();
       if (!(await assistantOutput.isVisible({ timeout: 60_000 }).catch(() => false))) {
         noteGap('Copilot', 'No assistant response or tool output visible after query', page);
@@ -915,12 +993,14 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
       ];
 
       for (const tabLabel of tabs) {
-        const tabBtn = page.getByRole('tab', { name: tabLabel });
-        if (await tabBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-          await tabBtn.click();
+        if (await clickReportTab(page, tabLabel)) {
           // Wait for any loading to settle
           await settled(page, 10_000);
+          const contentReady = await waitForReportTabContent(page, tabLabel);
           await shot(page, `37-reports-${tabLabel.toLowerCase().replace(/[^a-z0-9]/g, '-')}`);
+          if (contentReady) {
+            continue;
+          }
 
           const tabHasSuccessSurface = tabLabel === 'Trial Balance'
             && await page.locator('table[aria-label="Trial Balance"]').isVisible({ timeout: 1_000 }).catch(() => false)
@@ -976,6 +1056,11 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
         // Fill description and date
         const descInput = page.locator('[formcontrolname="description"]');
         await descInput.fill(`Demo v2 adjustment — Brightwater kickoff expense ${RUN_ID}`);
+
+        const reasonInput = page.locator('[formcontrolname="reason"]');
+        await reasonInput.fill(
+          `Demo v2 verification for Brightwater kickoff expense ${RUN_ID}. Evidence reviewed in the public walkthrough.`,
+        );
 
         const today = new Date().toISOString().split('T')[0];
         const dateInput = page.locator('[formcontrolname="entry_date"]');

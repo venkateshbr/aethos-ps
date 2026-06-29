@@ -1,0 +1,1673 @@
+{
+  "runId": "2026-06-29T06-16-35-083Z",
+  "web": "https://aethos.ishirock.tech",
+  "timesheet": "https://timesheet.aethos.ishirock.tech",
+  "evidence": [
+    {
+      "id": "auth",
+      "section": "Authentication",
+      "action": "Logged into https://aethos.ishirock.tech",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/auth-login-filled.png",
+      "notes": [
+        "Tenant: Meridian Hermes Demo 1782477159363",
+        "Tenant ID: f3fe988f-bade-4037-b709-efb077faee67",
+        "User: prod-hermes-demo-1782477159363@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "route-copilot",
+      "section": "Route Coverage",
+      "action": "Aethos Atlas",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-copilot.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/copilot",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat Ne"
+      ]
+    },
+    {
+      "id": "route-documents",
+      "section": "Route Coverage",
+      "action": "Documents",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-documents.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/documents",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Documents Docum"
+      ]
+    },
+    {
+      "id": "route-inbox",
+      "section": "Route Coverage",
+      "action": "Inbox",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-inbox.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/inbox",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Inbox 4 All Eng"
+      ]
+    },
+    {
+      "id": "route-engagements",
+      "section": "Route Coverage",
+      "action": "Engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-engagements.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/engagements",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "route-projects",
+      "section": "Route Coverage",
+      "action": "Projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-projects.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/projects",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "route-invoices",
+      "section": "Route Coverage",
+      "action": "Invoices",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-invoices.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/invoices",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Invoices Review"
+      ]
+    },
+    {
+      "id": "route-clients",
+      "section": "Route Coverage",
+      "action": "Contacts",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-clients.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/clients",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "route-expenses",
+      "section": "Route Coverage",
+      "action": "Expenses",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-expenses.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/expenses",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Expenses Track "
+      ]
+    },
+    {
+      "id": "route-bills",
+      "section": "Route Coverage",
+      "action": "Bills",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-bills.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/bills",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Bills Manage ve"
+      ]
+    },
+    {
+      "id": "route-billing-runs",
+      "section": "Route Coverage",
+      "action": "Billing Runs / Pay Bills",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-billing-runs.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/billing-runs",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Billing Run Bil"
+      ]
+    },
+    {
+      "id": "route-time",
+      "section": "Route Coverage",
+      "action": "Time",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-time.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/time",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Time Entries Lo"
+      ]
+    },
+    {
+      "id": "route-approvals",
+      "section": "Route Coverage",
+      "action": "Approvals",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-approvals.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/approvals",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Timesheet appro"
+      ]
+    },
+    {
+      "id": "route-payments",
+      "section": "Route Coverage",
+      "action": "Payments",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-payments.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/payments",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Payments AR rec"
+      ]
+    },
+    {
+      "id": "route-people",
+      "section": "Route Coverage",
+      "action": "People",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-people.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/people",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "route-reports",
+      "section": "Route Coverage",
+      "action": "Reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-reports.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/reports",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "route-journals",
+      "section": "Route Coverage",
+      "action": "Accounting / Journal Entries",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-journals.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/accounting/journals",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Journal Entries"
+      ]
+    },
+    {
+      "id": "route-settings",
+      "section": "Route Coverage",
+      "action": "Settings",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-settings.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/settings",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Settings Manage"
+      ]
+    },
+    {
+      "id": "route-timesheet",
+      "section": "Route Coverage",
+      "action": "Timesheet portal",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-timesheet.png",
+      "notes": [
+        "URL: https://timesheet.aethos.ishirock.tech",
+        "Body excerpt: Aethos Timesheets Sign in Log the hours you worked on your projects. EMAIL PASSWORD Sign in"
+      ]
+    },
+    {
+      "id": "1-1-engagement-letter",
+      "section": "1.1 Engagement letter onboarding",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.",
+      "response": " Perfect. I can see the Nexus engagement letter extraction is already queued in Inbox as a high-priority item (ID: 111be2f8-58be-4ffc-8838-cbc0ea60fc6a) awaiting manager review. The system has extracted the document and created a review task.\n\nHowever, I don't have direct read access to the detailed extracted content from that Inbox item. To proceed properly, I need to work with the engagement data that was extracted. The engagement letter attachment shows an Inbox review already in progress.\n\nHere's what I recommend:\n\n1. **Review the Inbox item first** — The Nexus engagement letter extraction is waiting for your review at high priority. This extraction has already identified the client, engagement terms, and risks that need approval before I create the records.\n\n2. **Once approved in Inbox**, I'll immediately create:\n   - New client (if not already in system)\n   - Engagement record with billing terms and rate card\n   - First project/work item\n\nThe key reason to route through Inbox first is that engagement letters carry material risk: new client master data, billing terms, rate assumptions, and engagement scope all affect downstream invoicing and revenue recognition. Your approval locks the source document as audit evidence.\n\nWould you like me to pull the details that are visible in the Inbox review task so you can assess them, or do you prefer to review it directly in Aethos first? Once you approve it, I can execute the full setup immediately.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-1-engagement-letter-response.png",
+      "notes": [
+        "Attachment banner before prompt: attach_file Attached: nexus_engagement_letter.pdf - add instructions and send to process. Documents",
+        "Attachment did not start extraction before prompt submission.",
+        "Business validation failed: matched 7/7 required signals; forbidden hits 1.",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Extracts the uploaded Nexus engagement letter instead of asking the user to retype it.",
+          "Creates or prepares client, engagement, billing terms, rate card, and first project.",
+          "Routes risky or incomplete items to Inbox."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/client/i",
+          "/engagement/i",
+          "/billing|fixed|retainer|T&M|time and materials|mixed/i",
+          "/rate card|rate/i",
+          "/project/i",
+          "/Inbox|review|risk/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+        ],
+        "summary": "Business validation failed: matched 7/7 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "1-2-engagement-structure",
+      "section": "1.2 Project structure",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Show me the Nexus Capital Partners engagement structure. List the active projects, billing model for each workstream, and anything missing before billing.",
+      "response": " I found Nexus Capital Partners LP in the records. They have two active engagements:\n\n**Nexus Capital Partners LP - Engagement Structure**\n\n1. **Nexus Capital Partners - Group Accounting & Advisory** (ENG-0003)\n   - Billing Model: Mixed\n   - Value: GBP 156,000\n   - Description: Mixed fixed-fee consolidation, monthly management accounts retainer, and CFO advisory T&M\n   - Service Line: Accounting\n   - Period: Jan 1 - Dec 31, 2026\n\n2. **Nexus Corporation Tax Return FY2025** (ENG-0004)\n   - Billing Model: Capped T&M (time and materials with cap)\n   - Value: GBP 22,000\n   - Description: Fixed-fee corporation tax return with advisory overrun capped\n   - Service Line: Tax\n   - Period: Jan 1 - Dec 31, 2026\n\n**Total Contract Value: GBP 178,000**\n\nI'm noting that both engagements show `billing_terms: null` and `source_document_id: null`. This typically means the engagement letter or billing schedule documentation hasn't been linked yet. Would you like me to check the current work-in-progress status or collections readiness for these engagements to see what's outstanding before invoicing?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-2-engagement-structure-response.png",
+      "notes": [
+        "Business validation failed: matched 2/4 required signals; forbidden hits 0.",
+        "Missing required signals: /project|workstream/i, /missing|ready|before billing|setup/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Lists Nexus workstreams/projects, billing model by workstream, and missing setup before billing."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/billing model|fixed|retainer|T&M|time and materials/i"
+        ],
+        "missingRequired": [
+          "/project|workstream/i",
+          "/missing|ready|before billing|setup/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business validation failed: matched 2/4 required signals; forbidden hits 0."
+      }
+    },
+    {
+      "id": "1-3-log-time",
+      "section": "1.3 Time entry",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling",
+      "response": " I don't have a time-logging tool available in my current Aethos toolkit. The tools I have access to cover finance operations (invoicing, payments, close procedures, collections) and engagement management, but not direct timesheet or hours entry.\n\nTo log your time, you'll likely need to:\n\n1. Use your firm's timesheet system directly (if it's separate from Aethos)\n2. Check if there's an Aethos portal or interface for time entry that I should route this through\n3. Let me know the correct workflow, and I can help you set it up\n\nCould you tell me which system you normally use to log project hours, or if this should be tracked within Aethos through a specific process?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-3-log-time-response.png",
+      "notes": [
+        "Business validation failed: matched 1/5 required signals; forbidden hits 1.",
+        "Missing required signals: /4\\.5|4\\.50/i, /Nexus/i, /CFO Advisory|board pack|cash flow/i, /logged|created|Inbox|approval/i",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Logs or prepares a 4.5 hour Nexus CFO Advisory time entry with the stated work description."
+        ],
+        "matchedRequired": [
+          "/time|hours/i"
+        ],
+        "missingRequired": [
+          "/4\\.5|4\\.50/i",
+          "/Nexus/i",
+          "/CFO Advisory|board pack|cash flow/i",
+          "/logged|created|Inbox|approval/i"
+        ],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+        ],
+        "summary": "Business validation failed: matched 1/5 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "1-3a-delivery-data",
+      "section": "1.3A People and WIP",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Show me Alice Chen's June delivery data. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced for Nexus.",
+      "response": " The data returned is tenant-wide, not specific to Alice Chen. Let me search for Alice Chen's time entries, approvals, and deliverables in June using a more targeted approach.\n\nI need to clarify: the tools I have access to show portfolio-wide data rather than individual resource time entries. Based on what I've retrieved, here's what I can see about Nexus-related work in the system:\n\n**Nexus Engagements Active:**\n- Nexus CFO Advisory (T&M) — 9.0 unbilled hours at GBP 350/hr = GBP 3,150 WIP\n- Nexus Group Consolidation FY2025 (no current WIP)\n- Nexus Monthly Management Accounts (no current WIP)\n\n**Nexus Invoice Status:**\n- One invoice (INV-1001) issued 20 May, due 19 June: GBP 9,000 overdue by 10 days (unpaid)\n\n**Ready to Invoice for Nexus:**\nThe 9 hours in CFO Advisory WIP can be billed once Alice's time entries are approved.\n\nHowever, I don't have granular visibility into Alice Chen's individual time entries, approval status, expense claims, or utilization metrics through the current tools. To show her complete June delivery data, I would typically need:\n- Her individual time logs with approval status (approved/pending)\n- Billable expense claims for June\n- Utilization rate for the month\n- Which specific entries are bound to invoiceable engagements\n\nCan you confirm: do you have access to a time tracking or resource management system where Alice Chen's individual June entries live, or should I draft an invoice for the 9 pending CFO Advisory hours to move that to billing?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-3a-delivery-data-response.png",
+      "notes": [
+        "Business validation failed: matched 7/7 required signals; forbidden hits 2.",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i, /can you provide|can you confirm|do you want me to/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Summarizes Alice Chen June delivery, utilization, WIP, expenses, and invoice readiness for Nexus."
+        ],
+        "matchedRequired": [
+          "/Alice Chen|Alice/i",
+          "/June/i",
+          "/approved time|pending time|hours/i",
+          "/utili[sz]ation/i",
+          "/WIP/i",
+          "/expense/i",
+          "/invoice|invoiced/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i",
+          "/can you provide|can you confirm|do you want me to/i"
+        ],
+        "summary": "Business validation failed: matched 7/7 required signals; forbidden hits 2."
+      }
+    },
+    {
+      "id": "1-4-billing-run",
+      "section": "1.4 Mixed model invoice",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare the June 2026 Nexus billing run across fixed fee, monthly retainer, T&M advisory hours, and approved expenses. Show the draft invoice lines and route the invoice to Inbox before sending.",
+      "response": " Perfect. The June 2026 invoice for Nexus Capital Partners has been drafted and routed to Inbox for review. Here's what's been prepared:\n\n**Nexus Capital Partners LP - June 2026 Billing Run**\n\nThe draft invoice includes:\n- Monthly retainer: Nexus Capital Partners - Group Accounting & Advisory (June allocation)\n- T&M advisory hours: Nexus CFO Advisory work (9.0 hours @ GBP 350/hr = GBP 3,150)\n- Any approved expenses from the period\n- Fixed fees and other billing components per the engagement terms\n\nThe invoice has been created as a draft and routed to Aethos Inbox under task ID 588221a3-f914-45a3-9828-84efce9566e4 for policy review and approval. Once reviewed and approved in Inbox, it will be ready for sending to the customer. The draft captures all four billing components you requested: fixed fees, monthly retainer, T&M advisory hours, and approved expenses.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-4-billing-run-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares Nexus June billing run with fixed fee, retainer, T&M hours, expenses, draft invoice lines, and Inbox routing."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/June 2026|June/i",
+          "/fixed fee/i",
+          "/retainer/i",
+          "/T&M|time and materials|hour/i",
+          "/expense/i",
+          "/invoice line|draft invoice/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "1-5-revenue-recognition",
+      "section": "1.5 Revenue recognition",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Explain how Nexus June revenue is recognized across fixed-fee milestone, retainer, T&M advisory WIP, and expenses. Tie the explanation to invoice-backed journals and Project P&L.",
+      "response": " Excellent. Now I have the picture. Let me walk you through how Nexus Capital Partners LP's June revenue recognition works across its mixed billing model.\n\n**NEXUS ENGAGEMENT STRUCTURE (ENG-0003)**\nNexus Capital Partners - Group Accounting & Advisory is a 156,000 GBP mixed-model engagement split into three service lines:\n1. Fixed-fee group consolidation\n2. Monthly management accounts retainer\n3. CFO advisory time-and-materials\n\n**JUNE REVENUE RECOGNITION FLOW**\n\n**1. FIXED-FEE CONSOLIDATION (Recognition: Contract completion / monthly pro-rata)**\nThe fixed-fee component recognizes revenue when the consolidation milestone is delivered. If billed monthly on a pro-rata schedule (e.g., 12,000 GBP per month), June revenue records as earned when the June consolidation deliverable is complete and signed off. This typically maps to a fixed revenue line: Dr. AR, Cr. Revenue (Fixed-Fee Consolidation).\n\n**2. RETAINER - MONTHLY MANAGEMENT ACCOUNTS (Recognition: Monthly billing)**\nThe retainer is earned monthly on a straight-line basis. Each month (June included), revenue is recognized at 1/12th of the annual amount. Assuming the retainer is billed, then the invoice backs a journal entry: Dr. AR, Cr. Revenue (Retainer). The WIP for Monthly Management Accounts shows 0.00 because the work is current and billed.\n\n**3. T&M ADVISORY - CFO ADVISORY (Recognition: Time accrual + WIP)**\nThis is where unbilled hours pile up as work-in-progress. Currently, Nexus CFO Advisory shows 9.0 unbilled hours at 350/hour = 3,150 GBP in WIP. These hours have been logged but not yet invoiced. Revenue recognition here follows accrual accounting: as the hours are worked and logged in June, they are recorded as Dr. WIP Asset, Cr. Revenue (T&M Advisory). When those hours are later invoiced, the journal reverses to Dr. AR (invoice), Cr. WIP (relief).\n\n**ACTUAL JUNE INVOICE (INV-1001)**\nThe system shows one invoice issued to Nexus on 2026-05-20 for 9,000 GBP:\n- Due date: 2026-06-19\n- Current status: Overdue (10 days past due as of June 29)\n- Balance: 9,000 GBP unpaid\n\nThis invoice backs the actual billing cycle. The 9,000 GBP is likely composed of:\n- Fixed consolidation June pro-rata\n- Retainer June installment\n- Potentially some previously accrued T&M hours billed in arrears\n\n**PROJECT P&L LINKAGE**\nThe Project P&L tie-down works as:\n- Revenue side: Sum of fixed-fee monthly allocations + retainer monthly allocations + T&M time-and-materials plus any hour-to-invoice conversion\n- Expense side: Allocated staff costs, direct expenses (subcontractors, software, etc.) tagged to Nexus CFO Advisory, Nexus Group Consolidation, Nexus Monthly Management Accounts\n- Margin: Revenue less expenses = contribution by project and billing model\n- Gross margin variance analysis compares actual time-loaded costs vs. charged rates\n\n**AR AGING & CASH IMPACT**\nThe 9,000 GBP invoice is now 10 days overdue. This creates a cash-flow gap: revenue was recognized (and likely booked to P&L) in May when the invoice issued, but cash has not yet arrived. From an aging view, the 9,000 GBP sits in the 0-30 bucket and blocks 9,000 GBP of the 13,500 GBP total current AR.\n\n**EXPENSES & BURDEN**\nWhen you allocate Q2 staff time (June included) to these three projects, the system records:\n- Direct labor cost: hours * loaded rate (salary + benefits + overhead allocation)\n- Project profitability = billed hours at rate minus loaded cost\n- Monthly reconciliation: WIP accrual must match timesheet entries so that Project P&L cost-of-revenue is accurate\n\nThe 3,150 GBP in CFO Advisory WIP means 9 hours have been logged but not yet recognized as revenue in an invoice. Once the next invoice is generated, those 9 hours will move from WIP to AR, and revenue hits the P&L for that invoice month.\n\nThis structure ensures fixed-fee revenue is earned and expensed smoothly, retainer revenue is recognized monthly, and T&M revenue only hits the P&L when hours are formally billed.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-5-revenue-recognition-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Explains Nexus revenue recognition across milestone/fixed fee, retainer, T&M WIP, expenses, journals, and Project P&L."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/revenue/i",
+          "/fixed fee|milestone/i",
+          "/retainer/i",
+          "/T&M|WIP|time and materials/i",
+          "/expense/i",
+          "/journal/i",
+          "/Project P&L|project/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "1-6-capped-tax",
+      "section": "1.6 Capped tax engagement",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Create an engagement for Nexus - Corporation Tax Return FY2025, fixed fee £18,500, capped at £22,000 if advisory hours overrun",
+      "response": " I'm hitting validation errors in the Aethos engagement tools. The available tools I have are designed for invoicing and collections workflows rather than direct engagement creation. \n\nTo properly set up this engagement for Nexus with the specifics you've outlined (fixed fee £18,500, capped at £22,000), I need more information:\n\n1. **Client ID** — What is Nexus's client ID in Aethos?\n2. **Service class** — Should this be classified as Tax or Advisory?\n3. **Engagement ID** — Does one exist already, or should Aethos auto-generate it?\n4. **Billing model** — Confirm this is fixed fee with a cap, not hourly?\n5. **Period** — When does FY2025 close (e.g., 31 December 2025)?\n\nOnce you provide the client ID, I can route this through Aethos Inbox as an engagement review for approval, which will ensure the billing cap and advisory hour terms are recorded correctly. This keeps the engagement in the audit evidence system and triggers any necessary control reviews.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-6-capped-tax-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Creates or prepares Nexus capped tax engagement with fixed fee, cap, and Inbox approval if required."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/Corporation Tax|Tax Return|FY2025/i",
+          "/18,?500|18500/i",
+          "/22,?000|22000|cap/i",
+          "/engagement/i",
+          "/Inbox|approval|created/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "1-7-o2c-readiness",
+      "section": "1.7 O2C controls",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review Nexus order-to-cash readiness for June 2026. Check service catalogue mapping, linked rate card, tax rate setup, draft invoices, public invoice link readiness, WIP, and any collections actions waiting for approval.",
+      "response": " Here's your Nexus Order-to-Cash readiness review for June 2026:\n\n## Executive Summary\n\nNexus has partial O2C readiness with critical items pending action:\n\n**Status: READINESS BLOCKED** — Engagement onboarding review is open and must be approved before invoice setup can proceed. One overdue invoice requires collection follow-up.\n\n---\n\n## Key Findings\n\n**WIP (Work in Progress)**\nNexus CFO Advisory: 9 unbilled hours at 350/hr = 3150 GBP pending invoice\nNexus Group Consolidation and Monthly Management Accounts: Fully billed, no WIP\nReady to invoice once engagement letter and service mapping are approved.\n\n**Invoices & Collections**\n    One invoice issued (INV-1001):\n    - Amount: 9,000 GBP, issued 20 May, due 19 June\n    - Status: OVERDUE by 10 days (0-30 day bucket)\n    - Payment: Unpaid, public invoice link available\n    - Policy Stage: Firm (escalated collections reminder recommended)\n    - No reminders sent yet\n    - Blocker: None; ready for collections action\n\n**Public Invoice Link**\nPublic invoice available for INV-1001; payment link shows \"public_invoice_only\" state (no direct payment acceptance). Customer can view but not pay directly online yet.\n\n**Approval Queue (Inbox)**\nFour high-risk items awaiting your approval:\n    1. Nexus engagement letter extraction review (Draft) — blocks service setup\n    2. Copilot-drafted invoice (57,185.50 GBP, Money-in) — requires manager approval\n    3. June month-end close package (Accounting) — blocking close\n    4. Vendor payment batch (3,389 GBP, Money-out) — unrelated to Nexus\n\n**Service Catalogue, Rate Card & Tax**\nThe engagement review in Inbox indicates these are being extracted from Nexus's engagement letter. Cannot confirm mapping or tax setup until that draft is approved.\n\n---\n\n## Recommended Next Steps\n\n1. Review the Nexus engagement letter draft in Inbox immediately — this unblocks service mapping and rate card configuration.\n2. Once approved, the system will auto-link service catalogue to rate cards.\n3. Address the overdue INV-1001 with a firm collections reminder (policy stage recommends escalation after 10 days).\n4. Approve the pending 57,185.50 GBP invoice draft to activate it.\n\nWould you like me to draft a firm collections reminder for INV-1001 for your Inbox review, or proceed with approving the engagement letter and invoice drafts?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-7-o2c-readiness-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Reviews Nexus O2C readiness across service catalogue, rate card, tax, invoices, payment links, WIP, and collections approvals."
+        ],
+        "matchedRequired": [
+          "/Nexus/i",
+          "/service catalogue|catalog/i",
+          "/rate card/i",
+          "/tax/i",
+          "/invoice/i",
+          "/payment link|public invoice/i",
+          "/WIP/i",
+          "/collections/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "1-7-collections-read",
+      "section": "1.7 Collections read pack",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.",
+      "response": " The collections data shows no overdue invoices at this time. I queried for all overdue invoices and got back an empty result set — zero customer count, zero invoice count, and zero overdue balance.\n\nThis means either:\n\n1. Your customers are current on all payments.\n2. There are no invoices issued yet.\n3. All outstanding invoices are still within their payment terms.\n\nWould you like me to:\n\n- Check for invoices approaching due date (not yet overdue)?\n- Look at your overall accounts receivable aging buckets to see if there are any aging trends?\n- Review customer collections and invoice status for a specific customer or invoice?\n\nLet me know what you'd like to investigate.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-7-collections-read-response.png",
+      "notes": [
+        "Business validation failed: matched 5/8 required signals; forbidden hits 0.",
+        "Missing required signals: /reminder/i, /blocker|blocked/i, /next action/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Shows collections customers with balances, invoices, due dates, aging, reminders, blockers, and next action without drafting."
+        ],
+        "matchedRequired": [
+          "/customer/i",
+          "/balance/i",
+          "/invoice/i",
+          "/due date|due/i",
+          "/aging|overdue/i"
+        ],
+        "missingRequired": [
+          "/reminder/i",
+          "/blocker|blocked/i",
+          "/next action/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business validation failed: matched 5/8 required signals; forbidden hits 0."
+      }
+    },
+    {
+      "id": "1-7-invoice-drilldown",
+      "section": "1.7 Invoice drilldown",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.",
+      "response": " Here's the invoice review for INV-1001:\n\nINVOICE DETAILS\nInvoice Number: INV-1001\nCustomer: Nexus Capital Partners LP\nIssue Date: 2026-05-20\nDue Date: 2026-06-19\nStatus: Sent\n\nPAYMENT STATE\nTotal Amount: GBP 9,000.00\nPaid Amount: GBP 0\nBalance Due: GBP 9,000.00\nPayment Status: Unpaid\n\nAGING\nDays Overdue: 10 days\nAging Bucket: 0-30 days\nInvoice State: Overdue\n\nPUBLIC & PAYMENT ACCESS\nPublic Invoice Available: Yes\nPayment Link State: Public invoice only (no direct payment link configured)\n\nREMINDER HISTORY\nReminders Sent: 0\nLast Reminder: None\nLast Tone: None\n\nCOLLECTIONS POLICY STAGE\nStage: Firm\n\nBLOCKERS\nNo blockers detected. Invoice is ready for collection action.\n\nRECOMMENDED NEXT ACTION\nDraft a firm collections reminder for Inbox review. This would be the first formal reminder to Nexus Capital Partners LP regarding the outstanding balance.\n\nThe invoice is cleanly overdue by 10 days with no payment received. There are no technical blockers, and the customer has already received the initial invoice. Moving to the firm reminder stage is the next appropriate step in your collections process.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-7-invoice-drilldown-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Reviews INV-1001 with due date, aging, balance, paid status, payment link, reminders, blockers, and next action."
+        ],
+        "matchedRequired": [
+          "/INV-1001/i",
+          "/due date|due/i",
+          "/aging|overdue/i",
+          "/balance/i",
+          "/paid|payment/i",
+          "/reminder/i",
+          "/blocker|blocked/i",
+          "/next action|recommend/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "1-7-draft-reminders",
+      "section": "1.7 Collections controlled write",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Draft collections reminders for invoices more than 30 days overdue. Create customer-specific reminder copy and route every email to Inbox before sending.",
+      "response": " The collections data shows no overdue invoices at the moment. There are currently zero invoices overdue in the system, so there are no 30+ day overdue invoices to draft reminders for.\n\nTo summarize:\n- I queried the collections system for overdue invoices\n- The query returned zero open overdue invoices and zero customers with overdue balances\n- There are no reminders to draft at this time\n\nIf overdue invoices appear in the future, the workflow would be:\n1. Pull overdue invoices from the collections pack (filtered by 30+ days overdue)\n2. Generate customer-specific reminder copy tailored to each account\n3. Route all reminder emails to Aethos Inbox for review and approval before sending\n\nWould you like me to set up a recurring collections review or monitor this in the future?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/1-7-draft-reminders-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Drafts customer-specific reminders for invoices over 30 days overdue and routes them to Inbox before sending."
+        ],
+        "matchedRequired": [
+          "/reminder/i",
+          "/invoice/i",
+          "/30 days|overdue/i",
+          "/customer/i",
+          "/Inbox|approval/i",
+          "/draft/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "2-1-retainer",
+      "section": "2.1 Monthly retainer billing",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Prepare Brightwater Manufacturing monthly retainer billing for June 2026. Show the draft invoice, any tax, and route it to Inbox before sending.",
+      "response": " Perfect. Here's the summary of what I've prepared for your June 2026 billing:\n\n**Draft Invoice for Brightwater Manufacturing Ltd**\n\nInvoice Number: INV-1002\nPeriod: June 1–30, 2026\nIssue Date: June 25, 2026\nDue Date: July 25, 2026\n\nAmount: 4,500.00 GBP\nTax: Included in total (no separate tax line shown in current record)\nTotal Due: 4,500.00 GBP\n\nCurrent Status: Unpaid\nAging Bucket: Current (not yet overdue)\nPayment Notes: Public invoice link available for customer payment\n\n**Inbox Status**\n\nThe invoice draft has been routed to Aethos Inbox for review before sending to the customer. This is the standard workflow for all customer invoices. Once the Inbox reviewer approves, the invoice will be ready to send or can be sent immediately depending on your approval process.\n\nThe invoice is currently held in draft review stage. No collections action is needed at this time since it hasn't reached the payment policy trigger stage yet.\n\nIs there anything you'd like me to adjust before the invoice is approved and sent to Brightwater Manufacturing?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-1-retainer-response.png",
+      "notes": [
+        "Business validation failed: matched 5/6 required signals; forbidden hits 0.",
+        "Missing required signals: /retainer/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Prepares Brightwater monthly retainer billing with draft invoice, tax, and Inbox routing."
+        ],
+        "matchedRequired": [
+          "/Brightwater/i",
+          "/June 2026|June/i",
+          "/invoice/i",
+          "/tax/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [
+          "/retainer/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business validation failed: matched 5/6 required signals; forbidden hits 0."
+      }
+    },
+    {
+      "id": "2-2-milestone",
+      "section": "2.2 Annual accounts milestone",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare the Brightwater Annual Accounts FY2025 milestone invoice. Include the milestone basis, tax treatment, and approval path before sending.",
+      "response": " Based on the Aethos data, here's the summary for the Brightwater Annual Accounts FY2025 milestone invoice:\n\n**MILESTONE ENGAGEMENT DETAILS**\n- Engagement: Brightwater - Annual Statutory Accounts + CT600 FY2025 (ENG-0006)\n- Client: Brightwater Manufacturing Ltd\n- Billing Arrangement: Milestone-based\n- Total engagement value: GBP 28,000\n- Work-in-progress tracked: 16 unbilled hours at GBP 350/hour (GBP 5,600 WIP value)\n\n**MILESTONE BASIS**\nThis is a fixed-fee milestone engagement for preparing the FY2025 statutory accounts and corporation tax return (CT600). Invoicing triggers on completion of defined milestones rather than time tracking. The service line is tax work for a UK manufacturing client.\n\n**TAX TREATMENT**\n- Currency: GBP (Sterling)\n- Likely VAT scope: Standard-rated professional services (20% VAT applies unless the client is VAT-exempt or reverse-charged)\n- This is advisory/outsourced accounting services, typically subject to UK VAT\n\n**APPROVAL PATH**\nPer policy, customer invoices require Manager-or-higher review before finalising. The approval workflow is:\n1. Draft invoice prepared and routed to Aethos Inbox\n2. Manager reviews milestone basis, amount, and tax treatment\n3. Upon approval, invoice is generated\n4. AR Lead can then prepare for sending to customer\n\n**NEXT STEPS TO COMPLETE THIS INVOICE**\nThe system indicates no invoiceable lines were found. To proceed, you need to:\n1. Record the approved billable work or milestone completion in the engagement (either time entries, expense items, or milestone billing terms)\n2. Once invoiceable lines exist, I can draft the invoice through Inbox for Manager approval\n3. After approval, the invoice will be ready to send\n\nWould you like me to proceed once you've confirmed the milestone has been reached and the work is ready to bill, or do you need to add billing terms to the engagement first?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-2-milestone-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares Brightwater Annual Accounts milestone invoice with basis, tax treatment, and approval path."
+        ],
+        "matchedRequired": [
+          "/Brightwater/i",
+          "/Annual Accounts|FY2025/i",
+          "/milestone/i",
+          "/invoice/i",
+          "/tax/i",
+          "/approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "2-3-payroll",
+      "section": "2.3 Payroll billing",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Prepare Brightwater payroll billing for June 2026 based on active employee count. Show per-employee billing, invoice total, and any approval needed.",
+      "response": " I'm getting consistent HTTP 400 errors from Aethos, which suggests the context reference I've been provided may have expired or there's an authentication issue. To proceed with preparing Brightwater's payroll billing for June 2026, I need additional information from you:\n\n1. What is the engagement ID or engagement name exactly as it appears in Aethos for Brightwater's payroll service?\n2. How many active employees does Brightwater have for June 2026?\n3. What is the per-employee billing rate for payroll services?\n4. Are there any surcharges, discounts, or adjustments to apply?\n\nAlternatively, if you have access to your Aethos dashboard or can provide the engagement details directly, I can structure the invoice with per-employee breakdown, total, and flag any approvals needed based on your approval thresholds.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-3-payroll-response.png",
+      "notes": [
+        "Business validation failed: matched 7/7 required signals; forbidden hits 1.",
+        "Invalid answer signals: /couldn'?t locate|not showing up|not found|no .* on file|need .* from you/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Prepares Brightwater payroll billing from active employee count with total and approval need."
+        ],
+        "matchedRequired": [
+          "/Brightwater/i",
+          "/payroll/i",
+          "/employee/i",
+          "/count/i",
+          "/invoice|billing/i",
+          "/total/i",
+          "/approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [
+          "/couldn'?t locate|not showing up|not found|no .* on file|need .* from you/i"
+        ],
+        "summary": "Business validation failed: matched 7/7 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "2-4-vendor-invoice",
+      "section": "2.4 Vendor invoice intake",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Process this vendor invoice for Brightwater. Match it to the right vendor and project, flag duplicate risk, code it to the right account, compare any PO or service-order evidence, and send exceptions to Inbox.",
+      "response": " The Aethos backend is currently unreachable. This is blocking real-time access to vendor records, bill history, duplicate signals, PO matching, and account coding in the system of record.\n\nHere's where we are:\n\nThe document extraction workflow has queued an Inbox review task for the Brightwater invoice (document_id: eaf2d50c-dccb-400b-a45e-c5c2861a94df). This is the right path — sensitive actions like vendor payment coding must route through Inbox with human review.\n\nOnce the Aethos system recovers, that Inbox task will contain:\n- Vendor identity and master-data match\n- Duplicate detection (same invoice already paid, partial duplicates, serial anomalies)\n- PO or service-order attachment evidence\n- Suggested GL account coding\n- Amount, due date, and payment-term validation\n- Any policy exceptions or risk flags\n\nWhat you should do now:\n\n1. Check your Aethos Inbox — the review task for this Brightwater invoice should appear there when the system recovers.\n2. The Inbox interface will show you the extracted details, any PO or service-order links, suggested account, and flagged risks (duplicate, coding mismatch, vendor mismatch, etc.).\n3. Approve or reject the coding and payment recommendation through Inbox. Your approval signals payment readiness to the batch.\n\nI'll retry the Aethos connection in a moment to pull the data directly if needed. Would you like me to wait and retry, or do you want to proceed with manual Inbox review in the meantime?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-4-vendor-invoice-response.png",
+      "notes": [
+        "Attachment banner before prompt: attach_file Attached: brightwater_subcontractor_invoice.pdf - add instructions and send to process. Documents",
+        "Attachment did not start extraction before prompt submission.",
+        "Business-valid answer: matched 7/8 required signals.",
+        "Missing required signals: /project/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Extracts the uploaded Brightwater subcontractor invoice.",
+          "Matches vendor/project, codes account, checks duplicate and PO/service-order evidence, and routes exceptions to Inbox."
+        ],
+        "matchedRequired": [
+          "/Brightwater/i",
+          "/vendor|subcontractor/i",
+          "/bill|invoice/i",
+          "/duplicate/i",
+          "/account|code/i",
+          "/PO|purchase order|service-order|service order/i",
+          "/Inbox|exception/i"
+        ],
+        "missingRequired": [
+          "/project/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/8 required signals."
+      }
+    },
+    {
+      "id": "2-4-payment-risk-read",
+      "section": "2.4 P2P read pack",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Which vendor bills are due soon, which are blocked, and what evidence supports payment? Show vendor, bill number, amount, due date, status, coding evidence, source document, duplicate risk, PO/service-order match, payment-batch state, blockers, and next action. Do not create a payment batch yet.",
+      "response": " Here's your vendor bill status summary. Both bills are due soon but blocked from payment due to missing evidence:\n\nFORSTER & REID LTD\nVendor: Forster & Reid Ltd\nBill: BILL-1001\nVendor Invoice: FR-2026-0615\nAmount: GBP 3,200.00\nDue Date: 2026-07-05 (6 days remaining)\nStatus: Approved\nCoding: Uncoded (0 of 1 lines coded)\nSource Document: Missing (not attached)\nDuplicate Risk: Low (no duplicate detected)\nPO Match: Not linked\nPayment Batches: None\nBlockers: Incomplete bill coding + missing source document\nNext Action: Complete bill coding and supply source document before payment release\n\nBT BROADBAND\nVendor: BT Broadband\nBill: BILL-1002\nVendor Invoice: BT-2026-0620\nAmount: GBP 189.00\nDue Date: 2026-07-01 (2 days remaining)\nStatus: Approved\nCoding: Uncoded (0 of 1 lines coded)\nSource Document: Missing (not attached)\nDuplicate Risk: Low (no duplicate detected)\nPO Match: Not linked\nPayment Batches: None\nBlockers: Incomplete bill coding + missing source document\nNext Action: Complete bill coding and supply source document before payment release\n\nSUMMARY\nTotal due soon (next 30 days): GBP 3,389.00\nTotal blocked: 2 bills\nBlocker pattern: Both bills need line coding and source document evidence before they can move to payment batch.\n\nTo clear these for payment, you'll need to: (1) code each bill's line items to the appropriate GL accounts, and (2) attach or reference the source documents (delivery receipts, contract scope documents, invoices from vendor). Once evidence is complete, both can be submitted for payment batch preparation.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-4-payment-risk-read-response.png",
+      "notes": [
+        "Business-valid answer: matched 9/9 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Shows due/blocked vendor bills with evidence, duplicate risk, PO match, payment state, blockers, and next action without batching."
+        ],
+        "matchedRequired": [
+          "/vendor/i",
+          "/bill/i",
+          "/due date|due soon|overdue/i",
+          "/blocked|blocker/i",
+          "/evidence|source document/i",
+          "/duplicate/i",
+          "/PO|service order/i",
+          "/payment/i",
+          "/next action/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 9/9 required signals."
+      }
+    },
+    {
+      "id": "2-4-single-bill",
+      "section": "2.4 Single bill drilldown",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review bill BILL-1001. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.",
+      "response": " Here's the bill review for BILL-1001:\n\nBILL DETAILS\nVendor: Forster & Reid Ltd\nBill Number: BILL-1001\nVendor Invoice Number: FR-2026-0615\nAmount: GBP 3,200.00\nIssue Date: 15-Jun-2026\nDue Date: 05-Jul-2026 (6 days remaining)\n\nCODING STATUS\nStatus: Uncoded (0 of 1 line coded)\nLines: 1 line requiring allocation\nPrepaid Lines: None\nService Period Exceptions: None\n\nSOURCE DOCUMENT\nSource Document Available: No\nDocument ID: Not linked\nBlocker: Missing source document evidence\n\nDUPLICATE SIGNALS\nDuplicate Risk: No\nDuplicate Review Required: No\n\nPO/SERVICE-ORDER MATCH\nPO Match Status: Not linked\nNo purchase order or service order currently associated with this bill\n\nAPPROVAL STATE\nCurrent Status: Approved\nApproval Stage: Approved for payment review\nBill State: Missing evidence\n\nPAYMENT READINESS\nPayment Status: Blocked\nBlocking Issues:\n- Coding incomplete (1 line needs allocation)\n- Source document missing (invoice attachment or evidence required)\n\nEXISTING BATCH STATUS\nPayment Batches: None\nNot yet included in any payment batch\n\nRECOMMENDED NEXT ACTION\nComplete bill coding and line evidence before payment approval. Obtain the missing invoice document and code the 1 uncoded line to the appropriate general ledger account. Once coding and evidence are complete, the bill can move to payment batch preparation.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-4-single-bill-response.png",
+      "notes": [
+        "Business-valid answer: matched 9/9 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Reviews BILL-1001 with due date, vendor invoice number, coding, source, duplicate, approval, payment readiness, and next action."
+        ],
+        "matchedRequired": [
+          "/BILL-1001/i",
+          "/due date|due/i",
+          "/vendor invoice/i",
+          "/coding|coded|account/i",
+          "/source document|source/i",
+          "/duplicate/i",
+          "/approval/i",
+          "/payment readiness|payment/i",
+          "/next action|recommend/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 9/9 required signals."
+      }
+    },
+    {
+      "id": "2-5-bill-pay",
+      "section": "2.5 Payment controls",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare this week's bill-pay run. Prioritize due and overdue approved bills, exclude anything disputed, explain the rationale, and send the payment batch to Inbox.",
+      "response": " I've reviewed the approved bills due this week. The issue is clear: both bills are blocked from payment. Here's my analysis:\n\n**Bill Review Summary:**\n- BILL-1001: Forster & Reid Ltd, GBP 3,200 (due 5 July) – Blocked\n- BILL-1002: BT Broadband, GBP 189 (due 1 July) – Blocked\n\n**Why These Cannot Be Paid This Week:**\nBoth bills are missing critical evidence and coding:\n1. No bill coding completed (0 of 1 line items coded on each bill)\n2. Source documents not attached to the system\n3. No PO linkage for verification\n\nThese are not disputed bills—they're simply incomplete. Aethos is correctly preventing payment until financial audit evidence is in place. Paying uncoded bills violates control standards and creates month-end close delays.\n\n**Recommendation:**\nRather than attempt a batch payment now, I recommend routing both bills back to the accounts team for completion:\n- Obtain and attach the source documents\n- Code the line items to the appropriate GL accounts\n- Link to purchase orders if applicable\n- Resubmit for payment review once evidence is complete\n\nOnce those steps are done, these bills will be payment-ready and eligible for next week's run.\n\nWould you like me to create an action plan in Inbox to track the completion of this evidence, or escalate this to the finance operations team?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-5-bill-pay-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/7 required signals.",
+        "Missing required signals: /rationale|reason/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares a bill-pay run for due/overdue approved bills, excludes disputed items, explains rationale, and routes batch to Inbox."
+        ],
+        "matchedRequired": [
+          "/bill-pay|payment/i",
+          "/due|overdue/i",
+          "/approved/i",
+          "/disputed|exclude/i",
+          "/batch/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [
+          "/rationale|reason/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/7 required signals."
+      }
+    },
+    {
+      "id": "2-5-payment-packet",
+      "section": "2.5 Payment approval packet",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare a payment approval packet for bills due in the next 10 days. Include vendor, amount, due date, coding evidence, duplicate status, cash impact, and the approver role required for the batch.",
+      "response": " PAYMENT APPROVAL PACKET — Bills due within 10 days\n\nGenerated: June 29, 2026 | Total bills: 2 | Batch amount: £3,389.00 | Currency: GBP\n\nBILL DETAILS:\n\nBill 1: BILL-1001 (Forster & Reid Ltd)\n  Vendor: Forster & Reid Ltd (FR-2026-0615)\n  Amount: £3,200.00\n  Due date: July 5, 2026 (6 days)\n  Coding status: Uncoded — 0 of 1 lines coded\n  Evidence: Missing source document\n  Duplicate risk: No\n  Payment blocker: Coding incomplete + source document missing\n\nBill 2: BILL-1002 (BT Broadband)\n  Vendor: BT Broadband (BT-2026-0620)\n  Amount: £189.00\n  Due date: July 1, 2026 (2 days)\n  Coding status: Uncoded — 0 of 1 lines coded\n  Evidence: Missing source document\n  Duplicate risk: No\n  Payment blocker: Coding incomplete + source document missing\n\nBATCH SUMMARY:\n\nTotal cash impact: £3,389.00 GBP outflow\nVendor count: 2\nDuplicate review required: No (low risk across all bills)\nPO linkage: Not linked (both bills)\nApproval state: Approved for payment review\nPayment readiness: BLOCKED\n\nCRITICAL BLOCKERS FOR PAYMENT:\n\nBoth bills are currently blocked and cannot proceed to payment approval without remediation:\n\nBill BILL-1001: Complete line-item coding; attach source document (invoice)\nBill BILL-1002: Complete line-item coding; attach source document (invoice)\n\nAPPROVER ROLE REQUIRED:\n\nPayment approval authority depends on batch amount. Both bills show approval_state as \"approved_for_payment_review,\" meaning they have passed initial review gates. Complete the coding and evidence requirements, then route the cleaned packet to the designated payment approver per your delegation authority matrix (typically Finance Manager or Controller for batches > £1,000; Accounts Payable Manager for routine transactions under £1,000).\n\nRECOMMENDATION:\n\nBefore proposing this batch for payment, coordinate with Accounts Payable to complete bill coding (assign GL accounts/cost centers to each line) and upload the vendor invoices as supporting evidence. Once blockers clear, I can prepare the formal payment proposal for Inbox review and approver routing.\n\nWould you like me to draft a payment proposal once the coding and evidence are complete?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/2-5-payment-packet-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares payment approval packet with vendor, amount, due date, coding evidence, duplicate status, cash impact, and approver role."
+        ],
+        "matchedRequired": [
+          "/vendor/i",
+          "/amount/i",
+          "/due date|due/i",
+          "/coding evidence|coding/i",
+          "/duplicate/i",
+          "/cash impact|cash/i",
+          "/approver|approval role/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "3-1-family-office",
+      "section": "3.1 Family office structure",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Show the Alderton Family Office structure. List each engagement, service line, billing model, currency, open projects, and missing setup before billing.",
+      "response": " Here's the Alderton Family Office engagement structure:\n\n**Alderton Family Office - 3 Active Engagements**\n\n1. ENG-0008: Alderton Family Office - Advisory Retainer\n   Service Line: Advisory | Billing: Retainer | Currency: GBP\n   Total Value: GBP 150,000 | Period: Jan 1 - Dec 31, 2026\n   Description: Private wealth advisory retainer across family entities\n\n2. ENG-0009: Alderton Trust (1985) - Trust Accounts & Tax\n   Service Line: Tax | Billing: Fixed Fee | Currency: GBP\n   Total Value: GBP 12,500 | Period: Jan 1 - Dec 31, 2026\n   Description: Trust accounts and tax work, including SGD dividend income review\n\n3. ENG-0010: Alderton COSEC Retainer - All Entities\n   Service Line: Company Secretarial (COSEC) | Billing: Retainer | Currency: GBP\n   Total Value: GBP 38,400 | Period: Jan 1 - Dec 31, 2026\n   Description: COSEC retainer covering 12 Alderton entities\n\n**Portfolio Total: GBP 200,900 annual revenue**\n\n**Missing Setup for Billing:**\nAll three engagements show these gaps:\n- Billing Terms not configured (null)\n- Source Document ID missing (no engagement letter on file)\n- Service Catalogue reference missing\n- No rate card assignments visible for advisory/tax services\n\nThese items typically block invoice generation. You'll need source engagement letters uploaded and billing terms (e.g., net 30, net 60) confirmed in each engagement before the first invoices can be raised.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/3-1-family-office-response.png",
+      "notes": [
+        "Business validation failed: matched 6/7 required signals; forbidden hits 1.",
+        "Missing required signals: /project/i",
+        "Invalid answer signals: /couldn'?t locate|not showing up|not found|no .* on file|need .* from you/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Shows Alderton family office engagements, service lines, billing models, currency, projects, and missing setup."
+        ],
+        "matchedRequired": [
+          "/Alderton/i",
+          "/engagement/i",
+          "/service line|service/i",
+          "/billing model|fixed|retainer|T&M/i",
+          "/currency|GBP|SGD|USD/i",
+          "/missing|setup/i"
+        ],
+        "missingRequired": [
+          "/project/i"
+        ],
+        "forbiddenHits": [
+          "/couldn'?t locate|not showing up|not found|no .* on file|need .* from you/i"
+        ],
+        "summary": "Business validation failed: matched 6/7 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "3-2-scope-creep",
+      "section": "3.2 Scope creep risk",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review Alderton bespoke tax return scope. Compare actual time, fixed fee, expected margin, open WIP, and recommend whether we need a fee adjustment before billing.",
+      "response": " Perfect. Here's my review of the Alderton bespoke tax return engagement:\n\nENGAGEMENT OVERVIEW\n- Fixed fee: £12,500\n- Service: Alderton Trust (1985) - Trust Accounts & Tax return (includes SGD dividend income review)\n- Currency: GBP\n\nKEY METRICS\n- Open WIP: £1,750 (5.0 unbilled hours at £350 average rate)\n- Actual time invested: 5 hours logged against the engagement\n- Fixed fee: £12,500\n- Gross margin target at FY close: approximately 86% (£10,750 cost absorption across full scope)\n\nANALYSIS & RECOMMENDATION\n\nThe engagement is tracking well:\n• Unbilled hours are modest relative to the fixed fee\n• The 5 hours of logged time represents only 14% of your implicit time budget (roughly 35-40 billable hours within £12,500)\n• Work-in-progress is reasonable at £1,750\n\nBEFORE BILLING: No fee adjustment recommended. The WIP position is healthy, and you have adequate cost absorption within the fixed fee to accommodate normal scope variance on trust tax returns. The 5 unbilled hours suggest efficient delivery.\n\nHowever, flag for review during wrap-up:\n- Confirm all SGD dividend income reconciliation and relief calculations are complete\n- Verify the trust tax computation is finalized\n- Once work is substantially complete, move these 5 hours into a draft invoice and route to Inbox for billing approval\n\nReady to draft and send the invoice when the work is complete?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/3-2-scope-creep-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Compares Alderton bespoke tax actual time, fixed fee, expected margin, WIP, and fee adjustment recommendation."
+        ],
+        "matchedRequired": [
+          "/Alderton/i",
+          "/bespoke tax|tax return/i",
+          "/actual time|hours/i",
+          "/fixed fee/i",
+          "/margin/i",
+          "/WIP/i",
+          "/fee adjustment|recommend/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "3-3-sgd-journal",
+      "section": "3.3 Multi-currency trust accounts",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare an SGD 18,000 dividend income journal for Alderton Trust for June 2026. Show the GBP base-currency impact, FX rate provenance, required approval role, and route it to Inbox before posting.",
+      "response": " Perfect. The draft Alderton Trust SGD dividend journal has been routed to Inbox for Admin approval review. Here's the full picture:\n\n**Journal Preparation Complete**\n\nEntry: DEMO-JE-ALDERTON-SGD\nCustomer: Alderton Trust\nPeriod: June 2026\nAmount: SGD 18,000 (dividend income)\nEntry Date: 2026-06-21\n\nGBP Base Currency Impact:\nThe SGD dividend is recorded in Aethos with conversion to GBP base currency for the tenant's consolidated reporting. The FX rate provenance is tracked through the journal's referenced date and source data.\n\nApproval Requirements:\n- Required Role: Admin (accounting approver)\n- Risk Class: High-value manual journal (above 10,000 threshold)\n- Routing: Inbox review task created for Admin approval\n- Status: Now pending Admin review before posting\n\nThe journal is ready for review through Aethos Inbox, where the Admin reviewer can inspect the SGD-to-GBP conversion, verify the dividend income classification, and approve posting to the June 2026 period. Once approved and posted, it will clear the close blocker and allow the month-end close to proceed.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/3-3-sgd-journal-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares SGD dividend income journal with GBP impact, FX provenance, approval role, and Inbox routing before posting."
+        ],
+        "matchedRequired": [
+          "/SGD/i",
+          "/18,?000|18000/i",
+          "/dividend/i",
+          "/journal/i",
+          "/GBP/i",
+          "/FX|exchange rate/i",
+          "/approval role|approval/i",
+          "/Inbox/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "3-4-cosec-reminders",
+      "section": "3.4 COSEC reminders",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Review COSEC filing reminders for Alderton entities. Show upcoming filing dates, missing evidence, billing impact, and which reminders need approval before sending.",
+      "response": " Based on the data pulled, I need to clarify what I found: the collections reminders search did not return any matching records for \"Alderton\" entities specifically. The system shows no eligible invoices for Alderton in the collections pipeline. However, I can see the approval framework that would apply to any filing reminders.\n\nHere's what the review shows:\n\n**Collections Status for Alderton:**\nNo active collections reminders drafted for Alderton entities at this time. The system recorded 0 eligible invoices and 0 review tasks created. One record for Nexus Capital Partners was skipped due to client filter mismatch (10 days overdue on INV-1001, but client name didn't match the Alderton filter).\n\n**Approval Requirements for Filing Reminders (when applicable):**\nAll external communications—including COSEC filing reminders—route through Inbox and require approval before sending:\n- External communications require Manager-or-higher approval\n- Your role (Owner/Admin) has full approval authority across all risk categories\n- Communications undergo review to prevent unauthorized external contact\n\n**Current Inbox Status:**\nYou have 9 open items pending action, including month-end close work, invoice reviews, and payment batches. All are ready for your approval.\n\n**Next Steps:**\nTo get a complete COSEC filing reminder review for Alderton entities, I'd need to search by specific entity name or look into your finance operational status. Would you like me to:\n1. Run a broader search across all entities to find Alderton filings due?\n2. Check the finance operations snapshot for upcoming close deadlines?\n3. Pull AR aging or engagement details if Alderton is a customer/client engagement?\n\nWhat's the specific scope you're looking for—is Alderton a customer, vendor, or internal subsidiary?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/3-4-cosec-reminders-response.png",
+      "notes": [
+        "Business validation failed: matched 5/7 required signals; forbidden hits 0.",
+        "Missing required signals: /evidence|missing/i, /billing impact|billing/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Reviews Alderton COSEC filing reminders, evidence gaps, billing impact, and approvals before sending."
+        ],
+        "matchedRequired": [
+          "/Alderton/i",
+          "/COSEC/i",
+          "/filing/i",
+          "/date|deadline/i",
+          "/approval|before sending/i"
+        ],
+        "missingRequired": [
+          "/evidence|missing/i",
+          "/billing impact|billing/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business validation failed: matched 5/7 required signals; forbidden hits 0."
+      }
+    },
+    {
+      "id": "4-1-usd-engagement",
+      "section": "4.1 USD-billed engagement",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Explain Thornton June billing and cash position in USD and GBP. Show invoice amount, base-currency journal impact, FX rate provenance, AR status, and cash-flow effect after payment.",
+      "response": " Based on Aethos data, here's Thornton Tech Solutions Ltd's June billing and cash position:\n\n**Invoice Summary**\n\nINV-1003: USD 4,500.00 issued 2026-06-10, due 2026-07-10\n\n**Cash Position**\n\nStatus: Fully paid as of 2026-06-29\n\nPayment received same day invoice was sent (2026-06-29)\n\nBalance due: USD 0.00\n\n**Base-Currency Journal Impact**\n\nOn invoice date (2026-06-10), Aethos posted:\n- Accounts Receivable (1200) +USD 4,500\n- Revenue (4000) +USD 4,500\n\nOn payment date (2026-06-29), Aethos posted:\n- Bank (1100) +USD 4,500\n- Accounts Receivable (1200) -USD 4,500\n\nNet GL effect after payment cycle: Revenue recognized USD 4,500 with cash collected in full.\n\n**FX Rate & Provenance**\n\nInvoice currency: USD. The invoice and all journal entries are recorded in USD with no multi-currency conversion. Thornton USD Advisory project is natively denominated in USD, so no FX translation or revaluation occurred.\n\n**AR Status & Aging**\n\nThornton's total open AR is USD 0 as of 2026-06-29. The invoice aged 0 days before payment. The company-wide AR aging shows USD 13,500 across 0-30 day bucket (other customers), but Thornton has no outstanding balance.\n\n**Cash-Flow Effect After Payment**\n\nOperating cash increased USD 4,500 from bank receipt on 2026-06-29. This is the full invoice amount, with no discounts or partial payments. Thornton is current.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/4-1-usd-engagement-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/8 required signals.",
+        "Missing required signals: /GBP/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Explains Thornton June billing/cash in USD and GBP with invoice, FX provenance, AR status, and cash-flow effect."
+        ],
+        "matchedRequired": [
+          "/Thornton/i",
+          "/June/i",
+          "/USD/i",
+          "/invoice/i",
+          "/FX|exchange rate/i",
+          "/AR|accounts receivable/i",
+          "/cash[- ]flow|cash flow/i"
+        ],
+        "missingRequired": [
+          "/GBP/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/8 required signals."
+      }
+    },
+    {
+      "id": "4-2-series-a",
+      "section": "4.2 Series A milestone",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Thornton Series A closed at $14.2M. Update the milestone amount and invoice. Route any revenue or billing change to Inbox before sending.",
+      "response": " Good. Now I have the complete picture:\n\n**Summary:**\n\nThornton Tech's Series A closed at USD 14.2M. Their engagement \"Thornton Tech - Series A Tax Structuring\" (ENG-0012) is structured as a 0.75% success fee milestone, which calculates to **USD 106,500** on the raised amount.\n\nThe milestone amount and invoice have been queued for approval in Aethos Inbox. Here's what needs to happen:\n\n1. **Milestone Update**: The engagement milestone needs confirmation at USD 106,500 (0.75% of USD 14.2M)\n2. **Invoice Preparation**: A new invoice will be drafted for this milestone amount once approved\n3. **Approval Gate**: The revenue and billing change routes through Aethos Inbox for policy review before any customer communication\n\nAn action plan has been created in Inbox (ID: e1fdd89d-42a5-4708-b3e3-407d03b4cdff) flagged for human review. Once approved there, the system will generate and send the invoice to Thornton Tech Solutions Ltd.\n\nThe current engagement shows all other Thornton engagements are active (retainer, time-and-materials, and milestone arrangements), so this Series A success fee invoice will consolidate with their regular billing.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/4-2-series-a-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Updates or prepares Thornton Series A milestone invoice for $14.2M and routes revenue/billing changes to Inbox."
+        ],
+        "matchedRequired": [
+          "/Thornton/i",
+          "/Series A/i",
+          "/14\\.2M|14,?200,?000|\\$14\\.2/i",
+          "/milestone/i",
+          "/invoice/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "4-3-cosec-instruction",
+      "section": "4.3 COSEC instruction",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Review this COSEC instruction for Thornton. Identify the company change, create the required filing/project work item, identify billing impact, and route any external filing or invoice action to Inbox.",
+      "response": " I don't have access to the document content itself—the system has processed it and created an Inbox task, but I'd need the extracted information to perform the analysis you're asking for.\n\nHere's what I recommend:\n\n1. Check your Inbox immediately. The document extraction workflow has already queued a task there with the extracted COSEC details, company changes, and any filing/billing information identified.\n\n2. Once you review that Inbox item, you'll have:\n   - The specific company change identified\n   - Any filing requirements flagged\n   - Billing impact assessment\n\n3. If you need me to help once you have the details, I can:\n   - Draft the project work item for filing (and route to Inbox for approval if needed)\n   - Route any invoice/external filing action to Inbox for controlled delivery\n   - Create an engagement-linked action plan\n\nCould you share the extracted details from the Inbox task, or forward the key facts from the COSEC instruction (company name, change type, filing deadline, engagement info)? That way I can help you structure the filing/project work and route actions appropriately.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/4-3-cosec-instruction-response.png",
+      "notes": [
+        "Attachment banner before prompt: attach_file Attached: thornton_cosec_instruction.pdf - add instructions and send to process. Documents",
+        "Attachment did not start extraction before prompt submission.",
+        "Business validation failed: matched 6/7 required signals; forbidden hits 1.",
+        "Missing required signals: /Thornton/i",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Extracts Thornton COSEC instruction, identifies company change, creates filing/project work item, billing impact, and Inbox routing."
+        ],
+        "matchedRequired": [
+          "/COSEC/i",
+          "/company change|change/i",
+          "/filing/i",
+          "/project|work item/i",
+          "/billing impact|billing/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [
+          "/Thornton/i"
+        ],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+        ],
+        "summary": "Business validation failed: matched 6/7 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "5-1-close-readiness",
+      "section": "5.1 Pre-close checklist",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Run June 2026 pre-close checks. Show AR, AP, WIP, unposted journals, close tasks, missing approvals, and what needs to happen before the period can be locked.",
+      "response": " Here's your comprehensive June 2026 pre-close status:\n\n**CLOSE STATUS: BLOCKED**\nPeriod is locked: No | Ready to lock: No | As of: June 29, 2026\n\n**CRITICAL BLOCKERS (Must resolve before lock)**\n\n1. Unposted journals: 1\n   - DEMO-JE-ALDERTON-SGD (June 21): Alderton Trust SGD dividend income accrual, GBP base currency\n   - Status: Draft, must be posted or rejected\n\n2. Incomplete close tasks: 5 of 6\n   - Reconcile AR/AP subledgers: DONE\n   - Review accruals: BLOCKED (Finance Manager due 7/5)\n   - Review deferred revenue release: OPEN (Finance Manager due 7/5)\n   - Review recurring journals: OPEN (Finance Manager due 7/5)\n   - Review trial balance and close package: OPEN (Controller due 7/5)\n   - Lock accounting period: BLOCKED until above tasks complete\n\n**ACCOUNTS RECEIVABLE**\nTotal open: 13,500.00 (all current, 0-30 days)\nPeriod activity: 9,000.00 revenue invoiced\nHealth: Strong; no aged balances beyond 30 days\n\n**ACCOUNTS PAYABLE**\nTotal open: 3,389.00 (all current, 0-30 days)\nPeriod activity: 3,389.00 bills received\nNo aged liabilities\n\n**WORK IN PROGRESS**\nTotal WIP: 16,800.00 across 7 active projects\nTop projects:\n- Brightwater Annual Accounts FY2025: 5,600.00 (16 unbilled hours)\n- Alderton COSEC Filings: 3,500.00 (10 unbilled hours)\n- Nexus CFO Advisory: 3,150.00 (9 unbilled hours)\n\n**FINANCIAL SNAPSHOT**\n- Trial balance: BALANCED (26,639.00 debit/credit)\n- Revenue: 9,000.00 (flat vs May)\n- Expenses: 4,139.00 (new in June)\n- Net income: 4,861.00 (down 46% vs May due to expenses)\n- Total assets: 18,000.00 | Liabilities: 4,139.00 | Equity: 13,861.00\n\n**JOURNALS**\nTotal in period: 7 | Posted: 6 | Draft: 1\nAll posted entries are AR/AP-driven or payment-related. One manual dividend accrual is pending.\n\n**MISSING APPROVALS (Inbox items requiring action)**\n10 high-priority items waiting (you have approval authority as Owner):\n- Month-end close package review (Accounting level): 4,861.00 net income\n- Two customer invoice drafts (Money-in level): 1,530.00 and 57,185.50\n- Two vendor bill drafts (Draft level)\n- Finance ops action plan\n- Engagement letter review\n- Plus 2 additional copilot-driven close review items\n\n**NEXT STEPS TO UNLOCK**\n\n1. Post or reject DEMO-JE-ALDERTON-SGD\n2. Complete the 3 open Finance Manager tasks (accruals, deferred revenue, recurring journals)\n3. Controller completes trial balance and close package review\n4. Approve the month-end close package from Inbox\n5. After all close tasks mark done, you can lock the period\n\nAccounting and close work routes through Inbox for controlled approval. The system is operationally healthy, trial balance balances, and subledgers reconcile to GL—core fundamentals are ready. Execution moves forward once the 5 task steps complete.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-1-close-readiness-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Runs June pre-close checks across AR, AP, WIP, unposted journals, close tasks, approvals, and period-lock blockers."
+        ],
+        "matchedRequired": [
+          "/June 2026|June/i",
+          "/AR|accounts receivable/i",
+          "/AP|accounts payable/i",
+          "/WIP/i",
+          "/unposted journal|journal/i",
+          "/close task|close/i",
+          "/approval/i",
+          "/lock|period/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "5-2-period-lock",
+      "section": "5.2 Period lock",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Can we lock June 2026? Show the period-lock readiness result, blockers, overrides if any, and what a Controller or Owner must review before locking.",
+      "response": " June 2026 is NOT ready to lock. Here's the readiness summary:\n\n**LOCK STATUS: BLOCKED**\n\nTwo critical blockers must be resolved:\n\n1. **Unposted journals (1)**\n   - Entry: DEMO-JE-ALDERTON-SGD\n   - Description: Alderton Trust SGD dividend income accrual, GBP base currency\n   - Date: 2026-06-21\n   - Action: Must be posted, rejected, or formally documented before lock.\n\n2. **Incomplete close tasks (5 of 6)**\n   - Review accruals (blocked, Finance Manager)\n   - Review deferred revenue release (open, Finance Manager)\n   - Review recurring journals (open, Finance Manager)\n   - Review trial balance and close package (open, Controller)\n   - Lock accounting period (blocked, Admin)\n\n**WHAT'S COMPLETE:**\n- Sub-ledger reconciliation ✓ (AR/AP reconcile to GL)\n- Trial balance ✓ (balanced at 26,639.00 both sides)\n- Close review queue ✓ (no pending HITL reviews)\n\n**FINANCIAL STATUS:**\nTrial balance is clean, net income 4,861 (54% margin on 9,000 revenue). Net income is down 46% vs. May due to 4,139 in new expenses.\n\n**WHAT THE CONTROLLER & OWNER MUST REVIEW BEFORE LOCKING:**\n- The draft Alderton SGD journal: determine if it should post or be reversed\n- Close task completion checklist: sign off on all five incomplete reviews\n- Working capital: open AR at 13,500 and WIP at 16,800 across engaged projects\n- Statement variances: 100% asset growth and margin compression vs. prior month warrant narrative\n\n**NEXT STEPS:**\n1. Resolve the unposted journal\n2. Complete all open close tasks\n3. Once blockers clear, the lock task becomes executable\n\nWorth noting—no overrides are currently in place. Once these tasks finish, the period will be ready to lock.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-2-period-lock-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Assesses June 2026 period-lock readiness with blockers, overrides, and Controller/Owner review."
+        ],
+        "matchedRequired": [
+          "/June 2026/i",
+          "/lock|period/i",
+          "/readiness|ready/i",
+          "/blocker/i",
+          "/override/i",
+          "/Controller|Owner/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "5-3-trial-balance",
+      "section": "5.3 Trial Balance",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Show the June 2026 Trial Balance. Confirm whether debits equal credits, summarize the largest account movements, and flag suspense or unbalanced items.",
+      "response": " Good news first: the June 2026 Trial Balance is balanced. Debits equal credits. Assets, liabilities, and equity reconcile cleanly with no unbalanced items or suspense accounts flagged.\n\nHere's the summary:\n\n**Trial Balance Status:**\n- Trial balance is balanced: TRUE\n- Balance sheet balanced: TRUE (Assets 18,000.00 = Liabilities 4,139.00 + Equity 13,861.00)\n\n**Largest Account Movements (vs May):**\n\n1. **Expenses (4,139.00)** — This is the dominant swing. May had zero expenses; June recorded 4,139.00, reducing net income by 46%.\n\n2. **Cash flow impact (4,500.00)** — Ending cash position moved from 0.00 in May to 4,500.00 in June.\n\n3. **Revenue flat (9,000.00)** — Held even with May at 9,000.00 (Accounting service line is the primary driver with 77.3% margin).\n\n4. **Working capital exposure (26.9M net)** — AR open at 13.5M, WIP at 16.8M, AP at 3.4M. Largest WIP projects are Brightwater Annual Accounts (5.6M) and Alderton COSEC Filings (3.5M).\n\n**Red Flags & Blockers:**\n\n- **1 unposted journal** — DEMO-JE-ALDERTON-SGD (dividend income accrual, dated June 21) is sitting in draft and blocking period close.\n- **5 incomplete close checklist tasks**, including WIP accrual review (currently blocked) and trial balance sign-off (open).\n- **Period is locked for writes** until these blockers clear.\n\n**Next steps:** Post the pending journal, then clear the close checklist tasks in Inbox. Once those are done, the period can lock and the variance commentary (net margin down from 100% to 54%) will be formally approved.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-3-trial-balance-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Shows June 2026 Trial Balance, debit/credit balance, largest movements, and suspense/unbalanced items."
+        ],
+        "matchedRequired": [
+          "/June 2026/i",
+          "/Trial Balance/i",
+          "/debit/i",
+          "/credit/i",
+          "/balance|balanced/i",
+          "/movement|largest/i",
+          "/suspense|unbalanced/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "5-4-management-reporting",
+      "section": "5.4 Management reporting",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Alice is at 64% utilisation in June. Which clients have unbilled WIP tied to Alice?",
+      "response": " Alice has unbilled work-in-progress (WIP) tied to the following five clients:\n\n1. Nexus — 9 hours, $3,150 WIP (CFO Advisory)\n2. Brightwater — 24 hours, $8,400 WIP combined (Monthly Management Accounts + Annual Accounts FY2025)\n3. Alderton — 15 hours, $5,250 WIP combined (Trust 1985 Accounts & Tax + COSEC Filings)\n\nThe unbilled balance totals 48 hours valued at $18,800 across these three clients. Given her 64% utilization in June, releasing some of this WIP through invoicing would help bridge capacity and cash.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-4-management-reporting-response.png",
+      "notes": [
+        "Business-valid answer: matched 5/5 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Identifies clients with unbilled WIP tied to Alice at 64 percent utilization."
+        ],
+        "matchedRequired": [
+          "/Alice/i",
+          "/64%|64 percent|utili[sz]ation/i",
+          "/unbilled/i",
+          "/WIP/i",
+          "/client/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 5/5 required signals."
+      }
+    },
+    {
+      "id": "5-5-management-pack",
+      "section": "5.5 R2R management pack",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Give me the June 2026 month-end management pack. Explain the major variances versus May 2026, show revenue, expenses, project margin, utilization, AR/AP movement, journals, close task blockers, draft journals, and remaining close blockers. Do not post journals or lock the period.",
+      "response": " Here is your June 2026 month-end management pack:\n\n**FINANCIAL OVERVIEW**\n\nRevenue was flat at 9,000 versus May. The key change is 4,139 in new expenses posted in June, driving net income down 46% (from 9,000 to 4,861). Net margin contracted from 100% to 54%. Your balance sheet expanded: total assets grew from 9,000 to 18,000 (a 100% increase), driven by 4,500 in new bank cash collected and working capital activity.\n\n**MAJOR VARIANCES vs MAY**\n\n- Expenses jumped 4,139 (first expenses recorded this month). Nexus CFO Advisory absorbed 185.50 in direct costs; the remainder is operational spend captured in your GL.\n- Net cash improved by 4,500 month-over-month, reflecting invoices converted to cash.\n- AR remained stable at 13,500 all unpaid within 30 days; AP grew to 3,389 (first payables), also all current.\n\n**REVENUE & EXPENSES**\n\nJune revenue: 9,000 across two projects (Brightwater Monthly Management Accounts and Thornton USD Advisory, each at 4,500). No revenue change from May, but both projects are hitting 100% project margin with zero direct costs. Accounting service line drove 77.3% gross margin overall (6,960 margin on 9,000 revenue).\n\nExpenses: 4,139 total. First month with operating spend visible; reserve for timing differences in vendor bill posting.\n\n**PROJECT MARGIN & UTILIZATION**\n\nTwo projects are healthy: Brightwater Monthly and Thornton USD Advisory each at 100% margin. Seven other engagements show zero revenue with 16,800 in accumulated WIP. Alterton COSEC Filings, Alterton Trust 1985, and Brightwater Annual Accounts FY2025 are the largest WIP holders (5,600 + 3,500 + 3,500).\n\nUtilization is tight: two employees at 100% (over-utilized risk), one at 91.7% (healthy). No slack for scope creep or unplanned work.\n\n**AR/AP MOVEMENT**\n\nAR aging: 13,500 current (0-30 days), no overdue. AP aging: 3,389 current. Working capital position stable. WIP balance unchanged at 16,800 (staged projects waiting for billing).\n\n**JOURNALS**\n\n7 total journals posted in June; 6 posted, 1 draft. Draft journal (DEMO-JE-ALDERTON-SGD) is an Alderton Trust SGD dividend accrual awaiting review. Posted journals include AR/AP captures for two invoices, two bills, one manual accrual, and one payment reversal.\n\n**CLOSE BLOCKERS**\n\nYou have TWO blocking issues preventing period lock:\n\n1. Unposted journal: The Alderton SGD accrual (DEMO-JE-ALDERTON-SGD) must be posted, rejected, or formally documented for exclusion before close.\n2. Five incomplete close tasks:\n   - Review accruals (blocked)\n   - Review deferred revenue release (open)\n   - Review recurring journals (open)\n   - Review trial balance and close package (open)\n   - Lock period (blocked until the above clear)\n\nSubledger reconciliation and trial balance are complete—your books are balanced.\n\n**REMAINING NEXT STEPS**\n\nPost or reject the draft journal. Complete or waive the five open close tasks. Once both blocking issues resolve, the period can be locked. Trial balance is balanced; no accounting overrides needed.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-5-management-pack-response.png",
+      "notes": [
+        "Business-valid answer: matched 9/10 required signals.",
+        "Missing required signals: /May 2026/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Produces June management pack comparing May with variances, revenue, expenses, margins, utilization, AR/AP, journals, and blockers without posting."
+        ],
+        "matchedRequired": [
+          "/June 2026/i",
+          "/variance/i",
+          "/revenue/i",
+          "/expense/i",
+          "/margin/i",
+          "/utili[sz]ation/i",
+          "/AR|AP/i",
+          "/journal/i",
+          "/blocker/i"
+        ],
+        "missingRequired": [
+          "/May 2026/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 9/10 required signals."
+      }
+    },
+    {
+      "id": "5-5-management-drilldown",
+      "section": "5.5 R2R blocker drilldown",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Drill into the draft journals and close task blockers for June 2026. Which ones block close, who owns them, and what should happen next?",
+      "response": " Here's what's blocking close for June 2026:\n\n**Two Primary Close Blockers:**\n\n1. **Unposted Journal (1 item)**\n   - Entry: DEMO-JE-ALDERTON-SGD\n   - Description: Alderton Trust SGD dividend income accrual, GBP base currency\n   - Date: June 21, 2026\n   - This manual journal must be either posted, rejected, or documented before close\n\n2. **Incomplete Close Tasks (5 of 6 items pending)**\n   - Review accruals — Status: BLOCKED, Owner: Finance Manager\n   - Review deferred revenue release — Status: OPEN, Owner: Finance Manager\n   - Review recurring journals — Status: OPEN, Owner: Finance Manager\n   - Review trial balance and close package — Status: OPEN, Owner: Controller\n   - Lock accounting period — Status: BLOCKED (depends on above items), Owner: Admin\n\n**Task Ownership & Dependencies:**\n\nThe Finance Manager owns three open review tasks (accruals, deferred revenue, recurring journals) all due July 5. One of these—accruals review—is marked blocked, likely waiting on the unposted journal decision.\n\nThe Controller owns the trial balance review, which is also open and due July 5.\n\nThe Admin owns the final period lock action, which cannot proceed until the Finance Manager and Controller complete their reviews.\n\n**What Should Happen Next:**\n\n1. Finance Manager should decide on DEMO-JE-ALDERTON-SGD: post it if it's correct, reject it if it shouldn't be recorded, or document why it's pending.\n\n2. Once that's resolved, the accruals review task can move from blocked to complete.\n\n3. Finance Manager then completes the other two open reviews (deferred revenue, recurring journals).\n\n4. Controller reviews trial balance and close package.\n\n5. Admin locks the period.\n\nThe underlying GL is balanced and sub-ledgers reconcile, so the only friction is these accounting reviews and the one unposted manual entry. Trial balance shows revenues at 9000 and expenses at 4139, net income 4861.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-5-management-drilldown-response.png",
+      "notes": [
+        "Business-valid answer: matched 5/5 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Drills into draft journals and close task blockers with owner, close impact, and next action."
+        ],
+        "matchedRequired": [
+          "/draft journal|journal/i",
+          "/close task|task/i",
+          "/block|blocker/i",
+          "/owner/i",
+          "/next action|should happen/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 5/5 required signals."
+      }
+    },
+    {
+      "id": "5-5-statement-package",
+      "section": "5.5 Financial statement package",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and evidence-backed management commentary. Compare it to May 2026 and show the variances.",
+      "response": " I've generated your complete financial statement package for June 2026 with comparison to May 2026. Here's the executive summary:\n\nFINANCIAL STATEMENTS SUMMARY\n\nTrial Balance (June 2026): Balanced\n- Debit/Credit totals: 26,639.00 each\n- 5 line items spanning assets, revenue, expenses, liabilities\n\nBalance Sheet\n- Total Assets: 18,000.00\n- Total Liabilities: 4,139.00\n- Total Equity: 13,861.00\n- Status: Balanced\n\nIncome Statement\n- Revenue: 9,000.00\n- Expenses: 4,139.00\n- Net Income: 4,861.00\n- Net Margin: 54.0%\n\nCash Flow Statement\n- Operating cash inflow: 4,500.00\n- Net change in cash: 4,500.00\n- Ending cash balance: 4,500.00\n\nRetained Earnings: 4,861.00\n\nKEY VARIANCES vs MAY 2026\n\nRevenue: Flat at 9,000.00 (no change, 0.0%)\nExpenses: Increased 4,139.00 (from 0 to 4,139.00)\nNet Income: Down 4,139.00 or -46.0% (from 9,000 down to 4,861)\nNet Margin: Declined 46 percentage points (from 100% to 54%)\nTotal Assets: Up 9,000.00 or +100% (doubled from 9,000 to 18,000)\nCash Position: Improved 4,500.00 (from 0 to 4,500)\n\nWORKING CAPITAL SNAPSHOT\n\nAccounts Receivable (open): 13,500.00 - all within 0-30 days\nAccounts Payable (open): 3,389.00 - all within 0-30 days\nWork in Progress: 16,800.00 across 9 projects\nNet working capital exposure: 26,911.00\n\nTop WIP Projects:\n1. Brightwater Annual Accounts FY2025: 5,600.00\n2. Alderton COSEC Filings: 3,500.00\n3. Nexus CFO Advisory: 3,150.00\n4. Brightwater Monthly Mgmt Accounts: 2,800.00\n5. Alderton Trust 1985 Accounts & Tax: 1,750.00\n\nCLOSE READINESS WARNINGS\n\nPeriod Status: BLOCKED - Cannot lock June 2026\nCritical Blockers:\n- 1 unposted journal (Alderton Trust SGD dividend income accrual, entry dated 2026-06-21)\n- 5 incomplete close tasks\n\nIncomplete Close Tasks (all due 2026-07-05):\n1. Review accruals (blocked) - Finance Manager\n2. Review deferred revenue release (open) - Finance Manager\n3. Review recurring journals (open) - Finance Manager\n4. Review trial balance and close package (open) - Controller\n5. Lock accounting period (blocked) - Admin\n\nCompleted Checklist Items:\n- Sub-ledger reconciliation: Complete (AR/AP reconcile to GL)\n- Trial balance: Balanced\n- Close review queue: No pending reviews\n- No accounting overrides\n\nEVIDENCE-BACKED MANAGEMENT COMMENTARY\n\nOperating Performance: Revenue held steady while expenses increased significantly. June saw the introduction of 4,139 in period costs (likely accruals), reducing net margin by 46 points. This was offset partially by the collection of 4,500 in cash during the period, improving balance sheet liquidity.\n\nService Line Mix: Accounting service line dominates with 9,000 revenue and 77.3% gross margin. Two key projects (Brightwater Monthly Mgmt Accounts and Thornton USD Advisory) each generated 4,500 with 100% margins, indicating healthy project economics in billable service lines.\n\nProject & Resource Health: Nine active projects show 16,800 in WIP value. Several projects with no revenue yet (Alderton COSEC, Alderton Trust, Brightwater Annual Accounts, Nexus offerings) indicate pre-revenue or internal initiatives. Utilization is strong: two employees at 100% billability, one at 91.7%.\n\nCash & Liquidity: Bank account grew from zero to 4,500.00, meeting immediate working capital needs. Open AR of 13,500 and AP of 3,389 are both young (0-30 days), indicating normal collection cycles.\n\nStatutory Pack Status: Trial balance, balance sheet, and income statement all balanced and reconciled. Tax liability (Sales Tax) is 0.00. No accounting blockers beyond the unposted journal and close task queue.\n\nNext Actions Required:\n1. Post, reject, or document the Alderton SGD dividend income accrual journal\n2. Complete the five open close tasks or formally waive them\n3. Resolve WIP accrual review and deferred revenue release before locking",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-5-statement-package-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Generates financial statement package with TB, BS, IS, cash flow, retained earnings, statutory pack, warnings, commentary, and May variance."
+        ],
+        "matchedRequired": [
+          "/Trial Balance/i",
+          "/Balance Sheet/i",
+          "/Income Statement/i",
+          "/Cash Flow/i",
+          "/Retained Earnings/i",
+          "/Statutory Pack/i",
+          "/warning|close-readiness/i",
+          "/variance|May 2026/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 8/8 required signals."
+      }
+    },
+    {
+      "id": "5-5-year-end",
+      "section": "5.5 Year-end close",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.",
+      "response": " Perfect. Here's the year-end close readiness summary for FY 2026:\n\n---\n\n**YEAR-END CLOSE READINESS: FY 2026 (Dec 31)**\n\n**Close Status: READY TO PROCEED**\n\nAll core audit checklist items are complete:\n- Trial balance is balanced (26,639.00 debit / credit)\n- Sub-ledger reconciliation complete for AR and AP\n- No unposted journals pending\n- No close-related reviews outstanding\n- Period is unlocked and ready to lock\n\n**Financial Summary (FY 2026 vs FY 2025)**\n\nIncome Statement:\n- Revenue: 18,000.00 (vs 0.00 prior year, +18,000.00)\n- Expenses: 4,139.00 (vs 0.00 prior year, +4,139.00)\n- Net Income: 13,861.00 (vs 0.00 prior year)\n\nBalance Sheet:\n- Total Assets: 18,000.00 (Bank 4,500 + AR 13,500)\n- Total Liabilities: 4,139.00 (AP 3,389 + Sales tax)\n- Total Equity: 13,861.00 (unchanged MoM)\n- Statement is in balance\n\n**Retained Earnings Setup**\n\nCurrent retained earnings balance: 0.00\nFY 2026 net income to post: 13,861.00\nNo duplicate close risk detected; trial balances match month-over-month.\n\n**Working Capital Movement**\n- AR aging: All 13,500 is current (0-30 days); no outstanding collections issues\n- AP aging: All 3,389 is current (0-30 days)\n- WIP balance: 16,800.00 across 9 projects (largest: Brightwater Annual Accounts at 5,600)\n\n**CRITICAL: RETAINED EARNINGS POSTING ROUTED TO INBOX**\n\nThe year-end close adjustment to post FY 2026 net income (13,861.00) to retained earnings has been submitted for Inbox review and approval. This posting will not be applied to the general ledger until explicitly approved through the review workflow.\n\nAction required: Review and approve the retained-earnings posting in Inbox before the period lock is finalized. Once approved, the journal entry will be posted and the period can be locked.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-5-year-end-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/8 required signals.",
+        "Missing required signals: /P&L|profit and loss/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares FY2026 year-end close with retained earnings, P&L activity, locked periods, duplicate risk, statement movement, and Inbox routing."
+        ],
+        "matchedRequired": [
+          "/2026|FY2026/i",
+          "/year-end|year end/i",
+          "/retained earnings/i",
+          "/locked period|period/i",
+          "/duplicate/i",
+          "/statement movement|prior year/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [
+          "/P&L|profit and loss/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/8 required signals."
+      }
+    },
+    {
+      "id": "5-6-manual-journal",
+      "section": "5.6 Manual journal lifecycle",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, approval role, and whether the approver is different from the submitter. Do not post it without Inbox approval.",
+      "response": " I'm ready to review the manual journal proposal, but I don't see it attached or referenced in your message. Please provide the proposal details, and I'll check:\n\n- Balance (debits equal credits)\n- Account validity and GL mapping\n- Period lock status and posting date appropriateness\n- Business reason and narrative\n- Supporting evidence (attachments, backing documents)\n- Approval role and authority level\n- Submitter vs. approver (must be different)\n\nOnce you share the proposal, I'll route it through Aethos Inbox for controlled review and approval before any posting.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-6-manual-journal-response.png",
+      "notes": [
+        "Business validation failed: matched 7/8 required signals; forbidden hits 1.",
+        "Missing required signals: /approver.*submitter|different from submitter|segregation/i",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Reviews manual journal proposal for balance, account validity, period lock, reason, evidence, approval role, and segregation of duties."
+        ],
+        "matchedRequired": [
+          "/journal/i",
+          "/balance|balanced/i",
+          "/account/i",
+          "/period lock|locked period/i",
+          "/business reason|reason/i",
+          "/evidence|support/i",
+          "/approval role|approval/i"
+        ],
+        "missingRequired": [
+          "/approver.*submitter|different from submitter|segregation/i"
+        ],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+        ],
+        "summary": "Business validation failed: matched 7/8 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "5-6-reversal",
+      "section": "5.6 Manual journal reversal",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Prepare a reversal packet for this posted manual journal. Explain why reversal is appropriate, propose an open-period reversal date, show the flipped debit and credit lines, and confirm the reversal will create a new journal rather than editing the original.",
+      "response": " I need some details to prepare the reversal packet. Please provide:\n\n1. **Journal identifier** — What's the journal ID, reference number, or posting date of the manual journal you want to reverse?\n\n2. **Journal details** — What accounts and amounts were in the original entry? (Or I can look it up if you give me the reference.)\n\n3. **Business reason** — Why is the reversal appropriate? (e.g., duplicate entry, posting error, reversing a transaction, accounting correction)\n\n4. **Proposed reversal date** — What date do you want the reversal to post? (I'll validate it's in an open period and suggest alternatives if needed.)\n\nOnce you provide these, I'll load the relevant Aethos tools to build the reversal packet with:\n- Explanation of why reversal is appropriate for this case\n- Recommended open-period reversal date\n- The flipped debit/credit lines (original credits become debits and vice versa)\n- Confirmation that this creates a new reversing journal per accounting standards, leaving the original posted entry intact",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/5-6-reversal-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/7 required signals.",
+        "Missing required signals: /new journal|not edit|rather than editing/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Prepares reversal packet with reason, open-period date, flipped debit/credit lines, and new journal rather than editing original."
+        ],
+        "matchedRequired": [
+          "/reversal/i",
+          "/journal/i",
+          "/reason|appropriate/i",
+          "/open period|date/i",
+          "/debit/i",
+          "/credit/i"
+        ],
+        "missingRequired": [
+          "/new journal|not edit|rather than editing/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/7 required signals."
+      }
+    },
+    {
+      "id": "6-1-finance-ops-check",
+      "section": "6.1 Finance Ops Manager",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Run today's finance ops check for June 2026. Tell me what needs billing, payment, collections, close, and review. Separate read-only findings from actions that need Inbox approval.",
+      "response": " Perfect. Here's your June 2026 finance ops check. I've split out read-only findings from actions that need your approval.\n\n## READ-ONLY FINDINGS\n\nCustomer Receivables: GBP 13,500 outstanding, all within 0-30 days. One invoice (INV-1001 to Nexus Capital Partners LP) is now 10 days overdue for GBP 9,000. All other invoicing is current.\n\nVendor Payables: GBP 3,389 due within 30 days. All payables are current with no aging concerns.\n\nWork in Progress (Unbilled Hours): Six active projects have billable hours pending invoicing totaling GBP 22,400 in WIP value. The largest items: Brightwater Annual Accounts (GBP 5,600 on 16 hours), Alderton COSEC Filings (GBP 3,500 on 10 hours), Nexus CFO Advisory (GBP 3,150 on 9 hours), and Brightwater Monthly Management Accounts (GBP 2,800 on 8 hours).\n\nFinance Ops Status: Operations are running normally. The daily check ran this morning as scheduled. No runtime failures or escalations.\n\nYou're matched to four finance personas: Owner/Admin, Controller, AP Lead, and AR Lead—so you can approve any policy-level work across all finance functions.\n\n## ACTIONS REQUIRING YOUR INBOX APPROVAL (10 OPEN ITEMS)\n\nThree categories need your review before they proceed:\n\nINVOICING (Money-In) – 2 draft invoices pending your approval:\n- Draft invoice for GBP 57,185.50 (likely retainer billing to a large client)\n- Draft invoice for GBP 1,530.00 (smaller transaction)\n\nBoth are created but not yet posted. Manager-level review required.\n\nBILLS & PROCUREMENT – 2 vendor bill drafts pending review:\n- Two bill drafts from the Vendor Invoice Agent (amounts pending details)\n\nManager-level review required before posting.\n\nCLOSE & ACCOUNTING – 3 close packages pending admin-level approval:\n- June 2026 month-end close package (with GBP 4,861 in close adjustments)\n- Year-end 2026 close package (with GBP 13,861 in close-related entries)\n- Finance ops action plan for June (high priority, 4 action items)\n\nAdmin-level approval required to proceed.\n\nCOLLECTIONS – 1 overdue-invoice reminder ready for review:\n- Firm-tone payment reminder to Nexus Capital Partners LP for INV-1001 (10 days overdue, GBP 9,000)\n\nManager-level review required before sending. The collections system has drafted this and is waiting for your sign-off in Inbox.\n\nAll 10 items are visible to you as Owner. You can approve them individually through the Inbox or, if preferred, I can help you prioritize or batch-review them.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/6-1-finance-ops-check-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Runs finance ops check separating read-only findings from Inbox-gated actions across billing, payment, collections, close, and review."
+        ],
+        "matchedRequired": [
+          "/billing/i",
+          "/payment/i",
+          "/collections/i",
+          "/close/i",
+          "/review/i",
+          "/read-only|read only/i",
+          "/Inbox|approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "6-1-action-plan",
+      "section": "6.1 Finance Ops action plan",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Create the next recommended finance ops work items for June 2026. Create at most five manager-reviewed work items. Route the action plan to Inbox for review. Do not approve invoices, payments, journals, or emails directly.",
+      "response": " Based on the financial operations snapshot I've reviewed, here's the recommended action plan for June 2026. I've identified five priority work items for manager review:\n\n**Finance Ops Action Plan - June 2026**\n\n1. **Invoice Brightwater Annual Accounts FY2025** — Complete milestone engagement with GBP 28,000 total value. 16 unbilled hours at 350/hour (GBP 5,600 WIP) ready to bill. This fixed-milestone work is ripe for invoicing.\n\n2. **Finalize Alderton COSEC Filings** — 10 unbilled hours across event-based company secretarial filings (GBP 3,500 WIP). Clear for customer delivery and billing given retainer structure.\n\n3. **Bill Alderton Trust 1985 Accounts & Tax** — Time-and-materials work with 5 unbilled hours (GBP 1,750 WIP). Trust accounts and tax work cycle appears complete in June.\n\n4. **Collect Brightwater Monthly Management Accounts** — Retainer engagement with 8 unbilled hours (GBP 2,800 WIP). June month-end retainer invoicing and AR follow-up for GBP 13,500 current aging (0-30 days).\n\n5. **Process Current Payables** — GBP 3,389 in AP due within 30 days requires payment processing and reconciliation. No overdue items present.\n\nAll five items require manager approval before invoicing or payment movement. The action plan is ready for Inbox review and will route through standard approval workflows. No invoices, payments, or journals have been directly executed — all actions remain in draft pending your review and authorization.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/6-1-action-plan-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Creates at most five manager-reviewed finance ops work items and routes action plan to Inbox without approving sensitive actions."
+        ],
+        "matchedRequired": [
+          "/finance ops/i",
+          "/work item|action plan/i",
+          "/five|5|at most/i",
+          "/manager-reviewed|review/i",
+          "/Inbox|approval/i",
+          "/invoice|payment|journal|email/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "6-2-scheduled-control-room",
+      "section": "6.2 Scheduled Finance Ops Manager",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Before enabling a scheduled Finance Ops Manager run, show the current cadence, escalation windows, last run, open scheduled plans, and approval boundary for resulting work.",
+      "response": " Here's the Finance Ops Manager readiness status before enabling a scheduled run:\n\n**Schedule & Cadence**\nThe Manager is currently enabled and runs daily at 7 AM UTC. The next run is scheduled for today (June 29) at 7:00 AM UTC. It analyzes the current month with a 10-day lookback limit.\n\n**Escalation Windows**\nEscalation is active. Standard data is considered stale after 24 hours; high-risk items escalate after 4 hours. This means urgent financial issues surface quickly through Inbox routing.\n\n**Last Run**\nNo scheduled runs have completed yet—this is the first cadence. The system is freshly initialized with default settings.\n\n**Open Scheduled Plans**\nOne action plan is open: a draft Finance Ops plan from today (created 06:29 UTC), high priority, containing 4 recommended actions for June. This is awaiting Manager review before the next automated run processes further work.\n\n**Approval Boundary for Resulting Work**\nAll work generated by the Manager routes through Inbox with role-based approval gates:\n\n- Draft and low-risk work: Manager approval required\n- Money-in actions (invoices, revenue): Manager approval required\n- External communications: Manager approval required\n- Money-out actions: Admin approval required; Owner approval for payments ≥ $50,000\n- Accounting and close work: Admin approval required; Owner approval for manual journals ≥ $10,000\n\nYou currently hold Owner role, so you can approve all work at any threshold. There are 10 open Inbox items awaiting your review, spanning invoices, collections emails, vendor bills, and close preparations.\n\n**Operational Health**\nStatus is green. No failures in the last 24 hours. Rate limiting is configured and the system is ready for production automation.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/6-2-scheduled-control-room-response.png",
+      "notes": [
+        "Business-valid answer: matched 6/6 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Shows scheduled Finance Ops cadence, escalation windows, last run, open plans, and approval boundary before enablement."
+        ],
+        "matchedRequired": [
+          "/scheduled|cadence/i",
+          "/Finance Ops/i",
+          "/escalation/i",
+          "/last run/i",
+          "/open .*plan|scheduled plan/i",
+          "/approval boundary|approval/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 6/6 required signals."
+      }
+    },
+    {
+      "id": "7-1-approval-controls",
+      "section": "7.1 Approval policy and personas",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "What am I allowed to approve, what requires Owner approval, and which Inbox items are high risk? Include my finance personas, effective thresholds, pending high-risk tasks, and why each item needs review. Do not show tool names, policy reason codes, raw payloads, traces, logs, or context IDs.",
+      "response": " You hold four active finance personas: Owner/Admin, Controller, AP Lead, and AR Lead. Here's your approval authority and what needs your review.\n\nWhat You Can Approve:\n- Any draft or low-risk work (invoices, records, engagement letters)\n- Customer money-in changes (invoices, AR records)\n- External communications before they're sent\n- Vendor payments and payment batches\n- Accounting, journals, and close preparation up to the thresholds\n- High-risk AI-recommended finance actions\n\nWhat Requires Owner Approval (Escalation):\n- Vendor payments at or above $50,000\n- High-value manual accounting journals at or above $10,000\n- Any money-out work exceeding the standard admin threshold\n\nThresholds:\n- Owner escalation for money-out: $50,000 and above\n- Manual journal escalation: $10,000 and above\n\nYour Current Inbox (13 open items):\n11 of 12 flagged items are ready for your review and approval — you have the authority for all of them. No items are stuck waiting for higher approval.\n\nHigh-Priority Tasks Requiring Review Now:\n\n1. Collections email – $9,000 (Medium priority) — External communication sent by the collections agent; needs your review before the email goes to the customer.\n\n2. Year-end close package – $13,861 (High priority) — Full year-end accounting close; requires controller-level review of all adjustments and financial statement readiness.\n\n3. Month-end close package (June) – (High priority) — Standard month-end package with accruals and adjustments; controller review is required.\n\n4. Two vendor bill drafts – (High priority each) — AI-reviewed vendor invoices ready for your processing approval.\n\n5. Payment batch – $3,389 (High priority) — Forster & Reid and BT Broadband payments; requires admin-level approval before processing.\n\n6. Two customer invoices – $1,530 and $57,185 (High priority each) — Money-in transactions; the larger one carries material exposure and needs your sign-off before it affects AR.\n\n7. Finance operations action plan (High priority) — Strategic operational workflow proposal from the Finance Ops Manager; requires manager review.\n\n8. Nexus engagement letter extraction (High priority) — Client engagement data onboarded from documentation; needs validation before it affects records.\n\nThe only reason each needs review is that these actions either affect financial records, move money, communicate externally to customers and vendors, or require a human approval gate as a control—none should be auto-processed by AI without your visibility.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/7-1-approval-controls-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Explains approval permissions, Owner approval thresholds, high-risk Inbox items, personas, and reasons without exposing internals."
+        ],
+        "matchedRequired": [
+          "/approve|approval/i",
+          "/Owner/i",
+          "/threshold/i",
+          "/persona|role/i",
+          "/Inbox/i",
+          "/high risk|risk/i",
+          "/review/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "7-2-decision-trail",
+      "section": "7.2 Decision trail",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Show the decision trail for the latest bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.",
+      "response": " ## Decision Trail Summary\n\nBased on the latest records across finance operations, here's the most recent decision trail:\n\n**LATEST PENDING DECISIONS IN INBOX**\n\nThe most recent item awaiting approval is a collections reminder email (6:36 AM today):\n- Task: Review collections email to Nexus Capital Partners LP\n- Role Required: Manager (Current user can approve)\n- Risk Category: External send\n- Amount: GBP 9,000\n- Status: Open\n- Business Reason: External communications require human review before sending\n\nThis is tied to invoice INV-1001 (due 2026-06-19), which is now 10 days overdue. A firm-tone reminder was last sent to the customer at 6:36:11 AM today and is pending review in Inbox.\n\n**SECOND: YEAR-END CLOSE PREPARATION**\n\nTwo accounting tasks are also pending immediate attention:\n\n1. Year-End Close Review (6:35 AM)\n   - Type: Accounting task requiring admin approval\n   - Amount: GBP 13,861\n   - Status: Open\n   - Requirement: Accounting approver sign-off\n\n2. Month-End Close Review (6:27 AM)\n   - Type: Accounting task requiring admin approval\n   - Amount: GBP 4,861\n   - Status: Open\n   - Requirement: Accounting approver sign-off\n\n**CLOSE BLOCKERS FOR JUNE 2026**\n\nThe accounting period cannot lock because:\n- 1 unposted journal: DEMO-JE-ALDERTON-SGD (Alderton Trust SGD dividend income accrual) created 6:15 AM today—must be posted, rejected, or documented.\n- 5 incomplete close tasks: Review accruals, deferred revenue release, recurring journals, trial balance, and period lock.\n\n**EARLIER BILLS AWAITING CODING**\n\nTwo vendor bills are approved but blocked from payment:\n- BILL-1001 from Forster & Reid Ltd (GBP 3,200 due 2026-07-05)\n- BILL-1002 from BT Broadband (GBP 189 due 2026-07-01)\n\nBoth lack evidence and are uncoded—they need line-by-line coding and supporting documents before payment can proceed.\n\n**YOUR APPROVAL CAPACITY**\n\nYou are authorized as the Owner/Admin with approval rights across all risk categories: drafts, money-in (invoices), money-out (payments), external sends, accounting work, and high-value transactions.\n\nWould you like me to drill into any specific decision trail, pending Inbox task, or close blocker?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/7-2-decision-trail-response.png",
+      "notes": [
+        "Business validation failed: matched 4/6 required signals; forbidden hits 0.",
+        "Missing required signals: /timestamp|time/i, /before\\/after|before and after|review summary/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Shows decision trail with related Inbox task, actor role, decision type, timestamp, and before/after summary."
+        ],
+        "matchedRequired": [
+          "/decision/i",
+          "/Inbox/i",
+          "/actor role|role/i",
+          "/decision type|type/i"
+        ],
+        "missingRequired": [
+          "/timestamp|time/i",
+          "/before\\/after|before and after|review summary/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business validation failed: matched 4/6 required signals; forbidden hits 0."
+      }
+    },
+    {
+      "id": "7-3-operational-health",
+      "section": "7.3 Operational Health",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Show operational health for the platform today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes. Do not expose secrets, traces, raw logs, or stack traces.",
+      "response": " I don't have access to operational health or infrastructure monitoring tools for the platform. The Aethos tools available to me are focused on business finance operations—O2C (Order-to-Cash), P2P (Procure-to-Pay), and R2R (Record-to-Report) workflows.\n\nTo get the operational health you're asking about—degraded health, endpoint abuse, background failure spikes, and agent/tool/workflow failures—you would need to query:\n\n- A monitoring/observability platform (Datadog, New Relic, Prometheus, CloudWatch, etc.)\n- Infrastructure dashboards (Kubernetes health, service mesh, load balancers)\n- Application performance monitoring (APM) systems\n- Log aggregation and alerting systems (ELK, Splunk, etc.)\n- Rate-limiting and DDoS protection services\n- Background job monitoring (Celery, Bull, etc.)\n- Workflow orchestration dashboards (Temporal, Airflow, etc.)\n\nCan you point me to where that operational data lives? Is there a dashboard URL, monitoring API, or alert system I should check?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/7-3-operational-health-response.png",
+      "notes": [
+        "Business validation failed: matched 6/6 required signals; forbidden hits 1.",
+        "Invalid answer signals: /\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+      ],
+      "validation": {
+        "verdict": "FAIL",
+        "criteria": [
+          "Shows operational health with degraded status, public abuse, background failures, agent/tool/workflow failures, and no secrets/logs/traces."
+        ],
+        "matchedRequired": [
+          "/health/i",
+          "/degraded|status/i",
+          "/public endpoint|abuse/i",
+          "/background/i",
+          "/agent|tool|workflow/i",
+          "/failure|spike|alert/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [
+          "/\\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\\b/i"
+        ],
+        "summary": "Business validation failed: matched 6/6 required signals; forbidden hits 1."
+      }
+    },
+    {
+      "id": "7-4-documents-audit",
+      "section": "7.4 Documents and source evidence",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Show documents that support recent engagements, bills, invoices, journals, and Inbox decisions. For each, show the linked business record, source filename, extraction state, and what I should review next.",
+      "response": " Here's a comprehensive view of documents supporting your recent business activities. I've organized this by area with linked records, extraction state, and next steps:\n\n=== ENGAGEMENTS (10 Active) ===\n\nThornton Tech Solutions Ltd\n- ENG-0013: COSEC Filings (Time & Materials, GBP 3,500)\n- ENG-0012: Series A Tax Structuring (Milestone, USD 106,500)\n- ENG-0011: Accounting & Advisory FY2026 (Retainer, USD 54,000)\n\nAlderton Family Office\n- ENG-0010: COSEC Retainer - 12 entities (Retainer, GBP 38,400)\n- ENG-0009: Trust (1985) Accounts & Tax (Fixed fee, GBP 12,500)\n- ENG-0008: Advisory Retainer (Retainer, GBP 150,000)\n\nBrightwater Manufacturing Ltd\n- ENG-0007: Payroll Bureau (Fixed fee, GBP 18,360)\n- ENG-0006: Annual Statutory Accounts + CT600 FY2025 (Milestone, GBP 28,000)\n- ENG-0005: Monthly Management Accounts (Retainer, GBP 54,000)\n\nNexus Capital Partners LP\n- ENG-0004: Corporation Tax Return FY2025 (Capped T&M, GBP 22,000)\n- ENG-0003: Group Accounting & Advisory (Mixed, GBP 156,000)\n\nNext: All engagements active and assigned. Review WIP reconciliation below.\n\n=== INVOICES & AR (3 Recent Invoices) ===\n\nINV-1001 | Nexus Capital Partners LP | GBP 9,000 | OVERDUE 10 days\n- Status: Sent, unpaid, due 2026-06-19\n- Reminder: 1 firm reminder sent today at 06:36; in cooldown (wait 24-48h before next)\n- Review next: Check payment status before end of day; cool-down prevents immediate escalation\n\nINV-1003 | Thornton Tech Solutions Ltd | USD 4,500 | PAID\n- Status: Sent 29 Jun, paid same day\n- Collections: No follow-up needed\n- Review next: Record payment confirmation\n\nINV-1002 | Brightwater Manufacturing Ltd | GBP 4,500 | CURRENT\n- Status: Sent 29 Jun, due 2026-07-25\n- Collections: No reminder yet; triggers policy at 14+ days overdue\n- Review next: Monitor for escalation when due date approaches\n\nTotal AR balance: GBP 13,500 (GBP 9,000 overdue)\n\n=== BILLS & AP (2 Recent Bills — Both Blocked) ===\n\nBILL-1001 | Forster & Reid Ltd (FR-2026-0615) | GBP 3,200 | DUE 2026-07-05 (6 days)\n- Status: Approved, missing evidence\n- Blockers: Uncoded + no source document attached\n- Extraction: 0 of 1 line coded; no PO link\n- Review next: Upload invoice image, code expense line, then unblock for payment\n\nBILL-1002 | BT Broadband (BT-2026-0620) | GBP 189 | DUE 2026-07-01 (2 days)\n- Status: Approved, missing evidence\n- Blockers: Uncoded + no source document attached\n- Extraction: 0 of 1 line coded; no PO link\n- Review next: Upload invoice image urgently, code line, unblock (due in 2 days)\n\nTotal AP blocked: GBP 3,389; total due soon (within 10 days): GBP 3,389\n\n=== WORK IN PROGRESS (Unbilled) ===\n\nActive WIP totaling GBP 22,350:\n- Brightwater Annual Accounts FY2025: 16 hrs → GBP 5,600\n- Nexus CFO Advisory: 9 hrs → GBP 3,150\n- Alderton COSEC Filings: 10 hrs → GBP 3,500\n- Brightwater Monthly Management Accounts: 8 hrs → GBP 2,800\n- Alderton Trust 1985 Accounts & Tax: 5 hrs → GBP 1,750\n\nReview next: 38 unbilled hours across 5 projects; prepare invoices for next billing cycle\n\n=== INBOX DECISIONS PENDING (10 Open Items) ===\n\nHIGH PRIORITY:\n1. Year-end close review (Copilot Agent, Accounting) — GBP 13,861 impact — created 06:35\n2. Month-end close review (Copilot Agent, Accounting) — GBP 4,861 impact — created 06:27\n3. Draft invoices × 2 (Copilot Agent, Money-in) — GBP 1,530 + GBP 57,185.5 — created 06:22 & 06:19\n\nMEDIUM PRIORITY:\n4. Collections reminder review (Collections Agent, External send) — GBP 9,000 — created 06:36\n5. Bill drafts × 2 (Vendor Invoice Agent, Draft) — created 06:30 & 06:24\n6. Finance Ops action plan review (Copilot Agent, Draft) — created 06:29\n\nAll require your or delegated manager+ approval before execution. You have full approval authority for all open items.\n\nReview next: Process Inbox items in priority order: close work first (accounting impact), then money-in (invoices), then collections and bills.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/7-4-documents-audit-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/8 required signals.",
+        "Missing required signals: /journal/i"
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Shows source documents linked to engagements, bills, invoices, journals, and Inbox decisions with extraction state and next review."
+        ],
+        "matchedRequired": [
+          "/document|source/i",
+          "/engagement/i",
+          "/bill/i",
+          "/invoice/i",
+          "/Inbox/i",
+          "/extraction state|extracted|processing/i",
+          "/review next|next review|what .* review/i"
+        ],
+        "missingRequired": [
+          "/journal/i"
+        ],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/8 required signals."
+      }
+    },
+    {
+      "id": "7-5-config-telemetry",
+      "section": "7.5 Configuration and telemetry",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Atlas runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.",
+      "response": " Configuration and telemetry status report:\n\nAPPROVAL CONTROLS\nYour role is Owner, which grants you all personas: Owner/Admin, Controller, AP Lead, and AR Lead. You can approve all action types without escalation. Policy thresholds in place are Owner approval required for money-out at $50,000+, and elevated approval for manual journals at $10,000+.\n\nFINANCE OPS MANAGER SCHEDULING\nStatus: Enabled, running daily at 7:00 UTC. Period mode is current month with 10-day lookback. Stale-item escalation is active (24 hours for standard, 4 hours for high-risk). Next scheduled run is today at 7:00 UTC.\n\nATLAS RUNTIME\nEnvironment is production with synchronous extraction. Queue is configured but not required. Rate limiting is enabled using in-memory backend with 60-second windows. No distributed rate-limit backend is configured; it falls back to memory. Health status is OK.\n\nFAILURE TELEMETRY (24H)\nRequest failures: 2 (non-workflow). Background failures: 0. Failed agent runs: 0. Failed tool invocations: 0. Failed workflow runs: 0. All agents and workflows completed successfully.\n\nALERTS & ESCALATIONS\nNo active alerts. Alert routing is not configured (runbook queue channel is disabled). Escalation is enabled but no escalations are pending.\n\nOPERATIONAL FINDINGS\n\n13 open Inbox items awaiting approval. All are approvable by your role. Highest priority: 2 accounting/close packages (June month-end and year-end close prep), 2 draft vendor invoices, 2 money-in invoices totaling ~$58,715, 1 payment batch ($3,389), 1 collections email, and 1 engagement onboarding review.\n\nOne open action plan for June 2026 with 4 items (created at 06:29 UTC today) in draft status, awaiting your review.\n\nLANGFUSE OBSERVABILITY & ABUSE-PATH CONTROLS\n\nThat information is not exposed through the current telemetry tools. Langfuse integration status, distributed tracing, and public abuse-path controls (CORS, rate-limit policies for external API consumers, API key rotation schedules) would require access to infrastructure observability or API gateway configuration outside the Aethos Inbox-focused toolset. If you need to audit:\n- Langfuse tracing and spans integration, contact your infrastructure team\n- External API controls and DDoS mitigation, check your API gateway console\n- Rate-limit and auth policies on public endpoints, review the deployment manifest or gateway config\n\nIs there a specific approval or action plan from Inbox you'd like me to summarize, or deeper dive into particular risk categories?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/7-5-config-telemetry-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "verdict": "PASS",
+        "criteria": [
+          "Reviews approval controls, scheduled Finance Ops, Atlas runtime, Langfuse observability, operational alerts, and abuse controls."
+        ],
+        "matchedRequired": [
+          "/approval controls|approval/i",
+          "/scheduled Finance Ops|Finance Ops/i",
+          "/Atlas runtime|Atlas/i",
+          "/Langfuse/i",
+          "/observability|telemetry/i",
+          "/alert/i",
+          "/abuse|public/i"
+        ],
+        "missingRequired": [],
+        "forbiddenHits": [],
+        "summary": "Business-valid answer: matched 7/7 required signals."
+      }
+    },
+    {
+      "id": "route-inbox-after-prompts",
+      "section": "Route Coverage",
+      "action": "Inbox after Atlas prompts",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-inbox-after-prompts.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/inbox",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Inbox 13 All En"
+      ]
+    },
+    {
+      "id": "route-documents-after-prompts",
+      "section": "Route Coverage",
+      "action": "Documents after Atlas uploads",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-documents-after-prompts.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/documents",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Documents Docum"
+      ]
+    },
+    {
+      "id": "route-workflow-runs-after-prompts",
+      "section": "Route Coverage",
+      "action": "Settings / workflow and observability surfaces",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-16-35-083Z/screenshots/route-workflow-runs-after-prompts.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/settings",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Settings Manage"
+      ]
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load Atlas threads: TypeError: Failed to fetch\n    at https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:2:3143\n    at t.<computed> (https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:1:13713)\n    at n.<anonymous> (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19794)\n    at Generator.next (<anonymous>)\n    at https://aethos.ishirock.tech/chunk-EMJ45C2U.js:1:874\n    at new Z (https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:2:2237)\n    at Ba (https://aethos.ishirock.tech/chunk-EMJ45C2U.js:1:694)\n    at n.loadThreads (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19754)\n    at n.ngOnInit (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19289)\n    at Nc (https://aethos.ishirock.tech/chunk-EMJ45C2U.js:7:13994)"
+  ],
+  "networkFailures": [
+    "net::ERR_ABORTED https://aethos.ishirock.tech/api/v1/chat/threads?limit=20",
+    "net::ERR_ABORTED https://aethos.ishirock.tech/api/v1/billing/subscription-status"
+  ],
+  "manualReview": {
+    "effectiveCounts": {
+      "PASS": 50,
+      "WARN": 0,
+      "FAIL": 16,
+      "SKIP": 0
+    },
+    "reclassifiedAsFail": [
+      {
+        "id": "1-6-capped-tax",
+        "reason": "Response hit Aethos validation errors and asked the user for client/service/engagement details instead of creating or routing the engagement.",
+        "issue": "https://github.com/venkateshbr/aethos-ps/issues/363"
+      },
+      {
+        "id": "5-6-reversal",
+        "reason": "Response asked the user for journal details instead of using latest/seeded posted manual journal context and did not clearly state new-journal reversal behavior.",
+        "issue": "https://github.com/venkateshbr/aethos-ps/issues/361"
+      },
+      {
+        "id": "7-5-config-telemetry",
+        "reason": "Response said Langfuse, telemetry, and abuse controls are not exposed through current tools despite mentioning the required terms.",
+        "issue": "https://github.com/venkateshbr/aethos-ps/issues/362"
+      }
+    ],
+    "interruptedStrictRerun": {
+      "path": "docs/qa/demo-v2-production-2026-06-29T06-44-39-272Z/",
+      "note": "Partial rerun after stricter validation; Atlas stopped returning responses after the first document prompt timed out. Used only as extra stability evidence for issue #358."
+    }
+  }
+}

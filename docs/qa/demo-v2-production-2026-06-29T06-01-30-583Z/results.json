@@ -1,0 +1,278 @@
+{
+  "runId": "2026-06-29T06-01-30-583Z",
+  "web": "https://aethos.ishirock.tech",
+  "timesheet": "https://timesheet.aethos.ishirock.tech",
+  "evidence": [
+    {
+      "id": "auth",
+      "section": "Authentication",
+      "action": "Logged into https://aethos.ishirock.tech",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/auth-login-filled.png",
+      "notes": [
+        "Tenant: Meridian Hermes Demo 1782477159363",
+        "Tenant ID: f3fe988f-bade-4037-b709-efb077faee67",
+        "User: prod-hermes-demo-1782477159363@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "route-copilot",
+      "section": "Route Coverage",
+      "action": "Aethos Atlas",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-copilot.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/copilot",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat Ne"
+      ]
+    },
+    {
+      "id": "route-documents",
+      "section": "Route Coverage",
+      "action": "Documents",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-documents.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/documents",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Documents Docum"
+      ]
+    },
+    {
+      "id": "route-inbox",
+      "section": "Route Coverage",
+      "action": "Inbox",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-inbox.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/inbox",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Inbox 3 All Eng"
+      ]
+    },
+    {
+      "id": "route-engagements",
+      "section": "Route Coverage",
+      "action": "Engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-engagements.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/engagements",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "route-projects",
+      "section": "Route Coverage",
+      "action": "Projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-projects.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/projects",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "route-invoices",
+      "section": "Route Coverage",
+      "action": "Invoices",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-invoices.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/invoices",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Invoices Review"
+      ]
+    },
+    {
+      "id": "route-clients",
+      "section": "Route Coverage",
+      "action": "Contacts",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-clients.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/clients",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "route-expenses",
+      "section": "Route Coverage",
+      "action": "Expenses",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-expenses.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/expenses",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Expenses Track "
+      ]
+    },
+    {
+      "id": "route-bills",
+      "section": "Route Coverage",
+      "action": "Bills",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-bills.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/bills",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Bills Manage ve"
+      ]
+    },
+    {
+      "id": "route-billing-runs",
+      "section": "Route Coverage",
+      "action": "Billing Runs / Pay Bills",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-billing-runs.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/billing-runs",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Billing Run Bil"
+      ]
+    },
+    {
+      "id": "route-time",
+      "section": "Route Coverage",
+      "action": "Time",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-time.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/time",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Time Entries Lo"
+      ]
+    },
+    {
+      "id": "route-approvals",
+      "section": "Route Coverage",
+      "action": "Approvals",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-approvals.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/approvals",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Timesheet appro"
+      ]
+    },
+    {
+      "id": "route-payments",
+      "section": "Route Coverage",
+      "action": "Payments",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-payments.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/payments",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Payments AR rec"
+      ]
+    },
+    {
+      "id": "route-people",
+      "section": "Route Coverage",
+      "action": "People",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-people.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/people",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "route-reports",
+      "section": "Route Coverage",
+      "action": "Reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-reports.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/reports",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "route-journals",
+      "section": "Route Coverage",
+      "action": "Accounting / Journal Entries",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-journals.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/accounting/journals",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Journal Entries"
+      ]
+    },
+    {
+      "id": "route-settings",
+      "section": "Route Coverage",
+      "action": "Settings",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-settings.png",
+      "notes": [
+        "URL: https://aethos.ishirock.tech/app/settings",
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Settings Manage"
+      ]
+    },
+    {
+      "id": "route-timesheet",
+      "section": "Route Coverage",
+      "action": "Timesheet portal",
+      "status": "PASS",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/route-timesheet.png",
+      "notes": [
+        "URL: https://timesheet.aethos.ishirock.tech",
+        "Body excerpt: Aethos Timesheets Sign in Log the hours you worked on your projects. EMAIL PASSWORD Sign in"
+      ]
+    },
+    {
+      "id": "1-1-engagement-letter",
+      "section": "1.1 Engagement letter onboarding",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.",
+      "response": " Good—I can see you have Inbox items pending. The document extraction has queued tasks. Since I don't have direct access to the extracted engagement letter details yet, I need to know the key information from the nexus_engagement_letter.pdf to create the engagement. \n\nCan you provide these details from the engagement letter:\n\n1. **Client name** and contact info\n2. **Service type** (audit, tax, accounting, advisory, etc.) and scope\n3. **Engagement period** (start and end dates)\n4. **Billing terms** (fixed fee, hourly rates, retainer, etc.)\n5. **Fee amounts** and billing schedule\n6. **Key contacts** (client stakeholder, Aethos engagement lead)\n7. **Rate card** (hourly rates by service/role if applicable)\n8. **First project details** (scope, timeline, deliverables)\n\nAny unusual terms or conditions that should go to Inbox for review?\n\nOnce I have these, I'll create the client, engagement, billing setup, rate card, and first project all through the proper approval workflows—anything flagged as risky will route to your Inbox.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/1-1-engagement-letter-response.png",
+      "notes": [
+        "Attachment banner before prompt: attach_file Attached: nexus_engagement_letter.pdf - add instructions and send to process. Documents",
+        "Attachment did not start extraction before prompt submission."
+      ]
+    },
+    {
+      "id": "1-2-engagement-structure",
+      "section": "1.2 Project structure",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Show me the Nexus Capital Partners engagement structure. List the active projects, billing model for each workstream, and anything missing before billing.",
+      "response": " Nexus Capital Partners is not showing up in the active engagements. The system currently has two demo engagements:\n\n1. **Blackwood Consulting** (ENG-0002): Annual Advisory Retainer in GBP, active since April 27, 2026\n2. **Acme Corp** (ENG-0001): Digital Transformation (time and materials) in USD, active since April 27, 2026\n\nNeither of these is Nexus Capital Partners. The engagement you're looking for either doesn't exist yet in this tenant, is under a different name, or may be inactive/archived.\n\nDo you want me to:\n- Search by a different client name or variation?\n- Check archived/inactive engagements?\n- Create a new engagement record for Nexus Capital Partners?\n- Pull details from one of the existing engagements as an example of the billing structure format?",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/1-2-engagement-structure-response.png",
+      "notes": []
+    },
+    {
+      "id": "1-3-log-time",
+      "section": "1.3 Time entry",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling",
+      "response": " I don't see a \"Nexus CFO Advisory\" project in the active engagements list. The system currently shows two demo engagements: Annual Advisory Retainer for Blackwood Consulting and Digital Transformation for Acme Corp.\n\nTo log your time, I need the correct engagement. Can you confirm:\n- Is \"Nexus CFO Advisory\" the exact name of the project as it appears in Aethos, or is it known by a different name?\n- Which client is this engagement for?\n- Do you know the engagement code (like ENG-0001 or ENG-0002)?\n\nAlternatively, if you'd like to log time to one of the existing engagements instead, I can set that up for you.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/1-3-log-time-response.png",
+      "notes": []
+    },
+    {
+      "id": "1-3a-delivery-data",
+      "section": "1.3A People and WIP",
+      "action": "Atlas prompt",
+      "status": "PASS",
+      "prompt": "Show me Alice Chen's June delivery data. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced for Nexus.",
+      "response": " I couldn't locate Alice Chen's record or a client named Nexus in the current data. The system shows two active engagements (Blackwood Consulting and Acme Corp) but neither is Nexus, and there are no invoices on file for Nexus.\n\nTo find Alice Chen's June delivery data, I need a bit more context:\n\n1. Is Alice Chen a consultant or resource assigned to a specific project or client? If you know the project name or engagement code, I can look up her WIP and billable entries for that work.\n\n2. Do you have the client ID or engagement ID for Nexus? The search came back empty, so either the client name differs slightly or the engagement may not be set up yet.\n\n3. Are you looking for time entries, expenses, or both for June?\n\nOnce you provide the engagement or client details, I can pull her full delivery summary with approved hours, pending approvals, billable expenses, utilization metrics, and which entries are ready to invoice.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/1-3a-delivery-data-response.png",
+      "notes": []
+    },
+    {
+      "id": "1-4-billing-run",
+      "section": "1.4 Mixed model invoice",
+      "action": "Atlas prompt",
+      "status": "FAIL",
+      "prompt": "Prepare the June 2026 Nexus billing run across fixed fee, monthly retainer, T&M advisory hours, and approved expenses. Show the draft invoice lines and route the invoice to Inbox before sending.",
+      "screenshot": "docs/qa/demo-v2-production-2026-06-29T06-01-30-583Z/screenshots/1-4-billing-run-failed.png",
+      "notes": [
+        "Error: page.waitForTimeout: Target page, context or browser has been closed"
+      ]
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load Atlas threads: TypeError: Failed to fetch\n    at https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:2:3143\n    at t.<computed> (https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:1:13713)\n    at n.<anonymous> (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19794)\n    at Generator.next (<anonymous>)\n    at https://aethos.ishirock.tech/chunk-EMJ45C2U.js:1:874\n    at new Z (https://aethos.ishirock.tech/polyfills-OQVFUOR5.js:2:2237)\n    at Ba (https://aethos.ishirock.tech/chunk-EMJ45C2U.js:1:694)\n    at n.loadThreads (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19754)\n    at n.ngOnInit (https://aethos.ishirock.tech/chunk-L2SXWXOM.js:1:19289)\n    at Nc (https://aethos.ishirock.tech/chunk-EMJ45C2U.js:7:13994)"
+  ],
+  "networkFailures": [
+    "net::ERR_ABORTED https://aethos.ishirock.tech/api/v1/billing/subscription-status",
+    "net::ERR_ABORTED https://aethos.ishirock.tech/api/v1/chat/threads?limit=20"
+  ]
+}

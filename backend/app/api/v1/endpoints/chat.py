@@ -31,11 +31,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
 from app.repositories.chat_repo import ChatRepository
+from app.services.atlas_runtime import build_atlas_runtime
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,16 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class MessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str | None
+    tool_name: str | None = None
+    finish_reason: str | None = None
+    model: str | None = None
+    created_at: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -88,6 +98,18 @@ def _thread_to_response(row: dict, tenant_id: str) -> ThreadResponse:
 
 def _build_repo(db: Client, tenant_id: str) -> ChatRepository:
     return ChatRepository(db=db, tenant_id=tenant_id)
+
+
+def _message_to_response(row: dict) -> MessageResponse:
+    return MessageResponse(
+        id=str(row["id"]),
+        role=str(row["role"]),
+        content=row.get("content"),
+        tool_name=row.get("tool_name"),
+        finish_reason=row.get("finish_reason"),
+        model=row.get("model"),
+        created_at=str(row["created_at"]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +180,33 @@ async def list_threads(
     return [_thread_to_response(r, tenant_id) for r in rows]
 
 
+@router.get(
+    "/threads/{thread_id}/messages",
+    response_model=list[MessageResponse],
+    summary="List messages for a chat thread",
+)
+async def list_messages(
+    thread_id: str,
+    limit: int = 50,
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_user_rls_client),  # noqa: B008
+) -> list[MessageResponse]:
+    """Return persisted messages for one authenticated user's thread."""
+    repo = _build_repo(db, tenant_id)
+    thread = await repo.get_thread(thread_id)
+    if thread is None or str(thread.get("user_id")) != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found",
+        )
+    rows = await repo.list_messages(
+        thread_id=thread_id,
+        limit=min(limit, 200),
+    )
+    return [_message_to_response(row) for row in rows]
+
+
 # ---------------------------------------------------------------------------
 # Message / SSE streaming endpoint
 # ---------------------------------------------------------------------------
@@ -191,7 +240,7 @@ async def send_message(
 
     # Validate thread exists and belongs to this tenant
     thread = await repo.get_thread(thread_id)
-    if thread is None:
+    if thread is None or str(thread.get("user_id")) != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thread not found",
@@ -220,13 +269,11 @@ async def send_message(
         extra={"tenant_id": tenant_id, "thread_id": thread_id},
     )
 
-    # Build the agent
-    deps = CopilotDeps(
+    runtime = await build_atlas_runtime(
         tenant_id=tenant_id,
         user_id=current_user.user_id,
         db_client=db,
     )
-    agent = CopilotAgent(deps=deps)
 
     async def event_stream() -> AsyncIterator[str]:
         """Consume the agent stream, accumulate the reply, persist it on done."""
@@ -234,7 +281,7 @@ async def send_message(
         finish_reason: str = "stop"
         had_error = False
 
-        async for frame in agent.run_stream(
+        async for frame in runtime.stream_message(
             user_message=payload.content,
             thread_id=thread_id,
         ):

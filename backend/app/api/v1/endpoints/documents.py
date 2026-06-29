@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, date
 from datetime import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
@@ -71,6 +71,86 @@ def _classify_document_type(filename: str) -> str:
     return "vendor_invoice"
 
 
+def _load_document_or_404(db: Client, tenant_id: str, document_id: str) -> dict:
+    try:
+        result = (
+            db.table("documents")
+            .select(
+                "id, tenant_id, original_filename, document_type, storage_path, "
+                "mime_type, file_size_bytes, sha256, status, created_at"
+            )
+            .eq("id", document_id)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error(
+            "Document lookup failed for tenant %s document %s: %s",
+            tenant_id,
+            document_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while loading the document.",
+        ) from exc
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+    return result.data[0]
+
+
+def _document_response_from_row(row: dict, *, tenant_id: str | None = None) -> DocumentResponse:
+    return DocumentResponse(
+        id=row["id"],
+        tenant_id=row.get("tenant_id") or tenant_id or "",
+        original_filename=row.get("original_filename"),
+        document_type=row.get("document_type") or "vendor_invoice",
+        storage_path=row["storage_path"],
+        mime_type=row["mime_type"],
+        file_size_bytes=int(row.get("file_size_bytes") or 0),
+        sha256=row.get("sha256") or "",
+        status=row["status"],
+        created_at=row["created_at"],
+    )
+
+
+async def _dispatch_extraction(*, document_id: str, tenant_id: str) -> None:
+    """Run or enqueue extraction using the configured extraction mode.
+
+    Failures are non-fatal at the upload/trigger layer because the document row
+    and storage object already exist. The extraction worker updates the row to
+    failed when it reaches the document and cannot process it.
+    """
+    from app.core.config import settings as _settings
+
+    try:
+        from app.workers.document_extraction import extract_document_worker
+
+        if _settings.extraction_mode == "async":
+            await extract_document_worker.defer_async(
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+        else:
+            await extract_document_worker.func(
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+    except Exception as exc:
+        logger.warning(
+            "Extraction dispatch (%s) failed for %s: %s",
+            _settings.extraction_mode,
+            document_id,
+            exc,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Upload endpoint
 # ---------------------------------------------------------------------------
@@ -79,6 +159,7 @@ def _classify_document_type(filename: str) -> str:
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile,
+    process: bool = Form(default=True),
     tenant_id: str = Depends(get_tenant_id),
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     db: Client = Depends(get_service_role_client),  # noqa: B008
@@ -89,7 +170,7 @@ async def upload_document(
     2. Reads full content, computes SHA-256.
     3. Uploads to Supabase Storage at ``{tenant_id}/{year}/{month}/{id}.{ext}``.
     4. Inserts a ``documents`` row with ``status='uploaded'``.
-    5. Defers ``extract_document_worker`` Procrastinate task.
+    5. Defers/runs ``extract_document_worker`` unless ``process=false``.
     6. Returns ``DocumentResponse``.
     """
     # ------------------------------------------------------------------
@@ -189,49 +270,8 @@ async def upload_document(
             detail="An internal error occurred while saving the document record.",
         ) from exc
 
-    # ------------------------------------------------------------------
-    # 6. Dispatch extraction.
-    #
-    # Two modes, switched by `settings.extraction_mode`:
-    #
-    #   sync  — Pilot default. Run the extraction inline; the upload
-    #           response carries the result. Blocks the request for 5-30s
-    #           while the LLM extracts. No Procrastinate worker required.
-    #
-    #   async — Defer onto the Procrastinate queue; the upload returns
-    #           immediately and the worker processes the job out of band.
-    #           Requires DATABASE_URL + a running worker. The original
-    #           production design.
-    #
-    # In both modes, failures are swallowed at the upload layer (the file
-    # is already in Storage + the documents row exists; a manual re-queue
-    # or cron sweep can pick it up later). The extraction worker itself
-    # also has its own try/except that updates documents.status='failed'.
-    # ------------------------------------------------------------------
-    from app.core.config import settings as _settings
-
-    try:
-        from app.workers.document_extraction import extract_document_worker
-
-        if _settings.extraction_mode == "async":
-            await extract_document_worker.defer_async(
-                document_id=document_id,
-                tenant_id=tenant_id,
-            )
-        else:
-            # Inline call — Procrastinate Task wraps the original function on
-            # `.func`. Direct invocation skips the queue entirely.
-            await extract_document_worker.func(
-                document_id=document_id,
-                tenant_id=tenant_id,
-            )
-    except Exception as exc:
-        logger.warning(
-            "Extraction dispatch (%s) failed for %s: %s",
-            _settings.extraction_mode,
-            document_id,
-            exc,
-        )
+    if process:
+        await _dispatch_extraction(document_id=document_id, tenant_id=tenant_id)
 
     response_row = saved_row
     try:
@@ -254,18 +294,40 @@ async def upload_document(
     # ------------------------------------------------------------------
     # 7. Return response.
     # ------------------------------------------------------------------
-    return DocumentResponse(
-        id=response_row.get("id", document_id),
-        tenant_id=response_row.get("tenant_id", tenant_id),
-        original_filename=response_row.get("original_filename"),
-        document_type=response_row.get("document_type") or "vendor_invoice",
-        storage_path=response_row.get("storage_path", storage_path),
-        mime_type=response_row.get("mime_type", content_type),
-        file_size_bytes=response_row.get("file_size_bytes", len(content)),
-        sha256=response_row.get("sha256", sha256_hex),
-        status=response_row.get("status", "uploaded"),
-        created_at=response_row.get("created_at", now_iso),
+    return _document_response_from_row(
+        {
+            **response_row,
+            "id": response_row.get("id", document_id),
+            "tenant_id": response_row.get("tenant_id", tenant_id),
+            "document_type": response_row.get("document_type") or "vendor_invoice",
+            "storage_path": response_row.get("storage_path", storage_path),
+            "mime_type": response_row.get("mime_type", content_type),
+            "file_size_bytes": response_row.get("file_size_bytes", len(content)),
+            "sha256": response_row.get("sha256", sha256_hex),
+            "status": response_row.get("status", "uploaded"),
+            "created_at": response_row.get("created_at", now_iso),
+        },
+        tenant_id=tenant_id,
     )
+
+
+@router.post("/{document_id}/extract", response_model=DocumentResponse)
+async def extract_document(
+    document_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> DocumentResponse:
+    """Explicitly run extraction for an uploaded document.
+
+    Copilot uses this after a user sends a prompt with an attached document, so
+    selecting a file only attaches it and does not create Inbox work by itself.
+    """
+    row = _load_document_or_404(db, tenant_id, document_id)
+    if row.get("status") != "extracted":
+        await _dispatch_extraction(document_id=document_id, tenant_id=tenant_id)
+        row = _load_document_or_404(db, tenant_id, document_id)
+    return _document_response_from_row(row, tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------
@@ -326,50 +388,8 @@ async def get_document(
     db: Client = Depends(get_user_rls_client),  # noqa: B008
 ) -> DocumentResponse:
     """Return one document row for upload/extraction status polling."""
-    try:
-        result = (
-            db.table("documents")
-            .select(
-                "id, tenant_id, original_filename, document_type, storage_path, "
-                "mime_type, file_size_bytes, sha256, status, created_at"
-            )
-            .eq("id", document_id)
-            .eq("tenant_id", tenant_id)
-            .limit(1)
-            .execute()
-        )
-    except Exception as exc:
-        logger.error(
-            "Document status query failed for tenant %s document %s: %s",
-            tenant_id,
-            document_id,
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred while loading the document.",
-        ) from exc
-
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found.",
-        )
-
-    row = result.data[0]
-    return DocumentResponse(
-        id=row["id"],
-        tenant_id=row.get("tenant_id") or tenant_id,
-        original_filename=row.get("original_filename"),
-        document_type=row.get("document_type") or "vendor_invoice",
-        storage_path=row["storage_path"],
-        mime_type=row["mime_type"],
-        file_size_bytes=int(row.get("file_size_bytes") or 0),
-        sha256=row.get("sha256") or "",
-        status=row["status"],
-        created_at=row["created_at"],
-    )
+    row = _load_document_or_404(db, tenant_id, document_id)
+    return _document_response_from_row(row, tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------

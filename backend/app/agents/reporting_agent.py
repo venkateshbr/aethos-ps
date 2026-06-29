@@ -35,8 +35,7 @@ from typing import ClassVar
 
 import openai
 
-from app.agents.base import make_async_llm_client, mask_pii
-from app.core.config import settings
+from app.agents.base import make_async_llm_client, mask_pii, resolve_model_chain
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +251,11 @@ class ReportingAgent:
 
     def __init__(self, deps: ReportingDeps) -> None:
         self.deps = deps
-        self.client = make_async_llm_client()
+        self.client = make_async_llm_client(
+            agent_name="reporting_agent",
+            tenant_id=deps.tenant_id,
+            user_id=deps.user_id,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -402,11 +405,12 @@ class ReportingAgent:
         pending_tool_calls: dict[int, dict] = {}
         announced_tool_names: set[int] = set()
         finish_reason: str | None = None
-        model_used: str = settings.agent_models[0]
+        model_chain = await resolve_model_chain(self.deps.db_client, self.deps.tenant_id)
+        model_used: str = model_chain[0]
 
         stream = await self.client.chat.completions.create(
-            model=settings.agent_models[0],
-            extra_body={"models": settings.agent_models},
+            model=model_chain[0],
+            extra_body={"models": model_chain},
             max_tokens=_MAX_TOKENS,
             messages=messages,  # type: ignore[arg-type]
             tools=self._openai_tools(),  # type: ignore[arg-type]

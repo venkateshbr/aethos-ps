@@ -222,6 +222,7 @@ def test_engagement_draft_accepts_valid_billing_arrangement() -> None:
         "retainer_draw",
         "milestone",
         "capped_tm",
+        "mixed",
     ]
     for arrangement in valid_arrangements:
         d = EngagementDraft(billing_arrangement=arrangement, confidence=0.8)

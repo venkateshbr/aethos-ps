@@ -170,6 +170,286 @@ class FinanceOpsScheduleResponse(SetFinanceOpsScheduleRequest):
     updated_at: str | None = None
 
 
+class FinanceOpsControlRoomWorkflow(BaseModel):
+    """Safe workflow summary for the Finance Ops Manager control room."""
+
+    id: str
+    workflow_name: str
+    status: str
+    owner_agent_name: str | None = None
+    current_step: str | None = None
+    period: str | None = None
+    started_at: str
+    completed_at: str | None = None
+    updated_at: str
+    has_error: bool = False
+    business_summary: str
+
+
+class FinanceOpsControlRoomTask(BaseModel):
+    """Safe Inbox task summary for pending Finance Ops Manager work."""
+
+    id: str
+    kind: str
+    priority: str
+    title: str
+    status: str
+    period: str | None = None
+    action_count: int | None = None
+    source_schedule_key: str | None = None
+    risk_class: str | None = None
+    required_approval_role: str | None = None
+    created_at: str
+    updated_at: str | None = None
+
+
+class FinanceOpsControlRoomResponse(BaseModel):
+    """Consolidated read-only Finance Ops Manager command center."""
+
+    tenant_id: str
+    generated_at: str
+    schedule: FinanceOpsScheduleResponse
+    next_run_at: str | None = None
+    latest_scheduled_run: FinanceOpsControlRoomWorkflow | None = None
+    recent_scheduled_runs: list[FinanceOpsControlRoomWorkflow]
+    recent_workflow_status_counts: dict[str, int]
+    waiting_on_human_workflows: list[FinanceOpsControlRoomWorkflow]
+    failed_or_skipped_workflows: list[FinanceOpsControlRoomWorkflow]
+    open_action_plans: list[FinanceOpsControlRoomTask]
+    open_plan_items: list[FinanceOpsControlRoomTask]
+    open_escalations: list[FinanceOpsControlRoomTask]
+    operational_health: dict
+
+
+class ApprovalControlsPersonaSummary(BaseModel):
+    """User-safe finance persona mapping for the current tenant role model."""
+
+    id: str
+    label: str
+    description: str
+    matched_current_role: bool
+    read_only: bool
+    mapped_roles: list[str]
+    areas: list[str]
+    allowed_actions: list[str]
+    restricted_actions: list[str]
+
+
+class ApprovalControlsPolicyRule(BaseModel):
+    """Business-readable approval policy rule for Atlas and Settings."""
+
+    id: str
+    label: str
+    required_role: str
+    current_user_can_approve: bool
+    threshold: str | None = None
+    explanation: str
+
+
+class ApprovalControlsInboxItem(BaseModel):
+    """Safe Inbox item summary for approval-control readbacks."""
+
+    id: str
+    kind: str
+    priority: str
+    title: str
+    status: str
+    created_at: str
+    risk_category: str
+    required_approval_role: str
+    current_user_can_approve: bool
+    business_reason: str
+    amount: str | None = None
+    threshold: str | None = None
+
+
+class ApprovalControlsReadPackResponse(BaseModel):
+    """Role-aware read pack for approval policy, personas, and Inbox risk."""
+
+    tenant_id: str
+    generated_at: str
+    current_user_role: str
+    policy_source: str
+    matched_persona_ids: list[str]
+    personas: list[ApprovalControlsPersonaSummary]
+    policy_rules: list[ApprovalControlsPolicyRule]
+    visible_open_inbox_item_count: int
+    pending_high_risk_inbox: list[ApprovalControlsInboxItem]
+    pending_items_requiring_higher_role: list[ApprovalControlsInboxItem]
+    denied_action_explanations: list[str]
+
+
+class O2CCollectionsReminderSummary(BaseModel):
+    """Safe reminder-history summary for an invoice."""
+
+    count: int = 0
+    last_sent_at: str | None = None
+    last_tone: str | None = None
+    last_status: str | None = None
+
+
+class O2CCollectionsInvoiceSummary(BaseModel):
+    """Invoice-level O2C collections and payment state for Atlas."""
+
+    id: str
+    invoice_number: str
+    client_id: str
+    client_name: str | None = None
+    status: str
+    invoice_state: str
+    payment_status: str
+    currency: str
+    total: str
+    paid_amount: str
+    balance_due: str
+    issue_date: str | None = None
+    due_date: str | None = None
+    sent_at: str | None = None
+    paid_at: str | None = None
+    days_overdue: int
+    aging_bucket: str
+    public_invoice_available: bool
+    payment_link_state: str
+    reminder_history: O2CCollectionsReminderSummary
+    collections_policy_stage: str | None = None
+    recommended_next_action: str
+    reminder_blockers: list[str]
+
+
+class O2CCustomerCollectionsSummary(BaseModel):
+    """Customer-level O2C collections rollup."""
+
+    client_id: str
+    client_name: str | None = None
+    invoice_count: int
+    open_invoice_count: int
+    overdue_invoice_count: int
+    balances_by_currency: dict[str, str]
+    overdue_balance_by_currency: dict[str, str]
+    recommended_next_action: str
+    invoices: list[O2CCollectionsInvoiceSummary]
+
+
+class O2CCollectionsReadPackResponse(BaseModel):
+    """Read-only O2C collections and invoice drilldown pack."""
+
+    tenant_id: str
+    generated_at: str
+    query: dict
+    totals: dict[str, object]
+    customers: list[O2CCustomerCollectionsSummary]
+    invoices: list[O2CCollectionsInvoiceSummary]
+
+
+class P2PPaymentBatchSummary(BaseModel):
+    """Safe payment-batch state for one bill."""
+
+    batch_id: str
+    batch_status: str
+    item_status: str
+    amount: str
+    currency: str
+    pay_date: str | None = None
+    file_format: str | None = None
+    exported_at: str | None = None
+    export_file_hash_present: bool = False
+    sent_at: str | None = None
+    settled_at: str | None = None
+    risk_review_required: bool = False
+
+
+class P2PBillSummary(BaseModel):
+    """Bill-level P2P payment-risk and evidence state for Atlas."""
+
+    id: str
+    bill_number: str
+    vendor_id: str
+    vendor_name: str | None = None
+    vendor_invoice_number: str | None = None
+    status: str
+    bill_state: str
+    currency: str
+    total: str
+    issue_date: str | None = None
+    due_date: str | None = None
+    paid_at: str | None = None
+    days_until_due: int | None = None
+    days_overdue: int
+    aging_bucket: str
+    source_document_id: str | None = None
+    source_document_available: bool
+    po_match_status: str
+    coding_summary: dict[str, object]
+    duplicate_risk: bool
+    duplicate_review_required: bool
+    approval_state: str
+    payment_readiness: str
+    payment_blockers: list[str]
+    payment_batches: list[P2PPaymentBatchSummary]
+    recommended_next_action: str
+
+
+class P2PVendorSummary(BaseModel):
+    """Vendor-level P2P payment-risk rollup."""
+
+    vendor_id: str
+    vendor_name: str | None = None
+    bill_count: int
+    open_bill_count: int
+    due_soon_bill_count: int
+    blocked_bill_count: int
+    balances_by_currency: dict[str, str]
+    due_soon_by_currency: dict[str, str]
+    recommended_next_action: str
+    bills: list[P2PBillSummary]
+
+
+class P2PPaymentRiskReadPackResponse(BaseModel):
+    """Read-only P2P vendor bill and payment-risk drilldown pack."""
+
+    tenant_id: str
+    generated_at: str
+    query: dict
+    totals: dict[str, object]
+    vendors: list[P2PVendorSummary]
+    bills: list[P2PBillSummary]
+
+
+class R2RJournalSummary(BaseModel):
+    """Safe journal state summary for an R2R management pack."""
+
+    period: str
+    total_count: int
+    posted_count: int
+    draft_count: int
+    recent_journals: list[dict[str, object]]
+    draft_journals: list[dict[str, object]]
+
+
+class R2RManagementPackReadPackResponse(BaseModel):
+    """Read-only R2R management reporting and close drilldown pack."""
+
+    tenant_id: str
+    generated_at: str
+    period: str
+    period_start: str
+    period_end: str
+    comparison_period: str
+    query: dict
+    data_availability: dict[str, object]
+    close_status: dict[str, object]
+    close_task_checklist_state: dict[str, object]
+    close_blockers: list[dict[str, object]]
+    financial_statements: dict[str, object]
+    statement_variances: list[dict[str, object]]
+    working_capital_movement: dict[str, object]
+    project_margin_highlights: list[dict[str, object]]
+    utilization_highlights: list[dict[str, object]]
+    journal_summary: R2RJournalSummary
+    management_commentary: list[dict[str, object]]
+    recommended_next_actions: list[str]
+
+
 class AgentEvalCandidateResponse(BaseModel):
     """Human correction selected as a candidate eval case."""
 

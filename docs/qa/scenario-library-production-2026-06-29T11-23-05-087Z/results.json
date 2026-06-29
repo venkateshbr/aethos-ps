@@ -1,0 +1,2989 @@
+{
+  "runId": "2026-06-29T11-23-05-087Z",
+  "web": "https://aethos.ishirock.tech",
+  "timesheet": "https://timesheet.aethos.ishirock.tech",
+  "results": [
+    {
+      "spec": {
+        "id": "T1",
+        "name": "Cobalt Consulting Co.",
+        "country": "US",
+        "currency": "USD",
+        "client": "Riverbend Foods",
+        "engagement": "Riverbend Discovery Advisory",
+        "project": "Riverbend Discovery Project",
+        "billing": "time_and_materials",
+        "serviceLine": "advisory",
+        "totalValue": "25000.00",
+        "prompt": "Show me the Riverbend Foods engagement structure. List active projects, billing model, linked source data, and anything missing before billing."
+      },
+      "owner": {
+        "email": "prod-t1-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T1-Owner-2026!",
+        "tenantId": "cc5a95c9-a4ba-4542-8573-fceca3ace26f"
+      },
+      "employee": {
+        "email": "prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T1-Employee-2026!",
+        "employeeId": "99ee9e47-1e5f-453f-853e-6df1b49f2a4d"
+      },
+      "erpUser": {
+        "email": "prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T1-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "d3b6e796-1bec-40e7-b4dd-e91c67327e2b"
+      },
+      "records": {
+        "clientId": "2ff58e2a-3099-4683-82ff-cc0e46d04a91",
+        "engagementId": "8b00779c-b634-4e15-9ec1-d7af8952f8ae",
+        "projectId": "9f8012ff-5f37-4199-8ea1-b2ef10751f16"
+      },
+      "checks": [
+        {
+          "id": "T1-signup",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=cc5a95c9-a4ba-4542-8573-fceca3ace26f",
+            "owner=prod-t1-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T1-master-data",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Riverbend Foods",
+            "project=Riverbend Discovery Project",
+            "erp_user=prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T1-owner-login",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-owner-login.png"
+        },
+        {
+          "id": "T1-copilot",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T1-clients",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T1-engagements",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T1-projects",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T1-people",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T1-time",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/time",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-time.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Time Entries Lo"
+          ]
+        },
+        {
+          "id": "T1-inbox",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/inbox",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-inbox.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Inbox All Engag"
+          ]
+        },
+        {
+          "id": "T1-invoices",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/invoices",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-invoices.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Invoices Review"
+          ]
+        },
+        {
+          "id": "T1-bills",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/bills",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-bills.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Bills Manage ve"
+          ]
+        },
+        {
+          "id": "T1-reports",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T1-journals",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/accounting/journals",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-journals.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Journal Entries"
+          ]
+        },
+        {
+          "id": "T1-settings",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Live route /app/settings",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-settings.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Settings Manage"
+          ]
+        },
+        {
+          "id": "T1-atlas",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me the Riverbend Foods engagement structure. List active projects, billing model, linked source data, and anything missing before billing.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Riverbend, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T1-erp-manager-login",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T1-timesheet",
+          "tenant": "Cobalt Consulting Co.",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T2",
+        "name": "Pixel & Pulp Studio",
+        "country": "GB",
+        "currency": "GBP",
+        "client": "Aurora Cosmetics",
+        "engagement": "Aurora Web Build SOW",
+        "project": "Aurora Milestone 1 Build",
+        "billing": "milestone",
+        "serviceLine": "advisory",
+        "totalValue": "45000.00",
+        "prompt": "Show me the Aurora Cosmetics milestone engagement. Include projects, milestone billing model, WIP readiness, and missing setup before invoicing."
+      },
+      "owner": {
+        "email": "prod-t2-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T2-Owner-2026!",
+        "tenantId": "72e4346c-adfd-46b2-a89f-1322e7f918e6"
+      },
+      "employee": {
+        "email": "prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T2-Employee-2026!",
+        "employeeId": "d31415b9-858f-4b0e-b762-5deb83c16649"
+      },
+      "erpUser": {
+        "email": "prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T2-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "5782b3d9-412d-4d56-bb12-93c8aa3ff348"
+      },
+      "records": {
+        "clientId": "7e73032c-d9d3-4270-98a0-c6247d97d86b",
+        "engagementId": "9e6c4b18-8361-45fb-b748-2b094a11ecf5",
+        "projectId": "feed2bc6-b1bd-44b7-a6c0-6655938ba662"
+      },
+      "checks": [
+        {
+          "id": "T2-signup",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=72e4346c-adfd-46b2-a89f-1322e7f918e6",
+            "owner=prod-t2-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T2-master-data",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Aurora Cosmetics",
+            "project=Aurora Milestone 1 Build",
+            "erp_user=prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T2-owner-login",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-owner-login.png"
+        },
+        {
+          "id": "T2-copilot",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T2-clients",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T2-engagements",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T2-projects",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T2-people",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T2-reports",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T2-atlas",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me the Aurora Cosmetics milestone engagement. Include projects, milestone billing model, WIP readiness, and missing setup before invoicing.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Aurora, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T2-erp-manager-login",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T2-timesheet",
+          "tenant": "Pixel & Pulp Studio",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T3",
+        "name": "Harborstone Accountants",
+        "country": "US",
+        "currency": "USD",
+        "client": "Delmont Holdings",
+        "engagement": "Delmont Annual Accounts FY2026",
+        "project": "Delmont Accounts Drafting",
+        "billing": "fixed_fee",
+        "serviceLine": "accounting",
+        "totalValue": "18500.00",
+        "prompt": "Show me the Delmont Holdings annual accounts engagement. Include service line, billing terms, projects, and year-end reporting readiness."
+      },
+      "owner": {
+        "email": "prod-t3-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T3-Owner-2026!",
+        "tenantId": "014909ad-505e-4ea0-af83-3e9aac4b661a"
+      },
+      "employee": {
+        "email": "prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T3-Employee-2026!",
+        "employeeId": "cb149495-077c-4b77-a248-e577cea5f8d8"
+      },
+      "erpUser": {
+        "email": "prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T3-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "94046f0e-5c94-4621-b1b5-cc242f6a3853"
+      },
+      "records": {
+        "clientId": "dafad7b6-6524-4eff-ae63-2d798a75a3c2",
+        "engagementId": "ad96a0d3-9a7a-4bd1-8a1e-7d7d68cf3f3f",
+        "projectId": "0b562af5-b21b-4aa9-9fbc-ffcbaa836324"
+      },
+      "checks": [
+        {
+          "id": "T3-signup",
+          "tenant": "Harborstone Accountants",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=014909ad-505e-4ea0-af83-3e9aac4b661a",
+            "owner=prod-t3-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T3-master-data",
+          "tenant": "Harborstone Accountants",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Delmont Holdings",
+            "project=Delmont Accounts Drafting",
+            "erp_user=prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T3-owner-login",
+          "tenant": "Harborstone Accountants",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-owner-login.png"
+        },
+        {
+          "id": "T3-copilot",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T3-clients",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T3-engagements",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T3-projects",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T3-people",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T3-reports",
+          "tenant": "Harborstone Accountants",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T3-atlas",
+          "tenant": "Harborstone Accountants",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me the Delmont Holdings annual accounts engagement. Include service line, billing terms, projects, and year-end reporting readiness.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Delmont, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T3-erp-manager-login",
+          "tenant": "Harborstone Accountants",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T3-timesheet",
+          "tenant": "Harborstone Accountants",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T4",
+        "name": "Vantage Tax Partners",
+        "country": "SG",
+        "currency": "SGD",
+        "client": "Pacific Rim Holdings",
+        "engagement": "Pacific Rim Cross-Border Tax",
+        "project": "Pacific Rim FX Advisory",
+        "billing": "capped_tm",
+        "serviceLine": "tax",
+        "totalValue": "38000.00",
+        "prompt": "Review Pacific Rim cross-border tax readiness. Include FX provenance needs, capped T&M terms, project setup, and missing evidence before billing."
+      },
+      "owner": {
+        "email": "prod-t4-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T4-Owner-2026!",
+        "tenantId": "ad66506d-fc37-45f5-93ab-a98b8188076a"
+      },
+      "employee": {
+        "email": "prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T4-Employee-2026!",
+        "employeeId": "bcecabd0-47a9-4015-854e-153bb70d8c25"
+      },
+      "erpUser": {
+        "email": "prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T4-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "ed21c790-4972-4042-9413-b871b8eb267c"
+      },
+      "records": {
+        "clientId": "363c46a1-0b1c-486b-8f8f-50010bdacfb7",
+        "engagementId": "7f18f63e-c073-4554-9c72-f6ee77bc9e70",
+        "projectId": "23ad5d80-67ce-4d5b-b7c5-ef93a909c247"
+      },
+      "checks": [
+        {
+          "id": "T4-signup",
+          "tenant": "Vantage Tax Partners",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=ad66506d-fc37-45f5-93ab-a98b8188076a",
+            "owner=prod-t4-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T4-master-data",
+          "tenant": "Vantage Tax Partners",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Pacific Rim Holdings",
+            "project=Pacific Rim FX Advisory",
+            "erp_user=prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T4-owner-login",
+          "tenant": "Vantage Tax Partners",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-owner-login.png"
+        },
+        {
+          "id": "T4-copilot",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T4-clients",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T4-engagements",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T4-projects",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T4-people",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T4-reports",
+          "tenant": "Vantage Tax Partners",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T4-atlas",
+          "tenant": "Vantage Tax Partners",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Review Pacific Rim cross-border tax readiness. Include FX provenance needs, capped T&M terms, project setup, and missing evidence before billing.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Pacific, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T4-erp-manager-login",
+          "tenant": "Vantage Tax Partners",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T4-timesheet",
+          "tenant": "Vantage Tax Partners",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T5",
+        "name": "Indus Engineering Advisory",
+        "country": "IN",
+        "currency": "INR",
+        "client": "Deccan Metro Authority",
+        "engagement": "Deccan Metro PMO Program",
+        "project": "Deccan Metro Phase 1 PMO",
+        "billing": "milestone",
+        "serviceLine": "advisory",
+        "totalValue": "7500000.00",
+        "prompt": "Show me Deccan Metro PMO delivery and billing readiness. Include milestone program setup, procurement risks, WIP, and AP controls to verify."
+      },
+      "owner": {
+        "email": "prod-t5-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T5-Owner-2026!",
+        "tenantId": "f6802da4-db0d-4592-bd21-d795af8ee401"
+      },
+      "employee": {
+        "email": "prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T5-Employee-2026!",
+        "employeeId": "d3e15cf5-dafb-423d-bbd5-3a35d1529464"
+      },
+      "erpUser": {
+        "email": "prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T5-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "3e96a5cd-b43b-4871-9f81-d27430503122"
+      },
+      "records": {
+        "clientId": "684ac143-76f8-4baf-b69f-b5bd6cc0606c",
+        "engagementId": "ae67198f-0abb-479d-a064-5f1a2a12dd06",
+        "projectId": "2727c10e-c0b6-4109-a39b-dd7ac1824516"
+      },
+      "checks": [
+        {
+          "id": "T5-signup",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=f6802da4-db0d-4592-bd21-d795af8ee401",
+            "owner=prod-t5-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T5-master-data",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Deccan Metro Authority",
+            "project=Deccan Metro Phase 1 PMO",
+            "erp_user=prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T5-owner-login",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-owner-login.png"
+        },
+        {
+          "id": "T5-copilot",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T5-clients",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T5-engagements",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T5-projects",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T5-people",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T5-reports",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T5-atlas",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me Deccan Metro PMO delivery and billing readiness. Include milestone program setup, procurement risks, WIP, and AP controls to verify.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Deccan, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T5-erp-manager-login",
+          "tenant": "Indus Engineering Advisory",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T5-timesheet",
+          "tenant": "Indus Engineering Advisory",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T6",
+        "name": "Southern Cross Legal",
+        "country": "AU",
+        "currency": "AUD",
+        "client": "Brindabella Ventures",
+        "engagement": "Brindabella Retainer Draw",
+        "project": "Brindabella Matter Support",
+        "billing": "retainer_draw",
+        "serviceLine": "advisory",
+        "totalValue": "60000.00",
+        "prompt": "Show me Brindabella retainer-draw status. Include project setup, retainer floor risk, invoice readiness, and any collection hold considerations."
+      },
+      "owner": {
+        "email": "prod-t6-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T6-Owner-2026!",
+        "tenantId": "9d76adfa-cfe5-4a14-8ec5-2e564ecbc17f"
+      },
+      "employee": {
+        "email": "prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T6-Employee-2026!",
+        "employeeId": "20e276c2-58a1-4d2f-b2e8-b4f00089aac8"
+      },
+      "erpUser": {
+        "email": "prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T6-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "bc6ae2d4-4927-4b78-b317-3e9662f0d861"
+      },
+      "records": {
+        "clientId": "7a2544f1-7119-430f-9186-94fbb230e500",
+        "engagementId": "e669ea4b-219a-43b0-8385-6e3ead7815d1",
+        "projectId": "48004119-18ea-4c5c-a36a-11045f1e6531"
+      },
+      "checks": [
+        {
+          "id": "T6-signup",
+          "tenant": "Southern Cross Legal",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=9d76adfa-cfe5-4a14-8ec5-2e564ecbc17f",
+            "owner=prod-t6-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T6-master-data",
+          "tenant": "Southern Cross Legal",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Brindabella Ventures",
+            "project=Brindabella Matter Support",
+            "erp_user=prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T6-owner-login",
+          "tenant": "Southern Cross Legal",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-owner-login.png"
+        },
+        {
+          "id": "T6-copilot",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T6-clients",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T6-engagements",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T6-projects",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T6-people",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T6-reports",
+          "tenant": "Southern Cross Legal",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T6-atlas",
+          "tenant": "Southern Cross Legal",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me Brindabella retainer-draw status. Include project setup, retainer floor risk, invoice readiness, and any collection hold considerations.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Brindabella, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T6-erp-manager-login",
+          "tenant": "Southern Cross Legal",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T6-timesheet",
+          "tenant": "Southern Cross Legal",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T7",
+        "name": "Atlas Capital Advisors",
+        "country": "US",
+        "currency": "USD",
+        "client": "Redwood Industrials",
+        "engagement": "Redwood Sell-Side M&A",
+        "project": "Redwood Deal Execution",
+        "billing": "milestone",
+        "serviceLine": "advisory",
+        "totalValue": "465000.00",
+        "prompt": "Review Redwood sell-side M&A billing readiness. Include success-fee milestone logic, approval boundary, FX considerations, and evidence needed before invoicing."
+      },
+      "owner": {
+        "email": "prod-t7-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T7-Owner-2026!",
+        "tenantId": "bac8461d-04e8-4022-82ac-62fd460c2dfc"
+      },
+      "employee": {
+        "email": "prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T7-Employee-2026!",
+        "employeeId": "967fe3f3-1bc2-4f71-9475-5e903d4f43ef"
+      },
+      "erpUser": {
+        "email": "prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T7-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "36eae3d6-e118-486d-aaf0-a561c62f5785"
+      },
+      "records": {
+        "clientId": "da221fe3-b46b-4893-806f-7f12f26863ff",
+        "engagementId": "18ed7809-3b2b-42b1-8a48-62c0b1af981a",
+        "projectId": "f1a33397-db99-44e2-a14a-02753a31aecb"
+      },
+      "checks": [
+        {
+          "id": "T7-signup",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=bac8461d-04e8-4022-82ac-62fd460c2dfc",
+            "owner=prod-t7-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T7-master-data",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Redwood Industrials",
+            "project=Redwood Deal Execution",
+            "erp_user=prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T7-owner-login",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-owner-login.png"
+        },
+        {
+          "id": "T7-copilot",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T7-clients",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T7-engagements",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T7-projects",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T7-people",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T7-reports",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T7-atlas",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Review Redwood sell-side M&A billing readiness. Include success-fee milestone logic, approval boundary, FX considerations, and evidence needed before invoicing.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Redwood, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T7-erp-manager-login",
+          "tenant": "Atlas Capital Advisors",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T7-timesheet",
+          "tenant": "Atlas Capital Advisors",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T8",
+        "name": "Helix Talent Group",
+        "country": "GB",
+        "currency": "GBP",
+        "client": "Halcyon Retail",
+        "engagement": "Halcyon RPO Retainer",
+        "project": "Halcyon Monthly Talent Ops",
+        "billing": "retainer",
+        "serviceLine": "payroll",
+        "totalValue": "72000.00",
+        "prompt": "Show me Halcyon RPO retainer readiness. Include per-period billing, project staffing, utilization, and month-end reporting implications."
+      },
+      "owner": {
+        "email": "prod-t8-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T8-Owner-2026!",
+        "tenantId": "f1f078bb-4f0f-492c-b3d7-86654aeaf701"
+      },
+      "employee": {
+        "email": "prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T8-Employee-2026!",
+        "employeeId": "d11d666b-575e-497c-9b1a-b7c4580aadca"
+      },
+      "erpUser": {
+        "email": "prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T8-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "05d094a8-3f1d-4541-b5ba-42984c41ee37"
+      },
+      "records": {
+        "clientId": "8b0ad5dc-858b-4b74-a6b7-cbc806402ecd",
+        "engagementId": "462f5b75-746c-4e63-b0a3-700d278ab1c5",
+        "projectId": "1e1fa153-ca45-4590-a099-ee62ed7fb459"
+      },
+      "checks": [
+        {
+          "id": "T8-signup",
+          "tenant": "Helix Talent Group",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=f1f078bb-4f0f-492c-b3d7-86654aeaf701",
+            "owner=prod-t8-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T8-master-data",
+          "tenant": "Helix Talent Group",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Halcyon Retail",
+            "project=Halcyon Monthly Talent Ops",
+            "erp_user=prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T8-owner-login",
+          "tenant": "Helix Talent Group",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-owner-login.png"
+        },
+        {
+          "id": "T8-copilot",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T8-clients",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T8-engagements",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T8-projects",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T8-people",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T8-reports",
+          "tenant": "Helix Talent Group",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T8-atlas",
+          "tenant": "Helix Talent Group",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me Halcyon RPO retainer readiness. Include per-period billing, project staffing, utilization, and month-end reporting implications.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Halcyon, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T8-erp-manager-login",
+          "tenant": "Helix Talent Group",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T8-timesheet",
+          "tenant": "Helix Talent Group",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T9",
+        "name": "Brightline Wealth Office",
+        "country": "GB",
+        "currency": "GBP",
+        "client": "Ashford Family Office",
+        "engagement": "Ashford Family Office Advisory",
+        "project": "Ashford COSEC and Tax Coordination",
+        "billing": "mixed",
+        "serviceLine": "cosec",
+        "totalValue": "125000.00",
+        "prompt": "Show me the Ashford Family Office structure. Include engagements, service lines, billing models, currencies, open projects, privacy risks, and missing setup before billing."
+      },
+      "owner": {
+        "email": "prod-t9-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T9-Owner-2026!",
+        "tenantId": "72156db1-7c77-494f-b0fe-ccd368526536"
+      },
+      "employee": {
+        "email": "prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T9-Employee-2026!",
+        "employeeId": "ee989902-181e-4878-b70f-25e244bd4e55"
+      },
+      "erpUser": {
+        "email": "prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T9-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "e447dc57-eb05-499d-97be-f0ad7dc27247"
+      },
+      "records": {
+        "clientId": "9df50e18-768c-42ff-94c2-2eb044d80636",
+        "engagementId": "13149946-6a37-40b3-8b26-e3387edae08a",
+        "projectId": "bddf1132-3903-4603-b42c-15587b34fc9d"
+      },
+      "checks": [
+        {
+          "id": "T9-signup",
+          "tenant": "Brightline Wealth Office",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=72156db1-7c77-494f-b0fe-ccd368526536",
+            "owner=prod-t9-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T9-master-data",
+          "tenant": "Brightline Wealth Office",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Ashford Family Office",
+            "project=Ashford COSEC and Tax Coordination",
+            "erp_user=prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T9-owner-login",
+          "tenant": "Brightline Wealth Office",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-owner-login.png"
+        },
+        {
+          "id": "T9-copilot",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T9-clients",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T9-engagements",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T9-projects",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T9-people",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T9-reports",
+          "tenant": "Brightline Wealth Office",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T9-atlas",
+          "tenant": "Brightline Wealth Office",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Show me the Ashford Family Office structure. Include engagements, service lines, billing models, currencies, open projects, privacy risks, and missing setup before billing.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Ashford, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T9-erp-manager-login",
+          "tenant": "Brightline Wealth Office",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T9-timesheet",
+          "tenant": "Brightline Wealth Office",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    },
+    {
+      "spec": {
+        "id": "T10",
+        "name": "Quantum Systems Integration",
+        "country": "US",
+        "currency": "USD",
+        "client": "Continental Insurance Group",
+        "engagement": "Continental Enterprise Transformation",
+        "project": "Continental Workstream A",
+        "billing": "mixed",
+        "serviceLine": "advisory",
+        "totalValue": "950000.00",
+        "prompt": "Run today's finance ops check for Continental and Quantum. Separate read-only findings from actions that need Inbox approval. Include AR, AP, WIP, close, controls, and operational health."
+      },
+      "owner": {
+        "email": "prod-t10-2026-06-29t11-23-05-owner@aethos-qa.dev",
+        "password": "Aethos-T10-Owner-2026!",
+        "tenantId": "5cdd8b50-e257-40df-85cd-d8d5ec3902b9"
+      },
+      "employee": {
+        "email": "prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev",
+        "password": "Aethos-T10-Employee-2026!",
+        "employeeId": "d602e6c8-606c-4c12-9c33-fe0be06ea236"
+      },
+      "erpUser": {
+        "email": "prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "password": "Aethos-T10-Manager-2026!",
+        "role": "manager",
+        "tenantUserId": "f9720c6c-17bb-418c-8fa9-25fee1abea8a"
+      },
+      "records": {
+        "clientId": "2aa56fa9-f728-4d5a-bd15-9ca9976b5334",
+        "engagementId": "bb30e1e6-c38d-4545-89fa-9e6b93a70004",
+        "projectId": "fa0a8be2-48b8-4dad-909e-1adf455911fb"
+      },
+      "checks": [
+        {
+          "id": "T10-signup",
+          "tenant": "Quantum Systems Integration",
+          "action": "Created tenant through production signup API",
+          "status": "PASS",
+          "notes": [
+            "tenant_id=5cdd8b50-e257-40df-85cd-d8d5ec3902b9",
+            "owner=prod-t10-2026-06-29t11-23-05-owner@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T10-master-data",
+          "tenant": "Quantum Systems Integration",
+          "action": "Created signature client, engagement, project, employee login, and project assignment",
+          "status": "PASS",
+          "notes": [
+            "client=Continental Insurance Group",
+            "project=Continental Workstream A",
+            "erp_user=prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev",
+            "employee=prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev"
+          ]
+        },
+        {
+          "id": "T10-owner-login",
+          "tenant": "Quantum Systems Integration",
+          "action": "Owner login to live app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-owner-login.png"
+        },
+        {
+          "id": "T10-copilot",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/copilot",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-copilot.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+          ]
+        },
+        {
+          "id": "T10-clients",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/clients",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-clients.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+          ]
+        },
+        {
+          "id": "T10-engagements",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/engagements",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-engagements.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+          ]
+        },
+        {
+          "id": "T10-projects",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/projects",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-projects.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+          ]
+        },
+        {
+          "id": "T10-people",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/people",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-people.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+          ]
+        },
+        {
+          "id": "T10-reports",
+          "tenant": "Quantum Systems Integration",
+          "action": "Live route /app/reports",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-reports.png",
+          "notes": [
+            "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T10-atlas",
+          "tenant": "Quantum Systems Integration",
+          "action": "Atlas scenario-library prompt",
+          "status": "FAIL",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-atlas-response.png",
+          "response": " Atlas is temporarily unavailable. Please try again.",
+          "notes": [
+            "Prompt: Run today's finance ops check for Continental and Quantum. Separate read-only findings from actions that need Inbox approval. Include AR, AP, WIP, close, controls, and operational health.",
+            "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+            "Missing required response signals: Continental, engagement|project|billing|finance|WIP|readiness",
+            "No internal tool terminology detected."
+          ]
+        },
+        {
+          "id": "T10-erp-manager-login",
+          "tenant": "Quantum Systems Integration",
+          "action": "ERP manager login to live Aethos app",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-erp-manager-login.png",
+          "notes": [
+            "Manager prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+            "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+          ]
+        },
+        {
+          "id": "T10-timesheet",
+          "tenant": "Quantum Systems Integration",
+          "action": "Timesheet employee login and time entry",
+          "status": "PASS",
+          "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-timesheet-submitted.png",
+          "notes": [
+            "Employee prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+          ]
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "T1-signup",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=cc5a95c9-a4ba-4542-8573-fceca3ace26f",
+        "owner=prod-t1-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T1-master-data",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Riverbend Foods",
+        "project=Riverbend Discovery Project",
+        "erp_user=prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T1-owner-login",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-owner-login.png"
+    },
+    {
+      "id": "T1-copilot",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T1-clients",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T1-engagements",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T1-projects",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T1-people",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T1-time",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/time",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-time.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Time Entries Lo"
+      ]
+    },
+    {
+      "id": "T1-inbox",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/inbox",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-inbox.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Inbox All Engag"
+      ]
+    },
+    {
+      "id": "T1-invoices",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/invoices",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-invoices.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Invoices Review"
+      ]
+    },
+    {
+      "id": "T1-bills",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/bills",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-bills.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Bills Manage ve"
+      ]
+    },
+    {
+      "id": "T1-reports",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T1-journals",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/accounting/journals",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-journals.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Journal Entries"
+      ]
+    },
+    {
+      "id": "T1-settings",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Live route /app/settings",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-settings.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Settings Manage"
+      ]
+    },
+    {
+      "id": "T1-atlas",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me the Riverbend Foods engagement structure. List active projects, billing model, linked source data, and anything missing before billing.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Riverbend, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T1-erp-manager-login",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T1-timesheet",
+      "tenant": "Cobalt Consulting Co.",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T1-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T2-signup",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=72e4346c-adfd-46b2-a89f-1322e7f918e6",
+        "owner=prod-t2-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T2-master-data",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Aurora Cosmetics",
+        "project=Aurora Milestone 1 Build",
+        "erp_user=prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T2-owner-login",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-owner-login.png"
+    },
+    {
+      "id": "T2-copilot",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T2-clients",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T2-engagements",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T2-projects",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T2-people",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T2-reports",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T2-atlas",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me the Aurora Cosmetics milestone engagement. Include projects, milestone billing model, WIP readiness, and missing setup before invoicing.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Aurora, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T2-erp-manager-login",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T2-timesheet",
+      "tenant": "Pixel & Pulp Studio",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T2-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T3-signup",
+      "tenant": "Harborstone Accountants",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=014909ad-505e-4ea0-af83-3e9aac4b661a",
+        "owner=prod-t3-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T3-master-data",
+      "tenant": "Harborstone Accountants",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Delmont Holdings",
+        "project=Delmont Accounts Drafting",
+        "erp_user=prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T3-owner-login",
+      "tenant": "Harborstone Accountants",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-owner-login.png"
+    },
+    {
+      "id": "T3-copilot",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T3-clients",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T3-engagements",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T3-projects",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T3-people",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T3-reports",
+      "tenant": "Harborstone Accountants",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T3-atlas",
+      "tenant": "Harborstone Accountants",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me the Delmont Holdings annual accounts engagement. Include service line, billing terms, projects, and year-end reporting readiness.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Delmont, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T3-erp-manager-login",
+      "tenant": "Harborstone Accountants",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T3-timesheet",
+      "tenant": "Harborstone Accountants",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T3-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T4-signup",
+      "tenant": "Vantage Tax Partners",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=ad66506d-fc37-45f5-93ab-a98b8188076a",
+        "owner=prod-t4-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T4-master-data",
+      "tenant": "Vantage Tax Partners",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Pacific Rim Holdings",
+        "project=Pacific Rim FX Advisory",
+        "erp_user=prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T4-owner-login",
+      "tenant": "Vantage Tax Partners",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-owner-login.png"
+    },
+    {
+      "id": "T4-copilot",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T4-clients",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T4-engagements",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T4-projects",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T4-people",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T4-reports",
+      "tenant": "Vantage Tax Partners",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T4-atlas",
+      "tenant": "Vantage Tax Partners",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Review Pacific Rim cross-border tax readiness. Include FX provenance needs, capped T&M terms, project setup, and missing evidence before billing.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Pacific, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T4-erp-manager-login",
+      "tenant": "Vantage Tax Partners",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T4-timesheet",
+      "tenant": "Vantage Tax Partners",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T4-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T5-signup",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=f6802da4-db0d-4592-bd21-d795af8ee401",
+        "owner=prod-t5-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T5-master-data",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Deccan Metro Authority",
+        "project=Deccan Metro Phase 1 PMO",
+        "erp_user=prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T5-owner-login",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-owner-login.png"
+    },
+    {
+      "id": "T5-copilot",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T5-clients",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T5-engagements",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T5-projects",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T5-people",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T5-reports",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T5-atlas",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me Deccan Metro PMO delivery and billing readiness. Include milestone program setup, procurement risks, WIP, and AP controls to verify.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Deccan, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T5-erp-manager-login",
+      "tenant": "Indus Engineering Advisory",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T5-timesheet",
+      "tenant": "Indus Engineering Advisory",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T5-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T6-signup",
+      "tenant": "Southern Cross Legal",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=9d76adfa-cfe5-4a14-8ec5-2e564ecbc17f",
+        "owner=prod-t6-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T6-master-data",
+      "tenant": "Southern Cross Legal",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Brindabella Ventures",
+        "project=Brindabella Matter Support",
+        "erp_user=prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T6-owner-login",
+      "tenant": "Southern Cross Legal",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-owner-login.png"
+    },
+    {
+      "id": "T6-copilot",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T6-clients",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T6-engagements",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T6-projects",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T6-people",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T6-reports",
+      "tenant": "Southern Cross Legal",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T6-atlas",
+      "tenant": "Southern Cross Legal",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me Brindabella retainer-draw status. Include project setup, retainer floor risk, invoice readiness, and any collection hold considerations.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Brindabella, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T6-erp-manager-login",
+      "tenant": "Southern Cross Legal",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T6-timesheet",
+      "tenant": "Southern Cross Legal",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T6-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T7-signup",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=bac8461d-04e8-4022-82ac-62fd460c2dfc",
+        "owner=prod-t7-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T7-master-data",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Redwood Industrials",
+        "project=Redwood Deal Execution",
+        "erp_user=prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T7-owner-login",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-owner-login.png"
+    },
+    {
+      "id": "T7-copilot",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T7-clients",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T7-engagements",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T7-projects",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T7-people",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T7-reports",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T7-atlas",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Review Redwood sell-side M&A billing readiness. Include success-fee milestone logic, approval boundary, FX considerations, and evidence needed before invoicing.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Redwood, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T7-erp-manager-login",
+      "tenant": "Atlas Capital Advisors",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T7-timesheet",
+      "tenant": "Atlas Capital Advisors",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T7-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T8-signup",
+      "tenant": "Helix Talent Group",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=f1f078bb-4f0f-492c-b3d7-86654aeaf701",
+        "owner=prod-t8-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T8-master-data",
+      "tenant": "Helix Talent Group",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Halcyon Retail",
+        "project=Halcyon Monthly Talent Ops",
+        "erp_user=prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T8-owner-login",
+      "tenant": "Helix Talent Group",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-owner-login.png"
+    },
+    {
+      "id": "T8-copilot",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T8-clients",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T8-engagements",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T8-projects",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T8-people",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T8-reports",
+      "tenant": "Helix Talent Group",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T8-atlas",
+      "tenant": "Helix Talent Group",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me Halcyon RPO retainer readiness. Include per-period billing, project staffing, utilization, and month-end reporting implications.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Halcyon, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T8-erp-manager-login",
+      "tenant": "Helix Talent Group",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T8-timesheet",
+      "tenant": "Helix Talent Group",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T8-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T9-signup",
+      "tenant": "Brightline Wealth Office",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=72156db1-7c77-494f-b0fe-ccd368526536",
+        "owner=prod-t9-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T9-master-data",
+      "tenant": "Brightline Wealth Office",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Ashford Family Office",
+        "project=Ashford COSEC and Tax Coordination",
+        "erp_user=prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T9-owner-login",
+      "tenant": "Brightline Wealth Office",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-owner-login.png"
+    },
+    {
+      "id": "T9-copilot",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T9-clients",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T9-engagements",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T9-projects",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T9-people",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T9-reports",
+      "tenant": "Brightline Wealth Office",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T9-atlas",
+      "tenant": "Brightline Wealth Office",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Show me the Ashford Family Office structure. Include engagements, service lines, billing models, currencies, open projects, privacy risks, and missing setup before billing.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Ashford, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T9-erp-manager-login",
+      "tenant": "Brightline Wealth Office",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T9-timesheet",
+      "tenant": "Brightline Wealth Office",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T9-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    },
+    {
+      "id": "T10-signup",
+      "tenant": "Quantum Systems Integration",
+      "action": "Created tenant through production signup API",
+      "status": "PASS",
+      "notes": [
+        "tenant_id=5cdd8b50-e257-40df-85cd-d8d5ec3902b9",
+        "owner=prod-t10-2026-06-29t11-23-05-owner@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T10-master-data",
+      "tenant": "Quantum Systems Integration",
+      "action": "Created signature client, engagement, project, employee login, and project assignment",
+      "status": "PASS",
+      "notes": [
+        "client=Continental Insurance Group",
+        "project=Continental Workstream A",
+        "erp_user=prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev",
+        "employee=prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev"
+      ]
+    },
+    {
+      "id": "T10-owner-login",
+      "tenant": "Quantum Systems Integration",
+      "action": "Owner login to live app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-owner-login.png"
+    },
+    {
+      "id": "T10-copilot",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/copilot",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-copilot.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle add New chat No"
+      ]
+    },
+    {
+      "id": "T10-clients",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/clients",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-clients.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Contacts Compan"
+      ]
+    },
+    {
+      "id": "T10-engagements",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/engagements",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-engagements.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Engagements All"
+      ]
+    },
+    {
+      "id": "T10-projects",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/projects",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-projects.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Projects All pr"
+      ]
+    },
+    {
+      "id": "T10-people",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/people",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-people.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle People Your tea"
+      ]
+    },
+    {
+      "id": "T10-reports",
+      "tenant": "Quantum Systems Integration",
+      "action": "Live route /app/reports",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-reports.png",
+      "notes": [
+        "Body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T10-atlas",
+      "tenant": "Quantum Systems Integration",
+      "action": "Atlas scenario-library prompt",
+      "status": "FAIL",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-atlas-response.png",
+      "response": " Atlas is temporarily unavailable. Please try again.",
+      "notes": [
+        "Prompt: Run today's finance ops check for Continental and Quantum. Separate read-only findings from actions that need Inbox approval. Include AR, AP, WIP, close, controls, and operational health.",
+        "Response excerpt:  Atlas is temporarily unavailable. Please try again.",
+        "Missing required response signals: Continental, engagement|project|billing|finance|WIP|readiness",
+        "No internal tool terminology detected."
+      ]
+    },
+    {
+      "id": "T10-erp-manager-login",
+      "tenant": "Quantum Systems Integration",
+      "action": "ERP manager login to live Aethos app",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-erp-manager-login.png",
+      "notes": [
+        "Manager prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev logged in independently.",
+        "Reports body excerpt: Aethos auto_awesome Atlas upload_file Documents inbox Inbox work Engagements folder_open Projects receipt Invoices bar_chart Reports More expand_more account_circle Reports AR Agin"
+      ]
+    },
+    {
+      "id": "T10-timesheet",
+      "tenant": "Quantum Systems Integration",
+      "action": "Timesheet employee login and time entry",
+      "status": "PASS",
+      "screenshot": "docs/qa/scenario-library-production-2026-06-29T11-23-05-087Z/screenshots/T10-timesheet-submitted.png",
+      "notes": [
+        "Employee prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev logged in independently and submitted 2.5 hours."
+      ]
+    }
+  ]
+}

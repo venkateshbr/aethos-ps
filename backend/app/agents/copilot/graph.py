@@ -1,8 +1,7 @@
 """Copilot agent — streaming chat with tool use.
 
 Uses the OpenAI-compatible chat-completions API against OpenRouter, so we can
-fan out to multiple models (free Gemini Flash first, paid Claude Haiku as
-fallback) via OpenRouter's ``models`` array.
+fan out to multiple configured models via OpenRouter's ``models`` array.
 
 Security / quality gates enforced here:
 - No raw PII sent to the LLM (tenant_id is ok; user email / names are not).
@@ -52,6 +51,9 @@ class CopilotDeps:
     tenant_id: str
     user_id: str
     db_client: object  # supabase Client — typed as object to avoid hard import at module level
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_models: list[str] | None = None
 
 
 class CopilotAgent:
@@ -524,7 +526,13 @@ class CopilotAgent:
 
     def __init__(self, deps: CopilotDeps) -> None:
         self.deps = deps
-        self.client = make_async_llm_client()
+        self.client = make_async_llm_client(
+            agent_name="copilot_agent",
+            tenant_id=deps.tenant_id,
+            user_id=str(deps.user_id),
+            api_key=deps.llm_api_key,
+            base_url=deps.llm_base_url,
+        )
         self.tool_policy = AgentToolPolicy(deps.db_client, deps.tenant_id)
 
     @classmethod
@@ -751,11 +759,12 @@ class CopilotAgent:
         pending_tool_calls: dict[int, dict] = {}
         announced_tool_names: set[int] = set()
         finish_reason: str | None = None
-        model_used: str = settings.agent_models[0]
+        model_chain = self._model_chain()
+        model_used: str = model_chain[0]
 
         stream = await self.client.chat.completions.create(
-            model=settings.agent_models[0],
-            extra_body={"models": settings.agent_models},
+            model=model_chain[0],
+            extra_body={"models": model_chain},
             max_tokens=_MAX_TOKENS,
             messages=messages,  # type: ignore[arg-type]
             tools=self._openai_tools(),  # type: ignore[arg-type]
@@ -808,6 +817,12 @@ class CopilotAgent:
             "tool_calls": tool_calls,
             "model": model_used,
         }
+
+    def _model_chain(self) -> list[str]:
+        """Return the tenant/runtime model chain, falling back to deployment config."""
+        if self.deps.llm_models:
+            return self.deps.llm_models
+        return settings.agent_models
 
     # ------------------------------------------------------------------
     # Tool execution

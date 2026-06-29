@@ -895,10 +895,89 @@ async def test_materialise_engagement_creates_reviewed_first_project() -> None:
     assert project_row["name"] == "SOC 2 Readiness"
     assert project_row["description"] == "Readiness assessment, gap closure, and evidence support."
     assert project_row["currency"] == "SGD"  # inherited from engagement
-    assert project_row["budget"] == "44500"
+    assert project_row["budget"] == "44500.00"
     assert project_row["start_date"] == "2026-07-01"
     assert project_row["end_date"] == "2026-09-30"
     assert project_row["status"] == "planning"
+
+
+@pytest.mark.asyncio
+async def test_materialise_engagement_persists_mixed_billing_terms() -> None:
+    """Approving Nexus-style mixed engagement drafts stores client, value, and terms."""
+    from unittest.mock import MagicMock
+
+    from app.services.inbox_service import InboxService
+
+    inserts: list[tuple[str, dict]] = []
+
+    def _table(name: str):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.ilike.return_value = chain
+        chain.limit.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+
+        def _insert(row: dict):
+            inserts.append((name, row))
+            ret = MagicMock()
+            ret.execute.return_value = MagicMock(data=[{"id": f"{name}-id"}])
+            return ret
+
+        chain.insert.side_effect = _insert
+        return chain
+
+    db = MagicMock()
+    db.table.side_effect = _table
+
+    svc = InboxService.__new__(InboxService)
+    svc._db = db
+    svc._tenant_id = "tenant-1"
+
+    result = await svc._materialise_engagement(
+        {
+            "client_name": "Nexus Capital Partners LP",
+            "engagement_name": "Nexus Capital Partners - Engagement Letter",
+            "currency": "GBP",
+            "billing_arrangement": "mixed",
+            "total_value": "144000",
+            "fixed_fee_amount": "42000",
+            "retainer_monthly_amount": "8500",
+            "start_date": "2026-01-01",
+            "end_date": "2026-12-31",
+            "service_line": "accounting",
+            "scope_summary": "Fixed fee, monthly retainer, and T&M CFO advisory support.",
+            "first_project_name": "Statutory Accounts - FY2025",
+            "rate_card_hints": [{"role": "CFO Advisory Partner", "rate": "350"}],
+        }
+    )
+
+    assert result["entity_type"] == "engagement"
+    assert result["client_name"] == "Nexus Capital Partners LP"
+    assert result["engagement_name"] == "Nexus Capital Partners - Engagement Letter"
+    assert result["billing_arrangement"] == "mixed"
+    assert result["currency"] == "GBP"
+    assert result["total_value"] == "144000.00"
+    assert result["billing_terms_created"] is True
+
+    engagement_row = next(row for t, row in inserts if t == "engagements")
+    assert engagement_row["client_id"] == "clients-id"
+    assert engagement_row["billing_arrangement"] == "mixed"
+    assert engagement_row["total_value"] == "144000.00"
+    assert engagement_row["service_line"] == "accounting"
+
+    terms_row = next(row for t, row in inserts if t == "engagement_billing_terms")
+    assert terms_row == {
+        "tenant_id": "tenant-1",
+        "engagement_id": "engagements-id",
+        "fixed_fee_amount": "42000.00",
+        "retainer_monthly_amount": "8500.00",
+    }
+
+    rate_card_row = next(row for t, row in inserts if t == "rate_cards")
+    assert rate_card_row["name"] == "Nexus Capital Partners - Engagement Letter Rate Card"
+    project_row = next(row for t, row in inserts if t == "projects")
+    assert project_row["budget"] == "144000.00"
 
 
 @pytest.mark.asyncio

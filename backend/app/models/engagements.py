@@ -131,6 +131,7 @@ class EngagementResponse(BaseModel):
     id: str
     tenant_id: str
     client_id: str
+    client_name: str | None = None
     code: str | None = None  # human-readable ENG-0001 (migration 0021)
     name: str
     billing_arrangement: str
@@ -144,6 +145,7 @@ class EngagementResponse(BaseModel):
     billing_terms: EngagementBillingTermsResponse | None = None
     service_line: str | None = None
     rate_card_id: str | None = None
+    source_document_id: str | None = None
     service_catalogue_id: str | None = None  # migration 0033
 
     @field_validator("total_value", mode="before")
@@ -158,10 +160,17 @@ class EngagementResponse(BaseModel):
         row: dict,
         billing_terms_row: dict | None = None,
     ) -> EngagementResponse:
+        client_join = row.get("clients")
+        client_name: str | None = None
+        if isinstance(client_join, dict):
+            client_name = client_join.get("name")
+        elif isinstance(client_join, list) and client_join:
+            client_name = (client_join[0] or {}).get("name")
         return cls(
             id=str(row["id"]),
             tenant_id=str(row["tenant_id"]),
             client_id=str(row["client_id"]),
+            client_name=client_name,
             code=row.get("code"),
             name=row["name"],
             billing_arrangement=row["billing_arrangement"],
@@ -179,6 +188,9 @@ class EngagementResponse(BaseModel):
             ),
             service_line=row.get("service_line"),
             rate_card_id=str(row["rate_card_id"]) if row.get("rate_card_id") else None,
+            source_document_id=(
+                str(row["source_document_id"]) if row.get("source_document_id") else None
+            ),
             service_catalogue_id=str(row["service_catalogue_id"]) if row.get("service_catalogue_id") else None,
         )
 

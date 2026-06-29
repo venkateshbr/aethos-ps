@@ -444,7 +444,7 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       await page.keyboard.press('Enter');
 
       const assistantOutput = page
-        .locator('[aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
+        .locator('[aria-label^="Atlas:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
         .last();
       if (!(await assistantOutput.isVisible({ timeout: 60_000 }).catch(() => false))) {
         test.info().annotations.push({

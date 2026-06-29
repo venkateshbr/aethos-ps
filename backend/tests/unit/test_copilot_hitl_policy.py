@@ -572,7 +572,7 @@ async def test_inbox_materialises_copilot_log_time_entry(monkeypatch: pytest.Mon
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(return_value={"logged": True, "entry_id": "te-1"})
     monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
 
@@ -599,7 +599,7 @@ async def test_inbox_materialises_copilot_draft_invoice(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     persist_draft = AsyncMock(
         return_value={
             "invoice_created": True,
@@ -645,7 +645,7 @@ async def test_inbox_materialises_copilot_month_end_close(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(
         return_value={
             "close_prepared": True,
@@ -678,7 +678,7 @@ async def test_inbox_materialises_copilot_year_end_close(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(
         return_value={
             "year_end_close_posted": True,
@@ -711,7 +711,7 @@ async def test_inbox_materialises_copilot_finance_ops_action_plan(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(return_value={"should_not_execute": True})
     monkeypatch.setattr(graph.CopilotAgent, "_execute_tool", execute_tool)
 
@@ -809,7 +809,7 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_collections
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(
         return_value={
             "collections_reminders_drafted": True,
@@ -854,7 +854,7 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_bill_pay(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(
         return_value={
             "requires_review": True,
@@ -893,7 +893,7 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_year_end_cl
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     execute_tool = AsyncMock(
         return_value={
             "requires_review": True,
@@ -982,7 +982,7 @@ async def test_inbox_finance_ops_action_item_dispatch_error_keeps_task_open(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     monkeypatch.setattr(
         graph.CopilotAgent,
         "_execute_tool_with_policy",
@@ -1014,7 +1014,7 @@ async def test_inbox_materialise_copilot_tool_failure_raises_409(
     from app.agents.copilot import graph
     from app.services.inbox_service import InboxService
 
-    monkeypatch.setattr(graph, "make_async_llm_client", lambda: MagicMock())
+    monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
     monkeypatch.setattr(
         graph.CopilotAgent,
         "_execute_tool",

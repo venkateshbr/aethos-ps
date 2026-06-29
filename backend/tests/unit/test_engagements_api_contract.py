@@ -101,6 +101,7 @@ class _FakeDb:
                     "id": "eng-1",
                     "tenant_id": TENANT_ID,
                     "client_id": "client-1",
+                    "clients": {"name": "Acme Corp"},
                     "code": "ENG-0001",
                     "name": "Monthly Advisory",
                     "billing_arrangement": "retainer",
@@ -114,12 +115,14 @@ class _FakeDb:
                     "deleted_at": None,
                     "service_line": "advisory",
                     "rate_card_id": None,
+                    "source_document_id": "document-1",
                     "service_catalogue_id": None,
                 },
                 {
                     "id": "eng-2",
                     "tenant_id": TENANT_ID,
                     "client_id": "client-2",
+                    "clients": {"name": "Bravo Holdings"},
                     "code": "ENG-0002",
                     "name": "Tax Filing",
                     "billing_arrangement": "fixed_fee",
@@ -133,6 +136,7 @@ class _FakeDb:
                     "deleted_at": None,
                     "service_line": "tax",
                     "rate_card_id": None,
+                    "source_document_id": None,
                     "service_catalogue_id": None,
                 },
             ],
@@ -261,9 +265,12 @@ def test_engagement_read_routes_use_rls_client(
     assert list_response.status_code == 200, list_response.text
     assert len(list_response.json()) == 1
     assert list_response.json()[0]["id"] == "eng-1"
+    assert list_response.json()[0]["client_name"] == "Acme Corp"
     assert paged_response.status_code == 200, paged_response.text
     assert [row["id"] for row in paged_response.json()] == ["eng-2"]
     assert detail_response.status_code == 200, detail_response.text
+    assert detail_response.json()["client_name"] == "Acme Corp"
+    assert detail_response.json()["source_document_id"] == "document-1"
     assert detail_response.json()["billing_terms"]["retainer_monthly_amount"] == "10000.00"
     assert summary_response.status_code == 200, summary_response.text
     assert summary_response.json() == {

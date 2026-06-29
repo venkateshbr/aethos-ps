@@ -251,7 +251,7 @@ class CloseStatusService:
     def _unposted_journals(self, period: str) -> list[dict[str, str | None]]:
         rows = (
             self.db.table("journal_entries")
-            .select("id, entry_number, description, entry_date, reference_type, reference")
+            .select("id, entry_number, description, entry_date, reference_type, reference_id")
             .eq("tenant_id", self.tenant_id)
             .eq("period", period)
             .is_("posted_at", "null")
@@ -266,7 +266,9 @@ class CloseStatusService:
                 "description": row.get("description"),
                 "entry_date": str(row.get("entry_date") or ""),
                 "reference_type": str(row.get("reference_type") or "manual"),
-                "reference": str(row["reference"]) if row.get("reference") else None,
+                "reference": str(row.get("reference") or row.get("reference_id"))
+                if row.get("reference") or row.get("reference_id")
+                else None,
             }
             for row in rows
         ]

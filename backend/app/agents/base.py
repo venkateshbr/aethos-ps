@@ -6,16 +6,30 @@ Never send un-masked text to an external LLM API.
 
 from __future__ import annotations
 
+import atexit
 import base64
+import logging
+import os
 import re
 import string
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI as StandardAsyncOpenAI
+from openai import OpenAI as StandardOpenAI
 
 from app.core.config import settings
+from app.core.logging import tenant_id_var, trace_id_var
 from supabase import Client
+
+logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - exercised through factory tests with monkeypatching.
+    from langfuse.openai import AsyncOpenAI as LangfuseAsyncOpenAI
+    from langfuse.openai import OpenAI as LangfuseOpenAI
+except Exception:  # pragma: no cover - dependency may be absent in old envs.
+    LangfuseAsyncOpenAI = None  # type: ignore[assignment]
+    LangfuseOpenAI = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -43,20 +57,264 @@ class DocumentSafetyScan:
 BinaryDocumentPolicy = Literal["withhold_on_sensitive_text", "allow_binary"]
 
 
-def make_async_llm_client() -> AsyncOpenAI:
-    """Async OpenAI-compatible client pointed at OpenRouter."""
-    return AsyncOpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
+def make_async_llm_client(
+    *,
+    agent_name: str | None = None,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> StandardAsyncOpenAI:
+    """Async OpenAI-compatible client pointed at OpenRouter.
+
+    When Langfuse keys are configured, this returns Langfuse's OpenAI drop-in
+    wrapper and injects tenant/user/trace metadata into each chat completion.
+    """
+    resolved_api_key = api_key or settings.openrouter_api_key
+    resolved_base_url = base_url or settings.openrouter_base_url
+    if _langfuse_available():
+        client = LangfuseAsyncOpenAI(  # type: ignore[misc,operator]
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+        return _InstrumentedOpenAIClient(
+            client,
+            default_metadata=_langfuse_metadata(
+                agent_name=agent_name,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                tags=tags,
+                metadata=metadata,
+            ),
+            default_name=agent_name,
+        )
+
+    return StandardAsyncOpenAI(
+        api_key=resolved_api_key,
+        base_url=resolved_base_url,
     )
 
 
-def make_sync_llm_client() -> OpenAI:
+def make_sync_llm_client(
+    *,
+    agent_name: str | None = None,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> StandardOpenAI:
     """Sync OpenAI-compatible client pointed at OpenRouter."""
-    return OpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
+    resolved_api_key = api_key or settings.openrouter_api_key
+    resolved_base_url = base_url or settings.openrouter_base_url
+    if _langfuse_available():
+        client = LangfuseOpenAI(  # type: ignore[misc,operator]
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+        )
+        return _InstrumentedOpenAIClient(
+            client,
+            default_metadata=_langfuse_metadata(
+                agent_name=agent_name,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                tags=tags,
+                metadata=metadata,
+            ),
+            default_name=agent_name,
+        )
+
+    return StandardOpenAI(
+        api_key=resolved_api_key,
+        base_url=resolved_base_url,
     )
+
+
+async def resolve_model_chain(db: Client | object, tenant_id: str) -> list[str]:
+    """Return tenant AI model chain, falling back to deployment defaults.
+
+    Agents should call this when they already have tenant-scoped dependencies.
+    If the settings table is unavailable during startup/migration windows, the
+    global configured chain is safer than blocking document or reporting work.
+    """
+    try:
+        from app.services.ai_settings_service import AiSettingsService
+
+        return await AiSettingsService(db, tenant_id).get_effective_model_chain()  # type: ignore[arg-type]
+    except Exception:
+        logger.warning(
+            "tenant_ai_model_chain_unavailable",
+            exc_info=True,
+            extra={"tenant_id": tenant_id},
+        )
+        return settings.agent_models
+
+
+def flush_langfuse() -> None:
+    """Flush queued Langfuse events during process shutdown."""
+    if not _langfuse_available():
+        return
+    try:
+        from langfuse import get_client
+
+        get_client().flush()
+    except Exception:
+        logger.warning("langfuse_flush_failed", exc_info=True)
+
+
+def _langfuse_available() -> bool:
+    if not settings.langfuse_tracing_enabled:
+        return False
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return False
+    if LangfuseAsyncOpenAI is None or LangfuseOpenAI is None:
+        logger.warning("langfuse_sdk_missing")
+        return False
+
+    os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse_public_key
+    os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse_secret_key
+    if settings.langfuse_base_url:
+        os.environ["LANGFUSE_BASE_URL"] = settings.langfuse_base_url
+    os.environ["LANGFUSE_TRACING_ENABLED"] = "true"
+    os.environ["LANGFUSE_SAMPLE_RATE"] = str(settings.langfuse_sample_rate)
+    return True
+
+
+def _langfuse_metadata(
+    *,
+    agent_name: str | None,
+    tenant_id: str | None,
+    user_id: str | None,
+    session_id: str | None,
+    tags: list[str] | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current_trace_id = trace_id_var.get("")
+    current_tenant_id = tenant_id or tenant_id_var.get("")
+    merged: dict[str, Any] = {
+        "environment": settings.environment,
+    }
+    if current_tenant_id:
+        merged["tenant_id"] = current_tenant_id
+    if current_trace_id:
+        merged["trace_id"] = current_trace_id
+    if agent_name:
+        merged["agent_name"] = agent_name
+    if user_id:
+        merged["user_id"] = user_id
+        merged["langfuse_user_id"] = user_id
+    if session_id or current_trace_id:
+        merged["langfuse_session_id"] = session_id or current_trace_id
+
+    langfuse_tags = [
+        f"env:{settings.environment}",
+        *(tags or []),
+    ]
+    if agent_name:
+        langfuse_tags.append(f"agent:{agent_name}")
+    if current_tenant_id:
+        langfuse_tags.append(f"tenant:{current_tenant_id}")
+    merged["langfuse_tags"] = langfuse_tags
+
+    if metadata:
+        merged.update(metadata)
+    return merged
+
+
+def _merge_langfuse_call_kwargs(
+    kwargs: dict[str, Any],
+    *,
+    default_metadata: dict[str, Any],
+    default_name: str | None,
+) -> dict[str, Any]:
+    merged = dict(kwargs)
+    metadata = dict(default_metadata)
+    metadata.update(merged.get("metadata") or {})
+    merged["metadata"] = metadata
+    if default_name and "name" not in merged:
+        merged["name"] = default_name
+    trace_id = str(metadata.get("trace_id") or "")
+    if _valid_langfuse_trace_id(trace_id) and "trace_id" not in merged:
+        merged["trace_id"] = trace_id
+    return merged
+
+
+def _valid_langfuse_trace_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{32}", value))
+
+
+class _InstrumentedOpenAIClient:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        default_metadata: dict[str, Any],
+        default_name: str | None,
+    ) -> None:
+        self._client = client
+        self.chat = _InstrumentedChat(
+            client.chat,
+            default_metadata=default_metadata,
+            default_name=default_name,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
+class _InstrumentedChat:
+    def __init__(
+        self,
+        chat: Any,
+        *,
+        default_metadata: dict[str, Any],
+        default_name: str | None,
+    ) -> None:
+        self._chat = chat
+        self.completions = _InstrumentedCompletions(
+            chat.completions,
+            default_metadata=default_metadata,
+            default_name=default_name,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._chat, name)
+
+
+class _InstrumentedCompletions:
+    def __init__(
+        self,
+        completions: Any,
+        *,
+        default_metadata: dict[str, Any],
+        default_name: str | None,
+    ) -> None:
+        self._completions = completions
+        self._default_metadata = default_metadata
+        self._default_name = default_name
+
+    def create(self, *args: Any, **kwargs: Any) -> Any:
+        return self._completions.create(
+            *args,
+            **_merge_langfuse_call_kwargs(
+                kwargs,
+                default_metadata=self._default_metadata,
+                default_name=self._default_name,
+            ),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._completions, name)
+
+
+atexit.register(flush_langfuse)
 
 
 def build_document_content(

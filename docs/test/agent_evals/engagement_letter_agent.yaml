@@ -107,6 +107,40 @@ datasets:
           path: cap_amount
           tolerance: "0.00"
 
+    - id: el_nexus_mixed_fixed_retainer_tm
+      tags: [golden, mixed, demo_v2]
+      inputs:
+        document_path: fixtures/engagement_letters/nexus_engagement_letter.pdf
+      expected:
+        engagement_type: mixed
+        client_name: "Nexus Capital Partners LP"
+        currency: GBP
+        fixed_fee_amount: "42000.00"
+        retainer_monthly_amount: "8500.00"
+        total_value: "144000.00"
+        rate_card_hints:
+          - role: cfo_advisory_partner
+            rate: "350.00"
+      evaluators:
+        - type: field_exact
+          path: engagement_type
+        - type: field_exact
+          path: client_name
+        - type: field_exact
+          path: currency
+        - type: numeric_close
+          path: fixed_fee_amount
+          tolerance: "0.00"
+        - type: numeric_close
+          path: retainer_monthly_amount
+          tolerance: "0.00"
+        - type: numeric_close
+          path: total_value
+          tolerance: "0.00"
+        - type: numeric_close
+          path: rate_card_hints[0].rate
+          tolerance: "0.00"
+
     - id: el_indian_inr
       tags: [golden, market_in]
       inputs:

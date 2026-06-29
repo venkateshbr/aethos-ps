@@ -22,6 +22,7 @@ dependencies = [
   # the queue lives in Supabase, eliminating Redis as a dependency. See #108.
   "procrastinate>=3.0",
   "psycopg[binary,pool]>=3.2",
+  "langfuse>=4.12.0",
 ]
 
 [project.optional-dependencies]

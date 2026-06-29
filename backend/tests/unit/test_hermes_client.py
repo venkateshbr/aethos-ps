@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import httpx
+import pytest
+
+from app.services.hermes_client import HermesClient, extract_response_text
+
+pytestmark = pytest.mark.unit
+
+
+@pytest.mark.asyncio
+async def test_hermes_client_health_uses_bearer_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen_headers: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers["authorization"] = request.headers.get("authorization", "")
+        assert request.url.path == "/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    transport = httpx.MockTransport(handler)
+    original_async_client = httpx.AsyncClient
+
+    def _client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _client)
+
+    client = HermesClient(base_url="http://hermes:8642/", api_key="secret-key")
+    assert await client.health() == {"status": "ok"}
+    assert seen_headers["authorization"] == "Bearer secret-key"
+
+
+@pytest.mark.asyncio
+async def test_hermes_client_create_response_posts_responses_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_payload: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/responses"
+        seen_payload.update(request.read() and __import__("json").loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Done"}],
+                    }
+                ],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_async_client = httpx.AsyncClient
+
+    def _client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _client)
+
+    client = HermesClient(base_url="http://hermes:8642", api_key="secret-key")
+    payload = await client.create_response(
+        input_text="Show WIP",
+        conversation="aethos:tenant:user:thread",
+        instructions="Use Aethos tools.",
+    )
+
+    assert seen_payload["model"] == "Aethos Atlas"
+    assert seen_payload["input"] == "Show WIP"
+    assert seen_payload["conversation"] == "aethos:tenant:user:thread"
+    assert seen_payload["store"] is True
+    assert extract_response_text(payload) == "Done"
+
+
+def test_extract_response_text_ignores_tool_items() -> None:
+    payload = {
+        "output": [
+            {"type": "function_call", "name": "internal_tool"},
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "Visible text"}],
+            },
+        ]
+    }
+
+    assert extract_response_text(payload) == "Visible text"

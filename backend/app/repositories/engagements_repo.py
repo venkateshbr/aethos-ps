@@ -25,7 +25,7 @@ class EngagementRepository:
     def _base_query(self):  # type: ignore[no-untyped-def]
         return (
             self.db.table(_TABLE)
-            .select("*")
+            .select("*, clients(name)")
             .eq("tenant_id", self.tenant_id)
             .is_("deleted_at", "null")
         )
