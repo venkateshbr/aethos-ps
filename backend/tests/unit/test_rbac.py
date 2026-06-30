@@ -12,7 +12,13 @@ from starlette.requests import Request
 
 from app.core.auth import CurrentUser
 from app.core.finance_personas import finance_persona_catalog, persona_ids_for_role
-from app.core.rbac import ROLE_HIERARCHY, UserRole, _resolve_role
+from app.core.rbac import (
+    ROLE_HIERARCHY,
+    UserRole,
+    _resolve_role,
+    role_allows_approval,
+    role_meets_minimum,
+)
 from app.core.tenant import _VERIFIED_TENANT_ROLE_STATE_KEY, _VERIFIED_TENANT_STATE_KEY
 
 pytestmark = pytest.mark.unit
@@ -31,10 +37,9 @@ def test_all_roles_in_hierarchy() -> None:
         assert role in ROLE_HIERARCHY, f"{role!r} missing from ROLE_HIERARCHY"
 
 
-def test_hierarchy_is_strictly_ordered() -> None:
-    """No two roles share the same rank."""
-    ranks = list(ROLE_HIERARCHY.values())
-    assert len(ranks) == len(set(ranks)), "Duplicate ranks found in ROLE_HIERARCHY"
+def test_auditor_and_viewer_share_read_only_rank() -> None:
+    assert ROLE_HIERARCHY[UserRole.auditor] == ROLE_HIERARCHY[UserRole.viewer]
+    assert role_meets_minimum(UserRole.auditor, UserRole.viewer)
 
 
 def test_role_enum_values_are_strings() -> None:
@@ -47,9 +52,26 @@ def test_finance_personas_map_to_existing_roles_without_new_permissions() -> Non
     catalog = finance_persona_catalog()
     persona_ids = {persona["id"] for persona in catalog}
 
-    assert {"owner_admin", "controller", "ap_lead", "ar_lead", "auditor", "executive"} <= persona_ids
-    assert persona_ids_for_role(UserRole.manager) == ["ap_lead", "ar_lead"]
-    assert persona_ids_for_role(UserRole.viewer) == ["auditor", "executive"]
+    assert {
+        "owner_admin",
+        "controller",
+        "cfo",
+        "finance_approver",
+        "procurement_manager",
+        "ap_lead",
+        "ar_lead",
+        "auditor",
+        "executive",
+    } <= persona_ids
+    assert persona_ids_for_role(UserRole.manager) == [
+        "finance_approver",
+        "procurement_manager",
+        "ap_lead",
+        "ar_lead",
+    ]
+    assert persona_ids_for_role(UserRole.approver) == ["finance_approver"]
+    assert persona_ids_for_role(UserRole.auditor) == ["auditor"]
+    assert persona_ids_for_role(UserRole.viewer) == ["executive"]
     assert "auditor" not in persona_ids_for_role(UserRole.admin)
     assert all(
         set(persona["mapped_roles"]) <= {role.value for role in UserRole}
@@ -63,6 +85,14 @@ def test_admin_outranks_manager() -> None:
 
 def test_manager_outranks_member() -> None:
     assert ROLE_HIERARCHY[UserRole.manager] > ROLE_HIERARCHY[UserRole.member]
+
+
+def test_approver_is_below_manager_for_crud_but_can_approve_manager_threshold() -> None:
+    assert ROLE_HIERARCHY[UserRole.approver] < ROLE_HIERARCHY[UserRole.manager]
+    assert not role_meets_minimum(UserRole.approver, UserRole.manager)
+    assert role_allows_approval(UserRole.approver, UserRole.manager)
+    assert not role_allows_approval(UserRole.approver, UserRole.admin)
+    assert role_allows_approval(UserRole.manager, UserRole.approver)
 
 
 class _Result:

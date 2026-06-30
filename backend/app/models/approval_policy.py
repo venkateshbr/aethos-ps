@@ -7,10 +7,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-ApprovalRole = Literal["manager", "admin", "owner"]
+ApprovalRole = Literal["approver", "manager", "admin", "owner"]
 ApprovalPolicySource = Literal["system_default", "tenant_default"]
 
-_ROLE_RANK = {"manager": 3, "admin": 4, "owner": 5}
+_ROLE_RANK = {"approver": 3, "manager": 4, "admin": 5, "owner": 6}
 
 
 class ApprovalPolicyConfig(BaseModel):
@@ -39,9 +39,9 @@ class ApprovalPolicyConfig(BaseModel):
         _require_at_least(self.money_out_owner_role, "owner", "money_out_owner_role")
         _require_at_least(self.accounting_role, "admin", "accounting_role")
         _require_at_least(self.high_risk_role, "admin", "high_risk_role")
-        _require_at_least(self.money_in_role, "manager", "money_in_role")
-        _require_at_least(self.draft_role, "manager", "draft_role")
-        _require_at_least(self.external_send_role, "manager", "external_send_role")
+        _require_at_least(self.money_in_role, "approver", "money_in_role")
+        _require_at_least(self.draft_role, "approver", "draft_role")
+        _require_at_least(self.external_send_role, "approver", "external_send_role")
         return self
 
 

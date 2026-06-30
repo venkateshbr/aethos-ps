@@ -542,12 +542,13 @@ Automation target:
 
 Persona: External CPA or auditor.
 
-Status: First slice implemented. Current `viewer` role maps to auditor/read-only
-personas; API tests prove read-only access to reports, bills/procurement, and
-Inbox while denying mutating finance actions. Bills/AP UI disables create,
-approval, conversion, and Pay Bills entry actions for read-only users. Browser
-proof for Settings, Inbox, and Bill-detail read-only behavior is automated in
-#309; broader page-by-page viewer regression remains future depth.
+Status: Implemented. The dedicated `auditor` role is read-only, separate from
+the executive `viewer` role. API tests prove read-only access to reports,
+bills/procurement, and Inbox while denying mutating finance actions. Bills/AP UI
+disables create, approval, conversion, and Pay Bills entry actions for
+read-only users. Browser proof for Settings, Inbox, and Bill-detail read-only
+behavior is automated in #309, with distinct approver/auditor role proof added
+under #364.
 
 Steps:
 

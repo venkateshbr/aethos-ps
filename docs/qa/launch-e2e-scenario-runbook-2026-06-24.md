@@ -31,14 +31,17 @@ The operational scenarios should be executed primarily as a tenant admin or owne
 | Project Manager | Priya Shah | Can view assigned projects, team, milestones, time, utilization/capacity, and relevant reports |
 | Staff Consultant | Nina Patel | Can enter time/expenses where UI allows; cannot approve invoices, bills, journals, or tenant settings |
 | AP Lead | Chris Moore | Can work vendor onboarding, bills, procurement, pay-bills, and AP Aging; cannot approve revenue actions unless explicitly allowed |
+| Finance Approver | Alex Reed | Can approve/reject manager-threshold Inbox and procurement review work, but cannot create operational records or approve Admin/Owner-threshold work |
 | Controller | Rachel Kim | Can post journals, work close tasks, review financial statements, and inspect statutory reports |
-| Viewer/Auditor | Read-only QA user | Can view permitted data, Bills/AP mutation buttons are disabled, direct Inbox/Bills/Procurement/Financial Events mutations fail cleanly |
+| Auditor | Read-only QA user | Can view permitted data and decision evidence; direct Inbox/Bills/Procurement/Financial Events mutations fail cleanly |
+| Executive Viewer | Board QA user | Can inspect dashboards, reports, and permitted records without mutation authority |
 
 If role-auth users are not already available, create ERP login users from
 `/app/settings` -> Tenant Users. Owner/admin users can invite
-`owner`/`admin`/`manager`/`member`/`viewer` accounts, with owner-only guardrails
-for owner/admin assignment and deactivation. Create staff delivery records,
-rates, managers, and timesheet-only employees separately through `/app/people`.
+`owner`/`admin`/`manager`/`approver`/`member`/`auditor`/`viewer` accounts, with
+owner-only guardrails for owner/admin assignment and deactivation. Create staff
+delivery records, rates, managers, and timesheet-only employees separately
+through `/app/people`.
 Record generated demo credentials in the secure credential file only; do not
 paste passwords into the runbook, screenshots, or issue comments.
 
@@ -565,9 +568,9 @@ Current implementation assessment:
 | AI vendor invoice exceptions | Implemented first slices in #284/#299 and automated in #310: extraction payloads include vendor match status, GL coding suggestions, review exceptions, duplicate guard metadata, project/customer hints, and source document linkage; Inbox and Bill detail surface AP review evidence, duplicate invoice approval requires a reviewer-entered reason, and approval uses the Bills service path to create reviewed bill lines with `vendor_invoice_review` evidence. #323 adds line-level PO/service-order match evidence: linked bills compare bill lines to approved PO/SO lines for description, quantity, unit price, amount, and service period where applicable; mismatches record `line_exceptions`, show in Bills list/detail, and block approval through the existing AP gate | Payment remains a separate bill-pay approval flow; fuzzy/semantic AI PO selection remains future P2P depth | #284, #299, #310, #323 |
 | AI engagement-letter onboarding | Implemented and browser-verified in #267, then deepened in #345: Copilot upload classifies engagement letters/SOWs, creates `create_engagement_draft` Inbox tasks with client, engagement, billing terms, rates, dates, and first project, then approval materialises customer, draft engagement, first project, and a linked rate card when reviewed rate hints are present | Broader admin reporting around segmented price books remains future depth; reviewed commercial terms are preserved in the Inbox payload | #267, #345 |
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
-| Enterprise approval policy | Implemented first slices in #280 and #296, then automated in #309: Inbox exposes required Owner/Admin/Manager approval role, the API enforces the same policy including approve-with-edits re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser proof verifies owner-threshold routing plus disabled under-privileged approval | Deeper finance-role taxonomy remains future enterprise controls | #280, #296, #309 |
+| Enterprise approval policy | Implemented first slices in #280 and #296, automated in #309, and expanded in #364: Inbox exposes required Owner/Admin/Manager/Finance Approver review roles, the API enforces the same policy including approve-with-edits and reject re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser/API proof verifies owner-threshold routing plus disabled under-privileged approval | Dual-review workflow depth remains future enterprise controls | #280, #296, #309, #364 |
 | Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
-| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, automated in #309, then expanded in #321: current enterprise personas map to owner/admin/manager/member/viewer/employee, Settings exposes a viewer-readable Finance role personas catalog, API/unit tests prove the catalog does not add permissions, browser proof verifies Owner/Admin, Manager, and Viewer paths across Settings, Inbox, and Bill detail, and the full persona matrix verifies Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive route/action expectations | Dedicated finance-role enum assignment remains future enterprise controls depth | #282, #298, #309, #321 |
+| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, automated in #309, expanded in #321, and deepened in #364: enforced roles now include owner/admin/manager/approver/member/auditor/viewer/employee; Settings exposes a read-only Finance role personas catalog; API/unit tests prove approver, auditor, manager, and viewer behavior; browser proof verifies Owner/Admin, Manager, Approver, Auditor, and Viewer paths across Settings, Inbox, Bills/AP, Accounting, Reports, and read-only mutation guards | Fine-grained custom permission groups remain future enterprise controls depth | #282, #298, #309, #321, #364 |
 | Enterprise ops hardening | Implemented first slices in #286 and #301, then automated in #311: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback/deny-safe behavior, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Deployed Supabase smoke validation remains environment evidence; deterministic browser/API proof is automated | #286, #301, #311 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -846,30 +849,37 @@ Evidence: Copilot management pack, report tabs, journal list, variance commentar
 
 ## Scenario 19 - Finance Role Persona And Permission Proof
 
-Persona: Owner/Admin, AP Lead, AR Lead, Controller, Auditor, and Executive.
+Persona: Owner/Admin, CFO, Controller, Procurement Manager, Finance Approver,
+AP Lead, AR Lead, Auditor, and Executive.
 AI role: Finance Ops Manager as access explainer only.
 
 Browser steps:
-1. `/app/settings`: open Tenant Users and confirm Owner/Admin can invite an ERP
-   manager or viewer, the invited user can log into the main app independently,
+1. `/app/settings`: open Tenant Users and confirm Owner/Admin can invite ERP
+   manager, approver, auditor, and viewer users, each can log into the main app independently,
    and invite/role/deactivation audit events are visible.
 2. `/app/settings`: open Approval Controls and verify the Finance role personas card shows the current enforced role.
-3. As Owner/Admin, Manager, and Viewer sessions, verify compatible persona chips:
-   Owner/Admin should include Owner/Admin, Controller, AP Lead, and AR Lead;
-   Manager should include AP Lead and AR Lead; Viewer should include Auditor
-   and Executive.
+3. As Owner/Admin, Manager, Approver, Auditor, and Viewer sessions, verify compatible persona chips:
+   Owner/Admin should include Owner/Admin, CFO, Controller, Finance Approver,
+   Procurement Manager, AP Lead, and AR Lead; Manager should include Finance
+   Approver, Procurement Manager, AP Lead, and AR Lead; Approver should include
+   Finance Approver; Auditor should include Auditor; Viewer should include
+   Executive.
 4. `/app/copilot`: ask `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.`
-5. As Viewer, open Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and Settings.
-6. Attempt restricted finance actions: approve, edit, create, convert, post, pay,
+5. As Approver, open Inbox/Procurement and prove manager-threshold review can
+   be approved/rejected while create/post/pay/settings routes are blocked.
+6. As Auditor and Viewer, open Inbox, Bills/AP, Invoices/AR, Accounting, Reports, and Settings.
+7. Attempt restricted finance actions: approve, edit, create, convert, post, pay,
    send, lock, and settings mutation.
-7. Repeat direct API calls for the same restricted paths.
+8. Repeat direct API calls for the same restricted paths.
 
 Expected result:
 - Finance persona labels are understandable to users but remain mapped to the
   enforced backend role hierarchy.
-- Viewer-backed Auditor and Executive personas can inspect permitted records and
-  decision evidence but cannot mutate finance or settings state.
-- Manager-backed AP/AR personas can prepare work and use manager-threshold flows
+- Auditor and Viewer users can inspect permitted records and decision evidence
+  but cannot mutate finance or settings state.
+- Finance Approver users can decide manager-threshold review work but cannot
+  create operational records or approve Admin/Owner-threshold work.
+- Manager-backed procurement/AP/AR personas can prepare work and use manager-threshold flows
   without gaining admin/owner approval rights.
 - Owner/Admin and Controller mappings keep final approval and settings authority
   behind the existing tenant role gates.
@@ -886,13 +896,13 @@ Implementation status:
   denial, Viewer read-only Settings/Inbox/Bill-detail behavior, Inbox Done
   decision history, and Bill decision timeline evidence. The #321 matrix signs
   in as Owner/Admin, Controller, AP Lead, AR Lead, Auditor, and Executive through
-  the current enforced-role compatibility model and verifies Settings, Inbox,
-  Bills/AP, Invoices/AR, Accounting, Reports, and read-only mutation guards.
+  the enforced-role compatibility model and verifies Settings, Inbox, Bills/AP,
+  Invoices/AR, Accounting, Reports, and read-only mutation guards.
 - Tenant-user invite and role administration first slice implemented under
   #364: Settings exposes Tenant Users, `/api/v1/tenant-users` supports list,
-  invite, role update, deactivation, and audit events, and the production
-  scenario-library run creates one ERP manager per tenant through the product
-  API before validating independent login.
+  invite, role update, deactivation, and audit events. #364 now also adds
+  dedicated `approver` and `auditor` ERP roles, policy-gated Inbox rejection,
+  manager-threshold approver proof, and auditor read-only proof.
 
 Automation:
 ```bash

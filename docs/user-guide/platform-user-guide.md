@@ -71,20 +71,25 @@ result and the approval boundary.
 
 ## 2. Roles And Responsibilities
 
-Current implementation uses the tenant role hierarchy
-`owner > admin > manager > member > viewer > employee`. Enterprise finance
-personas map onto that hierarchy for now; finer-grained named roles can be added
-later without weakening the existing approval gates.
+Current implementation uses a small enforced tenant role hierarchy:
+`owner > admin > manager > approver > member > viewer/auditor > employee`.
+Enterprise finance titles map onto that hierarchy as personas. This keeps the
+permission model auditable while still letting users think in familiar finance
+roles such as CFO, Controller, Procurement Manager, AP Lead, AR Lead, and
+Auditor.
 
 | Enterprise persona | Current role mapping | What they can do today | Current restrictions |
 | --- | --- | --- | --- |
 | Owner/Admin | `owner`, `admin` | Configure tenant and AI operations, inspect all finance records, and approve owner/admin-threshold Inbox work | Tenant-scoped only |
+| CFO | `owner`, `admin` | Review performance, cash, controls, and elevated approvals across finance operations | Owner-only tenant administration still requires `owner` |
 | Controller | `admin`, `owner` | Own close, journals, statements, accounting approvals, reports, and decision evidence | Cannot bypass owner-threshold policy or tenant boundaries |
+| Finance Approver | `approver`, `manager`, `admin`, `owner` | Approve, approve with edits, or reject manager-threshold Inbox and procurement review work | Cannot create operational records as an approver and cannot approve admin/owner-threshold work |
+| Procurement Manager | `manager`, `admin`, `owner` | Create/convert procurement documents, resolve vendor/procurement exceptions, and prepare payment packets | Cannot approve admin/owner-threshold spend unless mapped to admin/owner |
 | AP Lead | `manager`, `admin`, `owner` | Create/review bills and procurement documents, resolve vendor invoice exceptions, and prepare bill-pay batches | Cannot approve admin/owner-threshold money-out work unless mapped to admin/owner |
 | AR Lead | `manager`, `admin`, `owner` | Draft/review invoices, collections work, WIP, revenue, and AR Aging | Cannot bypass send, payment, or admin-threshold approval gates unless mapped to admin/owner |
 | Engagement Manager | `manager` | Maintain customers, engagements, projects, services, WIP, draft invoices, and team workflow | Cannot bypass admin approval for posting/sending/payment |
 | Staff / Consultant | `member` or Timesheet `employee` | Participate in delivery workflows such as time/expense where exposed | Cannot approve finance, accounting, payment, settings, or agent-control actions |
-| Auditor | `viewer` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and record-scoped decision evidence | Cannot create, approve, edit, reject, convert, post, pay, send, lock, change settings, or export admin-only audit events |
+| Auditor | `auditor` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and record-scoped decision evidence | Cannot create, approve, edit, reject, convert, post, pay, send, lock, change settings, or export admin-only audit events |
 | Executive | `viewer` | Read dashboards, management reports, operational status, and AI Finance Ops Manager summaries | Same read-only mutation restrictions as auditor |
 
 ### Tenant user administration
@@ -100,9 +105,11 @@ Current ERP roles that can be assigned from Tenant Users are:
 | --- | --- | --- |
 | `owner` | Firm owner, managing partner, tenant administrator | Full tenant authority, including owner-threshold approvals and high-risk settings |
 | `admin` | Controller, senior finance admin | Broad finance/settings access, below owner-only controls |
-| `manager` | Finance ops manager, AP/AR lead, engagement manager | Can prepare and review manager-threshold work; cannot bypass admin/owner gates |
+| `manager` | Finance ops manager, AP/AR lead, engagement manager, procurement manager | Can create and prepare operational finance work and review manager-threshold work; cannot bypass admin/owner gates |
+| `approver` | Dedicated finance approver | Can approve, approve with edits, or reject manager-threshold review work without general manager CRUD access |
 | `member` | Staff user or operator | Can participate in permitted operational workflows without approval authority |
-| `viewer` | Auditor, executive, read-only reviewer | Can inspect permitted records and evidence; mutation actions remain blocked |
+| `auditor` | External auditor, internal audit, compliance reviewer | Can inspect permitted records and evidence; all mutation and approval actions remain blocked |
+| `viewer` | Executive, read-only reviewer | Can inspect dashboards, reports, and permitted records; mutation actions remain blocked |
 
 Tenant user invite workflow:
 
@@ -147,10 +154,11 @@ for direct read-only mutation attempts.
 
 Settings -> Approval Controls -> Finance role personas shows the live
 product-facing persona catalog from `GET /api/v1/tenants/finance-personas`.
-The card is readable by viewer users, highlights which personas match the
+The card is readable by read-only users, highlights which personas match the
 current enforced tenant role, and explains the actions that remain restricted.
-This is a compatibility layer over the current role enum; dedicated finance-role
-enum expansion remains future depth.
+CFO, Controller, Procurement Manager, AP Lead, AR Lead, Auditor, and Executive
+remain personas; only roles that materially change enforcement are stored as ERP
+roles.
 
 ### Current approval policy matrix
 
@@ -159,16 +167,17 @@ approvals:
 
 | Task risk | Required approver |
 | --- | --- |
-| Draft or low-risk write | Manager or higher |
-| Money-in action | Manager or higher |
+| Draft or low-risk write | Manager by default; Finance Approver can decide manager-threshold review work, and tenants may configure Finance Approver for this category |
+| Money-in action | Manager by default; Finance Approver can decide manager-threshold review work, and tenants may configure Finance Approver for this category |
+| External send | Manager by default; Finance Approver can decide manager-threshold review work, and tenants may configure Finance Approver for this category |
 | Money-out action | Admin or higher |
 | Money-out action at or above 50,000 in task currency | Owner |
 | Accounting action | Admin or higher |
 
 Inbox shows the required approval role on review cards and lets users filter by
 required role. The API enforces the same policy at approval time, including
-approve-with-edits, so a corrected payload cannot bypass a higher approval
-threshold.
+approve-with-edits and rejection, so a corrected payload or rejection cannot
+bypass a higher approval threshold.
 
 Users can ask Aethos Atlas for the role-aware approval controls read pack:
 
@@ -304,7 +313,7 @@ Common Inbox actions:
 | Approve with edits | Correct the payload before materialization |
 | Reject | Stop the recommendation and record feedback |
 | Filter by task type | Focus on invoices, payments, emails, documents, close, or Plan Items |
-| Filter by required role | Focus on tasks needing Owner, Admin, or Manager approval |
+| Filter by required role | Focus on tasks needing Owner, Admin, Manager, or Finance Approver review |
 | Filter by status | Review Open work or inspect Done/All tasks with decision history |
 
 Inbox decision history now uses the immutable `financial_events` ledger for
@@ -319,7 +328,7 @@ decision is projected onto that record. Bill, invoice, engagement, payment
 batch, journal, close-period, and source-document surfaces can show a
 record-scoped decision timeline with the actor role, decision type, timestamp,
 related Inbox task, safe before/after review summary, and event hash.
-Viewer/auditor personas can inspect this record-scoped metadata without gaining
+Viewer/auditor roles can inspect this record-scoped metadata without gaining
 mutation access.
 
 Admins can also inspect or export the full financial event ledger through the
@@ -705,7 +714,7 @@ Current guidance:
   product-facing finance personas map to the current tenant role and what each
   persona can or cannot do through existing approval gates.
 - Use Settings -> Tenant Users to invite ERP users, assign owner/admin/manager/
-  member/viewer roles, test independent login, change roles, deactivate access,
+  approver/member/auditor/viewer roles, test independent login, change roles, deactivate access,
   and inspect the tenant-user audit trail.
 - Use run ledger details to inspect action evidence and risk class.
 - Use Settings -> Operational Health for support-safe runtime, table/migration,

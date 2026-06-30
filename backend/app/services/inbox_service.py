@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.core.rbac import UserRole, role_allows_approval
 from app.domain.money import serialise_money
 from app.models.inbox import (
     ApproveResponse,
@@ -202,13 +202,14 @@ class InboxService:
         suggestion_id = task.get("agent_suggestion_id") or task.get("suggestion_id")
         agent_name = task.get("agent_name", "unknown")
         kind = task.get("kind", "")
-        user_role = await self._fetch_user_role(user_id)
-        payload = self._task_materialisation_payload(task)
-        decision = ApprovalPolicyMatrix.decision_for_task(
-            kind,
-            payload,
-            settings=await self._approval_policy_settings(),
+        check = await self._enforce_approval_policy(
+            task,
+            user_id,
+            action="reject",
         )
+        user_role = check.user_role
+        payload = check.payload
+        decision = check.decision
 
         if suggestion_id:
             await self._repo.update_suggestion_status(suggestion_id, "rejected", user_id)
@@ -313,8 +314,11 @@ class InboxService:
             settings=policy,
         )
         user_role = await self._fetch_user_role(user_id)
-        if ROLE_HIERARCHY[user_role] >= ROLE_HIERARCHY[decision.required_role]:
-            if _is_manual_journal_self_approval_attempt(payload, user_id):
+        if role_allows_approval(user_role, decision.required_role):
+            if action.startswith("approve") and _is_manual_journal_self_approval_attempt(
+                payload,
+                user_id,
+            ):
                 denial_payload = {
                     "decision_result": "denied",
                     "denial_reason": "manual_journal_self_approval_denied",

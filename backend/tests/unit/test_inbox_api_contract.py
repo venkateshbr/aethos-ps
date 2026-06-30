@@ -285,6 +285,66 @@ def test_viewer_can_read_inbox_but_cannot_decide(
     assert fake_db.tables["agent_suggestions"][0]["status"] == "pending"
 
 
+def test_auditor_can_read_inbox_but_cannot_decide(
+    fake_db: _FakeDb,
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="auditor-1",
+        email="auditor@example.com",
+        role="auditor",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as auditor_client:
+            list_response = auditor_client.get("/api/v1/inbox/tasks")
+            approve_response = auditor_client.post("/api/v1/inbox/tasks/task-1/approve")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert list_response.status_code == 200, list_response.text
+    assert approve_response.status_code == 403, approve_response.text
+    assert fake_db.tables["hitl_tasks"][0]["status"] == "open"
+
+
+def test_approver_can_decide_manager_threshold_review_but_not_owner_threshold(
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["tenant_users"][1]["role"] = "approver"
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="user-1",
+        email="approver@example.com",
+        role="approver",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as approver_client:
+            fake_db.tables["hitl_tasks"][0]["kind"] = "review_note"
+            approve_response = approver_client.post("/api/v1/inbox/tasks/task-1/approve")
+
+            fake_db.tables["hitl_tasks"][0].update(
+                {
+                    "status": "open",
+                    "kind": "create_bill_payment_batch",
+                    "payload": {
+                        "risk_class": "write_money_out",
+                        "total_amount": "75000.00",
+                    },
+                }
+            )
+            fake_db.tables["agent_suggestions"][0]["status"] = "pending"
+            owner_response = approver_client.post("/api/v1/inbox/tasks/task-1/approve")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert approve_response.status_code == 200, approve_response.text
+    assert owner_response.status_code == 403, owner_response.text
+    assert "requires owner or higher" in owner_response.json()["detail"]
+
+
 def test_inbox_tasks_expose_enterprise_approval_policy(
     client: TestClient,
     fake_db: _FakeDb,
@@ -557,6 +617,7 @@ def test_inbox_reject_threshold_manual_journal_writes_lifecycle_event(
     client: TestClient,
     fake_db: _FakeDb,
 ) -> None:
+    fake_db.tables["tenant_users"][1]["role"] = "admin"
     fake_db.tables["agent_suggestions"][0].update(
         {
             "agent_name": "manual_journal_service",

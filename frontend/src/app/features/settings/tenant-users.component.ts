@@ -5,7 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { AuthService } from '../../core/services/auth.service';
 
-type TenantUserRole = 'owner' | 'admin' | 'manager' | 'member' | 'viewer';
+type TenantUserRole = 'owner' | 'admin' | 'manager' | 'approver' | 'member' | 'auditor' | 'viewer';
 
 interface TenantUser {
   id: string;
@@ -29,10 +29,12 @@ interface TenantUserInviteResponse extends TenantUser {
 
 const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
   { value: 'owner', label: 'Tenant Admin / Owner' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'member', label: 'Member' },
-  { value: 'viewer', label: 'Viewer' },
+  { value: 'admin', label: 'Controller / Admin' },
+  { value: 'manager', label: 'Finance Ops Manager' },
+  { value: 'approver', label: 'Finance Approver' },
+  { value: 'member', label: 'Finance Operator' },
+  { value: 'auditor', label: 'Auditor' },
+  { value: 'viewer', label: 'Executive Viewer' },
 ];
 
 @Component({

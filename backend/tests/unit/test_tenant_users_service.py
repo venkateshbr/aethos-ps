@@ -162,6 +162,31 @@ async def test_owner_can_invite_manager_user() -> None:
 
 
 @pytest.mark.asyncio
+async def test_admin_can_invite_approver_and_auditor_users() -> None:
+    db = _FakeDb(
+        [
+            _tenant_user(),
+            _tenant_user(id="tu-admin", user_id=ADMIN_ID, role="admin", email="admin@aethos-qa.dev"),
+        ]
+    )
+    svc = TenantUsersService(db, TENANT_ID)  # type: ignore[arg-type]
+
+    approver = await svc.invite_user(
+        TenantUserInviteRequest(email="approver@aethos-qa.dev", role="approver"),
+        actor=CurrentUser(user_id=ADMIN_ID, email="admin@aethos-qa.dev", role="admin"),
+    )
+    auditor = await svc.invite_user(
+        TenantUserInviteRequest(email="auditor@aethos-qa.dev", role="auditor"),
+        actor=CurrentUser(user_id=ADMIN_ID, email="admin@aethos-qa.dev", role="admin"),
+    )
+
+    assert approver.role == "approver"
+    assert auditor.role == "auditor"
+    assert db.auth.admin.created_users[0]["app_metadata"]["role"] == "approver"
+    assert db.auth.admin.created_users[1]["app_metadata"]["role"] == "auditor"
+
+
+@pytest.mark.asyncio
 async def test_admin_cannot_invite_admin_user() -> None:
     db = _FakeDb(
         [

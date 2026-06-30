@@ -6,7 +6,15 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
-TenantUserRole = Literal["owner", "admin", "manager", "member", "viewer"]
+TenantUserRole = Literal[
+    "owner",
+    "admin",
+    "manager",
+    "approver",
+    "member",
+    "auditor",
+    "viewer",
+]
 
 
 class TenantUserInviteRequest(BaseModel):

@@ -37,6 +37,55 @@ _PERSONAS: tuple[dict[str, Any], ...] = (
         "read_only": False,
     },
     {
+        "id": "cfo",
+        "label": "CFO",
+        "mapped_roles": [UserRole.owner.value, UserRole.admin.value],
+        "description": "Executive finance owner for policy, performance, and approvals.",
+        "areas": ["Management reporting", "Approval policy", "Cash", "Audit"],
+        "allowed_actions": [
+            "Inspect all finance reports and operational health",
+            "Approve elevated finance work within the configured tenant policy",
+            "Review AI Finance Ops Manager summaries and decision evidence",
+        ],
+        "restricted_actions": ["Owner-only tenant administration still requires owner role"],
+        "read_only": False,
+    },
+    {
+        "id": "finance_approver",
+        "label": "Finance Approver",
+        "mapped_roles": [
+            UserRole.approver.value,
+            UserRole.manager.value,
+            UserRole.admin.value,
+            UserRole.owner.value,
+        ],
+        "description": "Dedicated reviewer for manager-threshold Inbox decisions.",
+        "areas": ["Inbox", "Approval controls", "Decision evidence"],
+        "allowed_actions": [
+            "Approve, approve with edits, or reject manager-threshold review work",
+            "Inspect policy reasons and pending work that needs a higher approver",
+        ],
+        "restricted_actions": [
+            "Cannot create or mutate operational records outside review actions",
+            "Cannot approve admin or owner-threshold money-out, accounting, or high-risk work",
+        ],
+        "read_only": False,
+    },
+    {
+        "id": "procurement_manager",
+        "label": "Procurement Manager",
+        "mapped_roles": [UserRole.manager.value, UserRole.admin.value, UserRole.owner.value],
+        "description": "Procurement owner for purchase requests, orders, vendors, and AP matching.",
+        "areas": ["Procurement", "Bills", "Pay Bills", "Vendor onboarding"],
+        "allowed_actions": [
+            "Create and convert purchase requests, purchase orders, and service orders",
+            "Review vendor and procurement exceptions routed through Inbox",
+            "Prepare payment and purchasing packets for approval",
+        ],
+        "restricted_actions": ["Cannot approve admin or owner-threshold spend unless mapped to admin/owner"],
+        "read_only": False,
+    },
+    {
         "id": "ap_lead",
         "label": "AP Lead",
         "mapped_roles": [UserRole.manager.value, UserRole.admin.value, UserRole.owner.value],
@@ -67,7 +116,7 @@ _PERSONAS: tuple[dict[str, Any], ...] = (
     {
         "id": "auditor",
         "label": "Auditor",
-        "mapped_roles": [UserRole.viewer.value],
+        "mapped_roles": [UserRole.auditor.value],
         "description": "Read-only audit reviewer for records, reports, and decision evidence.",
         "areas": ["Reports", "Bills", "Invoices", "Audit evidence"],
         "allowed_actions": [

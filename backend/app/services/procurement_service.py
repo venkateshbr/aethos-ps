@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.core.rbac import UserRole, role_allows_approval
 from app.domain.money import serialise_money
 from app.models.procurement import (
     ProcurementConvertRequest,
@@ -108,10 +108,7 @@ def _role_allows(user_role: str | None, required_role: str) -> bool:
         resolved_required_role = UserRole(required_role)
     except ValueError:
         resolved_required_role = UserRole.owner
-    return (
-        ROLE_HIERARCHY.get(resolved_user_role, 0)
-        >= ROLE_HIERARCHY[resolved_required_role]
-    )
+    return role_allows_approval(resolved_user_role, resolved_required_role)
 
 
 def _line_to_response(row: dict) -> ProcurementLineResponse:

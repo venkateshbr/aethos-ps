@@ -15,7 +15,7 @@ from app.agents.base import AgentDeps
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.db import get_service_role_client
-from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.core.rbac import ROLE_HIERARCHY, UserRole, role_allows_approval
 from app.services.approval_policy import (
     ApprovalPolicyMatrix,
     ApprovalPolicySettings,
@@ -513,7 +513,6 @@ def _find_reviewer_for_role(
         or []
     )
     candidates: list[tuple[int, str]] = []
-    required_rank = ROLE_HIERARCHY[required_role]
     for row in rows:
         try:
             role = UserRole(row.get("role"))
@@ -521,7 +520,7 @@ def _find_reviewer_for_role(
             continue
         rank = ROLE_HIERARCHY.get(role, 0)
         user_id = str(row.get("user_id") or "")
-        if user_id and rank >= required_rank:
+        if user_id and role_allows_approval(role, required_role):
             candidates.append((rank, user_id))
     if not candidates:
         return None

@@ -5,7 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { AuthService } from '../../core/services/auth.service';
 
-type ApprovalRole = 'manager' | 'admin' | 'owner';
+type ApprovalRole = 'approver' | 'manager' | 'admin' | 'owner';
 type ApprovalPolicySource = 'system_default' | 'tenant_default';
 
 interface ApprovalPolicy {
@@ -25,12 +25,13 @@ interface ApprovalPolicy {
 }
 
 const ROLE_OPTIONS: { value: ApprovalRole; label: string }[] = [
-  { value: 'manager', label: 'Manager' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'owner', label: 'Owner' },
+  { value: 'approver', label: 'Finance Approver' },
+  { value: 'manager', label: 'Finance Ops Manager' },
+  { value: 'admin', label: 'Controller / Admin' },
+  { value: 'owner', label: 'Owner / CFO' },
 ];
 
-const ADMIN_OWNER_OPTIONS = ROLE_OPTIONS.filter(option => option.value !== 'manager');
+const ADMIN_OWNER_OPTIONS = ROLE_OPTIONS.filter(option => ['admin', 'owner'].includes(option.value));
 
 @Component({
   selector: 'app-approval-policy',

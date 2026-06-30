@@ -131,8 +131,8 @@ def test_admin_can_save_tenant_approval_policy_with_service_role_client() -> Non
                     "money_out_owner_role": "owner",
                     "accounting_role": "owner",
                     "manual_journal_approval_threshold": "15000",
-                    "money_in_role": "admin",
-                    "draft_role": "manager",
+                    "money_in_role": "approver",
+                    "draft_role": "approver",
                     "external_send_role": "admin",
                     "high_risk_role": "owner",
                 },
@@ -145,6 +145,8 @@ def test_admin_can_save_tenant_approval_policy_with_service_role_client() -> Non
     assert body["policy_source"] == "tenant_default"
     assert body["money_out_default_role"] == "owner"
     assert body["manual_journal_approval_threshold"] == "15000"
+    assert body["money_in_role"] == "approver"
+    assert body["draft_role"] == "approver"
     assert body["external_send_role"] == "admin"
     assert write_db.tables["tenant_approval_policies"][0]["tenant_id"] == TENANT_ID
 

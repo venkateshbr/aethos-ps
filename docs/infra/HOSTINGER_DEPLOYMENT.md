@@ -197,10 +197,13 @@ The Hermes-powered Atlas runtime uses a private Aethos Tool Broker:
   Aethos Basic, the built-in fallback path, and tenant-scoped document/reporting
   agents. Hermes still uses the mounted Atlas profile for its primary model
   until Hermes exposes dynamic per-tenant model selection.
-- Hermes provider/control-plane failures are classified as infrastructure
-  failures by the Aethos API. Atlas should show a short user-safe unavailable
-  message or fall back to the built-in runtime; it must not show provider URLs,
-  billing/key-limit text, traces, or raw tool output to end users.
+- Hermes provider/control-plane failures are classified by the Aethos API as
+  `quota`, `auth`, `rate_limit`, `timeout`, `upstream_outage`, or `unknown`.
+  Atlas should show a short user-safe unavailable message or fall back to the
+  built-in runtime; it must not show provider URLs, billing/key-limit text,
+  traces, or raw tool output to end users. The API records safe operational
+  counters such as `atlas_provider_quota` and `atlas_provider_rate_limit` for
+  health/alert review.
 - For enterprise resilience, do not point Hermes and the built-in fallback at
   the same exhausted provider key. Set `HERMES_OPENROUTER_API_KEY` for Hermes
   and `ATLAS_BASIC_OPENROUTER_API_KEY` for the built-in fallback when separate

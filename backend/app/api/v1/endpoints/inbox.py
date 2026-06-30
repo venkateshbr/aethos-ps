@@ -3,14 +3,14 @@
 Endpoints:
   GET    /inbox/tasks                     → list open HITL tasks (paginated)
   GET    /inbox/tasks/{task_id}           → full task detail
-  POST   /inbox/tasks/{task_id}/approve   → approve suggestion as-is (manager+)
-  POST   /inbox/tasks/{task_id}/approve-with-edits → approve with corrections (manager+)
-  POST   /inbox/tasks/{task_id}/reject    → reject suggestion (manager+)
+  POST   /inbox/tasks/{task_id}/approve   → approve suggestion as-is (approver+)
+  POST   /inbox/tasks/{task_id}/approve-with-edits → approve with corrections (approver+)
+  POST   /inbox/tasks/{task_id}/reject    → reject suggestion (approver+)
   POST   /inbox/tasks/{task_id}/escalate  → escalate to critical / tenant owner (any auth user)
 
 RBAC:
   read:     any authenticated user
-  approve / approve-with-edits / reject: manager and above
+  approve / approve-with-edits / reject: approver, manager, admin, owner
   escalate: any authenticated user
 """
 
@@ -111,7 +111,7 @@ async def get_task(
 @router.post("/tasks/{task_id}/approve", response_model=ApproveResponse)
 async def approve_task(
     task_id: str,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.approver),  # noqa: B008
     svc: InboxService = Depends(_write_service),  # noqa: B008
 ) -> ApproveResponse:
     return await svc.approve(task_id, current_user.user_id)
@@ -121,7 +121,7 @@ async def approve_task(
 async def approve_task_with_edits(
     task_id: str,
     body: ApproveWithEditsRequest,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.approver),  # noqa: B008
     svc: InboxService = Depends(_write_service),  # noqa: B008
 ) -> ApproveResponse:
     return await svc.approve_with_edits(task_id, body.corrected_payload, current_user.user_id)
@@ -131,7 +131,7 @@ async def approve_task_with_edits(
 async def reject_task(
     task_id: str,
     body: RejectRequest,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.approver),  # noqa: B008
     svc: InboxService = Depends(_write_service),  # noqa: B008
 ) -> RejectResponse:
     return await svc.reject(task_id, body.reason, current_user.user_id)

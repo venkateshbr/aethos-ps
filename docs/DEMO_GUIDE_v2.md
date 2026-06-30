@@ -92,7 +92,7 @@ clear human approval evidence.
 | P2P | 2.4-2.5 | Vendor invoice extraction, duplicate guard, PO/service-order match, GL coding, bill approval, payment approval, export, mark-sent, settlement, high-value money-out role checks |
 | R2R | 3.3, 4.1, 5.1-5.6 | Close readiness, reasoned overrides, period lock, Trial Balance, statements, year-end close, manual journal reason/approval/rejection/reversal, multi-currency base amounts, FX provenance |
 | AI Ops | 6.1-6.2 | Daily Finance Ops Manager, reviewed action plans, specialist dispatch, scheduled runs, stale/high-risk escalations |
-| Controls and audit | 7.0-7.5 | Tenant-user invite, ERP role assignment, independent login, approval policy, finance personas, read-only auditor, decision trails, Agent Run Ledger, Workflow Runs, document lineage, Operational Health, rate limits, alert routing |
+| Controls and audit | 7.0-7.5 | Tenant-user invite, ERP role assignment, independent login, finance approver, approval policy, finance personas, read-only auditor, decision trails, Agent Run Ledger, Workflow Runs, document lineage, Operational Health, rate limits, alert routing |
 | Reporting and management | 5.3-5.5, 6.1, 7.2 | AR/AP Aging, WIP, utilization, Project P&L, Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, action queues |
 
 ---
@@ -598,7 +598,8 @@ can move forward.
 
 7. Payment edge checks:
    - Money-out batches show required approver role; high-value batches route to Owner where policy requires it
-   - Viewer users cannot create bills, approve bills, open Pay Bills, export files, mark sent, or settle batches
+   - Finance Approver can approve/reject manager-threshold Inbox/procurement reviews but cannot create bills, create procurement documents, or approve Admin/Owner-threshold spend
+   - Viewer and Auditor users cannot create bills, approve bills, open Pay Bills, export files, mark sent, or settle batches
    - Vendor with missing bank details can be posted to AP but is blocked from payment batch execution
    - Payment file export, mark-sent, and settlement confirmation are separate recorded lifecycle steps
    - Settlement posts a DR Accounts Payable / CR Bank journal and updates AP Aging and Cash Flow
@@ -1185,43 +1186,60 @@ work.
 
 2. Go to **Settings** → **Tenant Users**.
 
-3. Invite a finance operations manager:
-   - Email: use a demo-safe address for the current tenant
-   - Display name: Finance Ops Manager
-   - Role: `manager`
+3. Invite three demo ERP users:
+   - Finance Ops Manager: role `manager`
+   - Finance Approver: role `approver`
+   - Read-only Auditor: role `auditor`
 
 4. After invite, show the generated temporary password or set-password link.
    Store it only in the secure demo credential file or your password manager,
    not in shared screenshots.
 
 5. Open a second browser profile or incognito window and log in as the invited
-   manager at the main Aethos app, not the timesheet portal.
+   manager, approver, and auditor in turn at the main Aethos app, not the
+   timesheet portal.
 
 6. Validate the manager can:
    - Open **Aethos Atlas**
    - Open **Reports**
    - Inspect permitted Inbox and finance records
+   - Create permitted operational records such as clients, engagements, projects,
+     bills, procurement documents, and draft invoices
    - Ask a role-aware access prompt:
      > *"Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver."*
 
-7. Switch back to Marcus and update the invited user:
+7. Validate the Finance Approver:
+   - Can approve or reject manager-threshold Inbox/procurement review work
+   - Cannot create clients, engagements, bills, procurement documents, journals,
+     or tenant settings
+   - Cannot approve Admin/Owner-threshold payment batches, accounting work, or
+     high-risk AI actions
+
+8. Validate the Auditor:
+   - Can inspect reports, source documents, record details, Inbox history, and
+     decision trails
+   - Cannot approve, reject, create, post, pay, send, lock, or change settings
+
+9. Switch back to Marcus and update the invited user:
    - Change display name or role where allowed
    - Confirm the Settings audit trail records the actor, target user, event,
      prior role, and new role
    - Deactivate a disposable test user and confirm they can no longer access
      the tenant
 
-8. Explain the current role model:
-   - Main ERP users use `owner`, `admin`, `manager`, `member`, or `viewer`
+10. Explain the current role model:
+   - Main ERP users use `owner`, `admin`, `manager`, `approver`, `member`,
+     `auditor`, or `viewer`
    - The user who registered the tenant is shown as Tenant Admin / Owner;
      internally this is the existing `owner` role
-   - Auditor and executive personas currently map to `viewer`
+   - CFO, Controller, Procurement Manager, AP Lead, AR Lead, Auditor, and
+     Executive are product personas mapped over the enforced ERP roles
    - Timesheet-only employees are invited and tested separately through the
      People/timesheet flow
    - Only owners can grant or modify owner/admin access
    - Users cannot demote or deactivate themselves
 
-**Talking point**: *"Aethos can run finance work through AI agents, but access is still tenant-scoped, role-assigned, and auditable. The finance manager can work in the ERP; the auditor can inspect evidence; owner-level approvals stay with the owner."*
+**Talking point**: *"Aethos can run finance work through AI agents, but access is still tenant-scoped, role-assigned, and auditable. The finance manager can operate, the finance approver can review, the auditor can inspect evidence, and owner-level approvals stay with the owner."*
 
 ---
 
@@ -1263,7 +1281,7 @@ without editing deployment files.
 
 2. Aethos Atlas should return:
    - Current tenant role and matching finance personas
-   - Manager/Admin/Owner approval thresholds in business language
+   - Finance Approver/Manager/Admin/Owner approval thresholds in business language
    - Which policy rules the current user can approve
    - Pending high-risk Inbox tasks, required approver role, and reason for review
    - Tasks requiring a higher role than the current user
@@ -1273,13 +1291,23 @@ without editing deployment files.
    - Manual journal threshold
    - Bill-pay approval role
    - Accounting approval role
+   - Lower-risk draft, money-in, and external-send categories can use Finance
+     Approver; money-out, accounting, and high-risk AI stay Admin/Owner gated
    - Finance role personas catalog
 
-4. Log in as Viewer/Auditor in a second tab:
-   > *"As a read-only auditor, show me the records I can inspect for this bill-payment batch and which actions are intentionally blocked for my role."*
+4. Log in as Finance Approver in a second tab:
+   > *"What can I approve now, what requires Admin or Owner, and which actions are intentionally blocked for the Finance Approver role?"*
 
 5. Check:
-   - Viewer can inspect permitted records
+   - Manager-threshold Inbox/procurement reviews can be approved or rejected
+   - Create/edit/post/pay/send/settings actions remain blocked
+   - Admin/Owner-threshold money-out, accounting, and high-risk AI work remains blocked
+
+6. Log in as Auditor in a second tab:
+   > *"As a read-only auditor, show me the records I can inspect for this bill-payment batch and which actions are intentionally blocked for my role."*
+
+7. Check:
+   - Auditor can inspect permitted records
    - Mutation buttons are disabled or absent
    - Direct mutation API attempts fail cleanly
    - Same-user high-value manual-journal approval is denied and audit-visible
@@ -1482,4 +1510,4 @@ python3 scripts/generate_demo_assets.py
 - `alderton_sgd_dividend_notice.pdf` — Singapore dividend income statement in SGD
 - `thornton_cosec_instruction.pdf` — New director appointment instruction letter
 
-> **Tip for demos**: Have two browser tabs open — one logged in as Marcus (Managing Partner, owner role) and one as an invited ERP manager from **Settings → Tenant Users**. Use `demo_credentials.json` for generated production scenario tenants. Switch tabs to show role-based access: the manager can operate within manager gates, while Marcus keeps owner-only settings and approvals.
+> **Tip for demos**: Keep separate browser profiles ready for Marcus (owner), Finance Ops Manager (`manager`), Finance Approver (`approver`), and Auditor (`auditor`). Use `demo_credentials.json` for generated production scenario tenants. Switch tabs to show role-based access: the manager can operate, the approver can decide manager-threshold reviews, the auditor can inspect evidence only, and Marcus keeps owner-only settings and approvals.

@@ -105,6 +105,17 @@ def test_tenant_policy_can_raise_external_send_to_admin() -> None:
     assert decision.risk_class == "external_send"
 
 
+def test_tenant_policy_can_assign_money_in_to_dedicated_approver() -> None:
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "copilot_draft_invoice",
+        {"preview": {"total": "5000.00"}},
+        settings=ApprovalPolicySettings(money_in_role=UserRole.approver),
+    )
+
+    assert decision.required_role == UserRole.approver
+    assert decision.reason == "money_in_requires_approver_review"
+
+
 def test_tenant_policy_cannot_lower_money_out_below_admin() -> None:
     with pytest.raises(ValueError, match="money_out_default_role"):
         ApprovalPolicySettings(money_out_default_role=UserRole.manager)

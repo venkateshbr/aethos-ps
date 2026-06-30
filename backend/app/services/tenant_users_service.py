@@ -26,8 +26,9 @@ from supabase import Client
 
 logger = logging.getLogger(__name__)
 
-ERP_ROLES = {"owner", "admin", "manager", "member", "viewer"}
+ERP_ROLES = {"owner", "admin", "manager", "approver", "member", "auditor", "viewer"}
 PRIVILEGED_ROLES = {"owner", "admin"}
+_ERP_ROLE_LIST_TEXT = "owner, admin, manager, approver, member, auditor, or viewer"
 
 
 class TenantUsersService:
@@ -364,7 +365,7 @@ class TenantUsersService:
         if requested_role not in ERP_ROLES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="ERP user roles must be owner, admin, manager, member, or viewer.",
+                detail=f"ERP user roles must be {_ERP_ROLE_LIST_TEXT}.",
             )
         actor_rank = ROLE_HIERARCHY[UserRole(actor_role)]
         if actor_rank < ROLE_HIERARCHY[UserRole.admin]:

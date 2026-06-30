@@ -14,7 +14,7 @@ from app.core.rbac import ROLE_HIERARCHY, UserRole
 
 _OWNER_REVIEW_MONEY_OUT_THRESHOLD = Decimal("50000")
 _MANUAL_JOURNAL_APPROVAL_THRESHOLD = Decimal("10000")
-_ROLE_NAMES = {"manager", "admin", "owner"}
+_ROLE_NAMES = {"approver", "manager", "admin", "owner"}
 _MANUAL_JOURNAL_KINDS = {"draft_journal", "create_journal", "create_manual_journal"}
 
 
@@ -45,11 +45,11 @@ class ApprovalPolicySettings:
             "money_out_owner_role",
         )
         _assert_role_at_least(self.accounting_role, UserRole.admin, "accounting_role")
-        _assert_role_at_least(self.money_in_role, UserRole.manager, "money_in_role")
-        _assert_role_at_least(self.draft_role, UserRole.manager, "draft_role")
+        _assert_role_at_least(self.money_in_role, UserRole.approver, "money_in_role")
+        _assert_role_at_least(self.draft_role, UserRole.approver, "draft_role")
         _assert_role_at_least(
             self.external_send_role,
-            UserRole.manager,
+            UserRole.approver,
             "external_send_role",
         )
         _assert_role_at_least(self.high_risk_role, UserRole.admin, "high_risk_role")

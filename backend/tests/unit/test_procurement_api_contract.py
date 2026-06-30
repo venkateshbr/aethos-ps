@@ -401,6 +401,50 @@ def test_procurement_writes_use_service_role_client(
     assert approve_response.json()["approved_by"] == "user-1"
 
 
+def test_procurement_approver_can_approve_manager_limit_only(
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["procurement_documents"][0].update(
+        {
+            "status": "draft",
+            "approval_required_role": "manager",
+            "approved_by": None,
+            "approved_at": None,
+        }
+    )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="approver-1",
+        email="approver@example.com",
+        role="approver",
+    )
+    app.dependency_overrides[get_tenant_id] = lambda: TENANT_ID
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    try:
+        with TestClient(app) as approver_client:
+            manager_response = approver_client.post(
+                f"/api/v1/procurement/documents/{DOCUMENT_ID}/approve"
+            )
+            fake_db.tables["procurement_documents"][0].update(
+                {
+                    "status": "draft",
+                    "approval_required_role": "admin",
+                    "approved_by": None,
+                    "approved_at": None,
+                }
+            )
+            admin_response = approver_client.post(
+                f"/api/v1/procurement/documents/{DOCUMENT_ID}/approve"
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert manager_response.status_code == 200, manager_response.text
+    assert manager_response.json()["approved_by"] == "approver-1"
+    assert admin_response.status_code == 403, admin_response.text
+    assert admin_response.json()["detail"]["required_role"] == "admin"
+
+
 def test_procurement_create_records_policy_route(
     client: TestClient,
     fake_db: _FakeDb,

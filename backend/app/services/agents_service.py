@@ -31,7 +31,7 @@ from app.agents.tool_registry import (
     risk_class_for_tool,
 )
 from app.core.finance_personas import finance_persona_catalog, persona_ids_for_role
-from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.core.rbac import ROLE_HIERARCHY, UserRole, role_allows_approval
 from app.services.agent_run_ledger import safe_snapshot, stable_payload_hash
 from app.services.approval_policy import (
     ApprovalPolicyDecision,
@@ -1361,7 +1361,12 @@ class AgentsService:
         policy_rules: list[dict],
     ) -> list[str]:
         explanations: list[str] = []
-        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[UserRole.manager]:
+        if user_role == UserRole.approver:
+            explanations.append(
+                "Your current role can approve manager-threshold Inbox work, "
+                "but cannot create, edit, post, pay, send, lock, or change settings."
+            )
+        elif not role_allows_approval(user_role, UserRole.manager):
             explanations.append(
                 "Your current role can inspect permitted tenant records and "
                 "decision evidence, but cannot approve, edit, reject, post, "
@@ -2096,7 +2101,7 @@ def _optional_int(value: object) -> int | None:
 
 
 def _role_allows(user_role: UserRole, required_role: UserRole) -> bool:
-    return ROLE_HIERARCHY.get(user_role, 0) >= ROLE_HIERARCHY.get(required_role, 999)
+    return role_allows_approval(user_role, required_role)
 
 
 def _user_role_or_default(value: object, default: UserRole) -> UserRole:

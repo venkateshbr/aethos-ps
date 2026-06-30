@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -356,6 +357,20 @@ def test_atlas_runtime_factory_rejects_unknown_value():
         normalise_atlas_runtime_name("unknown")
 
 
+def test_atlas_provider_failure_text_is_classified():
+    from app.services.atlas_runtime import _provider_failure_category_from_text
+
+    assert (
+        _provider_failure_category_from_text(
+            "HTTP 403: Key limit exceeded (total limit). Manage it using https://openrouter.ai"
+        )
+        == "quota"
+    )
+    assert _provider_failure_category_from_text("HTTP 429: rate limit exceeded") == "rate_limit"
+    assert _provider_failure_category_from_text("HTTP 401: invalid key") == "auth"
+    assert _provider_failure_category_from_text("HTTP 504 upstream unavailable") == "upstream_outage"
+
+
 @pytest.mark.asyncio
 async def test_basic_runtime_adapter_delegates_to_copilot(monkeypatch: pytest.MonkeyPatch):
     from app.agents.copilot.graph import CopilotDeps
@@ -466,6 +481,42 @@ async def test_hermes_runtime_adapter_hides_provider_error_text():
     payload = json.loads(frames[0][6:].strip())
     assert payload["error"] == "Atlas is temporarily unavailable. Please try again shortly."
     assert "openrouter" not in json.dumps(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_hermes_runtime_adapter_classifies_http_provider_failure():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+    from app.services.operational_telemetry import telemetry
+
+    class ProviderFailureHermesClient:
+        async def create_response(self, **kwargs):
+            request = httpx.Request("POST", "https://hermes.internal/v1/responses")
+            response = httpx.Response(429, request=request)
+            raise httpx.HTTPStatusError(
+                "429 Too Many Requests",
+                request=request,
+                response=response,
+            )
+
+    telemetry.reset()
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=ProviderFailureHermesClient(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    payload = json.loads(frames[0][6:].strip())
+    assert payload["error"] == "Atlas is temporarily unavailable. Please try again shortly."
+    assert telemetry.snapshot()["background_failures"] == [
+        {"worker_name": "atlas_provider_rate_limit", "count": 1}
+    ]
 
 
 @pytest.mark.asyncio

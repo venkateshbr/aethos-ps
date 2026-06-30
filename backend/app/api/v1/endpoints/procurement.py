@@ -89,7 +89,7 @@ async def get_procurement_document(
 @router.post("/documents/{document_id}/approve", response_model=ProcurementDocumentResponse)
 async def approve_procurement_document(
     document_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_role(UserRole.approver),  # noqa: B008
     svc: ProcurementService = Depends(_write_service),  # noqa: B008
 ) -> ProcurementDocumentResponse:
     document = await svc.approve_document(

@@ -1,7 +1,8 @@
 """Role-Based Access Control for Aethos PS.
 
-Roles mirror the ``user_role`` enum in the DB (migration 0001).
-The hierarchy is ordinal: owner > admin > manager > member > viewer > employee.
+Roles mirror the ``user_role`` enum in the DB (migration 0001 plus additive
+role migrations). The hierarchy is ordinal for normal ERP access gates:
+owner > admin > manager > approver > member > viewer/auditor > employee.
 
 ``employee`` is the narrow Timesheet-Portal role (migration 0021). It sits at the
 BOTTOM of the hierarchy so an employee JWT is rejected by every ``require_role``
@@ -41,19 +42,52 @@ class UserRole(StrEnum):
     owner = "owner"
     admin = "admin"
     manager = "manager"
+    approver = "approver"
     member = "member"
+    auditor = "auditor"
     viewer = "viewer"
     employee = "employee"
 
 
 ROLE_HIERARCHY: dict[UserRole, int] = {
-    UserRole.owner: 5,
-    UserRole.admin: 4,
-    UserRole.manager: 3,
+    UserRole.owner: 6,
+    UserRole.admin: 5,
+    UserRole.manager: 4,
+    UserRole.approver: 3,
     UserRole.member: 2,
     UserRole.viewer: 1,
+    UserRole.auditor: 1,
     UserRole.employee: 0,
 }
+
+_APPROVER_MANAGER_LEVEL_ROLES: frozenset[UserRole] = frozenset(
+    {
+        UserRole.manager,
+        UserRole.approver,
+        UserRole.member,
+        UserRole.viewer,
+        UserRole.auditor,
+    }
+)
+
+
+def role_meets_minimum(user_role: UserRole, minimum: UserRole) -> bool:
+    """Return True when ``user_role`` passes a normal hierarchy gate."""
+    return ROLE_HIERARCHY.get(user_role, 0) >= ROLE_HIERARCHY[minimum]
+
+
+def role_allows_approval(user_role: UserRole, required_role: UserRole) -> bool:
+    """Return True when ``user_role`` can decide an Inbox/approval item.
+
+    ``approver`` is intentionally not a general ``manager`` for CRUD screens,
+    but can decide manager-threshold review work. Admin/owner thresholds still
+    require admin/owner hierarchy.
+    """
+    if role_meets_minimum(user_role, required_role):
+        return True
+    if user_role == UserRole.approver and required_role in _APPROVER_MANAGER_LEVEL_ROLES:
+        return True
+    return False
 
 
 def _resolve_role(current_user: CurrentUser, request: Request, db: Client) -> UserRole:
@@ -124,11 +158,15 @@ def require_role(minimum: UserRole) -> CurrentUser:
     ) -> CurrentUser:
         user_role = _resolve_role(current_user, request, db)
 
-        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[minimum]:
+        if not role_meets_minimum(user_role, minimum):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient role: requires {minimum.value} or higher",
             )
-        return current_user
+        return CurrentUser(
+            user_id=current_user.user_id,
+            email=current_user.email,
+            role=user_role.value,
+        )
 
     return Depends(_check)
