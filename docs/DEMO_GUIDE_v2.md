@@ -67,6 +67,15 @@ or screenshots.
 Use business-language prompts. Users should not need to know internal tool names.
 The reusable prompt library lives at
 [`docs/copilot/prompt-library.md`](copilot/prompt-library.md).
+The exact prompts used by the live browser validation are listed in the prompt
+library under **Demo Guide v2 Live Validation Prompt Set**.
+
+Atlas conversations are persistent. When you log in, Atlas opens the most recent
+conversation and keeps its prior messages available for follow-up questions. Use
+the existing conversation when you want Atlas to retain context, such as asking
+"what did you just find?" after an engagement-structure readback. Click **New
+chat** only when you want a separate named conversation and audit trail.
+
 For document-driven scenarios, attach the PDF or text file first, then send the
 business prompt. Aethos Atlas should show the file as attached and only start
 extraction when the prompt is submitted.

@@ -35,6 +35,7 @@ class _Query:
         self._order_desc = False
         self._limit: int | None = None
         self._insert_payload: dict[str, Any] | None = None
+        self._update_payload: dict[str, Any] | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> _Query:
         return self
@@ -61,6 +62,10 @@ class _Query:
         self._insert_payload = dict(payload)
         return self
 
+    def update(self, payload: dict[str, Any]) -> _Query:
+        self._update_payload = dict(payload)
+        return self
+
     def execute(self) -> _Result:
         if self._insert_payload is not None:
             row = {
@@ -73,6 +78,14 @@ class _Query:
             }
             self.db.tables[self.table].append(row)
             return _Result([deepcopy(row)])
+
+        if self._update_payload is not None:
+            updated: list[dict[str, Any]] = []
+            for row in self.db.tables[self.table]:
+                if self._matches(row):
+                    row.update(self._update_payload)
+                    updated.append(row)
+            return _Result(deepcopy(updated))
 
         rows = [row for row in self.db.tables[self.table] if self._matches(row)]
         if self._order_key is not None:
@@ -303,3 +316,42 @@ def test_chat_message_stream_uses_runtime_interface(
     assert messages[0]["content"] == "hello Atlas"
     assert messages[1]["role"] == "assistant"
     assert messages[1]["content"] == "Runtime reply"
+    assert write_db.tables["chat_threads"][0]["title"] == "Runtime thread"
+    assert write_db.tables["chat_threads"][0]["updated_at"] != "2026-06-22T01:00:00+00:00"
+
+
+def test_first_user_message_names_blank_chat_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.v1.endpoints.chat as chat_module
+
+    write_db = _ChatWriteDb()
+    write_db.tables["chat_threads"][0]["title"] = "New conversation"
+
+    class _Runtime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "Show me active engagements"
+            assert thread_id == "thread-1"
+            yield 'data: {"delta":"Nexus has active work."}\n\n'
+            yield 'data: {"done":true,"finish_reason":"stop"}\n\n'
+
+    async def _build_runtime(**_kwargs: Any) -> _Runtime:
+        return _Runtime()
+
+    monkeypatch.setattr(chat_module, "build_atlas_runtime", _build_runtime)
+
+    _install_common_overrides()
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={"content": "Show me active engagements"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert write_db.tables["chat_threads"][0]["title"] == "Show me active engagements"

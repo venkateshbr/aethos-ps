@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 from supabase import Client
 
@@ -133,6 +134,7 @@ class ChatRepository:
             result = self.db.table("chat_messages").insert(data).execute()
             if not result.data:
                 raise RuntimeError("chat_messages insert returned no data")
+            self._touch_thread(thread_id=thread_id, role=role, content=content)
             return result.data[0]
 
         row = await asyncio.to_thread(_insert)
@@ -165,3 +167,39 @@ class ChatRepository:
             return result.data or []
 
         return await asyncio.to_thread(_list)
+
+    def _touch_thread(self, *, thread_id: str, role: str, content: str | None) -> None:
+        """Keep thread history named and sorted by real message activity."""
+
+        patch: dict = {"updated_at": datetime.now(UTC).isoformat()}
+
+        if role == "user":
+            title = _thread_title_from_message(content)
+            if title:
+                thread_result = (
+                    self.db.table("chat_threads")
+                    .select("title")
+                    .eq("id", thread_id)
+                    .eq("tenant_id", self.tenant_id)
+                    .execute()
+                )
+                existing_title = str((thread_result.data or [{}])[0].get("title") or "").strip()
+                if existing_title in {"", "New conversation"}:
+                    patch["title"] = title
+
+        (
+            self.db.table("chat_threads")
+            .update(patch)
+            .eq("id", thread_id)
+            .eq("tenant_id", self.tenant_id)
+            .execute()
+        )
+
+
+def _thread_title_from_message(content: str | None) -> str | None:
+    normalized = " ".join((content or "").split())
+    if not normalized:
+        return None
+    if len(normalized) <= 80:
+        return normalized
+    return f"{normalized[:77]}..."

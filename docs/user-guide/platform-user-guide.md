@@ -204,6 +204,12 @@ Use Aethos Atlas for chat-first finance operations:
   resource delivery data, accounting decision trails, and operational health
   through Aethos-owned tools.
 
+Atlas stores conversation history per tenant user. On login, Atlas resumes the
+most recent conversation so follow-up prompts can use prior context. Use **New
+chat** when the next task should have a separate name and audit trail; otherwise
+continue in the current conversation for clarification, drilldowns, and "try
+again using the same source document" follow-ups.
+
 When attaching a document in Aethos Atlas, file selection only stages the source
 document. Extraction and any Inbox task creation start after the user sends a
 business prompt such as "process this vendor invoice" or "review this engagement
@@ -211,7 +217,8 @@ letter." The Documents page may show the staged file as `uploaded` until that
 prompt is submitted.
 
 Good prompts include the business period, customer/vendor/engagement name,
-desired outcome, and approval boundary. See the prompt library for examples.
+desired outcome, and approval boundary. See the prompt library for examples,
+including the exact Demo Guide v2 live-validation prompt set.
 
 Recommended prompt pattern:
 

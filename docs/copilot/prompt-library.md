@@ -166,3 +166,57 @@ Approval Controls -> Approval Policy Matrix.
 For role mapping review, all users can use Settings -> Approval Controls ->
 Finance role personas to see product-facing finance personas mapped to enforced
 tenant roles.
+
+## Demo Guide v2 Live Validation Prompt Set
+
+These are the exact Aethos Atlas prompts used by
+`frontend/e2e/demo-v2-production-validation.spec.ts`. Use them for manual
+browser validation after seeding Demo Guide v2 data. For rows with attachments,
+attach the named demo asset first and then submit the prompt.
+
+| Step | Scenario | Prompt |
+| --- | --- | --- |
+| 1-1-engagement-letter | 1.1 Engagement letter onboarding | `Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.` |
+| 1-2-engagement-structure | 1.2 Project structure | `Show me the Nexus Capital Partners engagement structure. List the active projects, billing model for each workstream, and anything missing before billing.` |
+| 1-3-log-time | 1.3 Time entry | `Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling` |
+| 1-3a-delivery-data | 1.3A People and WIP | `Show me Alice Chen's June delivery data. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced for Nexus.` |
+| 1-4-billing-run | 1.4 Mixed model invoice | `Prepare the June 2026 Nexus billing run across fixed fee, monthly retainer, T&M advisory hours, and approved expenses. Show the draft invoice lines and route the invoice to Inbox before sending.` |
+| 1-5-revenue-recognition | 1.5 Revenue recognition | `Explain how Nexus June revenue is recognized across fixed-fee milestone, retainer, T&M advisory WIP, and expenses. Tie the explanation to invoice-backed journals and Project P&L.` |
+| 1-6-capped-tax | 1.6 Capped tax engagement | `Create an engagement for Nexus - Corporation Tax Return FY2025, fixed fee £18,500, capped at £22,000 if advisory hours overrun` |
+| 1-7-o2c-readiness | 1.7 O2C controls | `Review Nexus order-to-cash readiness for June 2026. Check service catalogue mapping, linked rate card, tax rate setup, draft invoices, public invoice link readiness, WIP, and any collections actions waiting for approval.` |
+| 1-7-collections-read | 1.7 Collections read pack | `Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.` |
+| 1-7-invoice-drilldown | 1.7 Invoice drilldown | `Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.` |
+| 1-7-draft-reminders | 1.7 Collections controlled write | `Draft collections reminders for invoices more than 30 days overdue. Create customer-specific reminder copy and route every email to Inbox before sending.` |
+| 2-1-retainer | 2.1 Monthly retainer billing | `Prepare Brightwater Manufacturing monthly retainer billing for June 2026. Show the draft invoice, any tax, and route it to Inbox before sending.` |
+| 2-2-milestone | 2.2 Annual accounts milestone | `Prepare the Brightwater Annual Accounts FY2025 milestone invoice. Include the milestone basis, tax treatment, and approval path before sending.` |
+| 2-3-payroll | 2.3 Payroll billing | `Prepare Brightwater payroll billing for June 2026 based on active employee count. Show per-employee billing, invoice total, and any approval needed.` |
+| 2-4-vendor-invoice | 2.4 Vendor invoice intake | `Process this vendor invoice for Brightwater. Match it to the right vendor and project, flag duplicate risk, code it to the right account, compare any PO or service-order evidence, and send exceptions to Inbox.` |
+| 2-4-payment-risk-read | 2.4 P2P read pack | `Which vendor bills are due soon, which are blocked, and what evidence supports payment? Show vendor, bill number, amount, due date, status, coding evidence, source document, duplicate risk, PO/service-order match, payment-batch state, blockers, and next action. Do not create a payment batch yet.` |
+| 2-4-single-bill | 2.4 Single bill drilldown | `Review bill BILL-1001. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.` |
+| 2-5-bill-pay | 2.5 Payment controls | `Prepare this week's bill-pay run. Prioritize due and overdue approved bills, exclude anything disputed, explain the rationale, and send the payment batch to Inbox.` |
+| 2-5-payment-packet | 2.5 Payment approval packet | `Prepare a payment approval packet for bills due in the next 10 days. Include vendor, amount, due date, coding evidence, duplicate status, cash impact, and the approver role required for the batch.` |
+| 3-1-family-office | 3.1 Family office structure | `Show the Alderton Family Office structure. List each engagement, service line, billing model, currency, open projects, and missing setup before billing.` |
+| 3-2-scope-creep | 3.2 Scope creep risk | `Review Alderton bespoke tax return scope. Compare actual time, fixed fee, expected margin, open WIP, and recommend whether we need a fee adjustment before billing.` |
+| 3-3-sgd-journal | 3.3 Multi-currency trust accounts | `Prepare an SGD 18,000 dividend income journal for Alderton Trust for June 2026. Show the GBP base-currency impact, FX rate provenance, required approval role, and route it to Inbox before posting.` |
+| 3-4-cosec-reminders | 3.4 COSEC reminders | `Review COSEC filing reminders for Alderton entities. Show upcoming filing dates, missing evidence, billing impact, and which reminders need approval before sending.` |
+| 4-1-usd-engagement | 4.1 USD-billed engagement | `Explain Thornton June billing and cash position in USD and GBP. Show invoice amount, base-currency journal impact, FX rate provenance, AR status, and cash-flow effect after payment.` |
+| 4-2-series-a | 4.2 Series A milestone | `Thornton Series A closed at $14.2M. Update the milestone amount and invoice. Route any revenue or billing change to Inbox before sending.` |
+| 4-3-cosec-instruction | 4.3 COSEC instruction | `Review this COSEC instruction for Thornton. Identify the company change, create the required filing/project work item, identify billing impact, and route any external filing or invoice action to Inbox.` |
+| 5-1-close-readiness | 5.1 Pre-close checklist | `Run June 2026 pre-close checks. Show AR, AP, WIP, unposted journals, close tasks, missing approvals, and what needs to happen before the period can be locked.` |
+| 5-2-period-lock | 5.2 Period lock | `Can we lock June 2026? Show the period-lock readiness result, blockers, overrides if any, and what a Controller or Owner must review before locking.` |
+| 5-3-trial-balance | 5.3 Trial Balance | `Show the June 2026 Trial Balance. Confirm whether debits equal credits, summarize the largest account movements, and flag suspense or unbalanced items.` |
+| 5-4-management-reporting | 5.4 Management reporting | `Alice is at 64% utilisation in June. Which clients have unbilled WIP tied to Alice?` |
+| 5-5-management-pack | 5.5 R2R management pack | `Give me the June 2026 month-end management pack. Explain the major variances versus May 2026, show revenue, expenses, project margin, utilization, AR/AP movement, journals, close task blockers, draft journals, and remaining close blockers. Do not post journals or lock the period.` |
+| 5-5-management-drilldown | 5.5 R2R blocker drilldown | `Drill into the draft journals and close task blockers for June 2026. Which ones block close, who owns them, and what should happen next?` |
+| 5-5-statement-package | 5.5 Financial statement package | `Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and evidence-backed management commentary. Compare it to May 2026 and show the variances.` |
+| 5-5-year-end | 5.5 Year-end close | `Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.` |
+| 5-6-manual-journal | 5.6 Manual journal lifecycle | `Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, approval role, and whether the approver is different from the submitter. Do not post it without Inbox approval.` |
+| 5-6-reversal | 5.6 Manual journal reversal | `Prepare a reversal packet for this posted manual journal. Explain why reversal is appropriate, propose an open-period reversal date, show the flipped debit and credit lines, and confirm the reversal will create a new journal rather than editing the original.` |
+| 6-1-finance-ops-check | 6.1 Finance Ops Manager | `Run today's finance ops check for June 2026. Tell me what needs billing, payment, collections, close, and review. Separate read-only findings from actions that need Inbox approval.` |
+| 6-1-action-plan | 6.1 Finance Ops action plan | `Create the next recommended finance ops work items for June 2026. Create at most five manager-reviewed work items. Route the action plan to Inbox for review. Do not approve invoices, payments, journals, or emails directly.` |
+| 6-2-scheduled-control-room | 6.2 Scheduled Finance Ops Manager | `Before enabling a scheduled Finance Ops Manager run, show the current cadence, escalation windows, last run, open scheduled plans, and approval boundary for resulting work.` |
+| 7-1-approval-controls | 7.1 Approval policy and personas | `What am I allowed to approve, what requires Owner approval, and which Inbox items are high risk? Include my finance personas, effective thresholds, pending high-risk tasks, and why each item needs review. Do not show tool names, policy reason codes, raw payloads, traces, logs, or context IDs.` |
+| 7-2-decision-trail | 7.2 Decision trail | `Show the decision trail for the latest bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
+| 7-3-operational-health | 7.3 Operational Health | `Show operational health for the platform today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes. Do not expose secrets, traces, raw logs, or stack traces.` |
+| 7-4-documents-audit | 7.4 Documents and source evidence | `Show documents that support recent engagements, bills, invoices, journals, and Inbox decisions. For each, show the linked business record, source filename, extraction state, and what I should review next.` |
+| 7-5-config-telemetry | 7.5 Configuration and telemetry | `Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Atlas runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.` |

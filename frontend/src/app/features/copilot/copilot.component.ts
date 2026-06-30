@@ -73,7 +73,7 @@ interface AttachedDocument {
 
       <!-- Thread sidebar -->
       <aside
-        class="hidden sm:flex flex-col w-48 flex-none bg-surface border-r border-border-default"
+        class="hidden sm:flex flex-col w-56 flex-none bg-surface border-r border-border-default"
         aria-label="Chat threads"
       >
         <div class="p-3 border-b border-border-default">
@@ -126,7 +126,12 @@ interface AttachedDocument {
           <div class="w-7 h-7 rounded-full bg-surface-raised flex items-center justify-center">
             <mat-icon class="text-accent-light text-base leading-none">auto_awesome</mat-icon>
           </div>
-          <h1 class="text-sm font-semibold text-text-primary">Aethos Atlas</h1>
+          <div class="min-w-0">
+            <h1 class="text-sm font-semibold text-text-primary">Aethos Atlas</h1>
+            <p class="text-xs text-text-muted truncate" [attr.title]="activeThreadTitle()">
+              {{ activeThreadTitle() }}
+            </p>
+          </div>
         </div>
 
         <!-- Message list -->
@@ -431,6 +436,16 @@ export class CopilotComponent implements OnInit {
     this.composerText().trim().length > 0 && !this.streaming() && !this.uploading()
   );
 
+  activeThread = computed(() =>
+    this.threads().find(thread => thread.id === this.currentThreadId()) ?? null
+  );
+
+  activeThreadTitle = computed(() => {
+    const threadId = this.currentThreadId();
+    if (!threadId) return 'Draft conversation';
+    return this.threadTitle(this.activeThread());
+  });
+
   // --- Document upload ---
   uploading     = signal(false);
   uploadStatus  = signal<'attached' | 'uploading' | 'extracting' | 'done' | 'error' | null>(null);
@@ -463,7 +478,6 @@ export class CopilotComponent implements OnInit {
   });
 
   private auth = inject(AuthService);
-  private pendingThreadCreate: Promise<string | null> | null = null;
 
   /**
    * Headers for the raw fetch() calls below. SSE streaming forces fetch over
@@ -502,22 +516,10 @@ export class CopilotComponent implements OnInit {
 
   // --- Thread management ---
 
-  async newThread(): Promise<void> {
+  newThread(): void {
     this.currentThreadId.set(null);
     this.messages.set([]);
     this.error.set(null);
-
-    const pending = this.createThread();
-    this.pendingThreadCreate = pending;
-    const id = await pending;
-
-    if (this.pendingThreadCreate === pending) {
-      this.pendingThreadCreate = null;
-    }
-
-    if (id && this.currentThreadId() === null && this.messages().length === 0) {
-      this.currentThreadId.set(id);
-    }
   }
 
   selectThread(thread: ChatThread): void {
@@ -559,8 +561,6 @@ export class CopilotComponent implements OnInit {
             id: msg.id,
             role: msg.role as 'user' | 'assistant',
             content: msg.content ?? '',
-            toolName: msg.tool_name ?? undefined,
-            toolDone: !!msg.tool_name,
           }))
       );
     } catch (err) {
@@ -569,16 +569,16 @@ export class CopilotComponent implements OnInit {
     }
   }
 
-  private async createThread(): Promise<string | null> {
+  private async createThread(title: string = 'New conversation'): Promise<string | null> {
     try {
       const res = await fetch('/api/v1/chat/threads', {
         method: 'POST',
         headers: this.apiHeaders(),
-        body: JSON.stringify({ title: 'New conversation' }),
+        body: JSON.stringify({ title }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { id: string; title: string; created_at: string };
-      this.threads.update(t => [...t, { id: data.id, title: data.title, created_at: data.created_at }]);
+      this.threads.update(t => [{ id: data.id, title: data.title, created_at: data.created_at }, ...t]);
       return data.id;
     } catch {
       return null;
@@ -597,8 +597,8 @@ export class CopilotComponent implements OnInit {
     this.composerText.set('Log time for today: 2 hours on ');
   }
 
-  threadTitle(thread: ChatThread): string {
-    return thread.title?.trim() || 'New conversation';
+  threadTitle(thread: ChatThread | null | undefined): string {
+    return thread?.title?.trim() || 'New conversation';
   }
 
   sendFromComposer(): void {
@@ -627,17 +627,14 @@ export class CopilotComponent implements OnInit {
 
     let threadId = this.currentThreadId();
     if (!threadId) {
-      const pending = this.pendingThreadCreate;
-      threadId = pending ? await pending : await this.createThread();
-      if (pending && this.pendingThreadCreate === pending) {
-        this.pendingThreadCreate = null;
-      }
+      threadId = await this.createThread(this.titleFromContent(content));
       if (!threadId) {
         this.error.set('Could not start a conversation. Please try again.');
         return;
       }
       this.currentThreadId.set(threadId);
     }
+    this.renameThreadIfPlaceholder(threadId, content);
 
     const pendingDocument = this.pendingDocumentId()
       ? { id: this.pendingDocumentId() as string, name: this.uploadDocumentName() }
@@ -707,31 +704,8 @@ export class CopilotComponent implements OnInit {
             );
           }
 
-          if (typeof payload['tool_start'] === 'string') {
-            this.messages.update(msgs =>
-              msgs.map(m =>
-                m.id === assistantId
-                  ? { ...m, toolName: payload['tool_start'] as string, toolDone: false }
-                  : m
-              )
-            );
-          }
-
-          if (payload['tool_end'] === true) {
-            this.messages.update(msgs =>
-              msgs.map(m => m.id === assistantId ? { ...m, toolDone: true } : m)
-            );
-          }
-
-          if (typeof payload['tool_result'] === 'string') {
-            this.messages.update(msgs =>
-              msgs.map(m =>
-                m.id === assistantId
-                  ? { ...m, toolName: payload['tool_result'] as string, toolDone: true }
-                  : m
-              )
-            );
-          }
+          // Tool events are intentionally not rendered in Atlas chat. The agent
+          // ledger and backend traces retain tool evidence for audit users.
 
           // Card frame — agent extracted a structured entity
           if (typeof payload['card_type'] === 'string') {
@@ -889,6 +863,28 @@ export class CopilotComponent implements OnInit {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private titleFromContent(content: string): string {
+    const normalized = content.replace(/\s+/g, ' ').trim();
+    return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized || 'New conversation';
+  }
+
+  private renameThreadIfPlaceholder(threadId: string, content: string): void {
+    const title = this.titleFromContent(content);
+    this.threads.update(threads => {
+      const updated = threads.map(thread => {
+        if (thread.id !== threadId) return thread;
+        const currentTitle = thread.title?.trim();
+        if (currentTitle && currentTitle !== 'New conversation') return thread;
+        return { ...thread, title };
+      });
+      const index = updated.findIndex(thread => thread.id === threadId);
+      if (index <= 0) return updated;
+      const active = updated.splice(index, 1)[0];
+      if (!active) return updated;
+      return [active, ...updated];
+    });
   }
 
   // --- Card actions ---
