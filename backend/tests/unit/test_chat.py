@@ -565,6 +565,95 @@ async def test_hermes_provider_error_can_fallback_to_basic():
 
 
 @pytest.mark.asyncio
+async def test_hermes_empty_output_falls_back_to_basic():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class EmptyHermesClient:
+        async def create_response(self, **kwargs):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "   "}],
+                    }
+                ]
+            }
+
+    class FallbackRuntime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "hello"
+            assert thread_id == "thread-1"
+            yield f"data: {json.dumps({'delta': 'Basic reply'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=EmptyHermesClient(),
+        fallback_runtime=FallbackRuntime(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="hello",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert json.loads(frames[0][6:].strip())["delta"] == "Basic reply"
+    assert json.loads(frames[1][6:].strip())["done"] is True
+
+
+@pytest.mark.asyncio
+async def test_hermes_internal_planning_text_falls_back_to_basic():
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    class PlanningHermesClient:
+        async def create_response(self, **kwargs):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    "We need to respond to user request. "
+                                    "The system's tool query_engagements can list engagements."
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    class FallbackRuntime:
+        async def stream_message(self, *, user_message: str, thread_id: str):
+            assert user_message == "show engagement"
+            assert thread_id == "thread-1"
+            yield f"data: {json.dumps({'delta': 'Basic business answer'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=PlanningHermesClient(),
+        fallback_runtime=FallbackRuntime(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(
+            user_message="show engagement",
+            thread_id="thread-1",
+        )
+    ]
+
+    assert json.loads(frames[0][6:].strip())["delta"] == "Basic business answer"
+    assert "query_engagements" not in "".join(frames)
+    assert json.loads(frames[1][6:].strip())["done"] is True
+
+
+@pytest.mark.asyncio
 async def test_hermes_runtime_adapter_degrades_safely():
     from app.services.atlas_runtime import HermesAgentRuntimeAdapter
 

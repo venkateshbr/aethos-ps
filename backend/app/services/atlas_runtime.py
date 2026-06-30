@@ -40,11 +40,29 @@ class HermesProviderError(RuntimeError):
         self.category = category
 
 
+class HermesUnsafeOutputError(RuntimeError):
+    """Hermes returned empty or internal-control text instead of a user answer."""
+
+    def __init__(self, category: str) -> None:
+        super().__init__(f"Hermes unsafe output: {category}")
+        self.category = category
+
+
 _PROVIDER_ERROR_PATTERNS = (
     re.compile(r"\bHTTP\s+(?:4\d{2}|5\d{2})\b", re.IGNORECASE),
     re.compile(r"\b(?:key|credit|quota|total|rate)\s+limit\s+exceeded\b", re.IGNORECASE),
     re.compile(r"\brequires\s+more\s+credits\b", re.IGNORECASE),
     re.compile(r"\bopenrouter\.ai\b", re.IGNORECASE),
+)
+_INTERNAL_OUTPUT_PATTERNS = (
+    re.compile(r"\bwe need to respond to (?:the )?user request\b", re.IGNORECASE),
+    re.compile(r"\bwe have to use the appropriate tool", re.IGNORECASE),
+    re.compile(r"\bthe system'?s tool\b", re.IGNORECASE),
+    re.compile(r"\b(?:query_engagements|query_time_entries|get_wip|get_ar_aging|get_ap_aging)\b"),
+    re.compile(r"\baethos\.[a-z0-9_.]+\b", re.IGNORECASE),
+    re.compile(r"\bcontext_ref\b", re.IGNORECASE),
+    re.compile(r"\bfunction_call\b", re.IGNORECASE),
+    re.compile(r"\braw tool (?:output|arguments|payload)\b", re.IGNORECASE),
 )
 
 
@@ -115,6 +133,9 @@ class HermesAgentRuntimeAdapter:
             provider_failure = _provider_failure_category_from_text(text)
             if provider_failure is not None:
                 raise HermesProviderError(provider_failure)
+            unsafe_output = _unsafe_output_category_from_text(text)
+            if unsafe_output is not None:
+                raise HermesUnsafeOutputError(unsafe_output)
             if text:
                 yield f"data: {json.dumps({'delta': text})}\n\n"
             yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
@@ -133,6 +154,29 @@ class HermesAgentRuntimeAdapter:
                     yield frame
                 return
             yield f"data: {json.dumps({'error': 'Atlas is temporarily unavailable. Please try again shortly.'})}\n\n"
+        except HermesUnsafeOutputError as exc:
+            _record_provider_failure(
+                category="unknown",
+                tenant_id=self.tenant_id,
+                thread_id=thread_id,
+                runtime=self.name,
+            )
+            logger.warning(
+                "hermes_agent_unsafe_output",
+                extra={
+                    "tenant_id": self.tenant_id,
+                    "thread_id": thread_id,
+                    "unsafe_output_category": exc.category,
+                },
+            )
+            if self.fallback_runtime is not None:
+                async for frame in self.fallback_runtime.stream_message(
+                    user_message=user_message,
+                    thread_id=thread_id,
+                ):
+                    yield frame
+                return
+            yield f"data: {json.dumps({'error': 'Atlas could not produce a safe answer. Please try again.'})}\n\n"
         except Exception as exc:
             provider_failure = _provider_failure_category_from_exception(exc)
             if provider_failure is not None:
@@ -209,6 +253,15 @@ def _provider_failure_category_from_exception(
             return "upstream_outage"
         if status_code >= 400:
             return "unknown"
+    return None
+
+
+def _unsafe_output_category_from_text(text: str) -> str | None:
+    """Classify Hermes output that should not be shown as a user response."""
+    if not text.strip():
+        return "empty"
+    if any(pattern.search(text) for pattern in _INTERNAL_OUTPUT_PATTERNS):
+        return "internal_control_text"
     return None
 
 

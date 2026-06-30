@@ -39,12 +39,19 @@ mcp_servers:
     supports_parallel_tool_calls: true
     tools:
       include:
+        - aethos_documents_intake_read_pack
+        - aethos_documents_audit_read_pack
         - aethos_engagements_list
+        - aethos_engagements_structure_read_pack
+        - aethos_engagements_create_review
         - aethos_finance_ar_aging
         - aethos_finance_ap_aging
         - aethos_finance_wip
+        - aethos_delivery_resource_read_pack
+        - aethos_time_log_entry
         - aethos_finance_ops_snapshot
         - aethos_finance_ops_control_room
+        - aethos_operational_health_read_pack
         - aethos_approval_controls_read_pack
         - aethos_finance_ops_create_action_plan
         - aethos_o2c_draft_invoice
@@ -56,5 +63,6 @@ mcp_servers:
         - aethos_r2r_prepare_year_end_close
         - aethos_r2r_generate_financial_statement_package
         - aethos_r2r_management_pack_read_pack
+        - aethos_r2r_accounting_decision_trail_read_pack
       resources: false
       prompts: false
