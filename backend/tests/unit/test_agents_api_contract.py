@@ -1590,7 +1590,12 @@ def test_approval_controls_read_pack_returns_role_aware_manager_view() -> None:
     assert body["tenant_id"] == TENANT_ID
     assert body["current_user_role"] == "manager"
     assert body["policy_source"] == "tenant_default"
-    assert body["matched_persona_ids"] == ["ap_lead", "ar_lead"]
+    assert body["matched_persona_ids"] == [
+        "finance_approver",
+        "procurement_manager",
+        "ap_lead",
+        "ar_lead",
+    ]
 
     rules = {rule["id"]: rule for rule in body["policy_rules"]}
     assert rules["money_in"]["current_user_can_approve"] is True
@@ -1627,7 +1632,7 @@ def test_approval_controls_read_pack_viewer_is_read_only() -> None:
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["current_user_role"] == "viewer"
-    assert body["matched_persona_ids"] == ["auditor", "executive"]
+    assert body["matched_persona_ids"] == ["executive"]
     assert all(rule["current_user_can_approve"] is False for rule in body["policy_rules"])
     assert {item["id"] for item in body["pending_items_requiring_higher_role"]} == {
         "task-owner-pay",

@@ -19,7 +19,7 @@ Summary: PASS 116, WARN 0, FAIL 10, SKIP 0
 
 - Tenant-user invite exists and is used for one ERP manager per tenant.
 - Employee invite exists and was used for independent timesheet portal validation.
-- Auditor-specific persona remains mapped to the read-only viewer role until a distinct auditor role is added.
+- Auditor and Executive Viewer are now distinct read-only ERP roles; Tenant Admin role/user administration is covered by the focused RBAC browser proof.
 
 ## Evidence Table
 

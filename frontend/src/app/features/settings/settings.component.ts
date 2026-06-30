@@ -14,6 +14,7 @@ import { FinancePersonasComponent } from './finance-personas.component';
 import { TenantHealthComponent } from './tenant-health.component';
 import { TenantUsersComponent } from './tenant-users.component';
 import { AiSettingsComponent } from './ai-settings.component';
+import { SecurityRolesComponent } from './security-roles.component';
 
 @Component({
   selector: 'app-settings',
@@ -34,6 +35,7 @@ import { AiSettingsComponent } from './ai-settings.component';
     TenantHealthComponent,
     TenantUsersComponent,
     AiSettingsComponent,
+    SecurityRolesComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -61,6 +63,7 @@ import { AiSettingsComponent } from './ai-settings.component';
           </h2>
           <div class="space-y-4">
             <app-change-password />
+            <app-security-roles />
             <app-tenant-users />
           </div>
         </section>

@@ -4,6 +4,8 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startWith } from 'rxjs';
 import { Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { SupabaseService } from '../../core/services/supabase.service';
 
@@ -123,6 +125,7 @@ export class ChangePasswordComponent {
   private router = inject(Router);
   private auth = inject(AuthService);
   private supabaseSvc = inject(SupabaseService);
+  private http = inject(HttpClient);
 
   protected form = this.fb.nonNullable.group(
     {
@@ -205,6 +208,8 @@ export class ChangePasswordComponent {
       if (newToken) {
         this.auth.setToken(newToken);
       }
+      await firstValueFrom(this.http.post('/api/v1/auth/complete-password-change', {}));
+      this.auth.setMustChangePassword(false);
 
       this.success.set(true);
       this.form.reset({ current_password: '', new_password: '', confirm_password: '' });

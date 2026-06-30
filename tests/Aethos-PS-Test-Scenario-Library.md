@@ -37,13 +37,20 @@ Aethos PS is **agent-first**: the chat surface is the product, and traditional C
 | **Agent Run Ledger / Workflow Runs** | `/settings` → Agent Runs / Workflow Runs | Per-run record: inputs, typed outputs, evidence snapshots, replay-safe validation. | Audit + "the agent actually did this" proof. |
 | **Public invoice** | `/p/{token}` | Customer-facing hosted invoice + Stripe pay. | Customer-safety + payment edge cases. |
 
-**Roles (RBAC):** main ERP users are invited from **Settings → Tenant Users**
-with `owner > admin > manager > approver > member > viewer/auditor`;
-`approver` is approval-only for manager-threshold review work, while `auditor`
-is a distinct read-only evidence role. Timesheet-only employees are created
-through the People/timesheet flow. Money-out, period close, Stripe connect, and
-high-value journals are role-gated (see §4 and the RBAC matrices in the source
-E2E docs).
+**Roles (RBAC):** main ERP users are created from **Settings → Tenant Users**
+and assigned seeded security roles from **Settings → Security Roles**. Aethos
+now follows a Dynamics-style model: user → role(s) → duties → privileges.
+Seeded roles include Tenant Owner, Tenant Admin, CFO, Finance Controller,
+Finance Ops Manager, Finance Approver, Procurement Manager, AP Manager/AP
+Clerk, AR Manager/Billing Specialist, GL Accountant, Close Manager, Auditor,
+Executive Viewer, AI Operations Admin, and Timesheet Employee. `tenant_users.role`
+remains as a legacy projection during migration. Tenant Admins can create users,
+create tenant roles from seeded duties, assign non-owner roles, and set initial
+passwords; admin-created users must change their initial password on first
+login. Timesheet-only employees are created through the People/timesheet flow.
+Money-out, period close, Stripe connect, and high-value journals are
+privilege/approval-policy gated (see §4 and the RBAC matrices in the source E2E
+docs).
 
 **Billing arrangements supported:** `time_and_materials`, `fixed_fee`, `milestone`, `retainer`, `retainer_draw`, `capped_tm`, and `mixed`. Plus event/per-unit and success-fee patterns expressed through fixed/milestone.
 
@@ -674,10 +681,13 @@ service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 **Proves:** the platform at enterprise scale — a single engagement combining all four billing models, multi-currency programs, massive procurement, full RBAC/controls/audit, the scheduled Finance Ops Manager, and abuse/red-team paths.
 
 **Setup (UI):** Base **USD** (+ EUR/GBP programs), country US. Use
-**Settings → Tenant Users** to create ERP users for `admin`, `manager`,
-`approver`, `member`, `auditor`, and `viewer`; use the `auditor` user for the
-read-only evidence walkthrough and the `viewer` user for executive read-only
-checks.
+**Settings → Security Roles** to verify the seeded catalog, then use
+**Settings → Tenant Users** to create ERP users for Tenant Admin, Finance
+Controller, Finance Ops Manager, Finance Approver, Procurement Manager, AP
+Clerk, GL Accountant, Auditor, and Executive Viewer; use the Auditor user for
+the read-only evidence walkthrough and the Executive Viewer user for executive
+read-only checks. Validate first-login password change for at least two created
+users.
 Use **People** for timesheet/staff records. Configure Approval Controls
 (manual-journal threshold, bill-pay Owner cap), and the **Finance Ops Manager
 schedule**.
@@ -772,12 +782,16 @@ Proof that the 10 tenants collectively span the platform. `●` = primary emphas
 Repeat for each tenant; no backend seeding at any step.
 
 1. **Sign up** a fresh tenant via the public flow → sets base currency + country + timezone. (Production demo login already exists for the Meridian reference tenant; its credentials live in the repo's `demo_credentials.json` — treat that password as a secret, do not copy it into shared docs.)
-2. **Create users** through product flows, not direct database writes. Owner
-   already exists from signup. Add ERP users from **Settings → Tenant Users**
-   for admin, manager, approver, member, auditor, and viewer checks; capture the generated
-   temporary password or set-password link in the secure run credential file.
-   Add timesheet employees through **People** / employee invite. Keep a second
-   browser tab logged in as a lower-privileged ERP role for RBAC checks.
+2. **Create users** through product flows, not direct database writes. Tenant
+   Owner already exists from signup. Confirm **Settings → Security Roles** has
+   the seeded role catalog, then add ERP users from **Settings → Tenant Users**
+   for Tenant Admin, Finance Controller, Finance Ops Manager, Finance Approver,
+   Procurement Manager, AP Clerk, GL Accountant, Auditor, and Executive Viewer
+   checks. Capture the generated temporary password or set-password link in the
+   secure run credential file. First login must land on Account/Profile and
+   require a password change before normal app navigation. Add timesheet
+   employees through **People** / employee invite. Keep a second browser tab
+   logged in as a lower-privileged ERP role for RBAC checks.
    Production browser runs store generated owner, ERP manager, and timesheet
    employee credentials in `demo_credentials.json` under
    `production_scenario_library_latest.tenants[]`.
@@ -796,7 +810,7 @@ Repeat for each tenant; no backend seeding at any step.
 **Per-scenario opening line (operator pattern):** show the **Atlas intent**, then the **Inbox boundary**, then the **UI evidence** — three artefacts, every time.
 
 **Controls checklist to demonstrate at least once across the run:**
-- [ ] Owner/admin invites ERP manager, finance approver, auditor, and viewer users from Settings → Tenant Users; each logs into the main app independently; invite/role/deactivation audit events are visible
+- [ ] Tenant Owner/Admin creates Finance Ops Manager, Finance Approver, Finance Controller, Auditor, and Executive Viewer users from Settings → Tenant Users; each changes the initial password, logs into the main app independently, and shows invite/role/deactivation audit evidence
 - [ ] Viewer cannot approve/send/pay (button hidden + API denied) — `EC-RBAC-01`
 - [ ] Finance approver can approve/reject manager-threshold Inbox/procurement reviews but cannot create operational records or approve Admin/Owner-threshold work
 - [ ] Cross-tenant access returns 404 — `EC-RBAC-02`

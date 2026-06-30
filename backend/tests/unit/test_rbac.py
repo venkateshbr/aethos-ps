@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 import pytest
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.core.auth import CurrentUser
@@ -19,7 +20,11 @@ from app.core.rbac import (
     role_allows_approval,
     role_meets_minimum,
 )
-from app.core.tenant import _VERIFIED_TENANT_ROLE_STATE_KEY, _VERIFIED_TENANT_STATE_KEY
+from app.core.tenant import (
+    _VERIFIED_TENANT_ROLE_STATE_KEY,
+    _VERIFIED_TENANT_STATE_KEY,
+    get_tenant_id,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -146,12 +151,12 @@ class _FlakyDb:
         return _FlakyQuery(self)
 
 
-def _request_with_tenant() -> Request:
+def _request_with_tenant(path: str = "/") -> Request:
     return Request(
         {
             "type": "http",
             "method": "GET",
-            "path": "/",
+            "path": path,
             "headers": [(b"x-tenant-id", b"11111111-1111-1111-1111-111111111111")],
         }
     )
@@ -224,3 +229,41 @@ def test_authenticated_supabase_role_retries_transient_membership_lookup() -> No
 
     assert role == UserRole.owner
     assert db.execute_calls == 2
+
+
+class _PasswordChangeResult:
+    data: ClassVar[list[dict[str, object]]] = [
+        {"id": "membership-id", "role": "member", "must_change_password": True}
+    ]
+
+
+class _PasswordChangeQuery(_Query):
+    def execute(self):
+        return _PasswordChangeResult()
+
+
+class _PasswordChangeDb:
+    def table(self, _name: str):
+        return _PasswordChangeQuery()
+
+
+def test_tenant_dependency_blocks_normal_api_when_password_change_required() -> None:
+    with pytest.raises(HTTPException) as exc:
+        get_tenant_id(
+            _request_with_tenant("/api/v1/clients"),
+            CurrentUser(user_id="user-id", email="user@example.com", role="authenticated"),
+            _PasswordChangeDb(),  # type: ignore[arg-type]
+        )
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "PASSWORD_CHANGE_REQUIRED"
+
+
+def test_tenant_dependency_allows_password_change_completion_path() -> None:
+    tenant_id = get_tenant_id(
+        _request_with_tenant("/api/v1/auth/complete-password-change"),
+        CurrentUser(user_id="user-id", email="user@example.com", role="authenticated"),
+        _PasswordChangeDb(),  # type: ignore[arg-type]
+    )
+
+    assert tenant_id == "11111111-1111-1111-1111-111111111111"

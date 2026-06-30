@@ -24,13 +24,21 @@ class _Query:
         self.table = table
         self._eq: list[tuple[str, Any]] = []
         self._is: list[tuple[str, Any]] = []
+        self._in: list[tuple[str, list[Any]]] = []
         self._limit: int | None = None
         self._insert: dict[str, Any] | None = None
         self._update: dict[str, Any] | None = None
         self._order_key: str | None = None
         self._order_desc = False
+        self._selected_columns: list[str] | None = None
 
-    def select(self, *_args: Any, **_kwargs: Any) -> _Query:
+    def select(self, *args: Any, **_kwargs: Any) -> _Query:
+        if args and args[0] != "*":
+            self._selected_columns = [
+                item.strip()
+                for item in str(args[0]).replace("\n", " ").split(",")
+                if item.strip()
+            ]
         return self
 
     def eq(self, key: str, value: Any) -> _Query:
@@ -39,6 +47,10 @@ class _Query:
 
     def is_(self, key: str, value: Any) -> _Query:
         self._is.append((key, value))
+        return self
+
+    def in_(self, key: str, values: list[Any]) -> _Query:
+        self._in.append((key, values))
         return self
 
     def limit(self, value: int) -> _Query:
@@ -81,6 +93,11 @@ class _Query:
             rows.sort(key=lambda row: str(row.get(self._order_key) or ""), reverse=self._order_desc)
         if self._limit is not None:
             rows = rows[: self._limit]
+        if self._selected_columns is not None:
+            rows = [
+                {column: row.get(column) for column in self._selected_columns}
+                for row in rows
+            ]
         return SimpleNamespace(data=deepcopy(rows))
 
     def _matches(self, row: dict[str, Any]) -> bool:
@@ -91,6 +108,9 @@ class _Query:
             if value == "null" and row.get(key) is not None:
                 return False
             if value != "null" and row.get(key) is not value:
+                return False
+        for key, values in self._in:
+            if row.get(key) not in values:
                 return False
         return True
 
@@ -116,6 +136,10 @@ class _FakeDb:
         self.tables = {
             "tenant_users": rows,
             "tenant_user_audit_events": [],
+            "tenant_user_role_audit_events": [],
+            "tenant_user_roles": [],
+            "security_roles": _security_roles(),
+            "tenant_user_effective_privileges": _effective_privileges(rows),
         }
         self.auth = SimpleNamespace(admin=_FakeAuthAdmin())
 
@@ -138,6 +162,7 @@ def _tenant_user(**overrides: Any) -> dict[str, Any]:
         "updated_at": "2026-06-29T00:00:00Z",
         "deleted_at": None,
         "deactivated_at": None,
+        "must_change_password": False,
     }
     row.update(overrides)
     return row
@@ -155,10 +180,36 @@ async def test_owner_can_invite_manager_user() -> None:
 
     assert response.email == "manager@aethos-qa.dev"
     assert response.role == "manager"
+    assert response.role_codes == ["finance_ops_manager"]
+    assert response.must_change_password is True
     assert response.temp_password
     assert response.set_password_url == "https://set-password.test/link"
     assert db.auth.admin.created_users[0]["app_metadata"]["role"] == "manager"
+    assert db.auth.admin.created_users[0]["app_metadata"]["role_codes"] == ["finance_ops_manager"]
+    assert db.auth.admin.created_users[0]["app_metadata"]["must_change_password"] is True
     assert db.tables["tenant_user_audit_events"][0]["action"] == "invited"
+
+
+@pytest.mark.asyncio
+async def test_list_users_includes_initial_password_change_status() -> None:
+    db = _FakeDb(
+        [
+            _tenant_user(),
+            _tenant_user(
+                id="tu-initial-password",
+                user_id="initial-password-user",
+                email="initial-password@aethos-qa.dev",
+                role="member",
+                must_change_password=True,
+            ),
+        ]
+    )
+    svc = TenantUsersService(db, TENANT_ID)  # type: ignore[arg-type]
+
+    response = await svc.list_users()
+
+    by_email = {item.email: item for item in response.items}
+    assert by_email["initial-password@aethos-qa.dev"].must_change_password is True
 
 
 @pytest.mark.asyncio
@@ -187,7 +238,7 @@ async def test_admin_can_invite_approver_and_auditor_users() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_cannot_invite_admin_user() -> None:
+async def test_admin_can_invite_admin_user_but_not_owner() -> None:
     db = _FakeDb(
         [
             _tenant_user(),
@@ -196,14 +247,19 @@ async def test_admin_cannot_invite_admin_user() -> None:
     )
     svc = TenantUsersService(db, TENANT_ID)  # type: ignore[arg-type]
 
+    response = await svc.invite_user(
+        TenantUserInviteRequest(email="next-admin@aethos-qa.dev", role="admin"),
+        actor=CurrentUser(user_id=ADMIN_ID, email="admin@aethos-qa.dev", role="admin"),
+    )
+    assert response.role == "admin"
+
     with pytest.raises(HTTPException) as exc:
         await svc.invite_user(
-            TenantUserInviteRequest(email="next-admin@aethos-qa.dev", role="admin"),
+            TenantUserInviteRequest(email="owner-2@aethos-qa.dev", role="owner"),
             actor=CurrentUser(user_id=ADMIN_ID, email="admin@aethos-qa.dev", role="admin"),
         )
 
     assert exc.value.status_code == 403
-    assert not db.auth.admin.created_users
 
 
 @pytest.mark.asyncio
@@ -239,8 +295,68 @@ async def test_owner_role_change_updates_auth_metadata_and_audit() -> None:
 
     assert response.role == "manager"
     assert db.auth.admin.updated_users == [
-        ("member-user", {"app_metadata": {"role": "manager", "tenant_id": TENANT_ID}})
+        (
+            "member-user",
+            {
+                "app_metadata": {
+                    "role": "manager",
+                    "role_codes": ["finance_ops_manager"],
+                    "tenant_id": TENANT_ID,
+                }
+            },
+        )
     ]
     assert db.tables["tenant_user_audit_events"][0]["action"] == "role_changed"
     assert db.tables["tenant_user_audit_events"][0]["previous_role"] == "member"
     assert db.tables["tenant_user_audit_events"][0]["new_role"] == "manager"
+
+
+def _security_roles() -> list[dict[str, Any]]:
+    rows = []
+    for code, label, legacy_role in [
+        ("tenant_owner", "Tenant Owner", "owner"),
+        ("tenant_admin", "Tenant Admin", "admin"),
+        ("finance_ops_manager", "Finance Ops Manager", "manager"),
+        ("finance_approver", "Finance Approver", "approver"),
+        ("finance_operator", "Finance Operator", "member"),
+        ("auditor", "Auditor", "auditor"),
+        ("executive_viewer", "Executive Viewer", "viewer"),
+    ]:
+        rows.append(
+            {
+                "id": f"role-{code}",
+                "tenant_id": None,
+                "code": code,
+                "label": label,
+                "description": "",
+                "legacy_role": legacy_role,
+                "is_system": True,
+                "is_assignable": True,
+                "rank": 1,
+                "deleted_at": None,
+            }
+        )
+    return rows
+
+
+def _effective_privileges(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output = []
+    for row in rows:
+        if row.get("role") not in {"owner", "admin"}:
+            continue
+        role_code = "tenant_owner" if row["role"] == "owner" else "tenant_admin"
+        for privilege in ("tenant.users.manage", "security.roles.manage"):
+            output.append(
+                {
+                    "tenant_id": row["tenant_id"],
+                    "user_id": row["user_id"],
+                    "tenant_user_id": row["id"],
+                    "role_code": role_code,
+                    "role_label": role_code.replace("_", " ").title(),
+                    "legacy_role": row["role"],
+                    "privilege_code": privilege,
+                    "privilege_label": privilege,
+                    "privilege_category": "Security",
+                }
+            )
+    return output

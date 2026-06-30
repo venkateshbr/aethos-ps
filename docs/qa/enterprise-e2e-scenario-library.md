@@ -599,7 +599,8 @@ Expected result:
 - Product-facing finance personas map to enforced backend roles without
   weakening current RBAC.
 - Browser controls are hidden or disabled consistently with API enforcement.
-- Auditor and Executive personas remain read-only for finance mutation paths.
+- Auditor and Executive Viewer personas remain separate read-only paths for
+  finance mutation checks.
 - Owner/Admin can still perform settings and final approval workflows.
 - Settings gives users a self-serve explanation of the finance persona mapping
   without exposing admin-only permission controls to viewer users.
@@ -612,6 +613,9 @@ Automation:
   persona-appropriate controls.
 - Browser: Auditor and Executive paths assert create, approve, post, pay, send,
   close, and settings mutation controls are disabled or absent.
+- Browser: `frontend/e2e/enterprise-tenant-admin-security.spec.ts` verifies
+  Tenant Admin role creation from seeded duties plus tenant user creation with
+  role codes and first-login password flags.
 - API: call `/api/v1/tenants/finance-personas` as Viewer and assert the catalog
   is readable; repeat restricted money/post/send/settings calls and assert 403.
 

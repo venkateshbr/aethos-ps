@@ -10,7 +10,7 @@ import { expect, Locator, Page, test } from '@playwright/test';
 
 const BASE = process.env.AETHOS_PS_WEB_URL ?? 'http://localhost:4201';
 
-type MockRole = 'owner' | 'admin' | 'manager' | 'viewer';
+type MockRole = 'owner' | 'admin' | 'manager' | 'approver' | 'auditor' | 'viewer';
 
 interface PersonaCase {
   persona: string;
@@ -63,6 +63,26 @@ const personas = [
     read_only: false,
   },
   {
+    id: 'finance_approver',
+    label: 'Finance Approver',
+    mapped_roles: ['approver', 'manager', 'admin', 'owner'],
+    description: 'Dedicated reviewer for manager-threshold Inbox decisions.',
+    areas: ['Inbox', 'Approval controls', 'Decision evidence'],
+    allowed_actions: ['Approve manager-threshold review work'],
+    restricted_actions: ['Cannot create or mutate operational records outside review actions'],
+    read_only: false,
+  },
+  {
+    id: 'procurement_manager',
+    label: 'Procurement Manager',
+    mapped_roles: ['manager', 'admin', 'owner'],
+    description: 'Procurement owner for purchase requests, orders, vendors, and AP matching.',
+    areas: ['Procurement', 'Bills', 'Pay Bills', 'Vendor onboarding'],
+    allowed_actions: ['Create and convert procurement documents'],
+    restricted_actions: ['Cannot approve admin or owner-threshold spend unless mapped to admin/owner'],
+    read_only: false,
+  },
+  {
     id: 'ap_lead',
     label: 'AP Lead',
     mapped_roles: ['manager', 'admin', 'owner'],
@@ -85,7 +105,7 @@ const personas = [
   {
     id: 'auditor',
     label: 'Auditor',
-    mapped_roles: ['viewer'],
+    mapped_roles: ['auditor'],
     description: 'Read-only audit reviewer for records, reports, and decision evidence.',
     areas: ['Reports', 'Bills', 'Invoices', 'Audit evidence'],
     allowed_actions: ['Inspect permitted tenant records and record-scoped decision timelines'],
@@ -108,7 +128,7 @@ const personaCases: PersonaCase[] = [
   {
     persona: 'Owner/Admin',
     role: 'owner',
-    compatiblePersonas: ['Owner/Admin', 'Controller', 'AP Lead', 'AR Lead'],
+    compatiblePersonas: ['Owner/Admin', 'Controller', 'Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: true,
     canCreateAp: true,
     canPayBills: true,
@@ -121,7 +141,7 @@ const personaCases: PersonaCase[] = [
   {
     persona: 'Controller',
     role: 'admin',
-    compatiblePersonas: ['Owner/Admin', 'Controller', 'AP Lead', 'AR Lead'],
+    compatiblePersonas: ['Owner/Admin', 'Controller', 'Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: true,
     canCreateAp: true,
     canPayBills: true,
@@ -134,7 +154,7 @@ const personaCases: PersonaCase[] = [
   {
     persona: 'AP Lead',
     role: 'manager',
-    compatiblePersonas: ['AP Lead', 'AR Lead'],
+    compatiblePersonas: ['Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: false,
     canCreateAp: true,
     canPayBills: false,
@@ -147,7 +167,7 @@ const personaCases: PersonaCase[] = [
   {
     persona: 'AR Lead',
     role: 'manager',
-    compatiblePersonas: ['AP Lead', 'AR Lead'],
+    compatiblePersonas: ['Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: false,
     canCreateAp: true,
     canPayBills: false,
@@ -158,9 +178,22 @@ const personaCases: PersonaCase[] = [
     readOnly: false,
   },
   {
+    persona: 'Finance Approver',
+    role: 'approver',
+    compatiblePersonas: ['Finance Approver'],
+    settingsCanEdit: false,
+    canCreateAp: false,
+    canPayBills: false,
+    canDraftInvoice: false,
+    canPostInvoice: false,
+    canPostJournal: false,
+    canRunClose: false,
+    readOnly: false,
+  },
+  {
     persona: 'Auditor',
-    role: 'viewer',
-    compatiblePersonas: ['Auditor', 'Executive'],
+    role: 'auditor',
+    compatiblePersonas: ['Auditor'],
     settingsCanEdit: false,
     canCreateAp: false,
     canPayBills: false,
@@ -173,7 +206,7 @@ const personaCases: PersonaCase[] = [
   {
     persona: 'Executive',
     role: 'viewer',
-    compatiblePersonas: ['Auditor', 'Executive'],
+    compatiblePersonas: ['Executive'],
     settingsCanEdit: false,
     canCreateAp: false,
     canPayBills: false,
@@ -519,15 +552,15 @@ async function expectSettingsMatrix(page: Page, personaCase: PersonaCase): Promi
 
   await expect(page.getByRole('heading', { name: 'Finance role personas' })).toBeVisible();
   await expect(
-    page.getByText('Current enforced role').locator('..').getByText(roleLabel(personaCase.role), { exact: true }),
-  ).toBeVisible();
+    page.getByText('Current enforced role').locator('..').locator('p.text-sm.font-medium'),
+  ).toHaveText(roleLabel(personaCase.role));
 
   for (const persona of personas) {
     await expect(page.getByRole('heading', { name: persona.label })).toBeVisible();
   }
   for (const label of personaCase.compatiblePersonas) {
     await expect(
-      page.getByText('Current enforced role').locator('..').getByText(label, { exact: true }),
+      page.getByText('Current enforced role').locator('..').locator('span').getByText(label, { exact: true }),
     ).toBeVisible();
   }
 
@@ -637,6 +670,8 @@ function roleLabel(role: MockRole): string {
     owner: 'Owner',
     admin: 'Admin',
     manager: 'Manager',
+    approver: 'Finance Approver',
+    auditor: 'Auditor',
     viewer: 'Viewer',
   }[role];
 }

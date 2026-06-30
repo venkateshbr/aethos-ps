@@ -275,7 +275,7 @@ def test_chat_message_stream_uses_runtime_interface(
             yield 'data: {"delta":"Runtime reply"}\n\n'
             yield 'data: {"done":true,"finish_reason":"stop"}\n\n'
 
-    def _build_runtime(**kwargs: Any) -> _Runtime:
+    async def _build_runtime(**kwargs: Any) -> _Runtime:
         assert kwargs["tenant_id"] == TENANT_ID
         assert kwargs["user_id"] == USER_ID
         assert kwargs["db_client"] is write_db

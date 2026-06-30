@@ -156,7 +156,7 @@ export class LoginComponent {
       if (userId) {
         const { data: memberships, error: membershipErr } = await this.supabaseSvc.client
           .from('tenant_users')
-          .select('tenant_id, role')
+          .select('tenant_id, role, must_change_password')
           .eq('user_id', userId)
           .is('deleted_at', null)
           .limit(1);
@@ -165,7 +165,11 @@ export class LoginComponent {
           this.auth.clearToken();
           return;
         }
-        const membership = memberships[0] as { tenant_id: string; role?: string | null };
+        const membership = memberships[0] as {
+          tenant_id: string;
+          role?: string | null;
+          must_change_password?: boolean | null;
+        };
         if (!membership.role) {
           this.error.set('Sign-in succeeded but this account has no tenant role. Contact support.');
           this.auth.clearToken();
@@ -173,9 +177,10 @@ export class LoginComponent {
         }
         this.auth.setTenantId(membership.tenant_id);
         this.auth.setRole(membership.role);
+        this.auth.setMustChangePassword(Boolean(membership.must_change_password));
       }
 
-      this.router.navigate(['/app/copilot']);
+      this.router.navigate([this.auth.getMustChangePassword() ? '/app/profile' : '/app/copilot']);
     } catch (err) {
       this.error.set('Could not reach the authentication server. Check your connection and try again.');
     } finally {

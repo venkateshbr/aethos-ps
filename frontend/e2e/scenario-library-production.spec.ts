@@ -687,7 +687,7 @@ function writeReport(results: TenantResult[]): void {
   const blockedRoleSurface = [
     'Tenant-user invite exists and is used for one ERP manager per tenant.',
     'Employee invite exists and was used for independent timesheet portal validation.',
-    'Auditor-specific persona remains mapped to the read-only viewer role until a distinct auditor role is added.',
+    'Auditor and Executive Viewer are distinct read-only ERP roles; Tenant Admin role/user administration is covered by the focused RBAC browser proof.',
   ];
   const report = [
     '# Aethos PS Test Scenario Library Production Run',

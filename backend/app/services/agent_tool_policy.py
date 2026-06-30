@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from app.agents.tool_registry import ToolRiskClass
 from app.core.rbac import ROLE_HIERARCHY, UserRole
+from app.services.security_service import SecurityService
 
 _DEFAULT_ACTION_TYPE = "default"
 
@@ -18,6 +19,15 @@ _MINIMUM_ROLE_BY_RISK: dict[ToolRiskClass, UserRole] = {
     "write_money_in": UserRole.manager,
     "write_money_out": UserRole.admin,
     "accounting": UserRole.admin,
+}
+
+_PRIVILEGE_BY_RISK: dict[ToolRiskClass, str] = {
+    "read_only": "atlas.tools.read",
+    "draft": "atlas.tools.execute_draft",
+    "write_low_risk": "atlas.tools.execute_draft",
+    "write_money_in": "atlas.tools.execute_money_in",
+    "write_money_out": "atlas.tools.execute_money_out",
+    "accounting": "accounting.journal_prepare",
 }
 
 _WRITE_RISKS: frozenset[ToolRiskClass] = frozenset(
@@ -53,6 +63,8 @@ class AgentToolPolicy:
         user_id: str,
     ) -> AgentToolPolicyDecision:
         user_role = await self._fetch_user_role(user_id)
+        privilege_code = _PRIVILEGE_BY_RISK[risk_class]
+        has_privilege = await self._has_tool_privilege(user_id, privilege_code)
         minimum_role = _MINIMUM_ROLE_BY_RISK[risk_class]
         autonomy_rows = await self._fetch_autonomy_rows(agent_name, action_type)
         autonomy_level = self._select_autonomy_level(autonomy_rows, action_type)
@@ -73,7 +85,7 @@ class AgentToolPolicy:
                 autonomy_level=autonomy_level,
             )
 
-        if ROLE_HIERARCHY[user_role] < ROLE_HIERARCHY[minimum_role]:
+        if not has_privilege and ROLE_HIERARCHY[user_role] < ROLE_HIERARCHY[minimum_role]:
             return AgentToolPolicyDecision(
                 allowed=False,
                 execute_now=False,
@@ -136,6 +148,15 @@ class AgentToolPolicy:
         except Exception:
             return UserRole.viewer
         return UserRole.viewer
+
+    async def _has_tool_privilege(self, user_id: str, privilege_code: str) -> bool:
+        try:
+            return await SecurityService(self.db, self.tenant_id).has_privilege(
+                user_id,
+                privilege_code,
+            )
+        except Exception:
+            return False
 
     @staticmethod
     def _select_autonomy_level(rows: list[dict], action_type: str) -> int:

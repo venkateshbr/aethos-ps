@@ -1305,7 +1305,9 @@ export class InboxComponent implements OnInit {
   canApproveTask(task: HitlTask): boolean {
     if (task.status !== 'open') return false;
     const required = task.required_approval_role ?? 'manager';
-    return this.roleRank(this.auth.role()) >= this.roleRank(required);
+    const currentRole = this.auth.role() ?? 'viewer';
+    if (currentRole === 'approver' && required === 'manager') return true;
+    return this.roleRank(currentRole) >= this.roleRank(required);
   }
 
   roleLabel(role: string | null | undefined): string {
@@ -1318,7 +1320,9 @@ export class InboxComponent implements OnInit {
       owner: 5,
       admin: 4,
       manager: 3,
+      approver: 2,
       member: 2,
+      auditor: 1,
       viewer: 1,
       employee: 0,
     };

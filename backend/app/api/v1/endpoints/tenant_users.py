@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client
-from app.core.rbac import UserRole, require_role
+from app.core.permissions import require_privilege
 from app.core.tenant import get_tenant_id
 from app.models.tenant_users import (
     TenantUserAuditEventListResponse,
@@ -37,7 +37,7 @@ def _service(
 @router.get("", response_model=TenantUserListResponse)
 async def list_tenant_users(
     include_inactive: IncludeInactiveQuery = False,
-    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+    _current_user: CurrentUser = require_privilege("tenant.users.read"),  # noqa: B008
     svc: TenantUsersService = Depends(_service),  # noqa: B008
 ) -> TenantUserListResponse:
     return await svc.list_users(include_inactive=include_inactive)
@@ -46,7 +46,7 @@ async def list_tenant_users(
 @router.post("", response_model=TenantUserInviteResponse, status_code=status.HTTP_201_CREATED)
 async def invite_tenant_user(
     payload: TenantUserInviteRequest,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("tenant.users.manage"),  # noqa: B008
     svc: TenantUsersService = Depends(_service),  # noqa: B008
 ) -> TenantUserInviteResponse:
     return await svc.invite_user(payload, actor=current_user)
@@ -56,7 +56,7 @@ async def invite_tenant_user(
 async def update_tenant_user(
     tenant_user_id: str,
     payload: TenantUserUpdateRequest,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("tenant.users.manage"),  # noqa: B008
     svc: TenantUsersService = Depends(_service),  # noqa: B008
 ) -> TenantUserResponse:
     return await svc.update_user(tenant_user_id, payload, actor=current_user)
@@ -65,7 +65,7 @@ async def update_tenant_user(
 @router.delete("/{tenant_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_tenant_user(
     tenant_user_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("tenant.users.manage"),  # noqa: B008
     svc: TenantUsersService = Depends(_service),  # noqa: B008
 ) -> None:
     await svc.deactivate_user(tenant_user_id, actor=current_user)
@@ -75,7 +75,7 @@ async def deactivate_tenant_user(
 async def list_tenant_user_audit_events(
     tenant_user_id: str | None = None,
     limit: LimitQuery = 100,
-    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    _current_user: CurrentUser = require_privilege("tenant.users.manage"),  # noqa: B008
     svc: TenantUsersService = Depends(_service),  # noqa: B008
 ) -> TenantUserAuditEventListResponse:
     return await svc.list_audit_events(tenant_user_id=tenant_user_id, limit=limit)

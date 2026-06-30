@@ -1653,7 +1653,9 @@ export class BillsListComponent implements OnInit {
       owner: 5,
       admin: 4,
       manager: 3,
+      approver: 2,
       member: 2,
+      auditor: 1,
       viewer: 1,
       employee: 0,
     };

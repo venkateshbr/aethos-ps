@@ -141,7 +141,9 @@ export class FinancePersonasComponent implements OnInit {
       owner: 'Owner',
       admin: 'Admin',
       manager: 'Manager',
+      approver: 'Finance Approver',
       member: 'Member',
+      auditor: 'Auditor',
       viewer: 'Viewer',
       employee: 'Employee',
     };
@@ -152,6 +154,8 @@ export class FinancePersonasComponent implements OnInit {
     if (role === 'owner') return 'bg-confidence-low/10 text-confidence-low';
     if (role === 'admin') return 'bg-confidence-med/10 text-confidence-med';
     if (role === 'manager') return 'bg-accent/10 text-accent-light';
+    if (role === 'approver') return 'bg-accent/10 text-accent-light';
+    if (role === 'auditor') return 'bg-surface-raised text-text-muted';
     if (role === 'viewer') return 'bg-surface-raised text-text-muted';
     return 'bg-surface text-text-muted';
   }

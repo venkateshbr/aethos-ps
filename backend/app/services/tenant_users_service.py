@@ -22,12 +22,16 @@ from app.models.tenant_users import (
     TenantUserResponse,
     TenantUserUpdateRequest,
 )
+from app.services.security_service import (
+    LEGACY_ROLE_TO_SECURITY_ROLE,
+    SecurityService,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 ERP_ROLES = {"owner", "admin", "manager", "approver", "member", "auditor", "viewer"}
-PRIVILEGED_ROLES = {"owner", "admin"}
+PRIVILEGED_ROLES = {"owner"}
 _ERP_ROLE_LIST_TEXT = "owner, admin, manager, approver, member, auditor, or viewer"
 
 
@@ -44,7 +48,8 @@ class TenantUsersService:
                 self._db.table("tenant_users")
                 .select(
                     "id, tenant_id, user_id, email, display_name, role, invited_at, "
-                    "joined_at, created_at, updated_at, deleted_at, deactivated_at"
+                    "joined_at, created_at, updated_at, deleted_at, deactivated_at, "
+                    "must_change_password"
                 )
                 .eq("tenant_id", self._tenant_id)
                 .order("created_at", desc=False)
@@ -54,7 +59,13 @@ class TenantUsersService:
             return query.execute().data or []
 
         rows = await asyncio.to_thread(_list)
-        items = [_row_to_response(row) for row in rows]
+        role_summaries = await self._role_summaries_by_tenant_user_ids(
+            [str(row["id"]) for row in rows]
+        )
+        items = [
+            _row_to_response(row, role_summaries.get(str(row["id"]), []))
+            for row in rows
+        ]
         return TenantUserListResponse(items=items, total=len(items))
 
     async def invite_user(
@@ -64,7 +75,9 @@ class TenantUsersService:
         actor: CurrentUser,
     ) -> TenantUserInviteResponse:
         actor_role = await self._actor_role(actor.user_id)
-        requested_role = str(payload.role)
+        requested_role_codes = _requested_role_codes(payload.role_codes, str(payload.role))
+        security = SecurityService(self._db, self._tenant_id)
+        roles, requested_role = await security.resolve_assignable_roles(requested_role_codes)
         self._assert_actor_can_assign_role(actor_role, requested_role)
         email = str(payload.email).lower()
         await self._assert_email_available(email)
@@ -80,7 +93,9 @@ class TenantUsersService:
                     "email_confirm": True,
                     "app_metadata": {
                         "role": requested_role,
+                        "role_codes": requested_role_codes,
                         "tenant_id": self._tenant_id,
+                        "must_change_password": True,
                     },
                     "user_metadata": {"display_name": display_name},
                 }
@@ -110,6 +125,7 @@ class TenantUsersService:
                     "email": email,
                     "display_name": display_name,
                     "role": requested_role,
+                    "must_change_password": True,
                     "invited_at": now,
                     "joined_at": now,
                     "invited_by_user_id": actor.user_id,
@@ -125,7 +141,17 @@ class TenantUsersService:
             action="invited",
             previous_role=None,
             new_role=requested_role,
-            metadata={"email": email, "display_name": display_name},
+            metadata={
+                "email": email,
+                "display_name": display_name,
+                "role_codes": requested_role_codes,
+                "must_change_password": True,
+            },
+        )
+        await security.assign_roles_to_tenant_user(
+            str(row["id"]),
+            requested_role_codes,
+            actor_user_id=actor.user_id,
         )
 
         set_password_url: str | None = None
@@ -137,7 +163,13 @@ class TenantUsersService:
             logger.warning("Could not generate recovery link for tenant user invite", exc_info=True)
 
         return TenantUserInviteResponse(
-            **_row_to_response(row).model_dump(),
+            **_row_to_response(
+                row,
+                [
+                    {"code": str(role["code"]), "label": str(role["label"])}
+                    for role in roles
+                ],
+            ).model_dump(),
             set_password_url=set_password_url,
             temp_password=None if payload.password else password,
         )
@@ -154,14 +186,17 @@ class TenantUsersService:
         patch: dict[str, Any] = {}
         previous_role = str(row["role"])
         new_role = previous_role
+        new_role_codes: list[str] | None = None
 
-        if payload.role is not None:
-            new_role = str(payload.role)
+        if payload.role is not None or payload.role_codes is not None:
+            new_role_codes = _requested_role_codes(payload.role_codes, str(payload.role or previous_role))
+            security = SecurityService(self._db, self._tenant_id)
+            _roles, new_role = await security.resolve_assignable_roles(new_role_codes)
             self._assert_actor_can_assign_role(actor_role, new_role)
             if previous_role in PRIVILEGED_ROLES and actor_role != "owner":
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only owners can change owner or admin users.",
+                    detail="Only owners can change owner users.",
                 )
             if str(row["user_id"]) == actor.user_id and new_role != previous_role:
                 raise HTTPException(
@@ -188,16 +223,23 @@ class TenantUsersService:
             .data[0]
         )
         if "role" in patch:
-            self._update_auth_role_best_effort(str(row["user_id"]), new_role)
+            if new_role_codes is not None:
+                await SecurityService(self._db, self._tenant_id).assign_roles_to_tenant_user(
+                    tenant_user_id,
+                    new_role_codes,
+                    actor_user_id=actor.user_id,
+                )
+            self._update_auth_role_best_effort(str(row["user_id"]), new_role, new_role_codes)
         await self._audit(
             tenant_user_id=tenant_user_id,
             actor_user_id=actor.user_id,
             action="role_changed" if "role" in patch else "profile_updated",
             previous_role=previous_role if "role" in patch else None,
             new_role=new_role if "role" in patch else None,
-            metadata={"fields": sorted(patch.keys())},
+            metadata={"fields": sorted(patch.keys()), "role_codes": new_role_codes or []},
         )
-        return _row_to_response(updated)
+        summaries = await self._role_summaries_by_tenant_user_ids([tenant_user_id])
+        return _row_to_response(updated, summaries.get(tenant_user_id, []))
 
     async def deactivate_user(
         self,
@@ -215,7 +257,7 @@ class TenantUsersService:
         if str(row["role"]) in PRIVILEGED_ROLES and actor_role != "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only owners can deactivate owner or admin users.",
+                detail="Only owners can deactivate owner users.",
             )
         if str(row["role"]) == "owner":
             await self._assert_not_last_owner(tenant_user_id)
@@ -376,8 +418,49 @@ class TenantUsersService:
         if requested_role in PRIVILEGED_ROLES and actor_role != "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only owners can grant owner or admin roles.",
+                detail="Only owners can grant owner roles.",
             )
+
+    async def _role_summaries_by_tenant_user_ids(
+        self,
+        tenant_user_ids: list[str],
+    ) -> dict[str, list[dict[str, str]]]:
+        if not tenant_user_ids:
+            return {}
+        assignment_rows = await asyncio.to_thread(
+            lambda: self._db.table("tenant_user_roles")
+            .select("tenant_user_id, security_role_id")
+            .eq("tenant_id", self._tenant_id)
+            .in_("tenant_user_id", tenant_user_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        role_ids = sorted({str(row["security_role_id"]) for row in assignment_rows})
+        if not role_ids:
+            return {}
+        role_rows = await asyncio.to_thread(
+            lambda: self._db.table("security_roles")
+            .select("id, code, label")
+            .in_("id", role_ids)
+            .is_("deleted_at", "null")
+            .execute()
+            .data
+            or []
+        )
+        roles_by_id = {
+            str(row["id"]): {"code": str(row["code"]), "label": str(row["label"])}
+            for row in role_rows
+        }
+        result: dict[str, list[dict[str, str]]] = {}
+        for row in assignment_rows:
+            role = roles_by_id.get(str(row["security_role_id"]))
+            if role:
+                result.setdefault(str(row["tenant_user_id"]), []).append(role)
+        for key, roles in result.items():
+            result[key] = sorted(roles, key=lambda item: item["label"])
+        return result
 
     async def _audit(
         self,
@@ -405,17 +488,32 @@ class TenantUsersService:
             .execute()
         )
 
-    def _update_auth_role_best_effort(self, user_id: str, role: str) -> None:
+    def _update_auth_role_best_effort(
+        self,
+        user_id: str,
+        role: str,
+        role_codes: list[str] | None = None,
+    ) -> None:
         try:
             self._db.auth.admin.update_user_by_id(
                 user_id,
-                {"app_metadata": {"role": role, "tenant_id": self._tenant_id}},
+                {
+                    "app_metadata": {
+                        "role": role,
+                        "role_codes": role_codes or [LEGACY_ROLE_TO_SECURITY_ROLE.get(role, role)],
+                        "tenant_id": self._tenant_id,
+                    }
+                },
             )
         except Exception:
             logger.warning("Could not update tenant user auth metadata", exc_info=True)
 
 
-def _row_to_response(row: dict[str, Any]) -> TenantUserResponse:
+def _row_to_response(
+    row: dict[str, Any],
+    role_summaries: list[dict[str, str]] | None = None,
+) -> TenantUserResponse:
+    summaries = role_summaries or []
     return TenantUserResponse(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
@@ -423,7 +521,10 @@ def _row_to_response(row: dict[str, Any]) -> TenantUserResponse:
         email=row.get("email"),
         display_name=row.get("display_name"),
         role=str(row["role"]),
+        role_codes=[summary["code"] for summary in summaries],
+        role_labels=[summary["label"] for summary in summaries],
         status="inactive" if row.get("deleted_at") else "active",
+        must_change_password=bool(row.get("must_change_password")),
         invited_at=str(row["invited_at"]) if row.get("invited_at") else None,
         joined_at=str(row["joined_at"]) if row.get("joined_at") else None,
         created_at=str(row["created_at"]),
@@ -441,6 +542,12 @@ def _display_name(display_name: str | None, email: str) -> str:
     if value:
         return value
     return email.split("@", 1)[0].replace(".", " ").replace("_", " ").title()
+
+
+def _requested_role_codes(role_codes: list[str] | None, fallback_role: str) -> list[str]:
+    if role_codes:
+        return [str(code).strip() for code in role_codes if str(code).strip()]
+    return [LEGACY_ROLE_TO_SECURITY_ROLE.get(fallback_role, "finance_operator")]
 
 
 def _utc_now() -> str:

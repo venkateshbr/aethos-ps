@@ -21,6 +21,7 @@ import { SupabaseService } from './supabase.service';
 const STORAGE_KEY = 'aethos_token';
 const TENANT_STORAGE_KEY = 'aethos_tenant_id';
 const ROLE_STORAGE_KEY = 'aethos_role';
+const MUST_CHANGE_PASSWORD_STORAGE_KEY = 'aethos_must_change_password';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -33,10 +34,13 @@ export class AuthService {
   /** Reactive tenant role signal — used for UI affordances; backend still enforces RBAC. */
   private _role = signal<string | null>(this.readRoleFromStorage());
 
+  private _mustChangePassword = signal<boolean>(this.readMustChangePasswordFromStorage());
+
   /** Public read-only signal of the current access token (null when signed out). */
   readonly token = this._token.asReadonly();
   readonly tenantId = this._tenantId.asReadonly();
   readonly role = this._role.asReadonly();
+  readonly mustChangePassword = this._mustChangePassword.asReadonly();
 
   /** True when a token is present. Derived signal — use in templates & guards. */
   readonly isAuthenticated = computed(() => this._token() !== null);
@@ -91,7 +95,7 @@ export class AuthService {
       }
       const { data: memberships, error } = await this.supa.client
         .from('tenant_users')
-        .select('tenant_id, role')
+        .select('tenant_id, role, must_change_password')
         .eq('user_id', userId)
         .is('deleted_at', null)
         .limit(1);
@@ -103,6 +107,7 @@ export class AuthService {
       if (memberships[0].role) {
         this.setRole(memberships[0].role as string);
       }
+      this.setMustChangePassword(Boolean((memberships[0] as { must_change_password?: boolean }).must_change_password));
     } catch {
       this.clearToken();
     }
@@ -128,12 +133,14 @@ export class AuthService {
     this._token.set(null);
     this._tenantId.set(null);
     this._role.set(null);
+    this._mustChangePassword.set(false);
     clearAccessToken();
     clearTenantId();
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TENANT_STORAGE_KEY);
       localStorage.removeItem(ROLE_STORAGE_KEY);
+      localStorage.removeItem(MUST_CHANGE_PASSWORD_STORAGE_KEY);
     }
   }
 
@@ -170,6 +177,17 @@ export class AuthService {
     return this._role();
   }
 
+  setMustChangePassword(value: boolean): void {
+    this._mustChangePassword.set(value);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(MUST_CHANGE_PASSWORD_STORAGE_KEY, value ? 'true' : 'false');
+    }
+  }
+
+  getMustChangePassword(): boolean {
+    return this._mustChangePassword();
+  }
+
   private readFromStorage(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(STORAGE_KEY);
@@ -183,5 +201,10 @@ export class AuthService {
   private readRoleFromStorage(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(ROLE_STORAGE_KEY);
+  }
+
+  private readMustChangePasswordFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(MUST_CHANGE_PASSWORD_STORAGE_KEY) === 'true';
   }
 }

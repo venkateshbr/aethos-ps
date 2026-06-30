@@ -393,6 +393,12 @@ def _master_data_counts(conn: psycopg.Connection) -> list[tuple[str, int]]:
             "public.tax_rates system rows",
             "SELECT count(*) AS count FROM public.tax_rates WHERE tenant_id IS NULL",
         ),
+        ("public.security_privileges", "SELECT count(*) AS count FROM public.security_privileges"),
+        ("public.security_duties", "SELECT count(*) AS count FROM public.security_duties"),
+        (
+            "public.security_roles system rows",
+            "SELECT count(*) AS count FROM public.security_roles WHERE tenant_id IS NULL AND deleted_at IS NULL",
+        ),
         ("storage.buckets", "SELECT count(*) AS count FROM storage.buckets"),
     ]
     counts: list[tuple[str, int]] = []

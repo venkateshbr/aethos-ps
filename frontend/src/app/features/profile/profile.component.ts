@@ -38,6 +38,11 @@ const PLAN_LABELS: Record<string, string> = {
       <p class="text-sm text-text-muted mb-8">Your profile, organisation and security settings.</p>
 
       <div class="max-w-2xl space-y-6">
+        @if (auth.mustChangePassword()) {
+          <div class="rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-accent-light" role="alert">
+            Change your initial password to continue using Aethos.
+          </div>
+        }
 
         <!-- ── Organisation details ──────────────────────────────────── -->
         <section aria-labelledby="org-heading">
@@ -130,7 +135,7 @@ const PLAN_LABELS: Record<string, string> = {
 })
 export class ProfileComponent implements OnInit {
   private http    = inject(HttpClient);
-  private auth    = inject(AuthService);
+  protected auth  = inject(AuthService);
   private router  = inject(Router);
   private supa    = inject(SupabaseService);
 

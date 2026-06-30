@@ -511,5 +511,5 @@ def test_finance_persona_catalog_is_viewer_readable() -> None:
     items = response.json()["items"]
     assert {item["id"] for item in items} >= {"ap_lead", "ar_lead", "controller"}
     auditor = next(item for item in items if item["id"] == "auditor")
-    assert auditor["mapped_roles"] == ["viewer"]
+    assert auditor["mapped_roles"] == ["auditor"]
     assert auditor["read_only"] is True

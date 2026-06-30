@@ -10,7 +10,7 @@ import { expect, Page, test } from '@playwright/test';
 
 const BASE = process.env.AETHOS_PS_WEB_URL ?? 'http://localhost:4201';
 
-type MockRole = 'owner' | 'manager' | 'viewer';
+type MockRole = 'owner' | 'manager' | 'auditor' | 'viewer';
 
 const approvalPolicy = {
   tenant_id: 'tenant-ctrl',
@@ -51,7 +51,7 @@ const personas = [
   {
     id: 'auditor',
     label: 'Auditor',
-    mapped_roles: ['viewer'],
+    mapped_roles: ['auditor'],
     description: 'Read-only audit reviewer.',
     areas: ['Reports', 'Inbox history', 'Decision evidence'],
     allowed_actions: ['Inspect permitted records and decisions'],
@@ -373,7 +373,7 @@ test.describe('Enterprise controls, audit, and RBAC proof (#309)', () => {
 
     await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Approval Controls' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Finance role personas' })).toBeVisible();
     await expect(page.getByText('Current enforced role')).toBeVisible();
@@ -425,14 +425,16 @@ test.describe('Enterprise controls, audit, and RBAC proof (#309)', () => {
     await expect(page.getByText('mock-token')).toHaveCount(0);
   });
 
-  test('viewer persona can inspect but mutation controls stay blocked', async ({ page }) => {
+  test('auditor persona can inspect but mutation controls stay blocked', async ({ page }) => {
     await installEnterpriseMocks(page);
-    await authenticate(page, 'viewer');
+    await authenticate(page, 'auditor');
 
     await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('Current enforced role')).toBeVisible();
-    await expect(page.getByText('Current enforced role').locator('..').getByText('Viewer', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Current enforced role').locator('..').locator('p.text-sm.font-medium'),
+    ).toHaveText('Auditor');
     await expect(page.getByText('Read-only audit reviewer.')).toBeVisible();
     await expect(page.getByText('Cannot create, approve, post, pay, send, lock, or change settings')).toBeVisible();
     await expect(page.getByText('Approval policy changes require Admin or Owner.')).toBeVisible();

@@ -1184,22 +1184,50 @@ work.
 
 1. Log in as Marcus or another owner/admin user.
 
-2. Go to **Settings** → **Tenant Users**.
+2. Go to **Settings** → **Security Roles**.
 
-3. Invite three demo ERP users:
-   - Finance Ops Manager: role `manager`
-   - Finance Approver: role `approver`
-   - Read-only Auditor: role `auditor`
+3. Show the seeded Dynamics-style catalog:
+   - Tenant Owner
+   - Tenant Admin
+   - CFO
+   - Finance Controller
+   - Finance Ops Manager
+   - Finance Approver
+   - Procurement Manager
+   - AP Manager / AP Clerk
+   - AR Manager / Billing Specialist
+   - GL Accountant / Close Manager
+   - Auditor
+   - Executive Viewer
+   - AI Operations Admin
+   - Timesheet Employee
 
-4. After invite, show the generated temporary password or set-password link.
+4. Optional tenant-admin check: create a disposable role named
+   **Demo Billing Reviewer** from seeded duties such as Finance read access,
+   Billing management, and Manager-threshold approval. Confirm the role appears
+   as tenant-created, not system-created.
+
+5. Go to **Settings** → **Tenant Users**.
+
+6. Create four demo ERP users:
+   - Finance Ops Manager: security role `Finance Ops Manager`
+   - Finance Approver: security role `Finance Approver`
+   - Finance Controller: security role `Finance Controller`
+   - Read-only Auditor: security role `Auditor`
+
+7. For each user, set or capture the initial password. Confirm the user row
+   shows initial password change required.
+
+8. After invite, show the generated temporary password or set-password link.
    Store it only in the secure demo credential file or your password manager,
    not in shared screenshots.
 
-5. Open a second browser profile or incognito window and log in as the invited
-   manager, approver, and auditor in turn at the main Aethos app, not the
-   timesheet portal.
+9. Open a second browser profile or incognito window and log in as each invited
+   user at the main Aethos app, not the timesheet portal. Confirm the first
+   screen is Account/Profile and that changing the initial password is required
+   before normal app navigation.
 
-6. Validate the manager can:
+10. Validate the Finance Ops Manager can:
    - Open **Aethos Atlas**
    - Open **Reports**
    - Inspect permitted Inbox and finance records
@@ -1208,38 +1236,42 @@ work.
    - Ask a role-aware access prompt:
      > *"Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver."*
 
-7. Validate the Finance Approver:
+11. Validate the Finance Approver:
    - Can approve or reject manager-threshold Inbox/procurement review work
    - Cannot create clients, engagements, bills, procurement documents, journals,
      or tenant settings
    - Cannot approve Admin/Owner-threshold payment batches, accounting work, or
      high-risk AI actions
 
-8. Validate the Auditor:
+12. Validate the Finance Controller:
+   - Can inspect accounting, journals, close, statements, and audit evidence
+   - Can approve admin-threshold accounting work where policy allows
+   - Cannot grant Tenant Owner authority
+
+13. Validate the Auditor:
    - Can inspect reports, source documents, record details, Inbox history, and
      decision trails
    - Cannot approve, reject, create, post, pay, send, lock, or change settings
 
-9. Switch back to Marcus and update the invited user:
+14. Switch back to Marcus and update the invited user:
    - Change display name or role where allowed
    - Confirm the Settings audit trail records the actor, target user, event,
-     prior role, and new role
+     prior role codes, and new role codes
    - Deactivate a disposable test user and confirm they can no longer access
      the tenant
 
-10. Explain the current role model:
-   - Main ERP users use `owner`, `admin`, `manager`, `approver`, `member`,
-     `auditor`, or `viewer`
-   - The user who registered the tenant is shown as Tenant Admin / Owner;
-     internally this is the existing `owner` role
-   - CFO, Controller, Procurement Manager, AP Lead, AR Lead, Auditor, and
-     Executive are product personas mapped over the enforced ERP roles
+15. Explain the current role model:
+   - Main ERP users are assigned seeded security roles made of duties and
+     privileges
+   - `tenant_users.role` remains only as a legacy projection during migration
+   - Tenant Admins can create users, create tenant roles from seeded duties,
+     assign non-owner roles, and set initial passwords
+   - Only Tenant Owners can grant Tenant Owner authority
    - Timesheet-only employees are invited and tested separately through the
      People/timesheet flow
-   - Only owners can grant or modify owner/admin access
    - Users cannot demote or deactivate themselves
 
-**Talking point**: *"Aethos can run finance work through AI agents, but access is still tenant-scoped, role-assigned, and auditable. The finance manager can operate, the finance approver can review, the auditor can inspect evidence, and owner-level approvals stay with the owner."*
+**Talking point**: *"Aethos can run finance work through AI agents, but access is still tenant-scoped, role-assigned, privilege-driven, and auditable. Tenant Admins manage users and roles; the finance manager operates; the finance approver reviews; the auditor inspects evidence; and owner-level approvals stay with the owner."*
 
 ---
 
@@ -1510,4 +1542,4 @@ python3 scripts/generate_demo_assets.py
 - `alderton_sgd_dividend_notice.pdf` — Singapore dividend income statement in SGD
 - `thornton_cosec_instruction.pdf` — New director appointment instruction letter
 
-> **Tip for demos**: Keep separate browser profiles ready for Marcus (owner), Finance Ops Manager (`manager`), Finance Approver (`approver`), and Auditor (`auditor`). Use `demo_credentials.json` for generated production scenario tenants. Switch tabs to show role-based access: the manager can operate, the approver can decide manager-threshold reviews, the auditor can inspect evidence only, and Marcus keeps owner-only settings and approvals.
+> **Tip for demos**: Keep separate browser profiles ready for Marcus (Tenant Owner), Finance Controller, Finance Ops Manager, Finance Approver, Auditor, and Executive Viewer. Use `demo_credentials.json` for generated production scenario tenants. Switch tabs to show privilege-based access: the manager operates, the approver decides manager-threshold reviews, the controller handles accounting controls, the auditor inspects evidence only, and Marcus keeps owner-only settings and approvals.

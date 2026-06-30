@@ -95,6 +95,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
 # FastAPI's Depends caching already covers the common case).
 _VERIFIED_TENANT_STATE_KEY = "_aethos_verified_tenant_id"
 _VERIFIED_TENANT_ROLE_STATE_KEY = "_aethos_verified_tenant_role"
+_VERIFIED_TENANT_MUST_CHANGE_PASSWORD_STATE_KEY = "_aethos_verified_tenant_must_change_password"
+
+_PASSWORD_CHANGE_ALLOWED_PATHS = frozenset(
+    {
+        "/api/v1/auth/complete-password-change",
+        "/api/v1/security/me/permissions",
+    }
+)
 
 
 def _lookup_active_membership(
@@ -102,7 +110,7 @@ def _lookup_active_membership(
     *,
     user_id: str,
     tenant_id: str,
-) -> dict[str, str] | None:
+) -> dict[str, object] | None:
     """Return active ``tenant_users`` membership details for this request.
 
     This is intentionally only request-scoped; revocation still takes effect on
@@ -112,18 +120,33 @@ def _lookup_active_membership(
     """
     for attempt in range(3):
         try:
-            result = (
-                db.table("tenant_users")
-                .select("id, role")
-                .eq("user_id", user_id)
-                .eq("tenant_id", tenant_id)
-                .is_("deleted_at", "null")
-                .limit(1)
-                .execute()
-            )
+            try:
+                result = (
+                    db.table("tenant_users")
+                    .select("id, role, must_change_password")
+                    .eq("user_id", user_id)
+                    .eq("tenant_id", tenant_id)
+                    .is_("deleted_at", "null")
+                    .limit(1)
+                    .execute()
+                )
+            except Exception:
+                result = (
+                    db.table("tenant_users")
+                    .select("id, role")
+                    .eq("user_id", user_id)
+                    .eq("tenant_id", tenant_id)
+                    .is_("deleted_at", "null")
+                    .limit(1)
+                    .execute()
+                )
             if result.data:
                 row = result.data[0]
-                return {"id": row["id"], "role": row["role"]}
+                return {
+                    "id": row["id"],
+                    "role": row["role"],
+                    "must_change_password": bool(row.get("must_change_password")),
+                }
             return None
         except Exception:  # pragma: no cover - exercised with fake DB in unit tests
             if attempt < 2:
@@ -237,7 +260,17 @@ def get_tenant_id(
     # Pin the verified value on request.state for any later in-request reads.
     setattr(request.state, _VERIFIED_TENANT_STATE_KEY, tenant_uuid)
     setattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, membership["role"])
+    setattr(
+        request.state,
+        _VERIFIED_TENANT_MUST_CHANGE_PASSWORD_STATE_KEY,
+        bool(membership.get("must_change_password")),
+    )
     # Also refresh the logging context var so subsequent log lines carry the
     # verified id (the middleware may have stashed an unverified header value).
     tenant_id_var.set(tenant_uuid)
+    if membership.get("must_change_password") and request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PASSWORD_CHANGE_REQUIRED",
+        )
     return tenant_uuid

@@ -5,7 +5,16 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { AuthService } from '../../core/services/auth.service';
 
-type TenantUserRole = 'owner' | 'admin' | 'manager' | 'approver' | 'member' | 'auditor' | 'viewer';
+type TenantUserRole = string;
+
+interface SecurityRoleOption {
+  code: string;
+  label: string;
+  legacy_role: string;
+  is_system: boolean;
+  is_assignable: boolean;
+  description: string;
+}
 
 interface TenantUser {
   id: string;
@@ -14,7 +23,10 @@ interface TenantUser {
   email: string | null;
   display_name: string | null;
   role: string;
+  role_codes: string[];
+  role_labels: string[];
   status: string;
+  must_change_password: boolean;
   invited_at: string | null;
   joined_at: string | null;
   created_at: string;
@@ -27,14 +39,15 @@ interface TenantUserInviteResponse extends TenantUser {
   temp_password: string | null;
 }
 
-const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
-  { value: 'owner', label: 'Tenant Admin / Owner' },
-  { value: 'admin', label: 'Controller / Admin' },
-  { value: 'manager', label: 'Finance Ops Manager' },
-  { value: 'approver', label: 'Finance Approver' },
-  { value: 'member', label: 'Finance Operator' },
-  { value: 'auditor', label: 'Auditor' },
-  { value: 'viewer', label: 'Executive Viewer' },
+const FALLBACK_ROLE_OPTIONS: SecurityRoleOption[] = [
+  { code: 'tenant_owner', label: 'Tenant Owner', legacy_role: 'owner', is_system: true, is_assignable: true, description: '' },
+  { code: 'tenant_admin', label: 'Tenant Admin', legacy_role: 'admin', is_system: true, is_assignable: true, description: '' },
+  { code: 'finance_controller', label: 'Finance Controller', legacy_role: 'admin', is_system: true, is_assignable: true, description: '' },
+  { code: 'finance_ops_manager', label: 'Finance Ops Manager', legacy_role: 'manager', is_system: true, is_assignable: true, description: '' },
+  { code: 'finance_approver', label: 'Finance Approver', legacy_role: 'approver', is_system: true, is_assignable: true, description: '' },
+  { code: 'finance_operator', label: 'Finance Operator', legacy_role: 'member', is_system: true, is_assignable: true, description: '' },
+  { code: 'auditor', label: 'Auditor', legacy_role: 'auditor', is_system: true, is_assignable: true, description: '' },
+  { code: 'executive_viewer', label: 'Executive Viewer', legacy_role: 'viewer', is_system: true, is_assignable: true, description: '' },
 ];
 
 @Component({
@@ -79,7 +92,7 @@ const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
                 <thead>
                   <tr class="border-b border-border-default bg-surface-base text-xs uppercase text-text-muted">
                     <th scope="col" class="px-3 py-2 text-left">User</th>
-                    <th scope="col" class="px-3 py-2 text-left">Role</th>
+                    <th scope="col" class="px-3 py-2 text-left">Roles</th>
                     <th scope="col" class="px-3 py-2 text-left">Status</th>
                     <th scope="col" class="px-3 py-2 text-right">Actions</th>
                   </tr>
@@ -93,15 +106,21 @@ const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
                       </td>
                       <td class="px-3 py-2">
                         <select
-                          [value]="user.role"
+                          [value]="primaryRoleCode(user)"
                           [disabled]="!canEdit() || savingUserId() === user.id"
                           (change)="changeRole(user, $event)"
-                          class="w-36 rounded border border-border-default bg-surface-base px-2 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                          class="w-48 rounded border border-border-default bg-surface-base px-2 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          @for (option of roleOptions; track option.value) {
+                          @for (option of roleOptions(); track option.value) {
                             <option [value]="option.value">{{ option.label }}</option>
                           }
                         </select>
+                        <div class="mt-1 text-xs text-text-muted">
+                          {{ user.role_labels.join(', ') || roleLabel(user.role) }}
+                        </div>
+                        @if (user.must_change_password) {
+                          <div class="mt-1 text-[11px] text-accent-light">Initial password change required</div>
+                        }
                       </td>
                       <td class="px-3 py-2">
                         <span class="rounded-full px-2 py-0.5 text-xs font-semibold" [class]="statusClass(user.status)">
@@ -161,7 +180,7 @@ const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
           <label class="mb-3 block">
             <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">Role</span>
             <select
-              formControlName="role"
+              formControlName="role_code"
               class="w-full rounded border border-border-default bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             >
               @for (option of inviteRoleOptions(); track option.value) {
@@ -214,7 +233,7 @@ const ROLE_OPTIONS: { value: TenantUserRole; label: string }[] = [
               <span>Inviting...</span>
             } @else {
               <mat-icon style="font-size:1rem;width:1rem;height:1rem;" aria-hidden="true">person_add</mat-icon>
-              <span>Invite User</span>
+              <span>Create User</span>
             }
           </button>
         </form>
@@ -235,22 +254,41 @@ export class TenantUsersComponent implements OnInit {
   loadError = signal(false);
   error = signal<string | null>(null);
   lastInvite = signal<TenantUserInviteResponse | null>(null);
-  roleOptions = ROLE_OPTIONS;
+  roles = signal<SecurityRoleOption[]>(FALLBACK_ROLE_OPTIONS);
+  roleOptions = computed(() =>
+    this.roles()
+      .filter(role => role.is_assignable)
+      .map(role => ({ value: role.code, label: role.label, legacyRole: role.legacy_role })),
+  );
   canEdit = computed(() => ['owner', 'admin'].includes(this.auth.role() ?? ''));
   inviteRoleOptions = computed(() => {
-    if (this.auth.role() === 'owner') return ROLE_OPTIONS;
-    return ROLE_OPTIONS.filter(option => !['owner', 'admin'].includes(option.value));
+    const options = this.roleOptions();
+    if (this.auth.role() === 'owner') return options;
+    return options.filter(option => option.legacyRole !== 'owner');
   });
 
   inviteForm = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     display_name: [''],
-    role: ['member' as TenantUserRole, [Validators.required]],
+    role_code: ['finance_operator' as TenantUserRole, [Validators.required]],
     password: ['', [Validators.minLength(8)]],
   });
 
   ngOnInit(): void {
+    this.loadRoles();
     this.load();
+  }
+
+  loadRoles(): void {
+    this.http.get<{ items: SecurityRoleOption[] }>('/api/v1/security/roles').subscribe({
+      next: (res) => {
+        const roles = (res.items ?? []).filter(role => role.is_assignable);
+        if (roles.length) this.roles.set(roles);
+      },
+      error: () => {
+        this.roles.set(FALLBACK_ROLE_OPTIONS);
+      },
+    });
   }
 
   load(): void {
@@ -278,7 +316,7 @@ export class TenantUsersComponent implements OnInit {
     const raw = this.inviteForm.getRawValue();
     const payload = {
       email: raw.email,
-      role: raw.role,
+      role_codes: [raw.role_code],
       display_name: raw.display_name || null,
       password: raw.password || null,
     };
@@ -286,7 +324,7 @@ export class TenantUsersComponent implements OnInit {
     this.http.post<TenantUserInviteResponse>('/api/v1/tenant-users', payload).subscribe({
       next: (res) => {
         this.lastInvite.set(res);
-        this.inviteForm.reset({ email: '', display_name: '', role: 'member', password: '' });
+        this.inviteForm.reset({ email: '', display_name: '', role_code: 'finance_operator', password: '' });
         this.load();
         this.inviting.set(false);
       },
@@ -299,10 +337,10 @@ export class TenantUsersComponent implements OnInit {
 
   changeRole(user: TenantUser, event: Event): void {
     const role = (event.target as HTMLSelectElement).value as TenantUserRole;
-    if (role === user.role) return;
+    if (role === this.primaryRoleCode(user)) return;
     this.error.set(null);
     this.savingUserId.set(user.id);
-    this.http.patch<TenantUser>(`/api/v1/tenant-users/${user.id}`, { role }).subscribe({
+    this.http.patch<TenantUser>(`/api/v1/tenant-users/${user.id}`, { role_codes: [role] }).subscribe({
       next: (updated) => {
         this.users.update(items => items.map(item => item.id === updated.id ? updated : item));
         this.savingUserId.set(null);
@@ -334,5 +372,25 @@ export class TenantUsersComponent implements OnInit {
     return status === 'active'
       ? 'bg-accent/10 text-accent-light'
       : 'bg-surface text-text-muted';
+  }
+
+  primaryRoleCode(user: TenantUser): string {
+    return user.role_codes?.[0] ?? legacyRoleToCatalogRole(user.role);
+  }
+
+  roleLabel(role: string): string {
+    return this.roles().find(option => option.legacy_role === role || option.code === role)?.label ?? role;
+  }
+}
+
+function legacyRoleToCatalogRole(role: string): string {
+  switch (role) {
+    case 'owner': return 'tenant_owner';
+    case 'admin': return 'tenant_admin';
+    case 'manager': return 'finance_ops_manager';
+    case 'approver': return 'finance_approver';
+    case 'auditor': return 'auditor';
+    case 'viewer': return 'executive_viewer';
+    default: return 'finance_operator';
   }
 }

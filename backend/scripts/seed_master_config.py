@@ -13,7 +13,8 @@ only repairs global platform data required before any tenant signs up:
 
 - Supabase Storage ``documents`` bucket and its RLS policies;
 - global FX seed rates;
-- system tax rates where ``tenant_id IS NULL``.
+- system tax rates where ``tenant_id IS NULL``;
+- enterprise RBAC roles, duties, and privileges.
 """
 
 from __future__ import annotations
@@ -84,6 +85,7 @@ def main() -> None:
 
         if args.execute:
             _ensure_storage_bucket_and_policies(conn)
+            _ensure_security_catalog(conn)
             _ensure_fx_rates(conn)
             _ensure_system_tax_rates(conn)
             after = _counts(conn)
@@ -92,8 +94,10 @@ def main() -> None:
         else:
             missing_fx = _missing_fx_rates(conn)
             missing_tax = _missing_tax_rates(conn)
+            missing_security = _missing_security_catalog(conn)
             print(f"Missing FX seed rows: {len(missing_fx)}")
             print(f"Missing system tax seed rows: {len(missing_tax)}")
+            print(f"Missing security catalog groups: {len(missing_security)}")
             print("Dry run complete. Re-run with --execute to repair missing rows.")
 
 
@@ -110,6 +114,12 @@ def _ensure_storage_bucket_and_policies(conn: psycopg.Connection) -> None:
         REPO_BACKEND / "supabase" / "migrations" / "0017_storage_documents_rls_helper.sql",
     ]:
         conn.execute(migration.read_text())
+
+
+def _ensure_security_catalog(conn: psycopg.Connection) -> None:
+    conn.execute(
+        (REPO_BACKEND / "supabase" / "migrations" / "0096_dynamics_style_security_catalog.sql").read_text()
+    )
 
 
 def _ensure_fx_rates(conn: psycopg.Connection) -> None:
@@ -203,6 +213,26 @@ def _missing_tax_rates(conn: psycopg.Connection) -> list[tuple[str, str]]:
     return missing
 
 
+def _missing_security_catalog(conn: psycopg.Connection) -> list[str]:
+    checks = {
+        "security_privileges": "SELECT count(*) AS count FROM public.security_privileges",
+        "security_duties": "SELECT count(*) AS count FROM public.security_duties",
+        "security_roles": (
+            "SELECT count(*) AS count FROM public.security_roles "
+            "WHERE tenant_id IS NULL AND deleted_at IS NULL"
+        ),
+    }
+    missing: list[str] = []
+    for label, query in checks.items():
+        try:
+            count = int(conn.execute(query).fetchone()["count"])
+        except Exception:
+            count = 0
+        if count == 0:
+            missing.append(label)
+    return missing
+
+
 def _counts(conn: psycopg.Connection) -> dict[str, int]:
     queries = {
         "fx_rates": "SELECT count(*) AS count FROM public.fx_rates",
@@ -216,11 +246,21 @@ def _counts(conn: psycopg.Connection) -> dict[str, int]:
         "document_objects": (
             "SELECT count(*) AS count FROM storage.objects WHERE bucket_id = 'documents'"
         ),
+        "security_privileges": (
+            "SELECT count(*) AS count FROM public.security_privileges"
+        ),
+        "security_roles": (
+            "SELECT count(*) AS count FROM public.security_roles "
+            "WHERE tenant_id IS NULL AND deleted_at IS NULL"
+        ),
     }
-    return {
-        label: int(conn.execute(query).fetchone()["count"])
-        for label, query in queries.items()
-    }
+    counts: dict[str, int] = {}
+    for label, query in queries.items():
+        try:
+            counts[label] = int(conn.execute(query).fetchone()["count"])
+        except Exception:
+            counts[label] = 0
+    return counts
 
 
 def _print_counts(label: str, counts: dict[str, int]) -> None:

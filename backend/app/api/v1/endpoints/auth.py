@@ -17,18 +17,40 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase_auth.errors import AuthApiError, AuthWeakPasswordError
 
+from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
+from app.core.tenant import get_tenant_id
 from app.domain.exceptions import BillingError
 from app.models.auth import SignupRequest, SignupResponse
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService, country_to_currency
 from app.services.localization_service import get_market_profile
+from app.services.security_service import SecurityService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.post(
+    "/complete-password-change",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear the first-login password-change requirement",
+)
+async def complete_password_change(
+    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> None:
+    """Mark the current tenant membership as having completed password reset.
+
+    The frontend calls this only after Supabase confirms ``updateUser`` changed
+    the password. Backend tenant access allows this endpoint even while
+    ``must_change_password`` is true.
+    """
+    await SecurityService(db, tenant_id).clear_must_change_password(current_user.user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +354,7 @@ async def signup(
 
         # 3b. Create tenant_users row (owner)
         try:
-            await tenant_repo.create_tenant_user(
+            tenant_user_row = await tenant_repo.create_tenant_user(
                 {
                     "tenant_id": tenant_id,
                     "user_id": user_id,
@@ -341,6 +363,25 @@ async def signup(
                     "display_name": payload.email.split("@")[0],
                 }
             )
+            owner_role_rows = (
+                db.table("security_roles")
+                .select("id")
+                .eq("code", "tenant_owner")
+                .is_("tenant_id", "null")
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if owner_role_rows:
+                db.table("tenant_user_roles").insert(
+                    {
+                        "tenant_id": tenant_id,
+                        "tenant_user_id": tenant_user_row["id"],
+                        "security_role_id": owner_role_rows[0]["id"],
+                    }
+                ).execute()
         except Exception as exc:
             logger.error(
                 "Failed to create tenant_users row",

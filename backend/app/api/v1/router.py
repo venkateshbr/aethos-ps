@@ -40,6 +40,7 @@ from app.api.v1.endpoints import (
     projects,
     rate_cards,
     reports,
+    security,
     service_catalogue,
     stripe_connect,
     tax_rates,
@@ -90,6 +91,7 @@ api_router.include_router(billing_runs.router, prefix="/billing-runs", tags=["bi
 api_router.include_router(fx_rates.router, prefix="/fx-rates", tags=["fx-rates"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(tenant_users.router, prefix="/tenant-users", tags=["tenant-users"])
+api_router.include_router(security.router, prefix="/security", tags=["security"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(atlas_tools.router, prefix="/atlas-tools", tags=["atlas-tools"])
 api_router.include_router(service_catalogue.router, prefix="/services", tags=["services"])

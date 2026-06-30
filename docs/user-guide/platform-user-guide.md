@@ -71,70 +71,74 @@ result and the approval boundary.
 
 ## 2. Roles And Responsibilities
 
-Current implementation uses a small enforced tenant role hierarchy:
-`owner > admin > manager > approver > member > viewer/auditor > employee`.
-Enterprise finance titles map onto that hierarchy as personas. This keeps the
-permission model auditable while still letting users think in familiar finance
-roles such as CFO, Controller, Procurement Manager, AP Lead, AR Lead, and
-Auditor.
+Current implementation uses a Dynamics-style security catalog:
 
-| Enterprise persona | Current role mapping | What they can do today | Current restrictions |
+`Tenant user -> assigned security role(s) -> duties -> privileges`
+
+`tenant_users.role` still exists as a compatibility projection for legacy JWT,
+UI, and API gates while the platform migrates fully to privilege checks. The
+authoritative product model is now the security catalog under
+Settings -> Security Roles and Settings -> Tenant Users.
+
+| Enterprise role | Legacy projection | Primary duties | Restrictions |
 | --- | --- | --- | --- |
-| Owner/Admin | `owner`, `admin` | Configure tenant and AI operations, inspect all finance records, and approve owner/admin-threshold Inbox work | Tenant-scoped only |
-| CFO | `owner`, `admin` | Review performance, cash, controls, and elevated approvals across finance operations | Owner-only tenant administration still requires `owner` |
-| Controller | `admin`, `owner` | Own close, journals, statements, accounting approvals, reports, and decision evidence | Cannot bypass owner-threshold policy or tenant boundaries |
-| Finance Approver | `approver`, `manager`, `admin`, `owner` | Approve, approve with edits, or reject manager-threshold Inbox and procurement review work | Cannot create operational records as an approver and cannot approve admin/owner-threshold work |
-| Procurement Manager | `manager`, `admin`, `owner` | Create/convert procurement documents, resolve vendor/procurement exceptions, and prepare payment packets | Cannot approve admin/owner-threshold spend unless mapped to admin/owner |
-| AP Lead | `manager`, `admin`, `owner` | Create/review bills and procurement documents, resolve vendor invoice exceptions, and prepare bill-pay batches | Cannot approve admin/owner-threshold money-out work unless mapped to admin/owner |
-| AR Lead | `manager`, `admin`, `owner` | Draft/review invoices, collections work, WIP, revenue, and AR Aging | Cannot bypass send, payment, or admin-threshold approval gates unless mapped to admin/owner |
-| Engagement Manager | `manager` | Maintain customers, engagements, projects, services, WIP, draft invoices, and team workflow | Cannot bypass admin approval for posting/sending/payment |
-| Staff / Consultant | `member` or Timesheet `employee` | Participate in delivery workflows such as time/expense where exposed | Cannot approve finance, accounting, payment, settings, or agent-control actions |
-| Auditor | `auditor` | Inspect permitted tenant records, reports, Inbox history, AP/AR records, and record-scoped decision evidence | Cannot create, approve, edit, reject, convert, post, pay, send, lock, change settings, or export admin-only audit events |
-| Executive | `viewer` | Read dashboards, management reports, operational status, and AI Finance Ops Manager summaries | Same read-only mutation restrictions as auditor |
+| Tenant Owner | `owner` | Tenant administration, security administration, all finance duties, owner-threshold approvals | Tenant-scoped only |
+| Tenant Admin | `admin` | Create users, create tenant roles, assign duties, manage settings, administer finance operations | Cannot grant Tenant Owner authority |
+| CFO | `admin` | Executive finance review, performance, cash, controls, elevated approvals | Does not automatically own tenant/subscription controls |
+| Finance Controller | `admin` | R2R, journals, close, financial statements, accounting approvals, audit evidence | Cannot bypass owner-threshold policy |
+| Finance Ops Manager | `manager` | O2C/P2P operations, people/time, draft finance work, manager-threshold approvals | Cannot approve admin/owner-threshold work |
+| Finance Approver | `approver` | Manager-threshold Inbox/procurement approval only | Cannot create operational records or approve admin/owner work |
+| Procurement Manager | `manager` | Procurement, PO/service-order flow, AP matching, payment packet preparation | Cannot approve elevated spend unless another role grants it |
+| AP Manager / AP Clerk | `manager` | Bills, AP evidence, payment preparation, AP exceptions | Payment approval/export remains gated by policy |
+| AR Manager / Billing Specialist | `manager` | Draft invoices, WIP, collections, AR reporting | Send/post/payment gates still apply |
+| GL Accountant / Close Manager | `admin` | Manual journals, close tasks, period locks, statement generation | Same-user high-value approval remains blocked |
+| Engagement Manager / Resource Manager | `manager` | Clients, engagements, projects, WIP, people/time approvals | Cannot bypass finance posting/payment gates |
+| Auditor | `auditor` | Read permitted records, reports, Inbox history, and audit evidence | No mutation, approval, posting, payment, send, lock, or settings authority |
+| Executive Viewer | `viewer` | Read dashboards, reports, and operational summaries | Read-only |
+| AI Operations Admin | `admin` | AI settings, agent autonomy, schedules, operational health | Cannot bypass finance approval policy |
+| Timesheet Employee | `employee` | Timesheet portal only | No ERP access |
 
 ### Tenant user administration
 
-Owner and admin users manage internal Aethos ERP users from
+Tenant Owners and Tenant Admins manage internal Aethos ERP users from
 Settings -> Tenant Users. This is separate from the People module: People stores
 staff, rates, utilization, managers, and timesheet context; Tenant Users stores
 login access and ERP authorization for the main Aethos app.
 
-Current ERP roles that can be assigned from Tenant Users are:
-
-| Role | Typical use | Current behavior |
-| --- | --- | --- |
-| `owner` | Firm owner, managing partner, tenant administrator | Full tenant authority, including owner-threshold approvals and high-risk settings |
-| `admin` | Controller, senior finance admin | Broad finance/settings access, below owner-only controls |
-| `manager` | Finance ops manager, AP/AR lead, engagement manager, procurement manager | Can create and prepare operational finance work and review manager-threshold work; cannot bypass admin/owner gates |
-| `approver` | Dedicated finance approver | Can approve, approve with edits, or reject manager-threshold review work without general manager CRUD access |
-| `member` | Staff user or operator | Can participate in permitted operational workflows without approval authority |
-| `auditor` | External auditor, internal audit, compliance reviewer | Can inspect permitted records and evidence; all mutation and approval actions remain blocked |
-| `viewer` | Executive, read-only reviewer | Can inspect dashboards, reports, and permitted records; mutation actions remain blocked |
+Settings -> Security Roles shows the seeded master role catalog and each role's
+duties/privileges. Tenant Admins can create tenant-specific roles by selecting
+seeded duties. The system privilege catalog remains master/config data; tenant
+admins create roles from permission sets, not ad-hoc ungoverned privileges.
 
 Tenant user invite workflow:
 
 1. Go to Settings -> Tenant Users.
-2. Enter the user's email, display name, and ERP role.
-3. Send the invite. Aethos creates the login user and shows the temporary
-   password or set-password link for the operator running the invite.
-4. Give the credential to the user through a secure channel outside the product
-   demo notes.
-5. The invited user logs into the main Aethos app and lands in the same tenant
-   with the assigned role.
-6. Owner/admin users can later update the display name, change the role, or
-   deactivate access from the same Settings surface.
+2. Enter the user's email, display name, security role, and initial password.
+   If the password is left blank, Aethos generates a temporary password.
+3. Create the user. Aethos creates the login, assigns the security role, records
+   the role audit event, and marks the account `must_change_password`.
+4. Give the credential or set-password link to the user through a secure
+   channel outside shared demo notes.
+5. The invited user signs in and is sent to Account/Profile to change the
+   initial password before normal app use.
+6. After the password change, the user can use the main Aethos app within the
+   assigned role's duties and privileges.
+7. Tenant Owners/Admins can later update the display name, replace assigned
+   roles, or deactivate access from the same Settings surface.
 
 Server-side guardrails:
 
-- Owner/admin access is required for tenant-user administration.
-- Only owners can grant `owner` or `admin`.
-- Only owners can change or deactivate users who currently hold `owner` or
-  `admin`.
+- `tenant.users.manage` is required for tenant-user administration.
+- `security.roles.manage` is required for tenant role creation.
+- Only Tenant Owners can grant Tenant Owner authority.
+- Tenant Admins can create users, create tenant roles from seeded duties, assign
+  non-owner roles, and set initial passwords.
 - Users cannot change their own role or deactivate themselves.
+- Admin-created users must change the initial password before normal app use.
 - Deactivation preserves historical audit evidence while removing active
   access.
-- Tenant-user audit events record invite, role update, and deactivation details
-  with actor and target user context.
+- Tenant-user and tenant-role audit events record invite, role update,
+  assignment, deactivation, actor, target user, and role-code context.
 
 For production validation tenants, generated credentials are stored locally in
 `demo_credentials.json` under
@@ -142,23 +146,18 @@ For production validation tenants, generated credentials are stored locally in
 `owner`, `erp_manager`, and `timesheet_employee` credentials. Treat that file as
 secret material and do not paste passwords into shared docs or screenshots.
 
-The user who registers a new tenant is the tenant administrator in product
-terms. Internally this maps to the existing `owner` role so all current
-Owner/Admin approval and settings gates continue to work. The Settings UI labels
-that role as Tenant Admin / Owner.
+The user who registers a new tenant receives the seeded Tenant Owner security
+role. During the transition, this also projects to the legacy `owner` role so
+existing owner-only gates continue to work.
 
 The Bills/AP UI now disables read-only users from creating bills or procurement
 documents, approving procurement, converting purchase requests, or opening Pay
 Bills from the Bills page. Backend RBAC remains authoritative and returns 403
 for direct read-only mutation attempts.
 
-Settings -> Approval Controls -> Finance role personas shows the live
-product-facing persona catalog from `GET /api/v1/tenants/finance-personas`.
-The card is readable by read-only users, highlights which personas match the
-current enforced tenant role, and explains the actions that remain restricted.
-CFO, Controller, Procurement Manager, AP Lead, AR Lead, Auditor, and Executive
-remain personas; only roles that materially change enforcement are stored as ERP
-roles.
+Settings -> Approval Controls -> Finance role personas remains a readable
+business-language summary, while Settings -> Security Roles is the authoritative
+role/duty/privilege catalog used for enterprise access control.
 
 ### Current approval policy matrix
 

@@ -189,7 +189,17 @@ class EmployeesService:
         #    service-role session — the #121 / signup pattern).
         try:
             admin_response = self._db.auth.admin.create_user(
-                {"email": email, "password": password, "email_confirm": True}
+                {
+                    "email": email,
+                    "password": password,
+                    "email_confirm": True,
+                    "app_metadata": {
+                        "role": "employee",
+                        "role_codes": ["timesheet_employee"],
+                        "tenant_id": self._tenant_id,
+                        "must_change_password": True,
+                    },
+                }
             )
         except AuthApiError as exc:
             logger.warning("Failed to create auth user for employee: %s", exc.message)
@@ -208,10 +218,36 @@ class EmployeesService:
         # 2. Membership row with the narrow 'employee' role.
         tu = (
             self._db.table("tenant_users")
-            .insert({"tenant_id": self._tenant_id, "user_id": user_id, "role": "employee"})
+            .insert(
+                {
+                    "tenant_id": self._tenant_id,
+                    "user_id": user_id,
+                    "role": "employee",
+                    "must_change_password": True,
+                }
+            )
             .execute()
         )
         tenant_user_id = str(tu.data[0]["id"])
+        role_rows = (
+            self._db.table("security_roles")
+            .select("id")
+            .eq("code", "timesheet_employee")
+            .is_("tenant_id", "null")
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if role_rows:
+            self._db.table("tenant_user_roles").insert(
+                {
+                    "tenant_id": self._tenant_id,
+                    "tenant_user_id": tenant_user_id,
+                    "security_role_id": role_rows[0]["id"],
+                }
+            ).execute()
 
         # 3. Link the employee record to the login.
         await self._repo.update(

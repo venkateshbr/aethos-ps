@@ -18,6 +18,26 @@ const personas = [
     read_only: false,
   },
   {
+    id: 'finance_approver',
+    label: 'Finance Approver',
+    mapped_roles: ['approver', 'manager', 'admin', 'owner'],
+    description: 'Dedicated reviewer for manager-threshold Inbox decisions.',
+    areas: ['Inbox', 'Approval controls'],
+    allowed_actions: ['Approve manager-threshold review work'],
+    restricted_actions: ['Cannot create or mutate operational records outside review actions'],
+    read_only: false,
+  },
+  {
+    id: 'procurement_manager',
+    label: 'Procurement Manager',
+    mapped_roles: ['manager', 'admin', 'owner'],
+    description: 'Procurement owner.',
+    areas: ['Procurement', 'Bills'],
+    allowed_actions: ['Create and convert procurement documents'],
+    restricted_actions: ['Cannot approve admin or owner-threshold spend unless mapped to admin/owner'],
+    read_only: false,
+  },
+  {
     id: 'ap_lead',
     label: 'AP Lead',
     mapped_roles: ['manager', 'admin', 'owner'],
@@ -40,7 +60,7 @@ const personas = [
   {
     id: 'auditor',
     label: 'Auditor',
-    mapped_roles: ['viewer'],
+    mapped_roles: ['auditor'],
     description: 'Read-only audit reviewer.',
     areas: ['Reports', 'Audit evidence'],
     allowed_actions: ['Inspect permitted tenant records'],
@@ -63,7 +83,7 @@ describe('FinancePersonasComponent', () => {
   let fixture: ComponentFixture<FinancePersonasComponent>;
   let http: HttpTestingController;
 
-  async function setup(roleValue: 'manager' | 'viewer' = 'manager'): Promise<void> {
+  async function setup(roleValue: 'manager' | 'approver' | 'auditor' | 'viewer' = 'manager'): Promise<void> {
     const role = signal<string | null>(roleValue);
 
     await TestBed.configureTestingModule({
@@ -95,22 +115,52 @@ describe('FinancePersonasComponent', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Finance role personas');
     expect(text).toContain('Manager');
-    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual(['ap_lead', 'ar_lead']);
+    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual([
+      'finance_approver',
+      'procurement_manager',
+      'ap_lead',
+      'ar_lead',
+    ]);
+    expect(text).toContain('Finance Approver');
+    expect(text).toContain('Procurement Manager');
     expect(text).toContain('AP Lead');
     expect(text).toContain('AR Lead');
   });
 
-  it('keeps viewer personas visibly read-only', async () => {
+  it('shows Finance Approver as approval-only', async () => {
+    await setup('approver');
+
+    http.expectOne('/api/v1/tenants/finance-personas').flush({ items: personas });
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual(['finance_approver']);
+    expect(text).toContain('Finance Approver');
+    expect(text).toContain('Cannot create or mutate operational records outside review actions');
+  });
+
+  it('keeps auditor visibly read-only and separate from executive viewer', async () => {
+    await setup('auditor');
+
+    http.expectOne('/api/v1/tenants/finance-personas').flush({ items: personas });
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual(['auditor']);
+    expect(text).toContain('Auditor');
+    expect(text).toContain('Read only');
+    expect(text).toContain('Cannot create, approve, edit, reject, post, pay, send, lock, or change settings');
+  });
+
+  it('keeps executive viewer read-only without auditor authority', async () => {
     await setup('viewer');
 
     http.expectOne('/api/v1/tenants/finance-personas').flush({ items: personas });
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent as string;
-    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual(['auditor', 'executive']);
-    expect(text).toContain('Auditor');
+    expect(fixture.componentInstance.compatiblePersonas().map(persona => persona.id)).toEqual(['executive']);
     expect(text).toContain('Executive');
     expect(text).toContain('Read only');
-    expect(text).toContain('Cannot create, approve, edit, reject, post, pay, send, lock, or change settings');
   });
 });

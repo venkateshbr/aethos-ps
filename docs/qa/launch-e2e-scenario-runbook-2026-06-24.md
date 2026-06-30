@@ -570,7 +570,7 @@ Current implementation assessment:
 | AI collections | Implemented and browser-verified in #266: Copilot drafts overdue-invoice reminder payloads, routes `collections_agent/send_email` tasks to Inbox, approval materialises through the email path, and rejection records audit feedback | Production email-provider credentials remain an environment validation outside the non-deliverable QA recipient domain | #266 |
 | Enterprise approval policy | Implemented first slices in #280 and #296, automated in #309, and expanded in #364: Inbox exposes required Owner/Admin/Manager/Finance Approver review roles, the API enforces the same policy including approve-with-edits and reject re-evaluation, Settings lets Admin/Owner users raise tenant approval roles, and browser/API proof verifies owner-threshold routing plus disabled under-privileged approval | Dual-review workflow depth remains future enterprise controls | #280, #296, #309, #364 |
 | Enterprise decision audit | Implemented first slices in #281 and #297, then automated in #309: Inbox approve, approve-with-edits, reject, and approval-denial paths append immutable `financial_events`; Inbox Done/All status views show recent decision history; materialized business records and source documents expose record-scoped decision timelines; browser proof verifies Inbox Done history and Bill detail decision evidence | Rejection/document timeline browser depth remains future coverage | #281, #297, #309 |
-| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, automated in #309, expanded in #321, and deepened in #364: enforced roles now include owner/admin/manager/approver/member/auditor/viewer/employee; Settings exposes a read-only Finance role personas catalog; API/unit tests prove approver, auditor, manager, and viewer behavior; browser proof verifies Owner/Admin, Manager, Approver, Auditor, and Viewer paths across Settings, Inbox, Bills/AP, Accounting, Reports, and read-only mutation guards | Fine-grained custom permission groups remain future enterprise controls depth | #282, #298, #309, #321, #364 |
+| Enterprise RBAC permission proof | Implemented first slices in #282 and #298, automated in #309, expanded in #321, deepened in #364, and extended with Dynamics-style roles/duties/privileges: enforced roles now include owner/admin/manager/approver/member/auditor/viewer/employee; Settings exposes Security Roles, Tenant Users, and Finance role personas; API/unit tests prove approver, auditor, manager, viewer, and tenant-admin behavior; browser proof verifies Owner/Admin, Manager, Approver, Auditor, Viewer, and Tenant Admin paths across Settings, Inbox, Bills/AP, Accounting, Reports, role creation, user creation, and first-login password flags | Multi-role assignment UI and custom atomic privilege creation remain future enterprise controls depth; current UI supports tenant custom roles assembled from seeded duties | #282, #298, #309, #321, #364 |
 | Enterprise ops hardening | Implemented first slices in #286 and #301, then automated in #311: signup and public invoice token reads have app-level rate limits with safe 429 responses, request failures are counted by sanitized path/status, tenant health exposes runtime/table/agent/tool/workflow failure signals without secrets, Supabase-backed distributed limiting is available with hashed subjects and fallback/deny-safe behavior, Settings exposes Operational Health, and tenant health routes degraded/abuse/background/agent failure alerts to webhook metadata or the runbook queue | Deployed Supabase smoke validation remains environment evidence; deterministic browser/API proof is automated | #286, #301, #311 |
 
 ## Scenario 11 - AI Finance Department Command Center
@@ -903,10 +903,14 @@ Implementation status:
   invite, role update, deactivation, and audit events. #364 now also adds
   dedicated `approver` and `auditor` ERP roles, policy-gated Inbox rejection,
   manager-threshold approver proof, and auditor read-only proof.
+- Dynamics-style security catalog implemented after #364: Settings exposes
+  Security Roles with seeded duties/privileges, Tenant Admin can create tenant
+  custom roles from seeded duties, Tenant Users assigns catalog role codes, and
+  invited users are marked for first-login password change.
 
 Automation:
 ```bash
-cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts --project=chromium
+cd frontend && npx playwright test e2e/enterprise-controls-audit-rbac.spec.ts e2e/enterprise-finance-persona-matrix.spec.ts e2e/enterprise-tenant-admin-security.spec.ts --project=chromium
 cd backend && uv run pytest tests/unit/test_approval_policy_api_contract.py tests/unit/test_inbox_api_contract.py tests/unit/test_financial_events_api_contract.py tests/unit/test_rbac.py -q
 ```
 
