@@ -1,0 +1,50 @@
+[
+  {
+    "id": "login",
+    "status": "PASS",
+    "notes": [
+      "Tenant Meridian Demo v2 20260630063630",
+      "User prod-demo-v2-20260630063630@aethos-qa.dev"
+    ],
+    "screenshot": "docs/qa/atlas-conversation-persistence-2026-06-30T09-05-54-744Z/screenshots/login-copilot.png"
+  },
+  {
+    "id": "new-chat-draft-only",
+    "status": "FAIL",
+    "notes": [
+      "thread create POSTs before send: 0",
+      "draft title visible: false"
+    ],
+    "screenshot": "docs/qa/atlas-conversation-persistence-2026-06-30T09-05-54-744Z/screenshots/new-chat-draft-only.png"
+  },
+  {
+    "id": "first-prompt-response",
+    "status": "FAIL",
+    "notes": [
+      "response chars: 322",
+      "contains Nexus/business signal: false",
+      "visible tool cards: 0",
+      "conversation title shown: true"
+    ],
+    "screenshot": "docs/qa/atlas-conversation-persistence-2026-06-30T09-05-54-744Z/screenshots/first-prompt-final.png"
+  },
+  {
+    "id": "same-thread-follow-up",
+    "status": "FAIL",
+    "notes": [
+      "response chars: 0",
+      "follow-up business-valid: false",
+      "visible tool cards: 0"
+    ],
+    "screenshot": "docs/qa/atlas-conversation-persistence-2026-06-30T09-05-54-744Z/screenshots/follow-up-final.png"
+  },
+  {
+    "id": "reload-history",
+    "status": "PASS",
+    "notes": [
+      "first prompt visible after reload: true",
+      "follow-up visible after reload: true"
+    ],
+    "screenshot": "docs/qa/atlas-conversation-persistence-2026-06-30T09-05-54-744Z/screenshots/reload-history.png"
+  }
+]

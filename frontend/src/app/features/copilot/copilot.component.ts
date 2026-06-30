@@ -431,6 +431,7 @@ export class CopilotComponent implements OnInit {
   error = signal<string | null>(null);
   composerFocused = signal(false);
   composerText = signal('');
+  draftConversation = signal(false);
 
   canSend = computed(() =>
     this.composerText().trim().length > 0 && !this.streaming() && !this.uploading()
@@ -441,6 +442,7 @@ export class CopilotComponent implements OnInit {
   );
 
   activeThreadTitle = computed(() => {
+    if (this.draftConversation()) return 'Draft conversation';
     const threadId = this.currentThreadId();
     if (!threadId) return 'Draft conversation';
     return this.threadTitle(this.activeThread());
@@ -520,9 +522,11 @@ export class CopilotComponent implements OnInit {
     this.currentThreadId.set(null);
     this.messages.set([]);
     this.error.set(null);
+    this.draftConversation.set(true);
   }
 
   selectThread(thread: ChatThread): void {
+    this.draftConversation.set(false);
     this.currentThreadId.set(thread.id);
     this.error.set(null);
     void this.loadMessages(thread.id);
@@ -537,7 +541,7 @@ export class CopilotComponent implements OnInit {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as ChatThread[];
       this.threads.set(data);
-      if (data.length > 0 && this.currentThreadId() === null) {
+      if (data.length > 0 && this.currentThreadId() === null && !this.draftConversation()) {
         this.currentThreadId.set(data[0].id);
         await this.loadMessages(data[0].id);
       }
@@ -632,6 +636,7 @@ export class CopilotComponent implements OnInit {
         this.error.set('Could not start a conversation. Please try again.');
         return;
       }
+      this.draftConversation.set(false);
       this.currentThreadId.set(threadId);
     }
     this.renameThreadIfPlaceholder(threadId, content);
