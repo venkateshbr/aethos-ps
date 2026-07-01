@@ -41,6 +41,7 @@ mcp_servers:
       include:
         - aethos_documents_intake_read_pack
         - aethos_documents_audit_read_pack
+        - aethos_cosec_reminders_read_pack
         - aethos_engagements_list
         - aethos_engagements_structure_read_pack
         - aethos_engagements_create_review
@@ -52,6 +53,7 @@ mcp_servers:
         - aethos_finance_ops_snapshot
         - aethos_finance_ops_control_room
         - aethos_operational_health_read_pack
+        - aethos_configuration_telemetry_read_pack
         - aethos_approval_controls_read_pack
         - aethos_finance_ops_create_action_plan
         - aethos_o2c_draft_invoice
@@ -63,6 +65,7 @@ mcp_servers:
         - aethos_r2r_prepare_year_end_close
         - aethos_r2r_generate_financial_statement_package
         - aethos_r2r_management_pack_read_pack
+        - aethos_r2r_prepare_manual_journal_review
         - aethos_r2r_accounting_decision_trail_read_pack
       resources: false
       prompts: false

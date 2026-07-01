@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -318,6 +319,149 @@ def test_chat_message_stream_uses_runtime_interface(
     assert messages[1]["content"] == "Runtime reply"
     assert write_db.tables["chat_threads"][0]["title"] == "Runtime thread"
     assert write_db.tables["chat_threads"][0]["updated_at"] != "2026-06-22T01:00:00+00:00"
+
+
+def test_chat_message_stream_uses_deterministic_response_before_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.v1.endpoints.chat as chat_module
+
+    write_db = _ChatWriteDb()
+
+    async def _render_semantic(**kwargs: Any) -> SimpleNamespace:
+        assert kwargs["db"] is write_db
+        assert kwargs["tenant_id"] == TENANT_ID
+        assert kwargs["current_user"].user_id == USER_ID
+        assert kwargs["thread_id"] == "thread-1"
+        assert "COSEC" in kwargs["message"]
+        assert kwargs["min_confidence"] == 0.72
+        return SimpleNamespace(
+            text="COSEC reminders require Inbox approval before sending.",
+            route=SimpleNamespace(
+                intent="cosec_reminders",
+                confidence=0.91,
+                action_mode="read",
+            ),
+        )
+
+    async def _build_runtime(**_kwargs: Any) -> None:
+        raise AssertionError("runtime should not be built for deterministic Atlas response")
+
+    monkeypatch.setattr(
+        chat_module,
+        "render_semantic_atlas_response",
+        _render_semantic,
+    )
+    monkeypatch.setattr(chat_module, "build_atlas_runtime", _build_runtime)
+
+    _install_common_overrides()
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={"content": "Review COSEC reminders"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert "COSEC reminders require Inbox approval" in response.text
+    messages = write_db.tables["chat_messages"]
+    assert messages[0]["role"] == "user"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "COSEC reminders require Inbox approval before sending."
+    assert messages[1]["model"] == "aethos-semantic-intent"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_manual_journal_honors_explicit_gbp_base_currency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import atlas_deterministic_responses as deterministic
+
+    calls: list[dict[str, Any]] = []
+
+    async def _prepare_manual_journal_review(
+        db: object,
+        context: object,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append(arguments)
+        return {
+            "requested_transaction": {
+                "currency": "SGD",
+                "amount": "18000.00",
+                "base_currency": arguments["base_currency"],
+                "base_amount": "10533.60",
+                "fx_rate_provenance": "SGD->GBP rate 0.5852 from fx_rates dated 2026-05-19.",
+            },
+            "review_path": "/app/inbox",
+            "task_id": "task-gbp",
+            "approval_boundary": "Do not post without Inbox approval.",
+            "journal_lines": [
+                {
+                    "direction": "DR",
+                    "account_code": "1100",
+                    "account_name": "Bank",
+                    "currency": "SGD",
+                    "amount": "18000.00",
+                    "base_amount": "10533.60",
+                },
+                {
+                    "direction": "CR",
+                    "account_code": "4000",
+                    "account_name": "Revenue",
+                    "currency": "SGD",
+                    "amount": "18000.00",
+                    "base_amount": "10533.60",
+                },
+            ],
+            "control_checks": {
+                "balance": {
+                    "balanced": True,
+                    "debits": "18000.00",
+                    "credits": "18000.00",
+                },
+                "account_validity": {"status": "valid"},
+                "period_lock_status": {"status": "open"},
+                "business_reason": "Record foreign dividend income.",
+                "supporting_evidence": "Dividend notice required.",
+                "required_approval_role": "finance_controller",
+                "segregation_of_duties": "Approver must be different from the submitter.",
+            },
+        }
+
+    monkeypatch.setattr(
+        deterministic.atlas_tools,
+        "_prepare_manual_journal_review",
+        _prepare_manual_journal_review,
+    )
+
+    answer = await deterministic.render_deterministic_atlas_response(
+        db=object(),
+        tenant_id=TENANT_ID,
+        current_user=CurrentUser(
+            user_id=USER_ID,
+            email="manager@example.com",
+            role="manager",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Prepare an SGD 18,000 dividend income journal for Alderton Trust for "
+            "June 2026. Show the GBP base-currency impact, FX rate provenance, "
+            "required approval role, and route it to Inbox before posting."
+        ),
+    )
+
+    assert calls[0]["base_currency"] == "GBP"
+    assert answer is not None
+    assert "SGD 18000.00" in answer
+    assert "GBP base-currency impact 10533.60" in answer
+    assert "SGD->GBP rate" in answer
+    assert "Inbox" in answer
 
 
 def test_first_user_message_names_blank_chat_thread(

@@ -1,0 +1,26 @@
+{
+  "id": "1-7-o2c-readiness-focused",
+  "status": "PASS",
+  "elapsedMs": 1854,
+  "prompt": "Review Nexus order-to-cash readiness for June 2026. Check service catalogue mapping, linked rate card, tax rate setup, draft invoices, public invoice link readiness, WIP, and any collections actions waiting for approval.",
+  "response": "Nexus order-to-cash readiness for June 2026:\n- Service catalogue mapping: fixed fee statutory accounts, monthly retainer management accounts, T&M advisory, and approved expenses must map to active professional-services catalogue items before billing.\n- Linked rate card: Nexus CFO Advisory uses the reviewed rate-card terms from the engagement letter; confirm hourly rates before final invoice approval.\n- Tax setup: UK VAT/tax rate must be present before invoice posting; missing tax setup blocks posting and points the user to Settings / Tax Rates.\n- Draft invoices/public invoice readiness: draft invoice lines remain in Inbox before send; payment link or public invoice link should be checked only after send approval.\n- WIP: approved billable time and approved expenses are invoice-ready; unapproved or non-billable entries stay out of the draft invoice.\n- Collections: any customer reminder or external collections email must route to Inbox approval before sending; disputed or hold invoices must not be chased.\n- Approval boundary: invoice send, payment-link publication, collections email, voiding, and backdated posting remain controlled actions.",
+  "matched": [
+    "/Nexus/i",
+    "/service catalogue|catalog/i",
+    "/rate card/i",
+    "/tax/i",
+    "/invoice/i",
+    "/payment link|public invoice/i",
+    "/WIP/i",
+    "/collections/i",
+    "/Inbox/i"
+  ],
+  "missing": [],
+  "forbiddenHits": [],
+  "visibleToolCardDelta": 0,
+  "screenshots": {
+    "login": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T14-08-32-078Z/screenshots/login.png",
+    "prompt": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T14-08-32-078Z/screenshots/prompt.png",
+    "response": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T14-08-32-078Z/screenshots/response.png"
+  }
+}

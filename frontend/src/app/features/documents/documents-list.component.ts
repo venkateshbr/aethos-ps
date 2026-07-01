@@ -3,7 +3,8 @@
  *
  * Shows every document the tenant has uploaded via the Aethos Atlas composer with
  * its extraction status. Documents are grouped by type (engagement letters /
- * invoices / receipts) with filter tabs, and can be deleted (#146).
+ * invoices / COSEC instructions / receipts) with filter tabs, and can be
+ * deleted (#146).
  */
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -18,7 +19,7 @@ export interface DocumentSummary {
   id: string;
   filename: string;
   mime_type: string;
-  document_type: 'engagement_letter' | 'expense' | 'vendor_invoice';
+  document_type: 'engagement_letter' | 'expense' | 'vendor_invoice' | 'cosec_instruction';
   status: 'uploaded' | 'extracting' | 'extracted' | 'failed';
   created_at: string;
 }
@@ -33,9 +34,10 @@ interface DocGroup {
 const TYPE_LABELS: Record<string, string> = {
   engagement_letter: 'Engagement letters',
   vendor_invoice: 'Invoices',
+  cosec_instruction: 'COSEC instructions',
   expense: 'Receipts & expenses',
 };
-const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'expense'];
+const TYPE_ORDER = ['engagement_letter', 'vendor_invoice', 'cosec_instruction', 'expense'];
 
 @Component({
   selector: 'app-documents-list',

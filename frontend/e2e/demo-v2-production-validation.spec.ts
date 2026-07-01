@@ -119,7 +119,7 @@ async function authenticate(page: Page): Promise<void> {
 async function gotoAndRecord(page: Page, id: string, label: string, url: string): Promise<void> {
   const notes: string[] = [];
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await gotoWithRetry(page, url);
     await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
     await page.waitForTimeout(750);
     const shot = await screenshot(page, `route-${id}`);
@@ -143,6 +143,22 @@ async function gotoAndRecord(page: Page, id: string, label: string, url: string)
       notes: [`URL: ${url}`, String(err).slice(0, 300)],
     });
   }
+}
+
+async function gotoWithRetry(page: Page, url: string, attempts = 3): Promise<void> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        await page.waitForTimeout(1_000 * attempt);
+      }
+    }
+  }
+  throw lastError;
 }
 
 async function startNewChat(page: Page): Promise<void> {
@@ -253,8 +269,23 @@ function validateBusinessAnswer(
 }
 
 async function sendAtlasPrompt(page: Page, step: PromptStep): Promise<void> {
+  let lastFailure: Evidence | null = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const result = await trySendAtlasPrompt(page, step, attempt);
+    if (result.status !== 'FAIL' || !result.validation?.forbiddenHits.includes('No Atlas response captured.')) {
+      record(result);
+      return;
+    }
+    lastFailure = result;
+    await page.waitForTimeout(1_000 * attempt);
+  }
+  if (lastFailure) record(lastFailure);
+}
+
+async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number): Promise<Evidence> {
   if (!step.sameThread) await startNewChat(page);
   const notes = await attachDocument(page, step);
+  if (attempt > 1) notes.push(`Retry attempt ${attempt} after no assistant response was captured.`);
   const beforeAssistant = await page.locator('[aria-label^="Atlas:"]').count();
   const beforeToolCards = await page.locator('[aria-label^="Running tool:"], [aria-label^="Tool completed:"]').count();
   try {
@@ -283,7 +314,7 @@ async function sendAtlasPrompt(page: Page, step: PromptStep): Promise<void> {
       notes.push('Response may expose internal context/tool/trace terminology.');
     }
     const validation = validateBusinessAnswer(step, response, notes, afterToolCards - beforeToolCards);
-    record({
+    return {
       id: step.id,
       section: step.section,
       action: 'Atlas prompt',
@@ -293,10 +324,10 @@ async function sendAtlasPrompt(page: Page, step: PromptStep): Promise<void> {
       screenshot: shot,
       notes,
       validation,
-    });
+    };
   } catch (err) {
     const shot = await screenshot(page, `${step.id}-failed`);
-    record({
+    return {
       id: step.id,
       section: step.section,
       action: 'Atlas prompt',
@@ -304,7 +335,7 @@ async function sendAtlasPrompt(page: Page, step: PromptStep): Promise<void> {
       prompt: step.prompt,
       screenshot: shot,
       notes: notes.concat(String(err).slice(0, 500)),
-    });
+    };
   }
 }
 

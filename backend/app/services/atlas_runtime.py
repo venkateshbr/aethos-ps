@@ -13,6 +13,7 @@ import httpx
 
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.config import settings
+from app.models.ai_settings import AiSettingsResponse
 from app.services.ai_settings_service import AiSettingsService, default_ai_settings_response
 from app.services.atlas_context import AtlasContextError, create_atlas_context_ref
 from app.services.hermes_client import HermesClient, extract_response_text
@@ -298,17 +299,19 @@ async def build_atlas_runtime(
     user_id: str,
     db_client: object,
     runtime_name: str | None = None,
+    ai_settings: AiSettingsResponse | None = None,
 ) -> AtlasRuntime:
     """Build the configured Atlas runtime adapter for a request."""
-    try:
-        ai_settings = await AiSettingsService(db_client, tenant_id).get_effective_settings()  # type: ignore[arg-type]
-    except Exception:
-        logger.warning(
-            "tenant_ai_settings_unavailable",
-            exc_info=True,
-            extra={"tenant_id": tenant_id},
-        )
-        ai_settings = default_ai_settings_response(tenant_id=tenant_id)
+    if ai_settings is None:
+        try:
+            ai_settings = await AiSettingsService(db_client, tenant_id).get_effective_settings()  # type: ignore[arg-type]
+        except Exception:
+            logger.warning(
+                "tenant_ai_settings_unavailable",
+                exc_info=True,
+                extra={"tenant_id": tenant_id},
+            )
+            ai_settings = default_ai_settings_response(tenant_id=tenant_id)
     runtime = normalise_atlas_runtime_name(runtime_name or ai_settings.atlas_runtime)
     model_chain = ai_settings.model_chain
     if runtime == "aethos_basic":

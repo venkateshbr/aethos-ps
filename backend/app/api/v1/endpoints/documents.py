@@ -61,9 +61,18 @@ def _classify_document_type(filename: str) -> str:
 
     Persisted on the row at upload time so the Documents page can group by type
     immediately (before extraction completes). Returns one of:
-    ``engagement_letter`` | ``expense`` | ``vendor_invoice``.
+    ``engagement_letter`` | ``expense`` | ``vendor_invoice`` |
+    ``cosec_instruction``.
     """
     lower = (filename or "").lower()
+    if (
+        "cosec" in lower
+        or "company_secretarial" in lower
+        or "company-secretarial" in lower
+        or "filing_instruction" in lower
+        or "filing-instruction" in lower
+    ):
+        return "cosec_instruction"
     if "engagement" in lower or "letter" in lower or "sow" in lower:
         return "engagement_letter"
     if "receipt" in lower or "expense" in lower or "reimbursement" in lower:
@@ -421,7 +430,9 @@ async def delete_document(
         )
     except Exception as exc:
         # .single() raises when no row matches — treat as not-found.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found."
+        ) from exc
 
     row = existing.data
     if not row:

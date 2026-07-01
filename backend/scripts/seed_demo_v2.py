@@ -51,6 +51,7 @@ def _best_effort_delete(db: Client, table: str, tenant_id: str) -> None:
 def reset_demo_v2_data(db: Client, tenant_id: str) -> None:
     _section("Resetting tenant operational demo data")
     for table in [
+        "cosec_compliance_obligations",
         "bill_payment_items",
         "bill_payment_batches",
         "payments",
@@ -303,8 +304,9 @@ def _create_document(
     document_type: str,
     entity_type: str | None = None,
     entity_id: str | None = None,
-) -> None:
-    db.table("documents").insert(
+) -> str | None:
+    rows = (
+        db.table("documents").insert(
         {
             "tenant_id": tenant_id,
             "uploader_id": owner_id,
@@ -319,7 +321,83 @@ def _create_document(
             "entity_id": entity_id,
             "status": "extracted",
         }
-    ).execute()
+        )
+        .execute()
+        .data
+        or []
+    )
+    return str(rows[0]["id"]) if rows else None
+
+
+def _seed_cosec_obligations(
+    db: Client,
+    *,
+    tenant_id: str,
+    client_id: str,
+    engagement_id: str,
+    project_id: str,
+) -> None:
+    existing = (
+        db.table("cosec_compliance_obligations")
+        .select("id")
+        .eq("tenant_id", tenant_id)
+        .eq("project_id", project_id)
+        .limit(1)
+        .execute()
+    ).data
+    if existing:
+        return
+    rows = [
+        {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "engagement_id": engagement_id,
+            "project_id": project_id,
+            "entity_name": "Alderton Holdings Ltd",
+            "obligation_type": "confirmation_statement",
+            "filing_reference": "CS01",
+            "due_date": "2026-07-15",
+            "status": "open",
+            "reminder_status": "not_drafted",
+            "approval_status": "requires_inbox_approval",
+            "missing_evidence": ["board approval minute", "register of members confirmation"],
+            "billing_impact": "Covered by the GBP 3,200 monthly COSEC retainer; no separate invoice unless out-of-scope changes are approved.",
+            "notes": "Demo Guide v2 Alderton COSEC filing calendar.",
+        },
+        {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "engagement_id": engagement_id,
+            "project_id": project_id,
+            "entity_name": "Alderton Property SPV Ltd",
+            "obligation_type": "people_with_significant_control_review",
+            "filing_reference": "PSC",
+            "due_date": "2026-07-22",
+            "status": "blocked",
+            "reminder_status": "not_drafted",
+            "approval_status": "requires_inbox_approval",
+            "missing_evidence": ["PSC register confirmation", "director sign-off"],
+            "billing_impact": "Potential out-of-scope COSEC review; route reminder and fee discussion to Inbox before sending.",
+            "notes": "Demo Guide v2 Alderton COSEC filing calendar.",
+        },
+        {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "engagement_id": engagement_id,
+            "project_id": project_id,
+            "entity_name": "Alderton Trust Company Ltd",
+            "obligation_type": "annual_accounts_filing",
+            "filing_reference": "AA",
+            "due_date": "2026-08-31",
+            "status": "in_progress",
+            "reminder_status": "drafted",
+            "approval_status": "requires_inbox_approval",
+            "missing_evidence": ["signed accounts approval"],
+            "billing_impact": "Included in retainer if filed by 2026-08-31; extra chase work should be approved before billing.",
+            "notes": "Demo Guide v2 Alderton COSEC filing calendar.",
+        },
+    ]
+    db.table("cosec_compliance_obligations").insert(rows).execute()
 
 
 def _post_manual_journal(
@@ -591,6 +669,13 @@ def seed_demo_v2(tenant_id: str, reset: bool = False) -> None:
     _create_document(db, tenant_id=tenant_id, owner_id=owner_id, filename="brightwater_subcontractor_invoice.pdf", document_type="vendor_invoice", entity_type="bill", entity_id=bill1001)
     _create_document(db, tenant_id=tenant_id, owner_id=owner_id, filename="alderton_sgd_dividend_notice.pdf", document_type="dividend_notice", entity_type="journal", entity_id=None)
     _create_document(db, tenant_id=tenant_id, owner_id=owner_id, filename="thornton_cosec_instruction.pdf", document_type="cosec_instruction", entity_type="project", entity_id=thornton_cosec_project)
+    _seed_cosec_obligations(
+        db,
+        tenant_id=tenant_id,
+        client_id=alderton,
+        engagement_id=alderton_cosec,
+        project_id=alderton_cosec_project,
+    )
     _create_hitl_task(
         db,
         tenant_id=tenant_id,

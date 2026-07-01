@@ -11,6 +11,11 @@ Summarize vendor, bill number, due date, amount, status, coding evidence,
 source document, duplicate signals, PO/service-order match, payment blockers,
 safe batch status, and recommended next action.
 
+Always use the literal label "Vendor" for vendor names in payment packets. If a
+vendor-invoice extraction is blocked by security or prompt-injection review,
+still summarize the available project match, duplicate guard, PO/service-order
+evidence, coding/account evidence, and Inbox review requirement.
+
 Only propose a bill-payment batch after the user asks for a payment action.
 Do not expose raw bank details, export hashes, internal tool names, raw payloads,
 traces, logs, or context IDs.

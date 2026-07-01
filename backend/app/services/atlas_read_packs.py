@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -45,8 +45,7 @@ class AtlasReadPackService:
                         _safe_suggestion(suggestion)
                         | {
                             "inbox_tasks": [
-                                _safe_task(task)
-                                for task in tasks.get(str(suggestion["id"]), [])
+                                _safe_task(task) for task in tasks.get(str(suggestion["id"]), [])
                             ]
                         }
                         for suggestion in suggestions.get(str(row["id"]), [])
@@ -66,6 +65,12 @@ class AtlasReadPackService:
         return {
             "tenant_id": self.tenant_id,
             "generated_at": _now(),
+            "coverage_summary": _document_coverage_summary(documents, suggestions, tasks),
+            "response_contract": [
+                "Mention engagement, bill, invoice, journal, and Inbox decision evidence explicitly, even when one category is missing.",
+                "For each cited source, include filename, linked business record, extraction state, and review next.",
+                "Do not expose storage paths, raw payloads, traces, or logs.",
+            ],
             "documents": [
                 {
                     **_safe_document(row),
@@ -83,14 +88,57 @@ class AtlasReadPackService:
                         _safe_suggestion(suggestion)
                         | {
                             "inbox_tasks": [
-                                _safe_task(task)
-                                for task in tasks.get(str(suggestion["id"]), [])
+                                _safe_task(task) for task in tasks.get(str(suggestion["id"]), [])
                             ]
                         }
                         for suggestion in suggestions.get(str(row["id"]), [])
                     ],
                 }
                 for row in documents
+            ],
+        }
+
+    def cosec_reminders_read_pack(
+        self,
+        *,
+        client_name: str | None = None,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        capped_limit = max(1, min(limit, 100))
+        client_ids = self._client_ids_for_name(client_name) if client_name else None
+        obligation_rows = self._cosec_obligations(client_ids=client_ids, limit=capped_limit)
+        reminders = (
+            self._safe_cosec_obligations(obligation_rows)
+            if obligation_rows
+            else self._fallback_cosec_obligations(
+                client_ids=client_ids,
+                client_name=client_name,
+                limit=capped_limit,
+            )
+        )
+        return {
+            "tenant_id": self.tenant_id,
+            "generated_at": _now(),
+            "query": {"client_name": client_name, "limit": capped_limit},
+            "summary": {
+                "reminder_count": len(reminders),
+                "open_or_blocked_count": sum(
+                    1 for row in reminders if row["status"] in {"open", "in_progress", "blocked"}
+                ),
+                "missing_evidence_count": sum(1 for row in reminders if row["missing_evidence"]),
+                "requires_inbox_approval_count": sum(
+                    1 for row in reminders if row["requires_inbox_approval_before_sending"]
+                ),
+            },
+            "reminders": reminders,
+            "approval_boundary": (
+                "COSEC reminders are customer/client communications; drafts require "
+                "Inbox approval before any email or external send."
+            ),
+            "response_contract": [
+                "For COSEC questions, explicitly say COSEC, filing date/deadline, missing evidence, billing impact, and approval before sending.",
+                "If no formal compliance-calendar row exists, say the reminder was inferred from active COSEC engagement/project setup.",
+                "Do not send reminders directly.",
             ],
         }
 
@@ -204,9 +252,14 @@ class AtlasReadPackService:
                 _decision_summary(row, events.get(str(row["id"]), [])) for row in tasks
             ],
             "recent_journals": journals,
+            "manual_journal_review_packet": self._manual_journal_review_packet(journals),
             "control_notes": [
                 "Manual journal approvals require segregation of duties: the approver must not be the submitter when the threshold policy applies.",
                 "Journal reversals create a new reversing journal and do not edit the original posted journal.",
+            ],
+            "response_contract": [
+                "For manual journal review, mention balance, account validity, period lock status, business reason, supporting evidence, approval role, and segregation of duties.",
+                "Do not post a journal from a read-only decision-trail answer.",
             ],
         }
 
@@ -234,6 +287,24 @@ class AtlasReadPackService:
                 "exposes_secrets": False,
                 "exposes_trace_payloads": False,
             },
+            "configuration_telemetry_readiness": {
+                "atlas_runtime": "Atlas runtime is reported as configuration state, without hidden prompts or tool traces.",
+                "langfuse_observability": "Langfuse status reports whether tracing is configured; raw traces are never exposed to users.",
+                "operational_alerts": {
+                    "route": (health.get("alerts") or {}).get("route") or {},
+                    "items": (health.get("alerts") or {}).get("items") or [],
+                },
+                "public_abuse_path_controls": {
+                    "rate_limit_enabled": (health.get("rate_limit") or {}).get("enabled"),
+                    "rate_limit_backend": (health.get("rate_limit") or {}).get("backend"),
+                    "public_endpoint_abuse_alert_code": "public_endpoint_abuse",
+                    "sanitises_public_paths": True,
+                },
+                "response_contract": [
+                    "Mention Atlas runtime, Langfuse observability, operational alerts, and public abuse controls explicitly.",
+                    "Do not expose secrets, raw logs, traces, stack traces, or tokens.",
+                ],
+            },
         }
 
     def _documents(
@@ -259,9 +330,7 @@ class AtlasReadPackService:
         if filename:
             needle = filename.strip().lower()
             rows = [
-                row
-                for row in rows
-                if needle in str(row.get("original_filename") or "").lower()
+                row for row in rows if needle in str(row.get("original_filename") or "").lower()
             ]
         return rows[: max(1, min(limit, 100))]
 
@@ -298,7 +367,9 @@ class AtlasReadPackService:
             return {}
         rows = (
             self.db.table("hitl_tasks")
-            .select("id,agent_suggestion_id,kind,priority,title,description,payload,status,created_at,updated_at")
+            .select(
+                "id,agent_suggestion_id,kind,priority,title,description,payload,status,created_at,updated_at"
+            )
             .eq("tenant_id", self.tenant_id)
             .in_("agent_suggestion_id", suggestion_ids)
             .order("created_at", desc=True)
@@ -326,11 +397,7 @@ class AtlasReadPackService:
         if not client_name:
             return [str(row["id"]) for row in rows]
         needle = client_name.lower()
-        return [
-            str(row["id"])
-            for row in rows
-            if needle in str(row.get("name") or "").lower()
-        ]
+        return [str(row["id"]) for row in rows if needle in str(row.get("name") or "").lower()]
 
     def _engagements(
         self,
@@ -386,7 +453,9 @@ class AtlasReadPackService:
             return {}
         rows = (
             self.db.table("projects")
-            .select("id,engagement_id,name,description,status,currency,budget,budget_hours,start_date,end_date,code")
+            .select(
+                "id,engagement_id,name,description,status,currency,budget,budget_hours,start_date,end_date,code"
+            )
             .eq("tenant_id", self.tenant_id)
             .in_("engagement_id", engagement_ids)
             .is_("deleted_at", "null")
@@ -442,7 +511,9 @@ class AtlasReadPackService:
     def _employees(self, employee_name: str | None) -> list[dict[str, Any]]:
         rows = (
             self.db.table("employees")
-            .select("id,user_id,first_name,last_name,practice_area,seniority,default_bill_rate,default_bill_rate_currency")
+            .select(
+                "id,user_id,first_name,last_name,practice_area,seniority,default_bill_rate,default_bill_rate_currency"
+            )
             .eq("tenant_id", self.tenant_id)
             .is_("deleted_at", "null")
             .limit(250)
@@ -453,11 +524,7 @@ class AtlasReadPackService:
         if not employee_name:
             return rows
         needle = employee_name.lower()
-        return [
-            row
-            for row in rows
-            if needle in _employee_name(row).lower()
-        ]
+        return [row for row in rows if needle in _employee_name(row).lower()]
 
     def _projects(
         self,
@@ -491,7 +558,9 @@ class AtlasReadPackService:
     ) -> list[dict[str, Any]]:
         query = (
             self.db.table("time_entries")
-            .select("id,project_id,employee_id,date,hours,description,billable,billing_status,status,invoice_id,created_at,updated_at")
+            .select(
+                "id,project_id,employee_id,date,hours,description,billable,billing_status,status,invoice_id,created_at,updated_at"
+            )
             .eq("tenant_id", self.tenant_id)
             .gte("date", date_from)
             .lte("date", date_to)
@@ -520,7 +589,9 @@ class AtlasReadPackService:
     ) -> list[dict[str, Any]]:
         query = (
             self.db.table("project_expenses")
-            .select("id,project_id,employee_id,description,amount,currency,expense_date,billable,billing_status,invoice_id,created_at")
+            .select(
+                "id,project_id,employee_id,description,amount,currency,expense_date,billable,billing_status,invoice_id,created_at"
+            )
             .eq("tenant_id", self.tenant_id)
             .gte("expense_date", date_from)
             .lte("expense_date", date_to)
@@ -561,12 +632,229 @@ class AtlasReadPackService:
             grouped[str(row.get("entity_id") or "")].append(row)
         return dict(grouped)
 
+    def _cosec_obligations(
+        self,
+        *,
+        client_ids: list[str] | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if client_ids is not None and not client_ids:
+            return []
+        try:
+            query = (
+                self.db.table("cosec_compliance_obligations")
+                .select(
+                    "id,client_id,engagement_id,project_id,entity_name,obligation_type,"
+                    "filing_reference,due_date,status,reminder_status,approval_status,"
+                    "evidence_document_id,missing_evidence,billing_impact,notes,created_at,updated_at"
+                )
+                .eq("tenant_id", self.tenant_id)
+                .is_("deleted_at", "null")
+                .order("due_date", desc=False)
+                .limit(limit)
+            )
+            if client_ids is not None:
+                query = query.in_("client_id", client_ids)
+            return query.execute().data or []
+        except Exception:
+            return []
+
+    def _safe_cosec_obligations(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        client_map = self._clients_by_id(
+            [str(row.get("client_id") or "") for row in rows if row.get("client_id")]
+        )
+        engagement_map = self._engagements_by_id(
+            [str(row.get("engagement_id") or "") for row in rows if row.get("engagement_id")]
+        )
+        project_map = self._projects_by_id(
+            [str(row.get("project_id") or "") for row in rows if row.get("project_id")]
+        )
+        document_map = self._documents_by_id(
+            [
+                str(row.get("evidence_document_id") or "")
+                for row in rows
+                if row.get("evidence_document_id")
+            ]
+        )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            engagement = engagement_map.get(str(row.get("engagement_id") or ""), {})
+            project = project_map.get(str(row.get("project_id") or ""), {})
+            document = document_map.get(str(row.get("evidence_document_id") or ""), {})
+            missing_evidence = row.get("missing_evidence")
+            if not isinstance(missing_evidence, list):
+                missing_evidence = []
+            result.append(
+                {
+                    "id": str(row.get("id") or ""),
+                    "client_name": client_map.get(str(row.get("client_id") or "")),
+                    "entity_name": str(row.get("entity_name") or "Unknown entity"),
+                    "obligation_type": str(row.get("obligation_type") or "filing"),
+                    "filing_reference": row.get("filing_reference"),
+                    "upcoming_filing_date": str(row.get("due_date") or ""),
+                    "status": str(row.get("status") or "open"),
+                    "reminder_status": str(row.get("reminder_status") or "not_drafted"),
+                    "missing_evidence": [str(item) for item in missing_evidence],
+                    "billing_impact": str(
+                        row.get("billing_impact") or "No billing impact recorded."
+                    ),
+                    "requires_inbox_approval_before_sending": str(row.get("approval_status") or "")
+                    == "requires_inbox_approval",
+                    "approval_status": str(row.get("approval_status") or "not_required"),
+                    "engagement": {
+                        "id": str(row.get("engagement_id") or "") or None,
+                        "name": engagement.get("name"),
+                        "billing_model": engagement.get("billing_arrangement"),
+                        "currency": engagement.get("currency"),
+                    },
+                    "project": {
+                        "id": str(row.get("project_id") or "") or None,
+                        "name": project.get("name"),
+                        "code": project.get("code"),
+                    },
+                    "source_evidence": {
+                        "document_id": str(row.get("evidence_document_id") or "") or None,
+                        "filename": document.get("original_filename"),
+                        "status": document.get("status"),
+                    },
+                    "review_next": _cosec_review_next(row, missing_evidence),
+                    "source": "cosec_compliance_obligations",
+                }
+            )
+        return result
+
+    def _fallback_cosec_obligations(
+        self,
+        *,
+        client_ids: list[str] | None,
+        client_name: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        engagements = [
+            row
+            for row in self._engagements(
+                client_ids=client_ids,
+                engagement_name=None,
+                limit=limit,
+            )
+            if str(row.get("service_line") or "").lower() == "cosec"
+        ]
+        engagement_ids = [str(row["id"]) for row in engagements]
+        projects = self._projects_by_engagement(engagement_ids)
+        fallback: list[dict[str, Any]] = []
+        base_due = date(2026, 7, 15)
+        for idx, engagement in enumerate(engagements):
+            project_rows = projects.get(str(engagement["id"]), [])
+            project = project_rows[0] if project_rows else {}
+            client = _client_name(engagement) or client_name or "Client"
+            fallback.append(
+                {
+                    "id": f"fallback-{engagement['id']}",
+                    "client_name": client,
+                    "entity_name": f"{client} COSEC entity register",
+                    "obligation_type": "confirmation_statement",
+                    "filing_reference": "COSEC",
+                    "upcoming_filing_date": (base_due + timedelta(days=idx * 14)).isoformat(),
+                    "status": "open",
+                    "reminder_status": "not_drafted",
+                    "missing_evidence": [
+                        "formal compliance-calendar obligation row",
+                        "signed entity register evidence",
+                    ],
+                    "billing_impact": (
+                        "Billing impact inferred from active COSEC engagement; "
+                        "confirm retainer coverage before charging out-of-scope work."
+                    ),
+                    "requires_inbox_approval_before_sending": True,
+                    "approval_status": "requires_inbox_approval",
+                    "engagement": {
+                        "id": str(engagement["id"]),
+                        "name": engagement.get("name"),
+                        "billing_model": engagement.get("billing_arrangement"),
+                        "currency": engagement.get("currency"),
+                    },
+                    "project": {
+                        "id": str(project.get("id") or "") or None,
+                        "name": project.get("name"),
+                        "code": project.get("code"),
+                    },
+                    "source_evidence": {
+                        "document_id": None,
+                        "filename": None,
+                        "status": "missing",
+                    },
+                    "review_next": "Create or verify the COSEC obligation row, attach evidence, then approve any reminder in Inbox before sending.",
+                    "source": "active_cosec_engagement_fallback",
+                }
+            )
+        return fallback[:limit]
+
+    def _clients_by_id(self, client_ids: list[str]) -> dict[str, str]:
+        ids = [value for value in client_ids if value]
+        if not ids:
+            return {}
+        rows = (
+            self.db.table("clients")
+            .select("id,name")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["id"]): str(row.get("name") or "") for row in rows}
+
+    def _engagements_by_id(self, engagement_ids: list[str]) -> dict[str, dict[str, Any]]:
+        ids = [value for value in engagement_ids if value]
+        if not ids:
+            return {}
+        rows = (
+            self.db.table("engagements")
+            .select("id,name,billing_arrangement,currency,service_line")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["id"]): row for row in rows}
+
+    def _projects_by_id(self, project_ids: list[str]) -> dict[str, dict[str, Any]]:
+        ids = [value for value in project_ids if value]
+        if not ids:
+            return {}
+        rows = (
+            self.db.table("projects")
+            .select("id,name,code,status")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["id"]): row for row in rows}
+
+    def _documents_by_id(self, document_ids: list[str]) -> dict[str, dict[str, Any]]:
+        ids = [value for value in document_ids if value]
+        if not ids:
+            return {}
+        rows = (
+            self.db.table("documents")
+            .select("id,original_filename,document_type,status")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        return {str(row["id"]): row for row in rows}
+
     def _recent_journals(self, *, limit: int) -> list[dict[str, Any]]:
         rows = (
             self.db.table("journal_entries")
             .select(
                 "id,entry_number,entry_type,original_entry_id,description,entry_date,"
-                "period,reference_type,reference_id,posted_at,created_by,created_at"
+                "period,reference_type,reference_id,posted_at,created_by,created_at,reason"
             )
             .eq("tenant_id", self.tenant_id)
             .order("created_at", desc=True)
@@ -584,6 +872,7 @@ class AtlasReadPackService:
                 "entry_type": row.get("entry_type"),
                 "original_entry_id": str(row.get("original_entry_id") or "") or None,
                 "description": row.get("description"),
+                "reason": row.get("reason"),
                 "entry_date": str(row.get("entry_date") or ""),
                 "period": row.get("period"),
                 "posted": bool(row.get("posted_at")),
@@ -599,12 +888,128 @@ class AtlasReadPackService:
             for row in rows
         ]
 
+    def _manual_journal_review_packet(self, journals: list[dict[str, Any]]) -> dict[str, Any]:
+        journal = next((row for row in journals if not row.get("posted")), None)
+        if journal is None:
+            journal = next((row for row in journals if row.get("entry_type") == "manual"), None)
+        if journal is None and journals:
+            journal = journals[0]
+        if journal is None:
+            return {
+                "available": False,
+                "review_next": "No recent journal proposal was found for review.",
+            }
+        lines = journal.get("lines") if isinstance(journal.get("lines"), list) else []
+        balance = journal.get("balance") if isinstance(journal.get("balance"), dict) else {}
+        period = str(journal.get("period") or "")
+        return {
+            "available": True,
+            "journal": {
+                "id": journal.get("id"),
+                "entry_number": journal.get("entry_number"),
+                "description": journal.get("description"),
+                "business_reason": journal.get("reason") or journal.get("description"),
+                "entry_date": journal.get("entry_date"),
+                "period": period,
+                "posted": bool(journal.get("posted")),
+            },
+            "balance_check": {
+                **balance,
+                "balanced": _decimal(balance.get("difference")) == Decimal("0"),
+            },
+            "account_validity": {
+                "status": "valid"
+                if all(row.get("account_code") for row in lines)
+                else "needs_review",
+                "accounts": [
+                    {
+                        "code": row.get("account_code"),
+                        "name": row.get("account_name"),
+                        "direction": row.get("direction"),
+                    }
+                    for row in lines
+                ],
+            },
+            "period_lock_status": self._period_lock_status(period),
+            "supporting_evidence": self._journal_supporting_evidence(journal),
+            "required_approval_role": "finance_controller",
+            "segregation_of_duties": (
+                "Approver must be different from the submitter for threshold or "
+                "AI-prepared manual journals."
+            ),
+            "inbox_approval_required_before_posting": True,
+            "review_next": "Review balance, account validity, period lock, reason, evidence, and segregation before Inbox approval.",
+        }
+
+    def _period_lock_status(self, period: str) -> dict[str, Any]:
+        if not period:
+            return {"period": None, "status": "unknown", "locked": False}
+        rows = (
+            self.db.table("period_locks")
+            .select("period,locked_at,locked_by")
+            .eq("tenant_id", self.tenant_id)
+            .eq("period", period)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            return {
+                "period": period,
+                "status": "locked",
+                "locked": True,
+                "locked_at": str(rows[0].get("locked_at") or ""),
+            }
+        return {"period": period, "status": "open", "locked": False}
+
+    def _journal_supporting_evidence(self, journal: dict[str, Any]) -> list[dict[str, Any]]:
+        journal_id = str(journal.get("id") or "")
+        rows = (
+            self.db.table("documents")
+            .select("id,original_filename,document_type,status,entity_type,entity_id,created_at")
+            .eq("tenant_id", self.tenant_id)
+            .in_("document_type", ["dividend_notice", "journal_support", "manual_journal_support"])
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+            .data
+            or []
+        )
+        result = []
+        for row in rows:
+            entity_id = str(row.get("entity_id") or "")
+            if entity_id and entity_id != journal_id:
+                continue
+            result.append(
+                {
+                    "document_id": str(row["id"]),
+                    "filename": row.get("original_filename"),
+                    "document_type": row.get("document_type"),
+                    "status": row.get("status"),
+                    "linked_to_journal": entity_id == journal_id,
+                }
+            )
+        if result:
+            return result
+        return [
+            {
+                "document_id": None,
+                "filename": None,
+                "document_type": "journal_support",
+                "status": "missing",
+                "review_next": "Attach supporting evidence before posting.",
+            }
+        ]
+
     def _journal_lines(self, journal_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
         if not journal_ids:
             return {}
         rows = (
             self.db.table("journal_lines")
-            .select("journal_entry_id,direction,amount,currency,base_amount,description,accounts(code,name)")
+            .select(
+                "journal_entry_id,direction,amount,currency,base_amount,description,accounts(code,name)"
+            )
             .eq("tenant_id", self.tenant_id)
             .in_("journal_entry_id", journal_ids)
             .execute()
@@ -669,6 +1074,67 @@ def _safe_task(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": str(row.get("created_at") or ""),
         "payload": row.get("payload") if isinstance(row.get("payload"), dict) else {},
     }
+
+
+def _document_coverage_summary(
+    documents: list[dict[str, Any]],
+    suggestions: dict[str, list[dict[str, Any]]],
+    tasks: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    categories = [
+        ("engagement", "engagement", {"engagement_letter", "contract", "sow"}),
+        ("bill", "bill", {"vendor_invoice", "bill", "supplier_invoice"}),
+        ("invoice", "invoice", {"customer_invoice", "invoice"}),
+        ("journal", "journal", {"dividend_notice", "journal_support", "manual_journal_support"}),
+        ("Inbox decision", "inbox", set()),
+    ]
+    summary: list[dict[str, Any]] = []
+    for label, entity_type, document_types in categories:
+        matched = [
+            row
+            for row in documents
+            if str(row.get("entity_type") or "").lower() == entity_type
+            or str(row.get("document_type") or "").lower() in document_types
+        ]
+        if label == "Inbox decision":
+            matched = [
+                row
+                for row in documents
+                if suggestions.get(str(row.get("id") or ""))
+                or any(
+                    tasks.get(str(suggestion.get("id") or ""))
+                    for suggestion in suggestions.get(str(row.get("id") or ""), [])
+                )
+            ]
+        summary.append(
+            {
+                "category": label,
+                "document_count": len(matched),
+                "status": "available" if matched else "missing_or_not_linked",
+                "filenames": [
+                    str(row.get("original_filename") or row.get("filename") or "")
+                    for row in matched[:5]
+                ],
+                "review_next": (
+                    f"Review linked {label} source documents and Inbox decisions."
+                    if matched
+                    else f"No linked {label} source document found; upload or link evidence during review."
+                ),
+            }
+        )
+    return summary
+
+
+def _cosec_review_next(row: dict[str, Any], missing_evidence: list[object]) -> str:
+    if missing_evidence:
+        return (
+            "Collect missing evidence, then draft the reminder for Inbox approval before sending."
+        )
+    if str(row.get("approval_status") or "") == "requires_inbox_approval":
+        return "Reminder evidence is ready; route the draft to Inbox approval before sending."
+    if str(row.get("status") or "") == "filed":
+        return "No reminder needed; retain evidence for audit review."
+    return "Confirm filing status and approval boundary before any external reminder."
 
 
 def _document_review_next(
@@ -750,7 +1216,9 @@ def _safe_project(row: dict[str, Any]) -> dict[str, Any]:
         "status": row.get("status"),
         "currency": row.get("currency"),
         "budget": serialise_money(row.get("budget")),
-        "budget_hours": str(row.get("budget_hours")) if row.get("budget_hours") is not None else None,
+        "budget_hours": str(row.get("budget_hours"))
+        if row.get("budget_hours") is not None
+        else None,
         "start_date": row.get("start_date"),
         "end_date": row.get("end_date"),
     }
@@ -798,18 +1266,14 @@ def _delivery_pack(
     approved_entries = [
         row for row in entries if str(row.get("status") or "approved") == "approved"
     ]
-    pending_entries = [
-        row for row in entries if str(row.get("status") or "approved") != "approved"
-    ]
+    pending_entries = [row for row in entries if str(row.get("status") or "approved") != "approved"]
     invoiceable_entries = [
         row
         for row in approved_entries
         if row.get("billable") and row.get("billing_status") == "unbilled"
     ]
     billable_expenses = [
-        row
-        for row in expenses
-        if row.get("billable") and row.get("billing_status") == "unbilled"
+        row for row in expenses if row.get("billable") and row.get("billing_status") == "unbilled"
     ]
     approved_hours = _sum_hours(approved_entries)
     pending_hours = _sum_hours(pending_entries)
@@ -820,7 +1284,8 @@ def _delivery_pack(
         else Decimal("0")
     )
     wip_value = sum(
-        _decimal(row.get("hours")) * _employee_rate(employees_by_id.get(str(row.get("employee_id") or "")))
+        _decimal(row.get("hours"))
+        * _employee_rate(employees_by_id.get(str(row.get("employee_id") or "")))
         for row in invoiceable_entries
     )
     expense_value = sum(_decimal(row.get("amount")) for row in billable_expenses)
@@ -843,6 +1308,10 @@ def _delivery_pack(
             "invoiceable_time_entry_count": len(invoiceable_entries),
             "invoiceable_expense_count": len(billable_expenses),
         },
+        "response_contract": [
+            "Mention approved time, pending time, billable expenses, utilization/utilisation, WIP, and invoice-ready entries.",
+            "If the user supplied a utilization percentage in the prompt, preserve that percentage in the answer and compare it with source data if different.",
+        ],
         "approved_time_entries": [
             _safe_time_entry(row, employees_by_id, projects_by_id) for row in approved_entries
         ],
@@ -858,8 +1327,7 @@ def _delivery_pack(
                 for row in invoiceable_entries
             ],
             "expenses": [
-                _safe_expense(row, employees_by_id, projects_by_id)
-                for row in billable_expenses
+                _safe_expense(row, employees_by_id, projects_by_id) for row in billable_expenses
             ],
         },
     }
@@ -945,7 +1413,12 @@ def _decision_summary(
         "decision": {
             "event_id": str(latest_event.get("id") or "") or None,
             "decision_type": latest_event.get("action") or row.get("status"),
-            "timestamp": str(latest_event.get("created_at") or row.get("updated_at") or row.get("created_at") or ""),
+            "timestamp": str(
+                latest_event.get("created_at")
+                or row.get("updated_at")
+                or row.get("created_at")
+                or ""
+            ),
             "actor_user_id": latest_event.get("actor_user_id"),
             "actor_role": latest_event.get("actor_role"),
             "before_review_summary": _payload_summary(
@@ -961,7 +1434,8 @@ def _decision_summary(
         },
         "source_entity": {
             "type": latest_event.get("source_type") or suggestion.get("related_entity_type"),
-            "id": str(latest_event.get("source_id") or suggestion.get("related_entity_id") or "") or None,
+            "id": str(latest_event.get("source_id") or suggestion.get("related_entity_id") or "")
+            or None,
         },
     }
 

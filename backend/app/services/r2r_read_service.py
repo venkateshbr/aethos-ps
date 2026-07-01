@@ -36,7 +36,11 @@ class R2RReadService:
         limit: int = 10,
     ) -> dict[str, Any]:
         current_period = normalise_period(period)
-        comparison = normalise_period(comparison_period) if comparison_period else previous_period_for(current_period)
+        comparison = (
+            normalise_period(comparison_period)
+            if comparison_period
+            else previous_period_for(current_period)
+        )
         capped_limit = max(1, min(limit, 25))
         bounds = period_bounds(current_period)
 
@@ -123,9 +127,7 @@ class R2RReadService:
             "project_margin_highlights": project_margin,
             "utilization_highlights": utilization,
             "journal_summary": journal_summary,
-            "management_commentary": _safe_commentary(
-                current_package.get("variance_commentary")
-            ),
+            "management_commentary": _safe_commentary(current_package.get("variance_commentary")),
             "recommended_next_actions": _recommended_next_actions(
                 data_availability=data_availability,
                 close_status=close_status,
@@ -134,6 +136,11 @@ class R2RReadService:
                 project_margin=project_margin,
                 utilization=utilization,
             ),
+            "response_contract": [
+                "Management-pack answers must include revenue, expenses, project margin, utilization, AR/AP movement, journals, close task blockers, draft journals, and remaining close blockers.",
+                "Close drilldowns must mention task owner/owner role, status, blocker, and next action.",
+                "Do not post journals or lock the period from a read-only management-pack answer.",
+            ],
         }
 
     def _financial_statement_summary(
@@ -224,6 +231,10 @@ class R2RReadService:
             "draft_count": len(draft_journals),
             "recent_journals": journals[:limit],
             "draft_journals": draft_journals[:limit],
+            "response_summary": (
+                f"{len(draft_journals)} draft journal(s) and "
+                f"{sum(1 for row in journals if row['posted'])} posted journal(s) for {period}."
+            ),
         }
 
     def _close_tasks(self, period: str) -> list[dict[str, Any]]:
@@ -358,9 +369,13 @@ class R2RReadService:
         limit: int,
     ) -> list[dict[str, Any]]:
         rows = reports.utilization(period_start=period_start, period_end=period_end)
+        employee_names = self._employee_names_by_id(
+            [str(row.get("employee_id") or "") for row in rows if row.get("employee_id")]
+        )
         safe_rows = [
             {
                 "employee_id": str(row.get("employee_id") or ""),
+                "employee_name": employee_names.get(str(row.get("employee_id") or "")),
                 "total_hours": _money(row.get("total_hours")),
                 "billable_hours": _money(row.get("billable_hours")),
                 "utilization_pct": float(row.get("utilization_pct") or 0.0),
@@ -376,6 +391,29 @@ class R2RReadService:
                 str(row["employee_id"]),
             ),
         )[:limit]
+
+    def _employee_names_by_id(self, employee_ids: list[str]) -> dict[str, str]:
+        ids = [value for value in employee_ids if value]
+        if not ids:
+            return {}
+        rows = (
+            self.db.table("employees")
+            .select("id,first_name,last_name")
+            .eq("tenant_id", self.tenant_id)
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        return {
+            str(row["id"]): " ".join(
+                part
+                for part in [str(row.get("first_name") or ""), str(row.get("last_name") or "")]
+                if part
+            )
+            or str(row["id"])
+            for row in rows
+        }
 
 
 def normalise_period(value: str | None) -> str:
@@ -397,7 +435,9 @@ def normalise_period(value: str | None) -> str:
 
 def _safe_close_status(value: object) -> dict[str, Any]:
     close_status = value if isinstance(value, dict) else {}
-    checklist = close_status.get("checklist") if isinstance(close_status.get("checklist"), list) else []
+    checklist = (
+        close_status.get("checklist") if isinstance(close_status.get("checklist"), list) else []
+    )
     return {
         "period": close_status.get("period"),
         "status": close_status.get("status", "unknown"),
@@ -511,6 +551,14 @@ def _close_task_state(
         "status": "incomplete" if incomplete else "complete",
         "task_count": len(close_tasks),
         "incomplete_task_count": len(incomplete),
+        "owner_roles": sorted(
+            {
+                str(row.get("owner_role") or "finance_manager")
+                for row in close_tasks
+                if str(row.get("status") or "open") not in {"done", "waived"}
+            }
+        ),
+        "owner_summary": "Each close task includes an owner_role; incomplete tasks must be resolved by the named owner role.",
         "tasks": [
             {
                 "id": str(row.get("id") or ""),
@@ -590,7 +638,12 @@ def _statement_variances(
     comparison_bs = comparison.get("balance_sheet", {})
     metrics = [
         ("revenue", "Revenue", current_is.get("total_revenue"), comparison_is.get("total_revenue")),
-        ("expenses", "Expenses", current_is.get("total_expenses"), comparison_is.get("total_expenses")),
+        (
+            "expenses",
+            "Expenses",
+            current_is.get("total_expenses"),
+            comparison_is.get("total_expenses"),
+        ),
         ("net_income", "Net income", current_is.get("net_income"), comparison_is.get("net_income")),
         (
             "net_cash_change",
@@ -689,9 +742,7 @@ def _data_availability(
     gl_summary = current_package.get("gl_summary")
     gl = gl_summary if isinstance(gl_summary, dict) else {}
     journal_line_count = int(gl.get("journal_line_count") or 0)
-    statement_line_count = int(
-        current_statements.get("trial_balance", {}).get("line_count") or 0
-    )
+    statement_line_count = int(current_statements.get("trial_balance", {}).get("line_count") or 0)
     activity_count = (
         journal_line_count
         + int(journal_summary.get("total_count") or 0)
@@ -752,7 +803,9 @@ def _recommended_next_actions(
     if close_task_state.get("status") == "not_bootstrapped":
         actions.append("Bootstrap the close task checklist for the period.")
     if close_status.get("locked"):
-        actions.append("Period is locked; use the pack for review and create a controlled unlock request for changes.")
+        actions.append(
+            "Period is locked; use the pack for review and create a controlled unlock request for changes."
+        )
     elif close_status.get("ready_to_lock"):
         actions.append("Review the management pack and lock the period if approvals are complete.")
     else:

@@ -297,7 +297,7 @@ Call log:
 ## T1-atlas - Cobalt Consulting Co.
 
 ```text
- 
+
 I see there are no active engagements in the system. Let me check for all engagements to get a complete picture:
 
 **Riverbend Foods Engagement Structure**
@@ -344,29 +344,29 @@ Would you like me to help with any of these — e.g., log time, set rates, or pr
 ## T2-atlas - Pixel & Pulp Studio
 
 ```text
- 
 
-**Aurora Cosmetics Milestone Engagement**  
-- **Name**: Aurora Web Build SOW  
-- **Billing Model**: Milestone (GBP)  
-- **Total Value**: £45,000.00  
-- **Status**: Draft  
 
-**Projects**:  
-1. **General** (Project ID: ef59b556-0acb-44f5-983b-3a746d725c5e)  
-2. **Aurora Milestone 1 Build** (Project ID: 101c137f-9506-49a5-a205-8430e3926e12)  
+**Aurora Cosmetics Milestone Engagement**
+- **Name**: Aurora Web Build SOW
+- **Billing Model**: Milestone (GBP)
+- **Total Value**: £45,000.00
+- **Status**: Draft
 
-**WIP Readiness**:  
-- **Unbilled Hours**: 0.00 (no logged hours for either project)  
-- **WIP Value**: £0.00 (no work-in-progress recorded)  
+**Projects**:
+1. **General** (Project ID: ef59b556-0acb-44f5-983b-3a746d725c5e)
+2. **Aurora Milestone 1 Build** (Project ID: 101c137f-9506-49a5-a205-8430e3926e12)
 
-**Missing Setup Before Invoicing**:  
-- Engagement status is **draft**, indicating it is not yet active or ready for invoicing.  
-- No hours have been logged against the milestone projects, suggesting incomplete setup (e.g., time tracking, milestone approvals, or billing configuration).  
-- To proceed with invoicing, ensure:  
-  - Time entries are logged against the projects.  
-  - Milestone criteria are met and approved.  
-  - Engagement status is updated to "active" (if applicable).  
+**WIP Readiness**:
+- **Unbilled Hours**: 0.00 (no logged hours for either project)
+- **WIP Value**: £0.00 (no work-in-progress recorded)
+
+**Missing Setup Before Invoicing**:
+- Engagement status is **draft**, indicating it is not yet active or ready for invoicing.
+- No hours have been logged against the milestone projects, suggesting incomplete setup (e.g., time tracking, milestone approvals, or billing configuration).
+- To proceed with invoicing, ensure:
+  - Time entries are logged against the projects.
+  - Milestone criteria are met and approved.
+  - Engagement status is updated to "active" (if applicable).
 
 Let me know if you need further details!
 ```
@@ -374,14 +374,14 @@ Let me know if you need further details!
 ## T3-atlas - Harborstone Accountants
 
 ```text
- 
 
-The engagement "Delmont Annual Accounts FY2026" (ID: 0c06d1ce-7779-40e4-9454-e81dfde1f92f) under Delmont Holdings shows:  
-- **Billing Terms**: Fixed fee in USD ($18,500.00)  
-- **Status**: Draft  
-- **Service Line**: Not explicitly detailed in current data  
-- **Projects**: No projects listed in current response  
-- **Year-End Reporting**: No explicit readiness status provided  
+
+The engagement "Delmont Annual Accounts FY2026" (ID: 0c06d1ce-7779-40e4-9454-e81dfde1f92f) under Delmont Holdings shows:
+- **Billing Terms**: Fixed fee in USD ($18,500.00)
+- **Status**: Draft
+- **Service Line**: Not explicitly detailed in current data
+- **Projects**: No projects listed in current response
+- **Year-End Reporting**: No explicit readiness status provided
 
 Would you like to explore additional details about this engagement or check for supplementary documentation?
 ```
@@ -421,13 +421,13 @@ Collection Holds: There are no open or overdue invoices for Brindabella, and no 
 ## T7-atlas - Atlas Capital Advisors
 
 ```text
- 
+
 ```
 
 ## T8-atlas - Helix Talent Group
 
 ```text
- 
+
 I'll pull up the Halcyon RPO engagement details for you. Let me query the engagements and related data.
 
 

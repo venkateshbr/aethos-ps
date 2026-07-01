@@ -70,6 +70,10 @@ class P2PReadService:
             "totals": self._totals(bills, vendors, due_within_days=due_window),
             "vendors": vendors,
             "bills": bills,
+            "response_contract": [
+                "Payment answers must use the literal label Vendor and include bill number, amount, due date, status, duplicate guard, PO/service-order evidence, coding/account evidence, blockers, and next action.",
+                "If extraction is blocked by security review, still summarize available project, duplicate, PO/service-order, coding, and Inbox review evidence.",
+            ],
         }
 
     def _vendor_ids_for_name(self, vendor_name: str | None) -> list[str]:
@@ -165,7 +169,9 @@ class P2PReadService:
             .data
             or []
         )
-        batch_ids = sorted({str(item.get("batch_id") or "") for item in items if item.get("batch_id")})
+        batch_ids = sorted(
+            {str(item.get("batch_id") or "") for item in items if item.get("batch_id")}
+        )
         batches = self._payment_batches(batch_ids)
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for item in items:
@@ -232,9 +238,7 @@ class P2PReadService:
             "vendor_id": str(row.get("client_id") or ""),
             "vendor_name": _vendor_name(row),
             "vendor_invoice_number": (
-                str(row.get("vendor_invoice_number"))
-                if row.get("vendor_invoice_number")
-                else None
+                str(row.get("vendor_invoice_number")) if row.get("vendor_invoice_number") else None
             ),
             "status": str(row.get("status") or ""),
             "bill_state": bill_state,
@@ -247,9 +251,7 @@ class P2PReadService:
             "days_overdue": days_overdue,
             "aging_bucket": _ap_aging_bucket(due_date, today, str(row.get("status") or "")),
             "source_document_id": (
-                str(row.get("source_document_id"))
-                if row.get("source_document_id")
-                else None
+                str(row.get("source_document_id")) if row.get("source_document_id") else None
             ),
             "source_document_available": bool(row.get("source_document_id")),
             "po_match_status": str(row.get("po_match_status") or "not_linked"),
@@ -451,10 +453,14 @@ def _duplicate_risk(
             if isinstance(exception, dict) and "duplicate" in str(exception.get("code") or ""):
                 return True
     vendor_invoice_number = str(row.get("vendor_invoice_number") or "").strip()
-    return bool(vendor_invoice_number) and (
-        str(row.get("client_id") or ""),
-        vendor_invoice_number,
-    ) in duplicate_keys
+    return (
+        bool(vendor_invoice_number)
+        and (
+            str(row.get("client_id") or ""),
+            vendor_invoice_number,
+        )
+        in duplicate_keys
+    )
 
 
 def _duplicate_review_approved(row: dict[str, Any]) -> bool:
@@ -580,7 +586,9 @@ def _recommended_next_action(
     if status in {"void", "voided"}:
         return "No payment action; the bill is voided."
     if "already_in_payment_batch" in payment_blockers:
-        batch = next((item for item in payment_batches if item.get("batch_status") != "settled"), {})
+        batch = next(
+            (item for item in payment_batches if item.get("batch_status") != "settled"), {}
+        )
         return _batch_next_action(batch)
     if "duplicate_review_required" in payment_blockers:
         return "Resolve duplicate vendor-invoice risk and capture reviewer reason before payment."
