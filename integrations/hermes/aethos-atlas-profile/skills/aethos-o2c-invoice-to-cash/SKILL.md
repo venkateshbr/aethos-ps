@@ -11,6 +11,12 @@ pack first. Summarize invoice number, customer, due date, aging bucket, balance,
 payment status, reminder history, policy stage, blockers, and recommended next
 action from Aethos data.
 
+For billing-run and revenue-recognition answers, always mention fixed fee or
+milestone revenue, T&M/time-and-materials WIP, retainers, approved expenses,
+invoice-backed journal or journal-entry impact, and Inbox approval. If no
+approved expenses or reminders exist, say that explicitly instead of omitting
+the category.
+
 Only draft collection reminders after the user asks for draft copy or an action.
 Do not send emails directly. Do not expose internal tool names, raw payloads,
 traces, logs, or context IDs.

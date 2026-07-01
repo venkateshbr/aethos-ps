@@ -201,8 +201,8 @@ Use Aethos Atlas for chat-first finance operations:
 - Draft invoices, collections reminders, bill-pay proposals, month-end/year-end
   close preparation, and financial statement packages.
 - Read uploaded document extraction results, engagement/project structure,
-  resource delivery data, accounting decision trails, and operational health
-  through Aethos-owned tools.
+  resource delivery data, COSEC filing reminders, accounting decision trails,
+  configuration telemetry, and operational health through Aethos-owned tools.
 
 Atlas stores conversation history per tenant user. On login, Atlas resumes the
 most recent conversation so follow-up prompts can use prior context. Use **New
@@ -233,6 +233,18 @@ Recommended prompt pattern:
 Users do not need to specify tool names in chat. Aethos Atlas should infer the
 correct internal capability from the business request. QA specs may still pin a
 tool name when they need deterministic run-ledger assertions.
+
+Atlas response-depth expectations:
+
+- O2C answers should include fixed fee/milestone, T&M, retainer, approved
+  expenses, journal impact, and Inbox approval boundaries where relevant.
+- P2P answers should label the Vendor and include duplicate, PO/service-order,
+  coding/account, blocker, and payment-readiness evidence.
+- R2R answers should include utilization, journals, blockers, owner role,
+  period-lock state, and approval boundaries.
+- Configuration answers should include approval controls, scheduled Finance Ops
+  Manager settings, Atlas runtime, Langfuse observability, operational alerts,
+  and public abuse controls without exposing raw logs or traces.
 
 Engineering details for runtime selection, Hermes MCP wiring, tool broker
 dispatch, database tables, and UI screen ownership are documented in
@@ -516,6 +528,11 @@ Current workflows:
   journals, transaction amounts keep their entered currency while base amounts
   are converted to the tenant base currency at the posting-date FX rate before
   financial statements read the journal.
+- Atlas can prepare an AI-drafted manual journal review packet for Inbox
+  instead of posting directly. The packet includes requested amount/currency,
+  base-currency impact, FX rate provenance, debit/credit lines, balance check,
+  account validity, period-lock status, business reason, supporting evidence,
+  required approval role, and segregation-of-duties confirmation.
 - Month-end close preparation can be requested through Aethos Atlas and routed to Inbox.
 - Admin/Owner users can post year-end close from Accounting. The system closes
   posted revenue and expense balances to seeded account `3000 Retained
@@ -629,7 +646,16 @@ Document evidence should be visible across the workflow:
 | Vendor invoice | Document attach -> prompt-triggered extraction -> bill draft with vendor/coding/duplicate/PO evidence -> Inbox approval -> bill and bill-line review evidence |
 | Receipt or project expense | Document attach -> prompt-triggered extraction -> project expense with billable/non-billable treatment and source link |
 | Dividend notice or accounting support | Document attach -> prompt-triggered extraction -> journal packet or manual journal support -> Inbox/accounting approval -> posted journal evidence |
-| COSEC instruction | Document attach -> prompt-triggered extraction -> project milestone, billing event, or engagement support record where configured |
+| COSEC instruction | Document attach -> prompt-triggered extraction -> COSEC instruction review packet with company change, filing/project work item, billing impact, and Inbox approval boundary before external filing or invoicing |
+
+COSEC compliance calendar:
+
+- `cosec_compliance_obligations` stores entity-level filing/reminder dates,
+  missing evidence, billing impact, evidence document link, and whether Inbox
+  approval is required before sending a reminder.
+- If a tenant has active COSEC engagements but no formal obligation rows yet,
+  Atlas can infer a read-only fallback from the engagement/project setup and
+  should state that the calendar row still needs to be created or verified.
 
 Atlas should not ask a user to retype fields already present in the extraction
 payload or linked Inbox task. If the extracted payload is incomplete, Atlas
@@ -706,7 +732,12 @@ Current guidance:
   next run, failed or skipped workflows, open Inbox work, and redacted
   operational health from one business prompt.
 - Use Settings -> Agent Autonomy -> AI Inference Settings to choose the tenant
-  Atlas runtime and model-routing order. The default OpenRouter chain is
+  Atlas runtime, semantic response order, and model-routing order. The default
+  Atlas response order is `semantic_intent` -> `atlas_runtime`, meaning
+  high-confidence operational finance prompts are handled by Aethos read-packs
+  and guarded workflow tools before falling back to Hermes or Aethos Basic.
+  The default semantic-router confidence threshold is `0.72`.
+- The default OpenRouter chain is
   `google/gemma-4-31b-it:free` -> `openrouter/free` ->
   `anthropic/claude-haiku-4.5`.
 - The AI settings chain applies to Aethos Basic, the built-in Atlas fallback,
@@ -769,6 +800,9 @@ Ops/Security slices under #286, #301, and #311:
   and `cd frontend && npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium`.
 - Health output is intended for internal operators and admins; it must not
   expose secrets, raw credentials, tokens, or customer document payloads.
+- Atlas configuration telemetry combines approval controls, scheduled Finance
+  Ops Manager settings, Atlas runtime, Langfuse observability state, routed
+  operational alerts, and public abuse-path controls into one safe read pack.
 
 Ops and abuse-path checks:
 

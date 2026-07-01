@@ -6,6 +6,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { AuthService } from '../../core/services/auth.service';
 
 type AtlasRuntime = 'aethos_basic' | 'hermes_agent';
+type AtlasResponseStage = 'semantic_intent' | 'atlas_runtime';
+type AtlasResponseOrderMode = 'semantic_first' | 'runtime_only' | 'runtime_first';
 type AiModelId =
   | 'google/gemma-4-31b-it:free'
   | 'openrouter/free'
@@ -26,6 +28,9 @@ interface AiSettings {
   primary_model: AiModelId;
   use_free_router: boolean;
   fallback_model: AiModelId;
+  semantic_router_enabled: boolean;
+  semantic_router_min_confidence: number;
+  atlas_response_order: AtlasResponseStage[];
   model_chain: string[];
   allowed_models: AiModelOption[];
   created_at: string | null;
@@ -153,6 +158,62 @@ const FALLBACK_MODEL_OPTIONS: AiModelId[] = [
             }
           </div>
 
+          <div class="rounded border border-border-subtle bg-surface-base px-3 py-3">
+            <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-text-muted">Atlas response routing</div>
+                <p class="mt-1 text-xs leading-5 text-text-muted">
+                  High-confidence operational prompts can be answered through Aethos tools before the model runtime.
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm text-text-secondary">
+                <input
+                  type="checkbox"
+                  formControlName="semantic_router_enabled"
+                  class="h-4 w-4 rounded border-border-default bg-surface-raised text-accent focus:ring-accent"
+                />
+                Semantic router
+              </label>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+              <label class="block">
+                <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">Response order</span>
+                <select
+                  formControlName="atlas_response_order_mode"
+                  class="w-full rounded border border-border-default bg-surface-base px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="semantic_first">Semantic router, then configured runtime</option>
+                  <option value="runtime_only">Configured runtime only</option>
+                  <option value="runtime_first">Configured runtime first</option>
+                </select>
+              </label>
+
+              <label class="block">
+                <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">
+                  Minimum confidence {{ confidenceLabel() }}
+                </span>
+                <input
+                  type="range"
+                  formControlName="semantic_router_min_confidence"
+                  min="0.5"
+                  max="0.98"
+                  step="0.01"
+                  class="w-full accent-accent"
+                />
+              </label>
+            </div>
+
+            <div class="mt-3 flex flex-wrap gap-2">
+              @for (stage of previewResponseOrder(); track stage; let index = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full border border-border-default px-2 py-1 text-xs text-text-secondary">
+                  <span class="text-text-muted">{{ index + 1 }}</span>
+                  {{ responseStageLabel(stage) }}
+                </span>
+              }
+            </div>
+          </div>
+
           @if (!canEdit()) {
             <div class="rounded border border-border-default bg-surface-base px-3 py-2 text-sm text-text-muted" role="status">
               AI settings changes require Admin or Tenant Admin / Owner.
@@ -222,6 +283,9 @@ export class AiSettingsComponent implements OnInit {
     primary_model: ['google/gemma-4-31b-it:free' as AiModelId, [Validators.required]],
     use_free_router: [true],
     fallback_model: ['anthropic/claude-haiku-4.5' as AiModelId, [Validators.required]],
+    semantic_router_enabled: [true],
+    semantic_router_min_confidence: [0.72, [Validators.required, Validators.min(0.5), Validators.max(0.98)]],
+    atlas_response_order_mode: ['semantic_first' as AtlasResponseOrderMode, [Validators.required]],
   });
 
   ngOnInit(): void {
@@ -257,6 +321,9 @@ export class AiSettingsComponent implements OnInit {
       primary_model: value.primary_model,
       use_free_router: value.use_free_router,
       fallback_model: value.fallback_model,
+      semantic_router_enabled: value.semantic_router_enabled,
+      semantic_router_min_confidence: value.semantic_router_min_confidence,
+      atlas_response_order: this.responseOrderFromMode(value.atlas_response_order_mode),
     }).subscribe({
       next: (settings) => {
         this.applySettings(settings);
@@ -276,6 +343,20 @@ export class AiSettingsComponent implements OnInit {
     if (value.use_free_router) chain.push('openrouter/free' as AiModelId);
     chain.push(value.fallback_model);
     return chain.filter((model, index) => chain.indexOf(model) === index);
+  }
+
+  previewResponseOrder(): AtlasResponseStage[] {
+    const value = this.form.getRawValue();
+    return this.responseOrderFromMode(value.atlas_response_order_mode);
+  }
+
+  responseStageLabel(stage: AtlasResponseStage): string {
+    return stage === 'semantic_intent' ? 'Semantic intent router' : 'Configured Atlas runtime';
+  }
+
+  confidenceLabel(): string {
+    const value = Number(this.form.controls.semantic_router_min_confidence.value ?? 0.72);
+    return Number.isFinite(value) ? value.toFixed(2) : '0.72';
   }
 
   modelLabel(modelId: string): string {
@@ -306,6 +387,9 @@ export class AiSettingsComponent implements OnInit {
       primary_model: settings.primary_model,
       use_free_router: settings.use_free_router,
       fallback_model: settings.fallback_model,
+      semantic_router_enabled: settings.semantic_router_enabled,
+      semantic_router_min_confidence: Number(settings.semantic_router_min_confidence ?? 0.72),
+      atlas_response_order_mode: this.responseOrderMode(settings.atlas_response_order),
     });
     this.applyEditState();
   }
@@ -316,5 +400,18 @@ export class AiSettingsComponent implements OnInit {
     } else {
       this.form.disable({ emitEvent: false });
     }
+  }
+
+  private responseOrderFromMode(mode: AtlasResponseOrderMode): AtlasResponseStage[] {
+    if (mode === 'runtime_only') return ['atlas_runtime'];
+    if (mode === 'runtime_first') return ['atlas_runtime', 'semantic_intent'];
+    return ['semantic_intent', 'atlas_runtime'];
+  }
+
+  private responseOrderMode(order: AtlasResponseStage[] | null | undefined): AtlasResponseOrderMode {
+    const normalized = order ?? ['semantic_intent', 'atlas_runtime'];
+    if (normalized[0] === 'atlas_runtime' && normalized[1] === 'semantic_intent') return 'runtime_first';
+    if (normalized.length === 1 && normalized[0] === 'atlas_runtime') return 'runtime_only';
+    return 'semantic_first';
   }
 }

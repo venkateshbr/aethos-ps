@@ -16,7 +16,9 @@ class DocumentResponse(BaseModel):
     )
     document_type: str = Field(
         default="vendor_invoice",
-        description="Classified type: engagement_letter | expense | vendor_invoice",
+        description=(
+            "Classified type: engagement_letter | expense | vendor_invoice | cosec_instruction"
+        ),
     )
     storage_path: str = Field(..., description="Path within the Supabase Storage bucket")
     mime_type: str = Field(..., description="MIME type of the uploaded file")
@@ -37,7 +39,9 @@ class DocumentSummary(BaseModel):
     mime_type: str = Field(..., description="MIME type of the uploaded file")
     document_type: str = Field(
         default="vendor_invoice",
-        description="Classified type: engagement_letter | expense | vendor_invoice",
+        description=(
+            "Classified type: engagement_letter | expense | vendor_invoice | cosec_instruction"
+        ),
     )
     status: str = Field(
         ...,

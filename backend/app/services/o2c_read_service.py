@@ -86,6 +86,10 @@ class O2CReadService:
             "totals": totals,
             "customers": customers,
             "invoices": invoices,
+            "response_contract": [
+                "Collections answers must mention customer, invoice, due/current status, reminder blocker or policy stage, and Inbox approval boundary.",
+                "If no customer reminder is due, explicitly say no customer reminder was routed to Inbox approval.",
+            ],
         }
 
     def _client_ids_for_name(self, client_name: str | None) -> list[str]:
@@ -102,11 +106,7 @@ class O2CReadService:
             .data
             or []
         )
-        return [
-            str(row["id"])
-            for row in rows
-            if raw in str(row.get("name") or "").lower()
-        ]
+        return [str(row["id"]) for row in rows if raw in str(row.get("name") or "").lower()]
 
     def _fetch_invoice_rows(
         self,

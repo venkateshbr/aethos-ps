@@ -51,6 +51,22 @@ async def aethos_documents_audit_read_pack(
 
 
 @mcp.tool()
+async def aethos_cosec_reminders_read_pack(
+    context_ref: str,
+    client_name: str | None = None,
+    limit: int = 25,
+) -> dict[str, Any]:
+    """Read COSEC filing reminders, evidence gaps, billing impact, and approval state."""
+    arguments = _optional_args(
+        {
+            "client_name": client_name,
+            "limit": limit,
+        }
+    )
+    return await _execute("aethos.cosec.reminders_read_pack", context_ref, arguments)
+
+
+@mcp.tool()
 async def aethos_engagements_list(
     context_ref: str,
     status: str = "all",
@@ -226,6 +242,19 @@ async def aethos_finance_ops_control_room(
 async def aethos_operational_health_read_pack(context_ref: str) -> dict[str, Any]:
     """Read safe tenant/platform health without exposing logs, traces, or secrets."""
     return await _execute("aethos.operational_health.read_pack", context_ref, {})
+
+
+@mcp.tool()
+async def aethos_configuration_telemetry_read_pack(
+    context_ref: str,
+    inbox_limit: int = 10,
+) -> dict[str, Any]:
+    """Read approval controls, Finance Ops schedule, Atlas runtime, Langfuse, and alerts."""
+    return await _execute(
+        "aethos.configuration_telemetry.read_pack",
+        context_ref,
+        {"inbox_limit": inbox_limit},
+    )
 
 
 @mcp.tool()
@@ -435,6 +464,44 @@ async def aethos_r2r_management_pack_read_pack(
     )
     return await _execute(
         "aethos.r2r.management_pack_read_pack",
+        context_ref,
+        arguments,
+    )
+
+
+@mcp.tool()
+async def aethos_r2r_prepare_manual_journal_review(
+    context_ref: str,
+    amount: str,
+    currency: str,
+    period: str,
+    base_currency: str | None = None,
+    description: str | None = None,
+    client_name: str | None = None,
+    business_reason: str | None = None,
+    supporting_evidence: str | None = None,
+    entry_date: str | None = None,
+    debit_account_code: str = "1100",
+    credit_account_code: str = "4000",
+) -> dict[str, Any]:
+    """Prepare an AI-drafted manual journal review packet and route it to Inbox."""
+    arguments = _optional_args(
+        {
+            "amount": amount,
+            "currency": currency,
+            "period": period,
+            "base_currency": base_currency,
+            "description": description,
+            "client_name": client_name,
+            "business_reason": business_reason,
+            "supporting_evidence": supporting_evidence,
+            "entry_date": entry_date,
+            "debit_account_code": debit_account_code,
+            "credit_account_code": credit_account_code,
+        }
+    )
+    return await _execute(
+        "aethos.r2r.prepare_manual_journal_review",
         context_ref,
         arguments,
     )

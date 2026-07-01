@@ -34,7 +34,13 @@ from pydantic import BaseModel
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.tenant import get_tenant_id
+from app.models.ai_settings import AiSettingsResponse
 from app.repositories.chat_repo import ChatRepository
+from app.services.ai_settings_service import AiSettingsService, default_ai_settings_response
+from app.services.atlas_deterministic_responses import (
+    SemanticAtlasResponse,
+    render_semantic_atlas_response,
+)
 from app.services.atlas_runtime import build_atlas_runtime
 from supabase import Client
 
@@ -269,56 +275,137 @@ async def send_message(
         extra={"tenant_id": tenant_id, "thread_id": thread_id},
     )
 
-    runtime = await build_atlas_runtime(
-        tenant_id=tenant_id,
-        user_id=current_user.user_id,
-        db_client=db,
-    )
-
     async def event_stream() -> AsyncIterator[str]:
         """Consume the agent stream, accumulate the reply, persist it on done."""
         accumulated_text: list[str] = []
         finish_reason: str = "stop"
         had_error = False
 
-        async for frame in runtime.stream_message(
-            user_message=payload.content,
-            thread_id=thread_id,
-        ):
-            yield frame
+        try:
+            ai_settings = await AiSettingsService(db, tenant_id).get_effective_settings()
+        except Exception:
+            logger.warning(
+                "tenant_ai_settings_unavailable",
+                exc_info=True,
+                extra={"tenant_id": tenant_id},
+            )
+            ai_settings = default_ai_settings_response(tenant_id=tenant_id)
 
-            # Parse the frame payload to accumulate assistant reply
+        async def maybe_semantic_response(
+            settings: AiSettingsResponse,
+        ) -> SemanticAtlasResponse | None:
+            if not settings.semantic_router_enabled:
+                return None
             try:
-                raw = frame[len("data: "):].strip()
-                parsed = json.loads(raw)
-                if "delta" in parsed:
-                    accumulated_text.append(parsed["delta"])
-                if "done" in parsed:
-                    finish_reason = parsed.get("finish_reason", "stop")
-                if "error" in parsed:
-                    had_error = True
-            except (ValueError, KeyError):
-                pass
-
-        # Persist assistant reply (even on error — record what we got)
-        assistant_content = "".join(accumulated_text) or None
-        if not had_error or assistant_content:
-            try:
-                await repo.create_message(
+                semantic_reply = await render_semantic_atlas_response(
+                    db=db,
+                    tenant_id=tenant_id,
+                    current_user=current_user,
                     thread_id=thread_id,
-                    role="assistant",
-                    content=assistant_content,
-                    finish_reason=finish_reason,
-                    model="claude-sonnet-4-6",
+                    message=payload.content,
+                    min_confidence=settings.semantic_router_min_confidence,
                 )
             except Exception:
-                # Non-fatal: the user got their response; persistence failure
-                # should not surface as an error in the stream.
-                logger.error(
-                    "Failed to persist assistant message",
+                logger.warning(
+                    "atlas_semantic_response_failed",
                     exc_info=True,
                     extra={"tenant_id": tenant_id, "thread_id": thread_id},
                 )
+                return None
+
+            if semantic_reply is None:
+                return None
+            return semantic_reply
+
+        async def stream_runtime(settings: AiSettingsResponse) -> AsyncIterator[str]:
+            nonlocal finish_reason, had_error
+            runtime = await build_atlas_runtime(
+                tenant_id=tenant_id,
+                user_id=current_user.user_id,
+                db_client=db,
+                ai_settings=settings,
+            )
+
+            async for frame in runtime.stream_message(
+                user_message=payload.content,
+                thread_id=thread_id,
+            ):
+                yield frame
+
+                # Parse the frame payload to accumulate assistant reply
+                try:
+                    raw = frame[len("data: ") :].strip()
+                    parsed = json.loads(raw)
+                    if "delta" in parsed:
+                        accumulated_text.append(parsed["delta"])
+                    if "done" in parsed:
+                        finish_reason = parsed.get("finish_reason", "stop")
+                    if "error" in parsed:
+                        had_error = True
+                except (ValueError, KeyError):
+                    pass
+
+            # Persist assistant reply (even on error — record what we got)
+            assistant_content = "".join(accumulated_text) or None
+            if not had_error or assistant_content:
+                try:
+                    await repo.create_message(
+                        thread_id=thread_id,
+                        role="assistant",
+                        content=assistant_content,
+                        finish_reason=finish_reason,
+                        model="claude-sonnet-4-6",
+                    )
+                except Exception:
+                    # Non-fatal: the user got their response; persistence failure
+                    # should not surface as an error in the stream.
+                    logger.error(
+                        "Failed to persist assistant message",
+                        exc_info=True,
+                        extra={"tenant_id": tenant_id, "thread_id": thread_id},
+                    )
+
+        response_order = ai_settings.atlas_response_order or ["semantic_intent", "atlas_runtime"]
+        for stage in response_order:
+            if stage == "semantic_intent":
+                semantic_reply = await maybe_semantic_response(ai_settings)
+                if semantic_reply is not None:
+                    frame = f"data: {json.dumps({'delta': semantic_reply.text})}\n\n"
+                    yield frame
+                    accumulated_text.append(semantic_reply.text)
+                    yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
+                    try:
+                        await repo.create_message(
+                            thread_id=thread_id,
+                            role="assistant",
+                            content="".join(accumulated_text),
+                            finish_reason=finish_reason,
+                            model="aethos-semantic-intent",
+                        )
+                    except Exception:
+                        logger.error(
+                            "Failed to persist assistant message",
+                            exc_info=True,
+                            extra={"tenant_id": tenant_id, "thread_id": thread_id},
+                        )
+                    logger.info(
+                        "atlas_semantic_response_used",
+                        extra={
+                            "tenant_id": tenant_id,
+                            "thread_id": thread_id,
+                            "intent": semantic_reply.route.intent,
+                            "confidence": semantic_reply.route.confidence,
+                            "action_mode": semantic_reply.route.action_mode,
+                        },
+                    )
+                    return
+            if stage == "atlas_runtime":
+                async for frame in stream_runtime(ai_settings):
+                    yield frame
+                return
+
+        async for frame in stream_runtime(ai_settings):
+            yield frame
 
     return StreamingResponse(
         event_stream(),

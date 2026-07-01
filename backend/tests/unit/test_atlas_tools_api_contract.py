@@ -367,6 +367,12 @@ def test_atlas_tool_broker_approval_controls_uses_context_user_and_tenant(
             {"limit": 12},
         ),
         (
+            "aethos.cosec.reminders_read_pack",
+            {"client_name": "Alderton", "limit": 4},
+            "cosec_reminders_read_pack",
+            {"client_name": "Alderton", "limit": 4},
+        ),
+        (
             "aethos.engagements.structure_read_pack",
             {"client_name": "Nexus", "limit": 6},
             "engagement_structure_read_pack",
@@ -413,6 +419,10 @@ def test_atlas_tool_broker_new_read_packs_use_context_tenant(
         def documents_audit_read_pack(self, **kwargs: Any) -> dict[str, Any]:
             calls.append({"method": "documents_audit_read_pack", "kwargs": kwargs})
             return {"tenant_id": TENANT_ID, "documents": [{"id": "doc-audit"}]}
+
+        def cosec_reminders_read_pack(self, **kwargs: Any) -> dict[str, Any]:
+            calls.append({"method": "cosec_reminders_read_pack", "kwargs": kwargs})
+            return {"tenant_id": TENANT_ID, "reminders": [{"id": "cosec-1"}]}
 
         def engagement_structure_read_pack(self, **kwargs: Any) -> dict[str, Any]:
             calls.append({"method": "engagement_structure_read_pack", "kwargs": kwargs})
@@ -491,6 +501,144 @@ def test_atlas_tool_broker_operational_health_read_pack_uses_context_tenant(
     assert calls[0]["tenant_id"] == TENANT_ID
     assert calls[1] == {"method": "operational_health_read_pack"}
     assert response.json()["result"]["safety_contract"]["exposes_secrets"] is False
+
+
+def test_atlas_tool_broker_configuration_telemetry_uses_context_user_and_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_ref = _context_ref(monkeypatch)
+    calls: list[dict[str, Any]] = []
+
+    class _AgentsService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            calls.append({"service": "agents", "tenant_id": tenant_id})
+
+        def get_approval_controls_read_pack(
+            self,
+            *,
+            user_id: str,
+            inbox_limit: int,
+        ) -> dict[str, Any]:
+            calls.append({"method": "approval", "user_id": user_id, "inbox_limit": inbox_limit})
+            return {"current_user_role": "manager"}
+
+        def get_finance_ops_control_room(
+            self,
+            *,
+            workflow_limit: int,
+            task_limit: int,
+        ) -> dict[str, Any]:
+            calls.append(
+                {
+                    "method": "control_room",
+                    "workflow_limit": workflow_limit,
+                    "task_limit": task_limit,
+                }
+            )
+            return {"schedule": {"cadence": "daily"}}
+
+    class _AtlasReadPackService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            calls.append({"service": "read_pack", "tenant_id": tenant_id})
+
+        def operational_health_read_pack(self) -> dict[str, Any]:
+            calls.append({"method": "operational_health"})
+            return {"atlas_runtime": {"runtime": "hermes"}, "langfuse_observability": {}}
+
+    monkeypatch.setattr(atlas_tools, "AgentsService", _AgentsService)
+    monkeypatch.setattr(atlas_tools, "AtlasReadPackService", _AtlasReadPackService)
+    _install_broker_overrides(monkeypatch)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/atlas-tools/execute",
+                headers={"Authorization": f"Bearer {BROKER_TOKEN}"},
+                json={
+                    "context_ref": context_ref,
+                    "tool_name": "aethos.configuration_telemetry.read_pack",
+                    "arguments": {
+                        "inbox_limit": 6,
+                        "tenant_id": "tenant-model-tried-to-pass",
+                    },
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["tenant_id"] == TENANT_ID
+    assert result["approval_controls"]["current_user_role"] == "manager"
+    assert result["operational_health"]["atlas_runtime"]["runtime"] == "hermes"
+    assert calls[0]["tenant_id"] == TENANT_ID
+    assert {"method": "approval", "user_id": USER_ID, "inbox_limit": 6} in calls
+
+
+def test_atlas_tool_broker_manual_journal_review_tool_preserves_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_ref = _context_ref(monkeypatch)
+    calls: list[dict[str, Any]] = []
+
+    async def _handler(
+        db: object,
+        context: atlas_context.AtlasToolContext,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append(
+            {
+                "tenant_id": context.tenant_id,
+                "user_id": context.user_id,
+                "arguments": arguments,
+            }
+        )
+        return {
+            "requires_review": True,
+            "review_path": "/app/inbox",
+            "requested_transaction": {"currency": arguments["currency"]},
+        }
+
+    monkeypatch.setitem(
+        atlas_tools._TOOL_DISPATCH,
+        "aethos.r2r.prepare_manual_journal_review",
+        _handler,
+    )
+    _install_broker_overrides(monkeypatch)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/atlas-tools/execute",
+                headers={"Authorization": f"Bearer {BROKER_TOKEN}"},
+                json={
+                    "context_ref": context_ref,
+                    "tool_name": "aethos.r2r.prepare_manual_journal_review",
+                    "arguments": {
+                        "amount": "18000",
+                        "currency": "SGD",
+                        "period": "June 2026",
+                        "tenant_id": "tenant-model-tried-to-pass",
+                    },
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert calls == [
+        {
+            "tenant_id": TENANT_ID,
+            "user_id": USER_ID,
+            "arguments": {
+                "amount": "18000",
+                "currency": "SGD",
+                "period": "June 2026",
+                "tenant_id": "tenant-model-tried-to-pass",
+            },
+        }
+    ]
+    assert response.json()["result"]["review_path"] == "/app/inbox"
 
 
 def test_atlas_tool_broker_creates_engagement_review_without_internal_ids(

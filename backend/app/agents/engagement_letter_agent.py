@@ -173,7 +173,7 @@ async def run_engagement_letter_agent(
         )
 
     try:
-        return EngagementDraft(**raw)
+        return EngagementDraft(**_normalise_billing_arrangement(raw))
     except ValidationError as exc:
         logger.warning(
             "engagement_letter_agent: ValidationError on LLM output — degrading",
@@ -186,3 +186,27 @@ async def run_engagement_letter_agent(
         return _empty_engagement_draft(
             suspected_injection=bool(raw.get("suspected_injection", False)),
         )
+
+
+def _normalise_billing_arrangement(raw: dict) -> dict:
+    """Correct common model under-classification for mixed engagement letters."""
+    result = dict(raw)
+    arrangement = str(result.get("billing_arrangement") or "").strip().lower()
+    term_signals = 0
+    if result.get("fixed_fee_amount") is not None or arrangement == "fixed_fee":
+        term_signals += 1
+    if result.get("milestone_total") is not None or arrangement == "milestone":
+        term_signals += 1
+    if result.get("retainer_monthly_amount") is not None or arrangement in {
+        "retainer",
+        "retainer_draw",
+    }:
+        term_signals += 1
+    has_time_and_materials = arrangement in {"time_and_materials", "capped_tm"} or bool(
+        result.get("cap_amount") or result.get("rate_card_hints") or result.get("rate")
+    )
+    if has_time_and_materials:
+        term_signals += 1
+    if term_signals >= 2:
+        result["billing_arrangement"] = "mixed"
+    return result

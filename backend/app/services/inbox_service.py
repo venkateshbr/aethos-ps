@@ -257,16 +257,16 @@ class InboxService:
 
         # Find the tenant owner
         owner_result = await asyncio.to_thread(
-            lambda: self._db.table("tenant_users")
-            .select("user_id")
-            .eq("tenant_id", self._tenant_id)
-            .eq("role", "owner")
-            .limit(1)
-            .execute()
+            lambda: (
+                self._db.table("tenant_users")
+                .select("user_id")
+                .eq("tenant_id", self._tenant_id)
+                .eq("role", "owner")
+                .limit(1)
+                .execute()
+            )
         )
-        owner_id = (
-            owner_result.data[0]["user_id"] if owner_result.data else user_id
-        )
+        owner_id = owner_result.data[0]["user_id"] if owner_result.data else user_id
 
         await self._repo.update_task(
             task_id,
@@ -350,10 +350,7 @@ class InboxService:
                 )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Manual journal approval requires a different user "
-                        "than the submitter"
-                    ),
+                    detail=("Manual journal approval requires a different user than the submitter"),
                 )
             return ApprovalCheck(decision=decision, user_role=user_role, payload=payload)
 
@@ -412,11 +409,7 @@ class InboxService:
         after_state = {
             "task": {
                 **_task_audit_summary(task),
-                "status": (
-                    "open"
-                    if action.endswith("_denied")
-                    else "done"
-                ),
+                "status": ("open" if action.endswith("_denied") else "done"),
             },
             "payload": _safe_payload_summary(after_payload),
             "payload_hash": stable_payload_hash(after_payload),
@@ -604,13 +597,15 @@ class InboxService:
     async def _fetch_user_role(self, user_id: str) -> UserRole:
         try:
             result = await asyncio.to_thread(
-                lambda: self._db.table("tenant_users")
-                .select("role")
-                .eq("tenant_id", self._tenant_id)
-                .eq("user_id", user_id)
-                .is_("deleted_at", "null")
-                .limit(1)
-                .execute()
+                lambda: (
+                    self._db.table("tenant_users")
+                    .select("role")
+                    .eq("tenant_id", self._tenant_id)
+                    .eq("user_id", user_id)
+                    .is_("deleted_at", "null")
+                    .limit(1)
+                    .execute()
+                )
             )
             rows = getattr(result, "data", None) or []
             if rows:
@@ -876,10 +871,7 @@ class InboxService:
                 tool_input = invoice_input["tool_input"]
             else:
                 return {
-                    "error": (
-                        "Unsupported finance ops Plan Item dispatch target: "
-                        f"{tool_name}"
-                    )
+                    "error": (f"Unsupported finance ops Plan Item dispatch target: {tool_name}")
                 }
             return {"tool_name": tool_name, "tool_input": tool_input}
 
@@ -948,8 +940,7 @@ class InboxService:
         if not engagement_id and not engagement_name:
             return {
                 "error": (
-                    "Invoice Plan Item dispatch requires an engagement_id or "
-                    "engagement_name."
+                    "Invoice Plan Item dispatch requires an engagement_id or engagement_name."
                 ),
             }
         if engagement_id:
@@ -990,49 +981,51 @@ class InboxService:
                 index=index,
             )
             suggestion = await asyncio.to_thread(
-                lambda child_payload=child_payload: self._db.table("agent_suggestions")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "agent_name": str(
-                            child_payload.get("suggested_agent") or "finance_ops_manager"
-                        ),
-                        "action_type": "finance_ops_action_item",
-                        "input_snapshot": {
-                            "parent_plan_id": plan_id,
-                            "period": period,
-                            "source_tool": "create_finance_ops_action_plan",
-                        },
-                        "output_snapshot": child_payload,
-                        "confidence": "0.00",
-                        "status": "pending",
-                        "hitl_required": True,
-                    }
+                lambda child_payload=child_payload: (
+                    self._db.table("agent_suggestions")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "agent_name": str(
+                                child_payload.get("suggested_agent") or "finance_ops_manager"
+                            ),
+                            "action_type": "finance_ops_action_item",
+                            "input_snapshot": {
+                                "parent_plan_id": plan_id,
+                                "period": period,
+                                "source_tool": "create_finance_ops_action_plan",
+                            },
+                            "output_snapshot": child_payload,
+                            "confidence": "0.00",
+                            "status": "pending",
+                            "hitl_required": True,
+                        }
+                    )
+                    .execute()
                 )
-                .execute()
             )
             rows = getattr(suggestion, "data", None) or []
             suggestion_id = rows[0].get("id") if rows else None
             await asyncio.to_thread(
-                lambda child_payload=child_payload, suggestion_id=suggestion_id: self._db.table(
-                    "hitl_tasks"
+                lambda child_payload=child_payload, suggestion_id=suggestion_id: (
+                    self._db.table("hitl_tasks")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "agent_suggestion_id": suggestion_id,
+                            "kind": "finance_ops_action_item",
+                            "priority": self._finance_ops_action_item_priority(child_payload),
+                            "title": self._finance_ops_action_item_title(child_payload),
+                            "description": (
+                                "Plan-derived finance ops work item. Review this follow-up "
+                                "before requesting the specialist action."
+                            ),
+                            "payload": child_payload,
+                            "status": "open",
+                        }
+                    )
+                    .execute()
                 )
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "agent_suggestion_id": suggestion_id,
-                        "kind": "finance_ops_action_item",
-                        "priority": self._finance_ops_action_item_priority(child_payload),
-                        "title": self._finance_ops_action_item_title(child_payload),
-                        "description": (
-                            "Plan-derived finance ops work item. Review this follow-up "
-                            "before requesting the specialist action."
-                        ),
-                        "payload": child_payload,
-                        "status": "open",
-                    }
-                )
-                .execute()
             )
             created += 1
         return created
@@ -1046,9 +1039,7 @@ class InboxService:
         index: int,
     ) -> dict:
         action_item_id = str(
-            item.get("action_id")
-            or item.get("id")
-            or f"{plan_id or 'finance-ops-plan'}-{index}"
+            item.get("action_id") or item.get("id") or f"{plan_id or 'finance-ops-plan'}-{index}"
         )
         return {
             "finance_ops_action_item": True,
@@ -1352,34 +1343,35 @@ class InboxService:
 
         # Find or create client
         existing = await asyncio.to_thread(
-            lambda: self._db.table("clients")
-            .select("id")
-            .eq("tenant_id", self._tenant_id)
-            .ilike("name", client_name)
-            .limit(1)
-            .execute()
+            lambda: (
+                self._db.table("clients")
+                .select("id")
+                .eq("tenant_id", self._tenant_id)
+                .ilike("name", client_name)
+                .limit(1)
+                .execute()
+            )
         )
         if existing.data:
             client_id = existing.data[0]["id"]
         else:
             client_row = await asyncio.to_thread(
-                lambda: self._db.table("clients")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "name": client_name,
-                        "kind": "customer",
-                    }
+                lambda: (
+                    self._db.table("clients")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "name": client_name,
+                            "kind": "customer",
+                        }
+                    )
+                    .execute()
                 )
-                .execute()
             )
             client_id = client_row.data[0]["id"]
 
         engagement_currency = (_non_empty(payload.get("currency")) or "USD").upper()
-        engagement_name = (
-            _non_empty(payload.get("engagement_name"))
-            or f"{client_name} Engagement"
-        )
+        engagement_name = _non_empty(payload.get("engagement_name")) or f"{client_name} Engagement"
         total_value = (
             serialise_money(Decimal(str(payload["total_value"])))
             if payload.get("total_value")
@@ -1391,30 +1383,32 @@ class InboxService:
             currency=engagement_currency,
         )
         eng_row = await asyncio.to_thread(
-            lambda: self._db.table("engagements")
-            .insert(
-                _without_none(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "client_id": client_id,
-                        "name": engagement_name,
-                        "billing_arrangement": payload.get(
-                            "billing_arrangement",
-                            "time_and_materials",
-                        ),
-                        "currency": engagement_currency,
-                        "total_value": total_value,
-                        "description": _non_empty(payload.get("scope_summary")),
-                        "start_date": _non_empty(payload.get("start_date")),
-                        "end_date": _non_empty(payload.get("end_date")),
-                        "status": "draft",
-                        "rate_card_id": rate_card_id,
-                        "service_line": _non_empty(payload.get("service_line")),
-                        "source_document_id": self._source_document_id(payload),  # #127
-                    }
+            lambda: (
+                self._db.table("engagements")
+                .insert(
+                    _without_none(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "client_id": client_id,
+                            "name": engagement_name,
+                            "billing_arrangement": payload.get(
+                                "billing_arrangement",
+                                "time_and_materials",
+                            ),
+                            "currency": engagement_currency,
+                            "total_value": total_value,
+                            "description": _non_empty(payload.get("scope_summary")),
+                            "start_date": _non_empty(payload.get("start_date")),
+                            "end_date": _non_empty(payload.get("end_date")),
+                            "status": "draft",
+                            "rate_card_id": rate_card_id,
+                            "service_line": _non_empty(payload.get("service_line")),
+                            "source_document_id": self._source_document_id(payload),  # #127
+                        }
+                    )
                 )
+                .execute()
             )
-            .execute()
         )
         engagement_id = str(eng_row.data[0]["id"])
         billing_terms_created = await self._create_engagement_billing_terms(
@@ -1430,24 +1424,26 @@ class InboxService:
         project_name = _non_empty(payload.get("first_project_name")) or "General"
         try:
             project_row = await asyncio.to_thread(
-                lambda: self._db.table("projects")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "engagement_id": engagement_id,
-                        "name": project_name,
-                        "description": (
-                            _non_empty(payload.get("first_project_description"))
-                            or _non_empty(payload.get("scope_summary"))
-                        ),
-                        "currency": engagement_currency,
-                        "budget": total_value,
-                        "start_date": _non_empty(payload.get("start_date")),
-                        "end_date": _non_empty(payload.get("end_date")),
-                        "status": "planning",
-                    }
+                lambda: (
+                    self._db.table("projects")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "engagement_id": engagement_id,
+                            "name": project_name,
+                            "description": (
+                                _non_empty(payload.get("first_project_description"))
+                                or _non_empty(payload.get("scope_summary"))
+                            ),
+                            "currency": engagement_currency,
+                            "budget": total_value,
+                            "start_date": _non_empty(payload.get("start_date")),
+                            "end_date": _non_empty(payload.get("end_date")),
+                            "status": "planning",
+                        }
+                    )
+                    .execute()
                 )
-                .execute()
             )
             if project_row.data:
                 project_id = str(project_row.data[0]["id"])
@@ -1485,15 +1481,17 @@ class InboxService:
         if not terms:
             return False
         await asyncio.to_thread(
-            lambda: self._db.table("engagement_billing_terms")
-            .insert(
-                {
-                    "tenant_id": self._tenant_id,
-                    "engagement_id": engagement_id,
-                    **terms,
-                }
+            lambda: (
+                self._db.table("engagement_billing_terms")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "engagement_id": engagement_id,
+                        **terms,
+                    }
+                )
+                .execute()
             )
-            .execute()
         )
         return True
 
@@ -1508,39 +1506,40 @@ class InboxService:
         if not lines:
             return None, 0
 
-        effective_date = (
-            _non_empty(payload.get("start_date"))
-            or date.today().isoformat()
-        )
+        effective_date = _non_empty(payload.get("start_date")) or date.today().isoformat()
         try:
             card_row = await asyncio.to_thread(
-                lambda: self._db.table("rate_cards")
-                .insert(
-                    {
-                        "tenant_id": self._tenant_id,
-                        "name": f"{engagement_name} Rate Card",
-                        "currency": currency,
-                        "effective_date": effective_date,
-                    }
+                lambda: (
+                    self._db.table("rate_cards")
+                    .insert(
+                        {
+                            "tenant_id": self._tenant_id,
+                            "name": f"{engagement_name} Rate Card",
+                            "currency": currency,
+                            "effective_date": effective_date,
+                        }
+                    )
+                    .execute()
                 )
-                .execute()
             )
             if not card_row.data:
                 return None, 0
             rate_card_id = str(card_row.data[0]["id"])
             await asyncio.to_thread(
-                lambda: self._db.table("rate_card_lines")
-                .insert(
-                    [
-                        {
-                            **line,
-                            "tenant_id": self._tenant_id,
-                            "rate_card_id": rate_card_id,
-                        }
-                        for line in lines
-                    ]
+                lambda: (
+                    self._db.table("rate_card_lines")
+                    .insert(
+                        [
+                            {
+                                **line,
+                                "tenant_id": self._tenant_id,
+                                "rate_card_id": rate_card_id,
+                            }
+                            for line in lines
+                        ]
+                    )
+                    .execute()
                 )
-                .execute()
             )
             return rate_card_id, len(lines)
         except Exception as exc:
@@ -1565,22 +1564,28 @@ class InboxService:
 
         amount = Decimal(str(payload.get("amount", "0")))
         exp_row = await asyncio.to_thread(
-            lambda: self._db.table("project_expenses")
-            .insert(
-                {
-                    "tenant_id": self._tenant_id,
-                    "project_id": project_id,
-                    "description": payload.get("vendor") or payload.get("description") or "Expense",
-                    "amount": str(amount),
-                    "currency": payload.get("currency", "USD"),
-                    "base_amount": str(amount),
-                    "expense_date": payload.get("expense_date"),
-                    "category": payload.get("category", "other"),
-                    "billable": payload.get("billable", True),
-                    "document_id": self._source_document_id(payload),  # #127 — column existed from 0007, never populated
-                }
+            lambda: (
+                self._db.table("project_expenses")
+                .insert(
+                    {
+                        "tenant_id": self._tenant_id,
+                        "project_id": project_id,
+                        "description": payload.get("vendor")
+                        or payload.get("description")
+                        or "Expense",
+                        "amount": str(amount),
+                        "currency": payload.get("currency", "USD"),
+                        "base_amount": str(amount),
+                        "expense_date": payload.get("expense_date"),
+                        "category": payload.get("category", "other"),
+                        "billable": payload.get("billable", True),
+                        "document_id": self._source_document_id(
+                            payload
+                        ),  # #127 — column existed from 0007, never populated
+                    }
+                )
+                .execute()
             )
-            .execute()
         )
         return {"entity_type": "expense", "entity_id": str(exp_row.data[0]["id"])}
 
@@ -1601,27 +1606,31 @@ class InboxService:
         else:
             # Find or create vendor client
             existing = await asyncio.to_thread(
-                lambda: self._db.table("clients")
-                .select("id")
-                .eq("tenant_id", self._tenant_id)
-                .eq("kind", "vendor")
-                .ilike("name", vendor_name)
-                .limit(1)
-                .execute()
+                lambda: (
+                    self._db.table("clients")
+                    .select("id")
+                    .eq("tenant_id", self._tenant_id)
+                    .eq("kind", "vendor")
+                    .ilike("name", vendor_name)
+                    .limit(1)
+                    .execute()
+                )
             )
             if existing.data:
                 client_id = existing.data[0]["id"]
             else:
                 client_row = await asyncio.to_thread(
-                    lambda: self._db.table("clients")
-                    .insert(
-                        {
-                            "tenant_id": self._tenant_id,
-                            "name": vendor_name,
-                            "kind": "vendor",
-                        }
+                    lambda: (
+                        self._db.table("clients")
+                        .insert(
+                            {
+                                "tenant_id": self._tenant_id,
+                                "name": vendor_name,
+                                "kind": "vendor",
+                            }
+                        )
+                        .execute()
                     )
-                    .execute()
                 )
                 client_id = client_row.data[0]["id"]
 
@@ -1712,9 +1721,7 @@ class InboxService:
             ]
 
         gl_suggestions = (
-            payload.get("gl_suggestions")
-            if isinstance(payload.get("gl_suggestions"), list)
-            else []
+            payload.get("gl_suggestions") if isinstance(payload.get("gl_suggestions"), list) else []
         )
         lines: list[dict] = []
         for index, raw_line in enumerate(raw_lines):
@@ -1866,10 +1873,7 @@ def _row_to_summary(
         required_approval_role=approval.get("required_role"),
         approval_policy_reason=approval.get("reason"),
         approval_policy=approval,
-        decision_history=[
-            HitlDecisionEvent.from_db(event)
-            for event in (decision_history or [])
-        ],
+        decision_history=[HitlDecisionEvent.from_db(event) for event in (decision_history or [])],
     )
 
 
@@ -1894,10 +1898,7 @@ def _row_to_detail(
         required_approval_role=approval.get("required_role"),
         approval_policy_reason=approval.get("reason"),
         approval_policy=approval,
-        decision_history=[
-            HitlDecisionEvent.from_db(event)
-            for event in (decision_history or [])
-        ],
+        decision_history=[HitlDecisionEvent.from_db(event) for event in (decision_history or [])],
         description=row.get("description"),
         payload=row.get("payload", {}),
     )
@@ -1967,10 +1968,9 @@ def _business_record_projection_targets(
         entity_id = _non_empty(materialisation.get("entity_id"))
         if entity_type and entity_id and entity_type != "hitl_task":
             targets.append((entity_type, entity_id))
-    source_document_id = (
-        _source_document_id_from_payload(payload)
-        or _source_document_id_from_payload(before_payload)
-    )
+    source_document_id = _source_document_id_from_payload(
+        payload
+    ) or _source_document_id_from_payload(before_payload)
     if source_document_id:
         targets.append(("document", source_document_id))
 
@@ -2040,9 +2040,7 @@ def _normalise_rate_card_hint_lines(hints: Any) -> list[dict[str, str | None]]:
             {
                 "role": role,
                 "rate": f"{rate:.2f}",
-                "service_line": _normalise_rate_card_service_line(
-                    hint.get("service_line")
-                ),
+                "service_line": _normalise_rate_card_service_line(hint.get("service_line")),
             }
         )
     return lines
@@ -2064,7 +2062,10 @@ def _is_manual_journal_threshold_payload(payload: dict | None) -> bool:
     approval = payload.get("manual_journal_approval")
     if not isinstance(approval, dict):
         return False
-    return approval.get("source") == "manual_journal_threshold"
+    return approval.get("source") in {
+        "manual_journal_threshold",
+        "atlas_ai_prepared_manual_journal",
+    }
 
 
 def _is_manual_journal_self_approval_attempt(
@@ -2088,7 +2089,10 @@ def _manual_journal_payload_summary(payload: dict) -> dict[str, Any]:
     approval = payload.get("manual_journal_approval") or {}
     if not isinstance(approval, dict):
         approval = {}
-    lines = payload.get("lines") or []
+    journal_entry = (
+        payload.get("journal_entry") if isinstance(payload.get("journal_entry"), dict) else {}
+    )
+    lines = payload.get("lines") or journal_entry.get("lines") or []
     line_count = len(lines) if isinstance(lines, list) else 0
     total_debits = _non_empty(payload.get("total_debits"))
     if total_debits is None:

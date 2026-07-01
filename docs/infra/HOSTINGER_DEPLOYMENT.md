@@ -193,8 +193,10 @@ The Hermes-powered Atlas runtime uses a private Aethos Tool Broker:
   then OpenRouter's free model router, then Claude Haiku 4.5:
   `google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5`.
   Tenant admins can view and override runtime/model routing from Settings ->
-  Agent Autonomy -> AI Inference Settings. These tenant settings apply to
-  Aethos Basic, the built-in fallback path, and tenant-scoped document/reporting
+  Agent Autonomy -> AI Inference Settings. The same card controls whether Atlas
+  tries the confidence-gated semantic intent router before the configured model
+  runtime. These tenant settings apply to Aethos Basic, the built-in fallback
+  path, semantic-router response order, and tenant-scoped document/reporting
   agents. Hermes still uses the mounted Atlas profile for its primary model
   until Hermes exposes dynamic per-tenant model selection.
 - Hermes provider/control-plane failures are classified by the Aethos API as

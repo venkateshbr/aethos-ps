@@ -16,6 +16,7 @@ from decimal import Decimal
 import pytest
 
 from app.agents.base import build_document_content, mask_pii, scan_document_safety
+from app.agents.engagement_letter_agent import _normalise_billing_arrangement
 from app.agents.schemas import BillDraft, EngagementDraft, ProjectExpenseDraft
 
 pytestmark = pytest.mark.unit
@@ -48,7 +49,9 @@ def test_build_content_text_masks_and_truncates() -> None:
 
 def test_build_content_pdf_not_decoded_as_text() -> None:
     # Regression for #146: PDF bytes must NOT be utf-8 decoded into the prompt.
-    content = build_document_content("PROMPT", b"%PDF-1.3\nstream\xff\xfe garbage", "application/pdf")
+    content = build_document_content(
+        "PROMPT", b"%PDF-1.3\nstream\xff\xfe garbage", "application/pdf"
+    )
     assert content[0]["type"] == "file"  # native, not a text blob of garbage
 
 
@@ -243,6 +246,19 @@ def test_engagement_draft_empty_raw_gives_safe_defaults() -> None:
     assert d.confidence == 0.5
     assert d.client_name == ""
     assert d.suspected_injection is False
+
+
+def test_engagement_letter_normalises_multi_term_letter_to_mixed() -> None:
+    raw = {
+        "billing_arrangement": "fixed_fee",
+        "fixed_fee_amount": "48000.00",
+        "retainer_monthly_amount": "9000.00",
+        "rate_card_hints": [{"role": "Partner", "rate": "350.00"}],
+    }
+
+    normalised = _normalise_billing_arrangement(raw)
+
+    assert normalised["billing_arrangement"] == "mixed"
 
 
 # ---------------------------------------------------------------------------

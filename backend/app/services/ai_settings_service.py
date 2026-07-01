@@ -15,6 +15,7 @@ DEFAULT_PRIMARY_MODEL = "google/gemma-4-31b-it:free"
 FREE_ROUTER_MODEL = "openrouter/free"
 DEFAULT_FALLBACK_MODEL = "anthropic/claude-haiku-4.5"
 DEFAULT_MODEL_CHAIN = [DEFAULT_PRIMARY_MODEL, FREE_ROUTER_MODEL, DEFAULT_FALLBACK_MODEL]
+DEFAULT_ATLAS_RESPONSE_ORDER = ["semantic_intent", "atlas_runtime"]
 
 ALLOWED_MODEL_OPTIONS = [
     AiModelOption(
@@ -63,9 +64,7 @@ class AiSettingsService:
         data = payload.model_dump(mode="json")
         data["tenant_id"] = self._tenant_id
         result = await asyncio.to_thread(
-            lambda: self._db.table(_TABLE)
-            .upsert(data, on_conflict="tenant_id")
-            .execute()
+            lambda: self._db.table(_TABLE).upsert(data, on_conflict="tenant_id").execute()
         )
         rows = result.data or []
         if rows:
@@ -83,11 +82,13 @@ class AiSettingsService:
 
     async def _find_settings(self) -> dict[str, Any] | None:
         result = await asyncio.to_thread(
-            lambda: self._db.table(_TABLE)
-            .select("*")
-            .eq("tenant_id", self._tenant_id)
-            .limit(1)
-            .execute()
+            lambda: (
+                self._db.table(_TABLE)
+                .select("*")
+                .eq("tenant_id", self._tenant_id)
+                .limit(1)
+                .execute()
+            )
         )
         rows = result.data or []
         return rows[0] if rows else None
@@ -122,6 +123,9 @@ def default_ai_settings_response(*, tenant_id: str | None = None) -> AiSettingsR
         primary_model=DEFAULT_PRIMARY_MODEL,
         use_free_router=True,
         fallback_model=DEFAULT_FALLBACK_MODEL,
+        semantic_router_enabled=True,
+        semantic_router_min_confidence=0.72,
+        atlas_response_order=list(DEFAULT_ATLAS_RESPONSE_ORDER),
         model_chain=list(DEFAULT_MODEL_CHAIN),
         allowed_models=ALLOWED_MODEL_OPTIONS,
         created_at=None,
@@ -136,6 +140,9 @@ def _row_to_response(row: dict[str, Any]) -> AiSettingsResponse:
         primary_model=row.get("primary_model") or DEFAULT_PRIMARY_MODEL,
         use_free_router=bool(row.get("use_free_router", True)),
         fallback_model=row.get("fallback_model") or DEFAULT_FALLBACK_MODEL,
+        semantic_router_enabled=bool(row.get("semantic_router_enabled", True)),
+        semantic_router_min_confidence=float(row.get("semantic_router_min_confidence") or 0.72),
+        atlas_response_order=_response_order_from_row(row.get("atlas_response_order")),
     )
     return AiSettingsResponse(
         tenant_id=str(row.get("tenant_id") or ""),
@@ -146,3 +153,21 @@ def _row_to_response(row: dict[str, Any]) -> AiSettingsResponse:
         updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
         **payload.model_dump(),
     )
+
+
+def _response_order_from_row(value: object) -> list[str]:
+    if isinstance(value, list):
+        candidate = [str(item) for item in value]
+    elif isinstance(value, str) and value.strip():
+        trimmed = value.strip("{}")
+        candidate = [item.strip().strip('"') for item in trimmed.split(",") if item.strip()]
+    else:
+        candidate = list(DEFAULT_ATLAS_RESPONSE_ORDER)
+    allowed = {"semantic_intent", "atlas_runtime"}
+    deduped: list[str] = []
+    for stage in candidate:
+        if stage in allowed and stage not in deduped:
+            deduped.append(stage)
+    if "atlas_runtime" not in deduped:
+        deduped.append("atlas_runtime")
+    return deduped

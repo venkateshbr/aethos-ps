@@ -187,6 +187,65 @@ def test_engagement_onboarding_output_normalises_nexus_mixed_terms() -> None:
     assert output["rate_card_summary"] == "CFO Advisory Partner: GBP 350/hr"
 
 
+def test_document_classifiers_recognise_cosec_instruction() -> None:
+    from app.api.v1.endpoints.documents import _classify_document_type as upload_classifier
+    from app.workers.document_extraction import _classify_document_type as worker_classifier
+
+    filename = "thornton_cosec_instruction.pdf"
+
+    assert upload_classifier(filename) == "cosec_instruction"
+    assert worker_classifier(filename) == "cosec_instruction"
+
+
+def test_cosec_instruction_output_routes_filing_and_billing_to_inbox() -> None:
+    from app.workers.document_extraction import _normalise_cosec_instruction_output
+
+    output = _normalise_cosec_instruction_output("thornton_cosec_instruction.pdf")
+
+    assert output["document_type"] == "cosec_instruction"
+    assert output["client_name"] == "Thornton Tech Solutions Ltd"
+    assert "company" in output["company_change"].lower()
+    assert output["filing_reference"] == "AP01"
+    assert "filing" in output["filing_work_item"].lower()
+    assert "project" in output["project_work_item"].lower()
+    assert "billing" in output["billing_impact"].lower()
+    assert output["requires_inbox_approval"] is True
+    assert "Inbox approval" in output["approval_boundary"]
+
+
+def test_known_nexus_engagement_letter_output_has_mixed_billing() -> None:
+    from app.workers.document_extraction import (
+        _known_engagement_letter_output,
+        _normalise_engagement_onboarding_output,
+    )
+
+    known = _known_engagement_letter_output("nexus_engagement_letter.pdf")
+    assert known is not None
+
+    output = _normalise_engagement_onboarding_output(known)
+
+    assert output["client_name"] == "Nexus Capital Partners LP"
+    assert output["billing_arrangement"] == "mixed"
+    assert output["fixed_fee_amount"] == "42000.00"
+    assert output["retainer_monthly_amount"] == "8500.00"
+    assert output["total_value"] == "144000.00"
+    assert "CFO Advisory Partner" in output["rate_card_summary"]
+
+
+def test_known_brightwater_vendor_invoice_output_has_review_exceptions() -> None:
+    from app.workers.document_extraction import _known_vendor_invoice_output
+
+    output = _known_vendor_invoice_output("brightwater_subcontractor_invoice.pdf")
+
+    assert output is not None
+    assert output["vendor_name"] == "Forster & Reid Ltd"
+    assert output["vendor_invoice_number"] == "FR-2026-0615"
+    assert output["currency"] == "GBP"
+    assert output["project_hint"] == "Brightwater Annual Accounts FY2025"
+    assert output["duplicate_risk"] is False
+    assert output["review_exceptions"]
+
+
 # ---------------------------------------------------------------------------
 # File size guard
 # ---------------------------------------------------------------------------

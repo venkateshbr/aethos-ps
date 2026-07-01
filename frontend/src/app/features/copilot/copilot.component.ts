@@ -522,6 +522,7 @@ export class CopilotComponent implements OnInit {
     this.currentThreadId.set(null);
     this.messages.set([]);
     this.error.set(null);
+    this.clearPendingDocument();
     this.draftConversation.set(true);
   }
 
@@ -529,12 +530,13 @@ export class CopilotComponent implements OnInit {
     this.draftConversation.set(false);
     this.currentThreadId.set(thread.id);
     this.error.set(null);
+    this.clearPendingDocument();
     void this.loadMessages(thread.id);
   }
 
   private async loadThreads(): Promise<void> {
     try {
-      const res = await fetch('/api/v1/chat/threads?limit=20', {
+      const res = await this.fetchWithRetry('/api/v1/chat/threads?limit=20', {
         method: 'GET',
         headers: this.apiHeaders(),
       });
@@ -552,7 +554,7 @@ export class CopilotComponent implements OnInit {
 
   private async loadMessages(threadId: string): Promise<void> {
     try {
-      const res = await fetch(`/api/v1/chat/threads/${threadId}/messages?limit=100`, {
+      const res = await this.fetchWithRetry(`/api/v1/chat/threads/${threadId}/messages?limit=100`, {
         method: 'GET',
         headers: this.apiHeaders(),
       });
@@ -575,7 +577,7 @@ export class CopilotComponent implements OnInit {
 
   private async createThread(title: string = 'New conversation'): Promise<string | null> {
     try {
-      const res = await fetch('/api/v1/chat/threads', {
+      const res = await this.fetchWithRetry('/api/v1/chat/threads', {
         method: 'POST',
         headers: this.apiHeaders(),
         body: JSON.stringify({ title }),
@@ -587,6 +589,22 @@ export class CopilotComponent implements OnInit {
     } catch {
       return null;
     }
+  }
+
+  private async fetchWithRetry(input: RequestInfo | URL, init: RequestInit, attempts = 3): Promise<Response> {
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const res = await fetch(input, init);
+        if (res.status < 500 || attempt === attempts) return res;
+        lastError = new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        lastError = err;
+        if (attempt === attempts) break;
+      }
+      await this.sleep(400 * attempt);
+    }
+    throw lastError instanceof Error ? lastError : new Error('Request failed');
   }
 
   // --- Sending messages ---
@@ -842,6 +860,7 @@ export class CopilotComponent implements OnInit {
       console.error('Document processing failed:', err);
       this.uploadStatus.set('error');
       this.error.set('Could not process the attached document. Please try again.');
+      this.clearPendingDocument({ keepErrorStatus: true });
       setTimeout(() => {
         if (this.uploadStatus() === 'error') this.uploadStatus.set(null);
       }, 10000);
@@ -868,6 +887,15 @@ export class CopilotComponent implements OnInit {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private clearPendingDocument(options: { keepErrorStatus?: boolean } = {}): void {
+    this.pendingDocumentId.set(null);
+    this.uploadDocumentId.set(null);
+    this.uploadDocumentName.set(null);
+    if (!options.keepErrorStatus) {
+      this.uploadStatus.set(null);
+    }
   }
 
   private titleFromContent(content: string): string {

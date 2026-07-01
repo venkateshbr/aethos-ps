@@ -516,9 +516,7 @@ class AgentsService:
             workflow_name=_FINANCE_OPS_WORKFLOW_NAME,
             limit=capped_workflow_limit,
         )["workflow_runs"]
-        recent_all = self.list_agent_workflow_runs(limit=capped_workflow_limit)[
-            "workflow_runs"
-        ]
+        recent_all = self.list_agent_workflow_runs(limit=capped_workflow_limit)["workflow_runs"]
         open_tasks = self._fetch_open_finance_ops_tasks(limit=capped_task_limit)
 
         return {
@@ -526,6 +524,14 @@ class AgentsService:
             "generated_at": generated_at.isoformat(),
             "schedule": schedule,
             "next_run_at": self._next_finance_ops_run_at(schedule, now=generated_at),
+            "last_run": (
+                self._workflow_control_room_summary(recent_scheduled[0])
+                if recent_scheduled
+                else {
+                    "status": "not_run_yet",
+                    "business_summary": "No scheduled Finance Ops Manager run has been recorded yet.",
+                }
+            ),
             "latest_scheduled_run": (
                 self._workflow_control_room_summary(recent_scheduled[0])
                 if recent_scheduled
@@ -552,6 +558,11 @@ class AgentsService:
                 for row in open_tasks
                 if row.get("kind") == _FINANCE_OPS_ACTION_PLAN_KIND
             ],
+            "open_scheduled_plans": [
+                self._finance_ops_task_summary(row)
+                for row in open_tasks
+                if row.get("kind") == _FINANCE_OPS_ACTION_PLAN_KIND
+            ],
             "open_plan_items": [
                 self._finance_ops_task_summary(row)
                 for row in open_tasks
@@ -563,6 +574,15 @@ class AgentsService:
                 if row.get("kind") == _FINANCE_OPS_ESCALATION_KIND
             ],
             "operational_health": self._safe_operational_health(),
+            "approval_boundary": (
+                "Scheduled Finance Ops Manager runs may prepare work plans, but "
+                "invoice approval, payment approval, journal posting, close locks, "
+                "and external emails still require Inbox approval."
+            ),
+            "response_contract": [
+                "Mention current cadence, escalation windows, last run, open scheduled plans, and approval boundary.",
+                "If no scheduled run exists, say last run: not run yet rather than reporting the system is unreachable.",
+            ],
         }
 
     def get_approval_controls_read_pack(
@@ -591,12 +611,8 @@ class AgentsService:
             )
             for row in self._fetch_open_inbox_tasks(limit=capped_limit)
         ]
-        high_risk_items = [
-            item for item in inbox_items if self._is_high_risk_inbox_item(item)
-        ]
-        higher_role_items = [
-            item for item in inbox_items if not item["current_user_can_approve"]
-        ]
+        high_risk_items = [item for item in inbox_items if self._is_high_risk_inbox_item(item)]
+        higher_role_items = [item for item in inbox_items if not item["current_user_can_approve"]]
         policy_rules = self._approval_controls_policy_rules(
             settings,
             user_role=user_role,
@@ -620,6 +636,15 @@ class AgentsService:
                 user_role=user_role,
                 policy_rules=policy_rules,
             ),
+            "approval_boundary": (
+                "Approval authority is role- and threshold-based. Owner approval "
+                "is required for configured high-value money-out and elevated-risk "
+                "work; manual journals require segregation of duties."
+            ),
+            "response_contract": [
+                "Mention what the current user can approve, Owner thresholds, finance personas, high-risk Inbox items, and why review is required.",
+                "Do not show raw policy reason codes, payloads, traces, logs, or context IDs.",
+            ],
         }
 
     def set_finance_ops_schedule(
@@ -862,8 +887,7 @@ class AgentsService:
         executed_count = sum(
             1
             for step in steps
-            if step["replay_status"]
-            in {"matched", "drift_detected", "executed_no_baseline"}
+            if step["replay_status"] in {"matched", "drift_detected", "executed_no_baseline"}
         )
         blocked_count = sum(
             1
@@ -871,9 +895,7 @@ class AgentsService:
             if step["replay_status"] in {"blocked_by_risk", "unsupported_executor"}
         )
         planned_count = sum(
-            1
-            for step in steps
-            if step["replay_status"] == "planned_for_human_reexecution"
+            1 for step in steps if step["replay_status"] == "planned_for_human_reexecution"
         )
         drift_count = sum(1 for step in steps if step["replay_status"] == "drift_detected")
         failed_count = sum(1 for step in steps if step["replay_status"] == "failed")
@@ -1300,12 +1322,8 @@ class AgentsService:
                 "read_only": bool(persona["read_only"]),
                 "mapped_roles": [str(role) for role in persona["mapped_roles"]],
                 "areas": [str(area) for area in persona["areas"]],
-                "allowed_actions": [
-                    str(action) for action in persona["allowed_actions"]
-                ],
-                "restricted_actions": [
-                    str(action) for action in persona["restricted_actions"]
-                ],
+                "allowed_actions": [str(action) for action in persona["allowed_actions"]],
+                "restricted_actions": [str(action) for action in persona["restricted_actions"]],
             }
             for persona in finance_persona_catalog()
         ]
@@ -1374,16 +1392,14 @@ class AgentsService:
             )
         if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY[UserRole.admin]:
             explanations.append(
-                "Approval policy changes and elevated finance operations "
-                "require Admin or Owner."
+                "Approval policy changes and elevated finance operations require Admin or Owner."
             )
 
         for rule in policy_rules:
             if rule["current_user_can_approve"]:
                 continue
             explanations.append(
-                f"{rule['label']} require {str(rule['required_role']).title()} "
-                "or higher approval."
+                f"{rule['label']} require {str(rule['required_role']).title()} or higher approval."
             )
 
         return list(dict.fromkeys(explanations))
@@ -1428,9 +1444,7 @@ class AgentsService:
                 "failed_tool_invocations_24h": int(
                     telemetry.get("failed_tool_invocations_24h") or 0
                 ),
-                "failed_workflow_runs_24h": int(
-                    telemetry.get("failed_workflow_runs_24h") or 0
-                ),
+                "failed_workflow_runs_24h": int(telemetry.get("failed_workflow_runs_24h") or 0),
             },
             "alerts": {
                 "route": alerts.get("route") or {},
@@ -1512,9 +1526,7 @@ class AgentsService:
         if not (1 <= lookback_limit <= 25):
             raise AgentAutonomyError("lookback_limit must be between 1 and 25")
         if not (1 <= high_risk_stale_after_hours <= 720):
-            raise AgentAutonomyError(
-                "high_risk_stale_after_hours must be between 1 and 720"
-            )
+            raise AgentAutonomyError("high_risk_stale_after_hours must be between 1 and 720")
         if not (high_risk_stale_after_hours <= stale_after_hours <= 720):
             raise AgentAutonomyError(
                 "stale_after_hours must be between high_risk_stale_after_hours and 720"
@@ -1711,7 +1723,9 @@ class AgentsService:
             "period": (
                 str(payload.get("period"))
                 if payload.get("period")
-                else str(source_action.get("period")) if source_action.get("period") else None
+                else str(source_action.get("period"))
+                if source_action.get("period")
+                else None
             ),
             "action_count": _optional_int(payload.get("action_count")),
             "source_schedule_key": (
@@ -1719,9 +1733,7 @@ class AgentsService:
                 if payload.get("source_schedule_key")
                 else None
             ),
-            "risk_class": (
-                str(payload.get("risk_class")) if payload.get("risk_class") else None
-            ),
+            "risk_class": (str(payload.get("risk_class")) if payload.get("risk_class") else None),
             "required_approval_role": (
                 str(payload.get("required_approval_role"))
                 if payload.get("required_approval_role")
@@ -1816,9 +1828,7 @@ class AgentsService:
             }
 
         current_hash = stable_payload_hash(current_output)
-        output_hash_matches = (
-            current_hash == recorded_output_hash if recorded_output_hash else None
-        )
+        output_hash_matches = current_hash == recorded_output_hash if recorded_output_hash else None
         if output_hash_matches is True:
             replay_status = "matched"
             reason = "Current read-only output hash matches recorded output"
@@ -1849,18 +1859,21 @@ class AgentsService:
     ) -> dict:
         tool_name = tool["tool_name"]
         action_type = action_type_for_tool(agent_name, tool_name)
-        external_side_effect = bool(tool.get("external_tool_call_id")) or (
-            agent_name,
-            tool_name,
-        ) in _EXTERNAL_PROVIDER_TOOLS
+        external_side_effect = (
+            bool(tool.get("external_tool_call_id"))
+            or (
+                agent_name,
+                tool_name,
+            )
+            in _EXTERNAL_PROVIDER_TOOLS
+        )
         idempotency_key = stable_payload_hash(
             {
                 "tenant_id": self.tenant_id,
                 "agent_name": agent_name,
                 "tool_invocation_id": tool["id"],
                 "tool_name": tool_name,
-                "input_hash": tool.get("input_hash")
-                or stable_payload_hash(input_snapshot),
+                "input_hash": tool.get("input_hash") or stable_payload_hash(input_snapshot),
             }
         )
         approval_role = "admin" if current_risk in {"write_money_out", "accounting"} else "manager"
@@ -2028,9 +2041,9 @@ class AgentsService:
                 "period": tool_input.get("period"),
             }
         if tool_name == "get_trial_balance":
-            return svc.trial_balance(
-                as_of_period=tool_input.get("as_of_period")
-            ).model_dump(mode="json")
+            return svc.trial_balance(as_of_period=tool_input.get("as_of_period")).model_dump(
+                mode="json"
+            )
         raise NotImplementedError(
             f"No current-code dry-run executor is registered for reporting tool {tool_name}"
         )
@@ -2144,10 +2157,7 @@ def _approval_business_reason(decision: ApprovalPolicyDecision) -> str:
     amount = _decimal_text(decision.amount)
     threshold = _decimal_text(decision.threshold)
     if decision.reason == "money_out_above_owner_review_threshold":
-        return (
-            f"Money-out amount {amount} is at or above the Owner review "
-            f"threshold {threshold}."
-        )
+        return f"Money-out amount {amount} is at or above the Owner review threshold {threshold}."
     if decision.reason == "manual_journal_above_approval_threshold":
         return (
             f"Manual journal total {amount} is at or above the accounting "

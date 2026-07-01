@@ -304,6 +304,8 @@ else
     --exclude node_modules \
     --exclude .angular \
     --exclude dist \
+    --exclude test-results \
+    --exclude playwright-report \
     --exclude .env \
     "$REPO_ROOT/frontend/" "$SSH_TARGET:$APP_DIR/frontend/"
   rsync -az --delete -e "ssh -p $SSH_PORT" \

@@ -1,0 +1,26 @@
+{
+  "id": "1-7-o2c-readiness-focused",
+  "status": "FAIL",
+  "elapsedMs": 915790,
+  "prompt": "Review Nexus order-to-cash readiness for June 2026. Check service catalogue mapping, linked rate card, tax rate setup, draft invoices, public invoice link readiness, WIP, and any collections actions waiting for approval.",
+  "response": " ",
+  "matched": [],
+  "missing": [
+    "/Nexus/i",
+    "/service catalogue|catalog/i",
+    "/rate card/i",
+    "/tax/i",
+    "/invoice/i",
+    "/payment link|public invoice/i",
+    "/WIP/i",
+    "/collections/i",
+    "/Inbox/i"
+  ],
+  "forbiddenHits": [],
+  "visibleToolCardDelta": 0,
+  "screenshots": {
+    "login": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T13-13-07-464Z/screenshots/login.png",
+    "prompt": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T13-13-07-464Z/screenshots/prompt.png",
+    "response": "docs/qa/atlas-o2c-readiness-focused-2026-06-30T13-13-07-464Z/screenshots/response.png"
+  }
+}

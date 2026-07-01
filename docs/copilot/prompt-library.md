@@ -10,6 +10,12 @@ read-only, needs an Inbox task, or should be routed to an existing ERP module.
 Engineers and QA authors may use tool names only for deterministic ledger
 assertions.
 
+Atlas uses a tenant-configurable semantic intent router before model inference
+when Settings -> Agent Autonomy -> AI Inference Settings is set to
+`Semantic router, then configured runtime`. Prompt wording can vary, but the
+business intent should remain clear: name the entity, period, desired outcome,
+and whether the request is read-only or should prepare reviewed work.
+
 For document intake, attach the document first and then send the matching
 business prompt. Aethos Atlas should not extract the file or create Inbox work
 until the prompt is submitted.
@@ -220,3 +226,22 @@ attach the named demo asset first and then submit the prompt.
 | 7-3-operational-health | 7.3 Operational Health | `Show operational health for the platform today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes. Do not expose secrets, traces, raw logs, or stack traces.` |
 | 7-4-documents-audit | 7.4 Documents and source evidence | `Show documents that support recent engagements, bills, invoices, journals, and Inbox decisions. For each, show the linked business record, source filename, extraction state, and what I should review next.` |
 | 7-5-config-telemetry | 7.5 Configuration and telemetry | `Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Atlas runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.` |
+
+Expected Atlas coverage for this prompt set:
+
+- `3-3-sgd-journal`: amount/currency, GBP base impact, FX provenance, journal
+  lines, balance, period lock, approval role, segregation of duties, and Inbox
+  review before posting.
+- `3-4-cosec-reminders`: COSEC filing date/deadline, missing evidence, billing
+  impact, and which reminders need Inbox approval before sending.
+- `4-3-cosec-instruction`: uploaded Thornton COSEC instruction, company
+  change, filing/project work item, billing impact, and Inbox approval boundary
+  before external filing or invoice action.
+- `5-5-management-pack` and drilldowns: revenue, expenses, margin,
+  utilization, AR/AP movement, journals, draft journals, close blockers, owner
+  role, and next action.
+- `7-4-documents-audit`: engagement, bill, invoice, journal, and Inbox
+  decision evidence, including missing categories.
+- `7-5-config-telemetry`: approval controls, scheduled Finance Ops settings,
+  Atlas runtime, Langfuse observability, operational alerts, and public
+  abuse-path controls without raw logs, traces, or secrets.

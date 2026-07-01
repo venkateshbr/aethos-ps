@@ -695,6 +695,9 @@ can move forward.
 2. In **Aethos Atlas**, type:
    > *"Prepare a manual journal packet for the 1985 Trust's S$42,000 SingTel dividend received on 28 March 2026. Show the GBP base-currency impact using the posting-date FX rate, route it to Inbox before posting, and verify the Trial Balance remains balanced after approval."*
 
+   Live validation prompt:
+   > *"Prepare an SGD 18,000 dividend income journal for Alderton Trust for June 2026. Show the GBP base-currency impact, FX rate provenance, required approval role, and route it to Inbox before posting."*
+
 3. Aethos Atlas responds using the FX rates table:
    > *"At 28 March 2026 rate (1 GBP = 1.7234 SGD): S$42,000 = £24,370.31. Rate is current. This journal needs controller review before posting."*
 
@@ -702,7 +705,7 @@ can move forward.
    - Business reason: "Record SingTel dividend income for 1985 Trust accounts"
    - Period lock status: open
    - Required approval role: Accounting/Admin if above threshold
-   - Same-user approval denied if Sarah attempts to approve her own high-value journal
+   - Same-user approval denied for threshold journals and Atlas AI-prepared manual journals
 
 5. Approve as Marcus or Rachel → Journal entry posts:
    ```
@@ -725,25 +728,28 @@ can move forward.
 **What to show**: The COSEC retainer covers all 12 Alderton entities' statutory filings — confirmation statements, accounts filing deadlines, trust deed changes.
 
 1. In **Aethos Atlas**, type:
-   > *"Show Alderton COSEC deadlines due in the next 30 days. Flag overdue milestones, responsible owner, retainer usage, and recommended next action."*
+   > *"Review COSEC filing reminders for Alderton entities. Show upcoming filing dates, missing evidence, billing impact, and which reminders need approval before sending."*
 
-2. Go to **Inbox** → show a project health alert card:
-   > **"Milestone Overdue — Alderton Family Investment Co"**
-   > Filing deadline: 31 July 2026 (Confirmation Statement due at Companies House)
-   > Status: Not yet prepared (milestone 3 days overdue)
-   > Recommended action: Prepare and file confirmation statement immediately
+2. Atlas should return the COSEC compliance-calendar view:
+   - Entity name and filing/reference type
+   - Upcoming filing date/deadline
+   - Missing evidence, such as board minutes, register confirmation, or signed accounts approval
+   - Billing impact against the retainer or out-of-scope work
+   - Whether the reminder must be approved in Inbox before sending
 
-3. Click **Investigate** → navigates to the COSEC engagement project timeline
+3. Go to **Inbox** → show any COSEC reminder or project health review card. The reminder must remain a draft until reviewed; Atlas must not send client email directly.
 
-4. Priya (COSEC manager) is notified via the Inbox:
+4. Click **Investigate** → navigates to the COSEC engagement project timeline or obligation source record.
+
+5. Priya (COSEC manager) is notified via the Inbox:
    > "3 Alderton entities have confirmation statements due in the next 30 days"
 
-5. Show **Projects** → filter by "COSEC" → see utilisation across all Alderton COSEC work:
+6. Show **Projects** → filter by "COSEC" → see utilisation across all Alderton COSEC work:
    - 12 entities, each with a project
    - Priya's hours tracked across all
    - Retainer hours: 18 of 22 monthly hours used (scope creep approaching)
 
-6. Project health automation has already created a retainer floor warning:
+7. Project health automation has already created a retainer floor warning:
    > *"Alderton COSEC Retainer: 82% of monthly hours used by day 20. If current pace continues, overage of 8–12 hours likely."*
 
 **Talking point**: *"Priya doesn't chase deadlines in a spreadsheet. The system watches every entity's milestone calendar and alerts her proactively — not after the deadline passes."*
@@ -869,15 +875,20 @@ can move forward.
 3. Thornton issues new shares for the Series A. In **Aethos Atlas**:
    > *"Log COSEC work for Thornton — SH01 shares allotment filing and shareholder register update, £1,200"*
 
-4. Thornton updates registered office. Another £250.
+4. Upload `docs/demo-assets/thornton_cosec_instruction.pdf` in **Aethos Atlas** and send:
+   > *"Review this COSEC instruction for Thornton. Identify the company change, create the required filing/project work item, identify billing impact, and route any external filing or invoice action to Inbox."*
 
-5. Go to **Engagements** → Thornton COSEC → show three separate mini-engagements or one T&M billing:
+   Atlas classifies the file as a COSEC instruction, prepares the company-change / filing work item review packet, identifies billing impact, and leaves external filing and invoice actions approval-gated in Inbox.
+
+5. Thornton updates registered office. Another £250.
+
+6. Go to **Engagements** → Thornton COSEC → show three separate mini-engagements or one T&M billing:
    - Director appointment: £650
    - Share allotment: £1,200
    - Registered office: £250
    - Total April COSEC work: £2,100
 
-6. Billing run → single invoice consolidating all three COSEC events for April:
+7. Billing run → single invoice consolidating all three COSEC events for April:
    ```
    Director Appointment (AP01 filing)       £650.00
    Share Allotment (SH01 + register)      £1,200.00
@@ -1077,13 +1088,21 @@ editing history.
 1. In **Aethos Atlas**, type:
    > *"Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, approval role, and whether the approver is different from the submitter. Do not post it without Inbox approval."*
 
-2. In **Accounting** → **Journal Entries**, demonstrate:
-   - A balanced under-threshold manual journal with a business reason posts through the guarded path
+2. Atlas should summarize the manual-journal review packet:
+   - Balance check and debit/credit equality
+   - Account validity for debit and credit lines
+   - Period lock status
+   - Business reason and supporting evidence
+   - Required approval role and whether the approver must be different from the submitter
+   - Confirmation that the journal is not posted without Inbox approval
+
+3. In **Accounting** → **Journal Entries**, demonstrate:
+   - A balanced under-threshold manual journal created from the Accounting UI with a business reason posts through the guarded path
    - A missing or short reason is rejected with a clear validation message
    - An imbalanced journal is rejected and no journal is posted
    - A posting date in a locked period is rejected with the period-lock message
 
-3. High-value journal approval:
+4. High-value journal approval:
    - Set or show the manual-journal approval threshold in **Settings / Approval Controls**
    - Submit a high-value balanced journal with a reason
    - It creates an Inbox review task instead of posting immediately
@@ -1303,15 +1322,23 @@ without editing deployment files.
      memory in Hermes
    - **Aethos Basic AI** uses the built-in Aethos runtime directly
 
-5. Save the settings and refresh the card. The effective model-chain chips
+5. Explain the response routing controls:
+   - **Semantic router** lets Atlas classify business-language prompts into
+     finance intents with confidence before calling the model runtime
+   - **Minimum confidence** controls when a semantic answer is allowed. Keep the
+     demo default at `0.72`
+   - **Response order** defaults to `Semantic router, then configured runtime`.
+     If the prompt is low-confidence, Atlas falls back to Hermes or Aethos Basic
+
+6. Save the settings and refresh the card. The effective model-chain chips
    should match the selected routing order.
 
-6. Note the current boundary: Aethos Basic, Atlas fallback, and tenant-scoped
+7. Note the current boundary: Aethos Basic, Atlas fallback, and tenant-scoped
    document/reporting agents use the tenant model chain. Hermes uses the mounted
    Atlas profile for its primary model until dynamic per-tenant Hermes model
    switching is added.
 
-**Talking point**: *"The tenant admin can decide whether Atlas runs through Hermes or the basic Aethos runtime, and can prefer free inference before falling back to paid Haiku. The setting is controlled in-product, not by editing Docker files."*
+**Talking point**: *"The tenant admin can decide whether Atlas first uses Aethos' semantic finance router or goes straight to the configured model runtime. The semantic router is confidence-gated and still routes controlled finance actions through Inbox."*
 
 ---
 
@@ -1457,7 +1484,17 @@ source evidence tied to Inbox decisions and materialized business records.
 **What to show**: Enterprise operation includes configuration surfaces, safe
 telemetry, and abuse-path behavior, not only happy-path finance workflows.
 
-1. In **Settings**, show the implemented configuration surfaces:
+1. In **Aethos Atlas**, type:
+   > *"Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Atlas runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention."*
+
+2. Atlas should return:
+   - Approval controls and effective thresholds
+   - Scheduled Finance Ops Manager cadence, escalation windows, last run, open scheduled plans, and approval boundary
+   - Atlas runtime mode and whether Hermes/basic fallback is configured
+   - Langfuse observability configuration status without raw traces
+   - Operational alerts and public abuse-path controls such as rate limits and sanitized public paths
+
+3. In **Settings**, show the implemented configuration surfaces:
    - **Services**: active service catalogue used by engagements and invoice lines
    - **Tax Rates**: market tax setup used by invoices and bills
    - **Collections Policy**: reminder cadence and tone
@@ -1466,10 +1503,10 @@ telemetry, and abuse-path behavior, not only happy-path finance workflows.
    - **Agent Runs** and **Workflow Runs**: run evidence, replay-safe validation, and failures
    - **Operational Health**: runtime shape, table checks, failure counters, limiter state, and routed alerts
 
-2. In **Aethos Atlas**, type:
+4. In **Aethos Atlas**, type:
    > *"Review agent activity and workflow telemetry for this tenant. Highlight failures, skipped actions, pending Inbox approvals, stale work, and anything that needs escalation."*
 
-3. Abuse-path checks to explain:
+5. Abuse-path checks to explain:
    - Signup and public invoice endpoints are rate-limited
    - Repeated public invoice abuse records sanitized paths, not raw public tokens
    - Unauthorized tenant-health access is denied by RBAC
@@ -1477,7 +1514,7 @@ telemetry, and abuse-path behavior, not only happy-path finance workflows.
    - If the distributed limiter backend is unavailable, the system reports the fallback/deny-safe state in operational health
    - Routed alerts expose channel/runbook metadata only, not webhook secrets or customer payloads
 
-4. Operator checklist:
+6. Operator checklist:
    - Health output is safe to paste into a support ticket
    - No raw JWTs, public invoice tokens, bank details, API keys, document text, or customer payload snapshots are shown
    - Agent/tool/workflow failure counts are visible enough to triage without leaking data
