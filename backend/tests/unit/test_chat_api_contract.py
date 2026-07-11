@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -369,10 +370,83 @@ def test_chat_message_stream_uses_deterministic_response_before_runtime(
 
     assert response.status_code == 200, response.text
     assert "COSEC reminders require Inbox approval" in response.text
+    assert '"tool_start"' not in response.text
+    assert '"tool_result"' not in response.text
     messages = write_db.tables["chat_messages"]
     assert messages[0]["role"] == "user"
     assert messages[1]["role"] == "assistant"
     assert messages[1]["content"] == "COSEC reminders require Inbox approval before sending."
+    assert messages[1]["model"] == "aethos-semantic-intent"
+
+
+def test_chat_message_stream_emits_semantic_tool_frames_before_delta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.api.v1.endpoints.chat as chat_module
+
+    write_db = _ChatWriteDb()
+
+    async def _render_semantic(**kwargs: Any) -> SimpleNamespace:
+        assert kwargs["db"] is write_db
+        assert kwargs["tenant_id"] == TENANT_ID
+        assert kwargs["current_user"].user_id == USER_ID
+        assert kwargs["thread_id"] == "thread-1"
+        return SimpleNamespace(
+            text="Prepared the time entry and routed it to Inbox for review.",
+            tool_name="log_time_entry",
+            route=SimpleNamespace(
+                intent="time_log",
+                confidence=0.94,
+                action_mode="prepare",
+            ),
+        )
+
+    async def _build_runtime(**_kwargs: Any) -> None:
+        raise AssertionError("runtime should not be built for deterministic Atlas response")
+
+    monkeypatch.setattr(
+        chat_module,
+        "render_semantic_atlas_response",
+        _render_semantic,
+    )
+    monkeypatch.setattr(chat_module, "build_atlas_runtime", _build_runtime)
+
+    _install_common_overrides()
+    app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={
+                    "content": (
+                        'Log exactly 4.5 billable hours on project "Nexus Advisory" '
+                        'for 2026-07-11. Use this exact description: "Board pack review".'
+                    )
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert events == [
+        {"tool_start": "log_time_entry"},
+        {"tool_result": "log_time_entry"},
+        {"delta": "Prepared the time entry and routed it to Inbox for review."},
+        {"done": True, "finish_reason": "stop"},
+    ]
+
+    messages = write_db.tables["chat_messages"]
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == (
+        "Prepared the time entry and routed it to Inbox for review."
+    )
     assert messages[1]["model"] == "aethos-semantic-intent"
 
 

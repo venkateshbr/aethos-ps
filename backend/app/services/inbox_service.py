@@ -808,7 +808,17 @@ class InboxService:
         )
         dispatch_tool = str(dispatch["tool_name"])
         dispatch_input = dispatch["tool_input"]
-        result = await agent._execute_tool_with_policy(dispatch_tool, dispatch_input)
+        domain = str(payload.get("domain") or "").strip().lower()
+        if domain == "ar" and dispatch_tool == "draft_collection_reminders":
+            # InboxService.approve/approve_with_edits already enforced the human
+            # approval policy for this parent Plan Item. Stage the separately
+            # gated send_email tasks without re-entering agent tool policy.
+            result = await agent._draft_collection_reminders(dispatch_input)
+        else:
+            result = await agent._execute_tool_with_policy(
+                dispatch_tool,
+                dispatch_input,
+            )
         if result.get("error"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -841,8 +851,13 @@ class InboxService:
         if isinstance(explicit_tool, str) and explicit_tool.strip():
             tool_name = explicit_tool.strip()
             tool_input = dict(explicit_input) if isinstance(explicit_input, dict) else {}
-            if tool_name == "draft_collection_reminders" and not tool_input:
-                tool_input = {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"}
+            if tool_name == "draft_collection_reminders":
+                if not tool_input:
+                    tool_input = {
+                        "minimum_days_overdue": 1,
+                        "limit": 10,
+                        "tone": "auto",
+                    }
             elif tool_name == "propose_bill_payment_batch" and not tool_input:
                 tool_input = {"due_within_days": 7}
             elif tool_name == "prepare_month_end_close":

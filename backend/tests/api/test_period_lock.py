@@ -164,7 +164,9 @@ def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
     assert {item["code"] for item in body["checklist"]} == {
         "subledger_reconciliation",
         "trial_balance",
+        "unposted_journals",
         "close_reviews",
+        "close_tasks",
         "period_lock",
     }
 

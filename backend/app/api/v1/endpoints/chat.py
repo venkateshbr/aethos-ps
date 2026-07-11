@@ -370,6 +370,10 @@ async def send_message(
             if stage == "semantic_intent":
                 semantic_reply = await maybe_semantic_response(ai_settings)
                 if semantic_reply is not None:
+                    tool_name = getattr(semantic_reply, "tool_name", None)
+                    if tool_name:
+                        yield f"data: {json.dumps({'tool_start': tool_name})}\n\n"
+                        yield f"data: {json.dumps({'tool_result': tool_name})}\n\n"
                     frame = f"data: {json.dumps({'delta': semantic_reply.text})}\n\n"
                     yield frame
                     accumulated_text.append(semantic_reply.text)

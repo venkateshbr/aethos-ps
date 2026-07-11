@@ -316,6 +316,16 @@ type FilterChip = 'all' | 'manual' | 'auto';
             <p class="text-xs text-text-muted mt-0.5">{{ closePeriod() }} · {{ completedCloseTasks() }}/{{ closeTasks().length }} complete</p>
           </div>
           <div class="flex items-center gap-2">
+            <label class="flex items-center gap-2 text-xs text-text-muted">
+              <span>Period</span>
+              <input
+                type="month"
+                [value]="closePeriod()"
+                (change)="selectClosePeriod($event)"
+                aria-label="Close period"
+                class="rounded border border-border-default bg-surface-base px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </label>
             @if (canClose()) {
               <button
                 type="button"
@@ -1465,34 +1475,55 @@ export class JournalEntriesListComponent implements OnInit {
   }
 
   loadCloseTasks(): void {
+    const requestedPeriod = this.closePeriod();
     this.closeTasksLoading.set(true);
     this.closeTasksError.set(null);
     this.http.get<{ tasks: CloseTask[] }>(
-      `/api/v1/accounting/periods/${this.closePeriod()}/close-tasks`,
+      `/api/v1/accounting/periods/${requestedPeriod}/close-tasks`,
     ).subscribe({
       next: (res) => {
+        if (this.closePeriod() !== requestedPeriod) return;
         this.closeTasks.set(res.tasks ?? []);
         this.closeTasksLoading.set(false);
       },
       error: (err: unknown) => {
+        if (this.closePeriod() !== requestedPeriod) return;
         this.closeTasksError.set(userMessageForError(err, 'Close Tasks'));
         this.closeTasksLoading.set(false);
       },
     });
   }
 
+  selectClosePeriod(event: Event): void {
+    const period = (event.target as HTMLInputElement | null)?.value.trim() || '';
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period) || period === this.closePeriod()) return;
+
+    this.closePeriod.set(period);
+    this.closeTasks.set([]);
+    this.closeTasksError.set(null);
+    this.closePackage.set(null);
+    this.closePackageError.set(null);
+    this.closeOverrideError.set(null);
+    this.yearEndCloseResult.set(null);
+    this.yearEndCloseError.set(null);
+    this.loadCloseTasks();
+  }
+
   loadClosePackage(): void {
+    const requestedPeriod = this.closePeriod();
     this.closePackageLoading.set(true);
     this.closePackageError.set(null);
     this.http.get<ClosePackage>(
-      `/api/v1/accounting/periods/${this.closePeriod()}/close-package`,
+      `/api/v1/accounting/periods/${requestedPeriod}/close-package`,
     ).subscribe({
       next: (res) => {
+        if (this.closePeriod() !== requestedPeriod) return;
         this.closePackage.set(res);
         this.syncCloseOverrideDefault(res);
         this.closePackageLoading.set(false);
       },
       error: (err: unknown) => {
+        if (this.closePeriod() !== requestedPeriod) return;
         this.closePackageError.set(userMessageForError(err, 'Close Package'));
         this.closePackageLoading.set(false);
       },

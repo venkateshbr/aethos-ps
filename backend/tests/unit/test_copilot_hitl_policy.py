@@ -810,7 +810,7 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_collections
     from app.services.inbox_service import InboxService
 
     monkeypatch.setattr(graph, "make_async_llm_client", lambda **_: MagicMock())
-    execute_tool = AsyncMock(
+    stage_reminders = AsyncMock(
         return_value={
             "collections_reminders_drafted": True,
             "requires_review": True,
@@ -819,7 +819,17 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_collections
             "message": "Created 2 Inbox review task(s) for collections reminders.",
         }
     )
-    monkeypatch.setattr(graph.CopilotAgent, "_execute_tool_with_policy", execute_tool)
+    execute_with_policy = AsyncMock()
+    monkeypatch.setattr(
+        graph.CopilotAgent,
+        "_draft_collection_reminders",
+        stage_reminders,
+    )
+    monkeypatch.setattr(
+        graph.CopilotAgent,
+        "_execute_tool_with_policy",
+        execute_with_policy,
+    )
 
     svc = InboxService(MagicMock(), tenant_id="tenant-abc")
     result = await svc._materialise_copilot_tool(
@@ -834,10 +844,10 @@ async def test_inbox_materialises_finance_ops_action_item_dispatches_collections
         user_id="approver-1",
     )
 
-    execute_tool.assert_awaited_once_with(
-        "draft_collection_reminders",
+    stage_reminders.assert_awaited_once_with(
         {"minimum_days_overdue": 1, "limit": 10, "tone": "auto"},
     )
+    execute_with_policy.assert_not_awaited()
     assert result["entity_type"] == "finance_ops_action_item"
     assert result["entity_id"] == "finance-ops-plan-1-1"
     assert result["parent_plan_id"] == "finance-ops-plan-1"

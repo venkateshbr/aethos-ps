@@ -56,6 +56,25 @@ interface AttachedDocument {
   name: string | null;
 }
 
+export interface SseLineBatch {
+  lines: string[];
+  remainder: string;
+}
+
+/** Preserve partial SSE lines because fetch stream chunks can split anywhere. */
+export function collectCompleteSseLines(
+  remainder: string,
+  chunk: string,
+  flush = false,
+): SseLineBatch {
+  const segments = `${remainder}${chunk}`.split('\n');
+  const nextRemainder = flush ? '' : (segments.pop() ?? '');
+  return {
+    lines: segments.map(line => line.endsWith('\r') ? line.slice(0, -1) : line),
+    remainder: nextRemainder,
+  };
+}
+
 @Component({
   selector: 'app-copilot',
   standalone: true,
@@ -701,13 +720,14 @@ export class CopilotComponent implements OnInit {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let sseLineRemainder = '';
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split('\n').filter(l => l.startsWith('data: '));
+        const text = decoder.decode(value, { stream: !done });
+        const batch = collectCompleteSseLines(sseLineRemainder, text, done);
+        sseLineRemainder = batch.remainder;
+        const lines = batch.lines.filter(line => line.startsWith('data: '));
 
         for (const line of lines) {
           let payload: Record<string, unknown>;
@@ -727,8 +747,25 @@ export class CopilotComponent implements OnInit {
             );
           }
 
-          // Tool events are intentionally not rendered in Atlas chat. The agent
-          // ledger and backend traces retain tool evidence for audit users.
+          if (typeof payload['tool_start'] === 'string') {
+            this.messages.update(msgs =>
+              msgs.map(m =>
+                m.id === assistantId
+                  ? { ...m, toolName: payload['tool_start'] as string, toolDone: false }
+                  : m
+              )
+            );
+          }
+
+          if (typeof payload['tool_result'] === 'string') {
+            this.messages.update(msgs =>
+              msgs.map(m =>
+                m.id === assistantId
+                  ? { ...m, toolName: payload['tool_result'] as string, toolDone: true }
+                  : m
+              )
+            );
+          }
 
           // Card frame — agent extracted a structured entity
           if (typeof payload['card_type'] === 'string') {
@@ -763,6 +800,8 @@ export class CopilotComponent implements OnInit {
             );
           }
         }
+
+        if (done) break;
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';

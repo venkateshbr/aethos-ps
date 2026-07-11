@@ -32,6 +32,7 @@ import {
   IncomeStatementReport,
   RetainedEarningsRollForwardReport,
   StatutoryReportingPack,
+  statementPeriodRangeError,
 } from '../../core/services/reports.service';
 
 @Component({
@@ -1195,17 +1196,39 @@ import {
     <!-- ── Shared templates ─────────────────────────────────────────────── -->
 
     <ng-template #statementPeriodPicker>
-      <div class="flex flex-wrap items-center gap-3">
-        <label class="text-slate-400 text-sm" for="statement-period">Statement period</label>
-        <input
-          id="statement-period"
-          type="month"
-          [(ngModel)]="statementPeriod"
-          (change)="loadFinancialStatements()"
-          class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          aria-label="Select period for financial statements"
-        />
-      </div>
+      <fieldset class="flex flex-wrap items-end gap-3">
+        <legend class="mb-1 w-full text-sm font-medium text-slate-300">Statement period</legend>
+        <label class="flex flex-col gap-1 text-sm text-slate-400">
+          <span>From</span>
+          <input
+            type="month"
+            [(ngModel)]="statementPeriodStart"
+            (change)="loadFinancialStatements()"
+            [attr.aria-invalid]="statementPeriodValidationError() ? 'true' : null"
+            class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            aria-label="Statement period start"
+            required
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm text-slate-400">
+          <span>To</span>
+          <input
+            type="month"
+            [(ngModel)]="statementPeriodEnd"
+            (change)="loadFinancialStatements()"
+            [attr.aria-invalid]="statementPeriodValidationError() ? 'true' : null"
+            class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            aria-label="Statement period end"
+            required
+          />
+        </label>
+        <p class="w-full text-xs text-text-muted">
+          Use the same month for a monthly statement, or choose a quarter or custom range.
+        </p>
+        @if (statementPeriodValidationError(); as validationError) {
+          <p class="w-full text-sm text-confidence-low" role="alert">{{ validationError }}</p>
+        }
+      </fieldset>
     </ng-template>
 
     <ng-template #statementMetric let-label="label" let-value="value">
@@ -1495,10 +1518,12 @@ export class ReportsComponent implements OnInit {
   statutoryPackLoading = signal(false);
   statutoryPackError = signal(false);
   statutoryPackData = signal<StatutoryReportingPack | null>(null);
-  statementPeriod = (() => {
+  statementPeriodStart = (() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   })();
+  statementPeriodEnd = this.statementPeriodStart;
+  statementPeriodValidationError = signal<string | null>(null);
 
   // Trial Balance
   tbLoading = signal(false);
@@ -1742,48 +1767,62 @@ export class ReportsComponent implements OnInit {
   }
 
   loadBalanceSheet(): void {
+    if (!this.statementPeriodRangeIsValid()) return;
     this.balanceSheetLoading.set(true);
     this.balanceSheetError.set(false);
-    this.svc.getBalanceSheet(this.statementPeriod || undefined).subscribe({
+    this.svc.getBalanceSheet(this.statementPeriodEnd).subscribe({
       next: data => { this.balanceSheetData.set(data); this.balanceSheetLoading.set(false); },
       error: () => { this.balanceSheetError.set(true); this.balanceSheetLoading.set(false); },
     });
   }
 
   loadRetainedEarnings(): void {
+    if (!this.statementPeriodRangeIsValid()) return;
     this.retainedEarningsLoading.set(true);
     this.retainedEarningsError.set(false);
-    this.svc.getRetainedEarningsRollForward(this.statementPeriod).subscribe({
+    this.svc.getRetainedEarningsRollForward(this.statementPeriodEnd).subscribe({
       next: data => { this.retainedEarningsData.set(data); this.retainedEarningsLoading.set(false); },
       error: () => { this.retainedEarningsError.set(true); this.retainedEarningsLoading.set(false); },
     });
   }
 
   loadIncomeStatement(): void {
+    if (!this.statementPeriodRangeIsValid()) return;
     this.incomeStatementLoading.set(true);
     this.incomeStatementError.set(false);
-    this.svc.getIncomeStatement(this.statementPeriod || undefined).subscribe({
+    this.svc.getIncomeStatement(this.statementPeriodStart, this.statementPeriodEnd).subscribe({
       next: data => { this.incomeStatementData.set(data); this.incomeStatementLoading.set(false); },
       error: () => { this.incomeStatementError.set(true); this.incomeStatementLoading.set(false); },
     });
   }
 
   loadCashFlow(): void {
+    if (!this.statementPeriodRangeIsValid()) return;
     this.cashFlowLoading.set(true);
     this.cashFlowError.set(false);
-    this.svc.getCashFlow(this.statementPeriod || undefined).subscribe({
+    this.svc.getCashFlow(this.statementPeriodStart, this.statementPeriodEnd).subscribe({
       next: data => { this.cashFlowData.set(data); this.cashFlowLoading.set(false); },
       error: () => { this.cashFlowError.set(true); this.cashFlowLoading.set(false); },
     });
   }
 
   loadStatutoryPack(): void {
+    if (!this.statementPeriodRangeIsValid()) return;
     this.statutoryPackLoading.set(true);
     this.statutoryPackError.set(false);
-    this.svc.getStatutoryPack(this.statementPeriod).subscribe({
+    this.svc.getStatutoryPack(this.statementPeriodStart, this.statementPeriodEnd).subscribe({
       next: data => { this.statutoryPackData.set(data); this.statutoryPackLoading.set(false); },
       error: () => { this.statutoryPackError.set(true); this.statutoryPackLoading.set(false); },
     });
+  }
+
+  private statementPeriodRangeIsValid(): boolean {
+    const validationError = statementPeriodRangeError(
+      this.statementPeriodStart,
+      this.statementPeriodEnd,
+    );
+    this.statementPeriodValidationError.set(validationError);
+    return validationError === null;
   }
 
   marginAmountClass(pct: number): string {

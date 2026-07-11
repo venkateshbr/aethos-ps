@@ -63,6 +63,7 @@ class AtlasIntentRoute:
     intent: AtlasIntentName
     confidence: float
     action_mode: AtlasActionMode
+    action_required: bool
     entities: dict[str, str]
     matched_concepts: list[str]
     negation_detected: bool
@@ -184,12 +185,18 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
         "time_log",
         (
             ("time", "hours", "timesheet"),
-            ("cfo advisory", "board pack", "cash flow modelling", "cash flow modeling"),
+            (
+                "project",
+                "cfo advisory",
+                "board pack",
+                "cash flow modelling",
+                "cash flow modeling",
+            ),
             ("log", "record", "create", "prepare"),
         ),
         priority=88,
         action_required=True,
-        anchor_phrases=("log 4.5 hours",),
+        anchor_phrases=("log 4.5 hours", "log time entry", "billable hours"),
     ),
     _IntentDefinition(
         "capped_tax_engagement",
@@ -558,16 +565,17 @@ def _score_definition(
     anchor_hits = sum(1 for phrase in definition.anchor_phrases if _contains(normalized, phrase))
     entity_bonus = 0.05 if entities.get("client_name") else 0.0
     confidence = 0.22 + (0.58 * concept_ratio) + min(anchor_hits, 2) * 0.05 + entity_bonus
+    requested_action_negated = _matched_action_is_negated(normalized, matched)
 
     if definition.action_required:
-        if action_mode in {"prepare", "controlled_action"} and not negation_detected:
+        if action_mode in {"prepare", "controlled_action"} and not requested_action_negated:
             confidence += 0.1
         else:
             confidence -= 0.3
     elif action_mode == "explain":
         confidence += 0.03
 
-    if negation_detected and definition.action_required:
+    if requested_action_negated and definition.action_required:
         confidence -= 0.2
     confidence = max(0.0, min(0.99, confidence))
     if confidence < 0.5:
@@ -577,6 +585,7 @@ def _score_definition(
         intent=definition.intent,
         confidence=round(confidence, 3),
         action_mode=action_mode,
+        action_required=definition.action_required,
         entities=entities,
         matched_concepts=matched,
         negation_detected=negation_detected,
@@ -631,6 +640,48 @@ def _action_mode(text: str) -> AtlasActionMode:
 
 def _negation_detected(message: str) -> bool:
     return any(pattern.search(message) for pattern in _NEGATION_PATTERNS)
+
+
+def _matched_action_is_negated(text: str, matched_concepts: list[str]) -> bool:
+    """Return true only when the action for this candidate is negated.
+
+    A prompt can request a safe preparatory action while explicitly forbidding a
+    different downstream action, for example: create an action plan, but do not
+    approve payments. Treating any negation in the prompt as a veto caused the
+    requested action-plan route to lose to the read-only finance-ops route.
+    """
+    action_terms = set(_PREPARE_TERMS) | set(_CONTROLLED_ACTION_TERMS)
+    gerunds = {
+        "approve": "approving",
+        "build": "building",
+        "create": "creating",
+        "draft": "drafting",
+        "export": "exporting",
+        "generate": "generating",
+        "lock": "locking",
+        "log": "logging",
+        "pay": "paying",
+        "post": "posting",
+        "prepare": "preparing",
+        "propose": "proposing",
+        "route": "routing",
+        "send": "sending",
+        "settle": "settling",
+        "submit": "submitting",
+    }
+    for action in matched_concepts:
+        if action not in action_terms:
+            continue
+        escaped = re.escape(action)
+        if re.search(
+            rf"\b(?:do not|don t|dont|no need to|not)\s+{escaped}\b",
+            text,
+        ):
+            return True
+        gerund = gerunds.get(action)
+        if gerund and re.search(rf"\bwithout\s+{re.escape(gerund)}\b", text):
+            return True
+    return False
 
 
 def _entities(text: str) -> dict[str, str]:
