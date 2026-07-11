@@ -1,13 +1,20 @@
 # E2E Scenario — Record to Report
 
-> Sub-ledger events → GL postings → period close → reports.
+> Guarded service postings → GL → period close → reports.
 > Standard: [`agent-harness/core/e2e-workflow-standard.md`](../../agent-harness/core/e2e-workflow-standard.md).
+
+Evidence status: expected outcomes below are requirements. They are not proof
+that the complete close ran; §9 records the executable, mocked, partial, and
+missing coverage.
 
 ## Workflow
 
 - **Name**: record-to-report
-- **Entry point**: implicit — every sub-ledger write triggers a GL posting. Reports surfaced at `/reports/*`.
-- **Exit state**: balanced GL; period locked; reports render with multi-currency toggle.
+- **Entry point**: `/app/accounting/journals` for accounting/close and
+  `/app/reports` for report tabs. There is no `/reports/*` browser route.
+- **Exit state**: balanced GL; period locked; monthly and inclusive statement
+  ranges reconcile in tenant base currency. There is no general report-currency
+  toggle.
 
 ## Pre-conditions
 
@@ -20,9 +27,13 @@
 
 ## §1 Happy Path
 
-### §1.1 Auto-posting via triggers
+### §1.1 Guarded posting through services
 
-For each sub-ledger event (invoice approved, payment received, bill approved, bill paid, expense recorded):
+Invoice, payment, bill, and settlement services explicitly request their
+journals; these are not proven as one atomic database-trigger layer. Payment
+webhook state can currently be updated before a caught journal failure, so the
+E2E must assert both the source state and journal. Expense creation currently
+does not post a GL journal.
 
 | # | Event | Expected journal |
 | --- | --- | --- |
@@ -30,50 +41,52 @@ For each sub-ledger event (invoice approved, payment received, bill approved, bi
 | 2 | Payment received | DR `1100 Bank` / CR `1200 AR` |
 | 3 | Bill approved | DR `5000 Expense` (or `1500 Asset`) / CR `2000 AP` (+ DR `1300 Input Tax` if any) |
 | 4 | Bill paid | DR `2000 AP` / CR `1100 Bank` |
-| 5 | Expense recorded (non-billable, paid by employee, awaiting reimbursement) | DR `5100 Expense` / CR `2100 Accrued Reimbursement` |
+| 5 | Expense recorded | No current automatic expense journal; this is a documented R2R gap until an explicit posting workflow exists |
 
-After each event, the test asserts: `sum(debits) == sum(credits)` for that journal entry and at the tenant level.
+After each posting-capable event, assert that the expected source row and one
+balanced journal both exist. After expense creation, assert that no unsupported
+journal is claimed. Reconcile the tenant-level Trial Balance separately.
 
 ### §1.2 Period close
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 6 | Controller | `/copilot` → "Prepare month-end close for April 2026" | Copilot routes a close package to Inbox. The package includes AR, AP, WIP, GL, approvals, unposted journals, incomplete close tasks, close blockers, and recorded override evidence. |
+| 6 | Finance Controller (`admin`) | `/app/copilot` → "Prepare month-end close for April 2026" | Copilot routes a close package to Inbox. The package includes AR, AP, WIP, GL, approvals, unposted journals, incomplete close tasks, close blockers, and recorded override evidence. |
 | 7 | Owner/Admin | Reviews close package and resolves blockers | Sub-ledger, trial-balance, unposted-journal, close-review, and close-task blockers must be resolved or explicitly overridden with a reason and actor. |
 | 8 | system | Insert `period_locks` row | Subsequent posts dated in that period are rejected by `accounting_guardian` |
-| 8a | Owner/Admin | `/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
-| 8b | Finance Ops Manager | `/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/inbox` task | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
-| 8c | Finance Ops Manager | `/accounting/journals` -> Post manual journal with business reason | Balanced manual journals require a business reason, store it on `journal_entries.reason`, and append `manual_journal.posted` audit evidence with actor role, line count, and debit total. |
-| 8d | Finance Ops Manager + Accounting approver | `/settings` threshold -> `/accounting/journals` high-value journal -> `/inbox` approval/rejection | Manual journals at or above the tenant threshold create a `draft_journal` Inbox task, append `manual_journal.submitted_for_approval`, deny same-user approval, post only after different-user Accounting-role approval, and append `manual_journal.rejected` when rejected. |
-| 8e | Finance Ops Manager | `/accounting/journals` -> Reverse posted manual journal | Reversal creates a new `manual_reversal` journal with flipped lines, original-reference linkage, reason, and `manual_journal.reversed` audit evidence. |
+| 8a | Owner/Admin | `/app/accounting/journals` -> Year-end close | Posts `year_end_close` journal for the selected fiscal year, reversing posted revenue/expense balances and offsetting net income or loss to `3000 Retained Earnings`. Duplicate and locked-year attempts are rejected. |
+| 8b | Finance Ops Manager | `/app/copilot` -> "Prepare year-end close for fiscal year 2026..." then approve `/app/inbox` task with a permitted different approver | Copilot creates a `copilot_prepare_year_end_close` review task with retained-earnings posting preview, blockers, P&L activity, and current-vs-prior statement commentary. Approval posts through the same year-end close service. |
+| 8c | Finance Ops Manager | `/app/accounting/journals` -> Post manual journal with business reason | Projected `manager` is the minimum manual-journal submit/reverse gate. Balanced under-threshold journals post; threshold journals route for approval. |
+| 8d | Submitter + different Accounting approver | `/app/settings` threshold -> `/app/accounting/journals` high-value journal -> `/app/inbox` approval/rejection | Creates a `draft_journal` Inbox task, records submitted/denied/rejected evidence, and posts only after an authorized different-user decision. |
+| 8e | Finance Ops Manager | `/app/accounting/journals` -> Reverse posted manual journal | Reversal creates a new `manual_reversal` journal with flipped lines, original-reference linkage, reason, and `manual_journal.reversed` evidence. |
 
 ### §1.3 Reports
 
 | # | Report | Expected behavior |
 | --- | --- | --- |
-| 9 | P&L by engagement | Revenue, direct cost, gross margin per engagement; multi-currency toggle |
+| 9 | P&L by engagement | Revenue, direct cost, gross margin in the report's supported tenant-base presentation; no general currency toggle |
 | 10 | AR aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `invoices` table |
 | 11 | AP aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `bills` table |
 | 12 | Utilization | Billable hours / available hours per employee |
 | 13 | WIP | Unbilled effort × rate per project |
 | 14 | Trial balance | DR total = CR total for the period; if not, raise alarm |
-| 14a | AI statement package | Copilot generates current and comparison-period statement summaries, deterministic variances, and commentary from report-service outputs |
+| 14a | Financial statements | From=To gives a month; an inclusive From/To range feeds Income Statement, Cash Flow, and Statutory Pack, while Balance Sheet/retained earnings use the ending month. #370 is automated component/service proof, not live Q2 proof. |
 
 ### §1.4 AI Finance Ops Manager command center
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 15a | Admin | `/settings` -> Agent Autonomy -> Finance Ops Manager Schedule; saves cadence, period mode, work-item limit, and stale escalation windows | `PUT /agents/finance-ops/schedule` persists tenant cadence; scheduled execution still creates reviewed Inbox action plans instead of directly changing finance records |
-| 15 | Finance ops manager | `/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records the invocation in `agent_tool_invocations` as `read_only` |
+| 15a | Admin | `/app/settings` -> Agent Autonomy -> Finance Ops Manager Schedule; saves cadence, period mode, work-item limit, and stale escalation windows | `PUT /api/v1/agents/finance-ops/schedule` persists tenant cadence; scheduled execution still creates reviewed Inbox action plans instead of directly changing finance records |
+| 15 | Finance ops manager | `/app/copilot` → "Run today's finance ops check" | `copilot_agent` invokes `run_finance_ops_check` and records a read-only invocation |
 | 16 | system | Summarise AR, AP, WIP, close readiness, action queue, and recent agent/workflow status | Response separates `read_only_findings` from `recommended_actions`; write-capable recommendations are marked as requiring Inbox approval |
-| 17 | Finance ops manager | `/copilot` → "Create the next recommended finance ops work items" | `copilot_agent` invokes `create_finance_ops_action_plan`; Inbox receives a manager action-plan task with domain, recommendation, specialist tool, risk class, rationale, and review path |
-| 18 | Finance ops manager | Approves the action-plan task, then approves a Plan Item in `/inbox` | Action-plan approval creates one `finance_ops_action_item` child Inbox task per review-required recommendation. Plan Item approval dispatches the mapped specialist workflow, creating the next specialist review task where applicable; invoices, payments, journals, statements, and emails remain behind specialist approval flows |
+| 17 | Finance ops manager | `/app/copilot` → "Create the next recommended finance ops work items" | Creates a reviewed action-plan task; final finance writes remain separate |
+| 18 | Finance ops manager | Approves the action-plan task, then approves a Plan Item in `/app/inbox` | Creates child review work and dispatches mapped specialist workflows; final invoices, payments, journals, statements, and emails remain behind their own gates |
 
 ### §1.5 AI collections reminders through Inbox
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 19 | Finance ops manager | `/copilot` → "Draft reminders for invoices overdue more than 30 days" | `copilot_agent` invokes `draft_collection_reminders`; `collections_agent` discovers live overdue invoices, drafts deterministic reminder payloads, and records read/draft/send ledger steps |
+| 19 | Finance ops manager | `/app/copilot` → "Draft reminders for invoices overdue more than 30 days" | `collections_agent` discovers eligible invoices and drafts reviewed reminder work; no send before approval |
 | 20 | system | Create one Inbox task per eligible invoice | Each `send_email` task includes invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale; no email is sent before approval |
 | 21 | Finance ops manager | Approves or rejects the Inbox task | Approval materialises through the existing collections email send path; rejection records a correction/audit signal and sends nothing |
 
@@ -81,9 +94,14 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 
 ## §2 Variants
 
-- **§2.1 Multi-currency toggle**: P&L and AR aging render in tenant base by default; toggle to engagement / invoice currency.
+- **§2.1 Multi-currency limitation**: reports render tenant-base values; there is
+  no general engagement/invoice-currency toggle. Validate any explicit
+  transaction-currency buckets from the response instead.
 - **§2.2 Mid-month report**: WIP and AR aging accept any date range; period close not required.
 - **§2.3 Comparative report**: side-by-side last month vs. this month.
+- **§2.4 Statement range**: equal From/To months are monthly; inclusive ranges
+  feed flow statements/statutory pack and the ending month is the balance-sheet
+  as-of date. A live quarter still requires ledger tie-out evidence.
 
 ---
 
@@ -91,10 +109,10 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 
 | ID | Trigger | Expected behavior |
 | --- | --- | --- |
-| §3.1 | Sub-ledger event with imbalanced amounts (force via test) | Trigger refuses; sub-ledger event rolled back |
+| §3.1 | Service attempts an imbalanced posting | Guard rejects the journal and no partial source/journal state remains. A database-trigger rollback is not currently proven, so assert both sides explicitly. |
 | §3.2 | Posting dated in a closed period | 422 `period_locked` |
-| §3.3 | Trial balance does not balance after a batch of events | P0 alert fires; `reporting_agent` refuses to render reports until reconciled; runbook entry created |
-| §3.4 | FX rate retroactively changed (operational error) | Rejected — FX rate at journal post time is frozen; any change is a new reversing entry |
+| §3.3 | Trial Balance is not balanced after a batch | Surface the imbalance and block close; file P0. Do not claim an automatic alert or reporting-agent refusal unless those records/responses are observed. |
+| §3.4 | FX rate correction after posting | Posted journal base amounts must not change. Correct the rate with a new sourced rate and use the appropriate open-period accounting correction; a rate edit is not itself a reversing journal. |
 | §3.5 | Cross-tenant report attempt | 404 |
 | §3.6 | Reporting agent (LLM) hallucinates a number | Eval case: numbers in report response must reconcile with API totals. LLM cannot make up money totals; numbers are tool-call outputs only |
 | §3.7 | Concurrent close + post | Race: post-loser gets 422 `period_locked`; period_locks insertion is atomic |
@@ -116,33 +134,42 @@ After each event, the test asserts: `sum(debits) == sum(credits)` for that journ
 | E2 | Year-end close (December 2026) | Roll P&L → Retained Earnings; net income = 0 going into Jan 2027 |
 | E3 | Voiding an invoice in a closed period | Allowed only via reversing entry dated in the open period |
 | E4 | Manual journal entry | Manager+ can submit when balanced and reasoned; under-threshold entries post immediately, over-threshold entries route to Inbox with submitted/rejected lifecycle evidence and same-user approval denial, `accounting_guardian` validates balance/account/period on final posting, `manual_journal.posted` evidence is written, and later corrections use reasoned reversal journals. |
-| E5 | Reports request a million-row range | API paginates; UI streams; no OOM |
+| E5 | Reports request a million-row range | Performance/pagination/streaming behavior is not established by current E2E evidence; run a bounded load test and record memory/latency rather than asserting no OOM. |
 
 ---
 
 ## §5 RBAC Matrix
 
-| Action | Owner | Admin | Manager | Member | Viewer |
-| --- | --- | --- | --- | --- | --- |
-| View P&L | ✅ | ✅ | ✅ (assigned engagements only) | ❌ | ✅ (assigned engagements only) |
-| View AR/AP aging | ✅ | ✅ | ✅ | ❌ | ✅ |
-| View trial balance | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Close period | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Reopen period | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Create manual journal | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Action | Owner | Admin | Manager | Approver | Member | Viewer/Auditor | Employee |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| View P&L / AR / AP / Trial Balance | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (tenant-wide current report gate) | ❌ ERP |
+| Lock/close period | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Reopen period | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Submit/reverse manual journal | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+This is projected legacy-role enforcement. It does not prove granular behavior
+for all 22 catalogue roles. In particular, Finance Controller/GL
+Accountant/Close Manager project to `admin`, while Finance Ops Manager projects
+to `manager` and cannot lock a period.
 
 ---
 
 ## §6 Audit Trail
 
-- `events`: `period.closed`, `period.reopened`, `journal.posted`, `journal.reversed`
-- `audit_log`: every period close logs reconciliation snapshot
+- `financial_events` uses current event names such as `period.locked`,
+  `period.unlocked`, `journal_entry.posted`, and `manual_journal.*`.
 - `agent_suggestions`: `reporting_agent` rows for natural-language Q&A
 - `accounting_close_overrides`: close blocker code, reason, actor, timestamp, and blocker evidence for explicit overrides
 - `close_package.readiness_evidence`: AR/AP/WIP/GL/approval evidence and recorded overrides shown to the reviewer
 - `journal_entries.reason` and `financial_events`: `manual_journal.submitted_for_approval`, `manual_journal.approval_denied`, `manual_journal.posted`, `manual_journal.rejected`, and `manual_journal.reversed` evidence with reason, actor role, line count, debit total, threshold, and task/journal linkage where applicable
 
 ## §6.1 Automated Browser Proof
+
+The files below are useful bounded evidence, but the enterprise browser specs
+use intercepted/mocked API contracts unless explicitly described as live. They
+must not be counted as a browser-only production close. The live
+`frontend/e2e/copilot-finance-ops-live.spec.ts` is a supplemental live slice,
+not the full deterministic R2R ledger/close.
 
 The #310 browser proof covers a deterministic R2R slice with user-facing
 Copilot prompts:
@@ -225,13 +252,26 @@ action-plan Inbox task, separate stale high-risk escalation notice, and
 
 ## §8 Cleanup
 
-- Period close on test tenant is a hard delete after tests; no archival needed for test data.
-- `eval_runs` for `reporting_agent` retained for drift analysis.
+- Preserve the retained Ishantech production tenant, close evidence, journals,
+  and report artifacts. A period close is not "hard deleted" after testing.
+- Disposable local tenant cleanup is a separately authorized operation; retain
+  audit/eval evidence according to policy.
 
 ## §9 Executable Test Mapping
 
-```
-backend/tests/e2e/test_record_to_report.py::test_§<id>_<slug>
-backend/tests/property/test_journal_balance.py::test_property_<invariant>
-backend/tests/property/test_trial_balance.py::test_property_<invariant>
-```
+The formerly mapped `backend/tests/e2e/test_record_to_report.py` and
+`backend/tests/property/test_trial_balance.py` do not exist.
+
+| Existing evidence | Scope and limitation |
+| --- | --- |
+| `backend/tests/property/test_journal_balance.py` | Pure in-process balance model; its two guardian properties are strict xfails and its claimed DB counterpart is absent. |
+| `backend/tests/unit/test_trial_balance.py` | Actual unit-level Trial Balance service coverage; not property or production E2E proof. |
+| `backend/tests/api/test_reports.py`, `test_period_lock.py`, `test_manual_journal.py` | Real API integration slices for reports, locks, and journals. |
+| Close/manual/year-end unit suites | Bounded service contracts using controlled state. |
+| `frontend/e2e/r2r-reports-render.spec.ts`, `trial-balance.spec.ts`, `accounting-journals.spec.ts` | Render/empty/error-state browser checks; some tolerate backend errors or skip without seeded state. |
+| Enterprise R2R, year-end, and scheduled-finance browser specs | Mocked contract proofs; not persisted production accounting evidence. |
+| `frontend/e2e/copilot-finance-ops-live.spec.ts` | Live supplemental finance-ops slice; not a full month/quarter close. |
+
+The browser-only Ishantech production run must supply the missing end-to-end
+proof: source IDs, journals, reconciliations, three locks, post-lock denials,
+monthly statements, a true Apr–Jun range, and exact GL/sub-ledger tie-outs.

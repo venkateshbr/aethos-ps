@@ -68,6 +68,20 @@ frontend/src/app/
 - **Closure evidence bar** (added 2026-05-26 after #128 RCA — see `docs/team/SDLC_PROTOCOL.md`): UI-touching issues require a passing Playwright spec under `frontend/e2e/` OR a Founder-confirmed browser walkthrough with screenshot. Backend `curl`/`httpx` proof is **not sufficient** for any UI-touching issue — it bypasses the SPA interceptor, routing, and error handling. Backend-only issues still close on real-stack pytest evidence. Applies to Vishwa-during-cap-strike closures too.
 - Role-gated issue creation: only Vishwa, Vastu, Netra create `type:feature`. Others create `type:bug`/`task`/`chore`/`spike`.
 
+## Agent skills
+
+### Issue tracker
+
+Work is tracked in GitHub Issues for `venkateshbr/aethos-ps`; use the repository's `gh` workflow. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Engineering skills map their generic triage states onto this repository's existing `status:*`, assignment, and disposition labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context professional-services ERP; use the project context, plan, domain pack, and relevant ADRs/scenario documents. See `docs/agents/domain.md`.
+
 ## Agent Team
 | Agent | Role | Trigger |
 |---|---|---|

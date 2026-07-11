@@ -1,5 +1,12 @@
 # Aethos — Demo Guide
 
+> **Archived v1 guide.** This document is retained as historical demo evidence
+> and is not the current product walkthrough. Routes, roles, privacy wording,
+> and several workflows below are stale. Use
+> [`DEMO_GUIDE_v2.md`](DEMO_GUIDE_v2.md) for the maintained guide; verify every
+> production claim against the current launch-readiness audit before presenting
+> it as live functionality.
+
 > **Version**: 1.0 · **Date**: 2026-06-20
 > **Purpose**: Walk a prospect through the Aethos PS platform in ~35 minutes
 > **Audience**: Firm owners, senior accountants, PS operations leads

@@ -4,7 +4,62 @@
 > **Base Currency**: GBP (£)
 > **Service Lines**: Accounting & Advisory · Tax Services · Company Secretarial · Payroll
 > **Markets**: UK (primary), Singapore, US (cross-border clients)
-> **Guide version**: 2.2 · 2026-06-29
+> **Guide version**: 2.3 · 2026-07-11
+
+## Current Product Boundaries
+
+This is a scenario script, not evidence that each scenario passed on the
+current production build. Run it at `${PRODUCTION_URL}` only after the canonical
+hostname is confirmed, and record actual IDs, journals, reports, and screenshots
+in the current launch-readiness runbook.
+
+Authenticated browser routes use the `/app/*` namespace. The current routes
+used in this guide are `/app/copilot`, `/app/inbox`, `/app/clients`,
+`/app/people`, `/app/engagements`, `/app/projects`, `/app/time`,
+`/app/approvals`, `/app/expenses`, `/app/invoices`, `/app/payments`,
+`/app/bills`, `/app/billing-runs`, `/app/accounting/journals`,
+`/app/reports`, `/app/documents`, `/app/settings`, and `/app/profile`.
+The public routes are `/`, `/signup`, `/login`, and `/p/:token`. There is no
+standalone `/copilot`, `/reports/*`, `/payments` batch, or `/settings/stripe`
+browser route.
+
+Current limitations that must not be demonstrated as shipped behavior:
+
+- The public signup wizard creates the authenticated owner, tenant, Stripe
+  customer, and SetupIntent after the Account step; it then selects a plan,
+  confirms a card with Stripe, starts the trial, and lands at
+  `/app/copilot`. A declined card therefore leaves a provisioned tenant/customer
+  without an active trial; signup is not one atomic card-gated transaction.
+- Signup confirms the owner email server-side. The login page has no public
+  self-service "forgot password" flow. Admin-created users can receive a
+  one-time set-password link or temporary password, and signed-in users can
+  change their password from Profile.
+- The backend exposes a Stripe Customer Portal session endpoint, but the app
+  has no self-service billing-management/plan-change UI. Stripe Connect status
+  is embedded in `/app/settings`; its configured callback browser path is not
+  in the Angular route table and must be production-tested before a demo.
+- The public invoice page is not a general client portal. There is no client
+  document/engagement portal for exchanging engagement letters or other files.
+- There is no Settings Rate Cards management screen. Existing rate cards can
+  be selected on engagement creation and inspected on engagement detail; an
+  approved engagement extraction may materialize a linked card when reviewed
+  rate hints exist.
+- Reports do not offer an interactive "show in transaction currency" toggle.
+  Financial statements are rendered in tenant base currency; transaction-
+  currency detail is shown only where a particular report supplies it.
+- Reports now have From month and To month statement controls. Equal values are
+  a monthly statement; a range feeds Income Statement, Cash Flow, and Statutory
+  Pack, while Balance Sheet and retained earnings use the ending month as the
+  as-of period. Reversed or incomplete ranges are rejected before requests.
+  This behavior has focused automated proof under #370, but no live Q2
+  production statement is claimed by this guide.
+- There is no separate platform-administrator role in the 22-role tenant
+  security catalogue. Do not present Tenant Owner as a platform administrator.
+- Do not claim that uploaded text, scanned images, names, tax IDs, or bank
+  numbers are automatically masked before model processing. Operational-health
+  and telemetry redaction is narrower than document/LLM input handling. Use
+  fictional or approved data and the configured provider's data-processing
+  controls.
 
 ---
 
@@ -40,10 +95,14 @@ Meridian is a 45-person professional services firm based in London, with a Singa
 
 ## Pre-Demo Setup
 
-If production has just been reset with
+If a disposable QA environment has just been reset with
 `uv run python -m scripts.reset_operational_data --execute --confirm DELETE_ALL_TENANTS`,
 there are no tenants or login users. First create a tenant/user through the
 normal signup flow, then seed that tenant with the command below.
+
+Do not run that destructive reset against a retained production tenant. For a
+production validation, register a new fictional tenant through `/signup` and
+follow the production E2E runbook instead of seeding business data.
 
 1. Seed the demo tenant:
    ```bash
@@ -53,11 +112,11 @@ normal signup flow, then seed that tenant with the command below.
 2. Log in as `marcus@meridianadvisory.co.uk` (Managing Partner — owner role)
 3. The Aethos Atlas home appears — this is Meridian's operations hub
 
-For production scenario-library tenants created by the automated browser run,
-credentials are stored locally in `demo_credentials.json` under
-`production_scenario_library_latest.tenants[]`. Each tenant has an `owner`, an
-`erp_manager`, and a `timesheet_employee`. Treat that file as secret material:
-use it for validation, but do not paste passwords into decks, guides, tickets,
+Store generated validation credentials only in the ignored local
+`demo_credentials.json` under a run-specific key and set mode 0600. Historical
+scenario-library runs used `production_scenario_library_latest`; the current
+Ishantech run uses `ishantech_launch_e2e_20260711`. Treat the file as secret:
+never paste passwords, links, tokens, or sessions into decks, guides, tickets,
 or screenshots.
 
 ---
@@ -155,7 +214,8 @@ clear human approval evidence.
 5. Check:
    - **Engagements** → Nexus engagement references a linked rate card
    - **Projects** → first project was created under the engagement
-   - **Settings / Rate Cards** or engagement detail → the reviewed rates are present
+   - Engagement detail → the linked rate-card name or ID is present
+   - Limitation: there is no Settings Rate Cards management screen to open
    - **Inbox decision history** → approval payload includes `rate_card_id` and line count
 
 **Talking point**: *"The AI read a 12-page engagement letter, pulled out the commercial terms, created the engagement and first project, and materialised a rate card from the reviewed commercial hints. Marcus approved the packet instead of re-keying the contract."*
@@ -269,8 +329,14 @@ rate, approval, and receipt evidence.
 
 4. Review the draft → click **Approve** → click **Send**
 
-5. Stripe Payment Link generated → show the public invoice page (`/p/<token>`)
-   - Nexus's finance team clicks Pay → Stripe processes → webhook fires → invoice marked paid → journal posts automatically
+5. When server-side Stripe is configured, show the generated public invoice
+   page (`/p/<token>`)
+   - Nexus's finance team clicks Pay → Stripe processes → webhook fires
+   - Verify both the paid/payment state and the separate DR Bank / CR AR journal.
+     Current webhook handling can report `journal_posted=false` after payment
+     state changes; that is a P0, not a successful automatic posting.
+   - Also test the configured `/p/<token>/thanks` redirect; it is not a current
+     Angular route and must not be presented as working without browser proof.
 
 6. In **Aethos Atlas**, type:
    > *"Check the Nexus June invoice after sending. Confirm invoice status, payment link readiness, AR Aging bucket, and posted journal evidence."*
@@ -352,7 +418,8 @@ controlled.
 2. Go to **Settings** and quickly show:
    - **Services** → standard professional-services catalogue and active service lines
    - **Tax Rates** → UK VAT rate used by the invoice
-   - **Rate Cards** or engagement detail → Nexus reviewed rate card from the engagement letter
+   - Engagement detail → Nexus linked rate card from the engagement letter
+   - Limitation: rate-card create/edit is not exposed as a Settings walkthrough
    - **Collections Policy** → reminder timing and tone policy
    - **Stripe Connect** → connected status or manual-payment fallback state
 
@@ -386,7 +453,10 @@ controlled.
    - Missing tax setup blocks invoice posting and points the user to **Settings / Tax Rates**
    - Viewer users can inspect permitted invoice/report data but cannot approve, send, void, or record payment
    - A locked accounting period blocks backdated invoice posting
-   - If Stripe is not connected, the invoice can still be sent without a payment link and settled through the manual record-payment path
+   - If server-side Stripe is configured, a Payment Link can still be created
+     without Connect; Connect adds destination/on-behalf-of payout routing. If
+     Stripe itself is not configured, the invoice uses the PDF-only path and
+     can be settled through manual record payment.
    - Stripe webhook/reconciliation evidence is visible through payment and webhook-event records when payment automation is enabled
    - Disputed or collections-hold invoices are not reminded until the blocker is resolved
    - Partially paid invoices show remaining balance and collect only the remaining balance
@@ -549,7 +619,7 @@ controlled.
 
 8. Aethos Atlas should return:
    - Vendor balances and due-soon totals by currency
-   - Bill-level state: draft, approved, scheduled, paid, voided, duplicate risk, or missing evidence
+   - Bill-level state: draft, approved, paid, voided, duplicate risk, or missing evidence
    - Coding status, source document availability, duplicate review state, PO/service-order match state
    - Payment readiness, blockers, safe batch status, export presence, send/settlement state
    - No raw bank details, export hashes, tool calls, traces, logs, or raw payloads
@@ -563,6 +633,9 @@ controlled.
 11. **Inbox** → approve the bill-pay proposal. Then go to **Pay Bills**:
    - Draft payment batch exists
    - Forster & Reid is selected with due-date rationale
+   - A projected `admin` user performs create/approve/export/send/settle; AP
+     Manager and AP Clerk currently project to `manager` and cannot perform
+     those batch mutations
    - Export CSV/NACHA file where available
    - Mark batch sent
    - Confirm settlement when bank confirmation is received
@@ -606,14 +679,20 @@ can move forward.
    > *"Prepare a payment approval packet for bills due in the next 10 days. Include vendor, amount, due date, coding evidence, duplicate status, cash impact, and the approver role required for the batch."*
 
 7. Payment edge checks:
-   - Money-out batches show required approver role; high-value batches route to Owner where policy requires it
+   - Direct batch mutations currently require projected `admin`; separately
+     verify any configured Admin/Owner high-value Inbox threshold
    - Finance Approver can approve/reject manager-threshold Inbox/procurement reviews but cannot create bills, create procurement documents, or approve Admin/Owner-threshold spend
    - Viewer and Auditor users cannot create bills, approve bills, open Pay Bills, export files, mark sent, or settle batches
-   - Vendor with missing bank details can be posted to AP but is blocked from payment batch execution
+   - Limitation: vendor-bank validation is not a proven execution block and the
+     current export can contain blank/placeholder bank fields. Stop before
+     download/upload and record the gap.
    - Payment file export, mark-sent, and settlement confirmation are separate recorded lifecycle steps
    - Settlement posts a DR Accounts Payable / CR Bank journal and updates AP Aging and Cash Flow
    - Draft, paid, voided, duplicate-risk, PO-mismatch, and missing-evidence bills are explained before payment
    - Existing draft/approved/sent payment batches are shown without exposing raw bank details or export hashes
+   - Limitation: partial AP payments, early-pay discounts, mixed-currency
+     batches, bank-balance checks, and duplicate-open-batch prevention are not
+     supported/proven by the current Pay Bills service
 
 **Talking point**: *"P2P is deliberately staged: extract and code the invoice, approve the bill, approve the payment batch, export/send, then settle. The AI prepares each packet, but duplicate risk, PO mismatch, and money-out approval are never silently bypassed."*
 
@@ -678,7 +757,9 @@ can move forward.
    - Billing: Fixed £5,000 (agreed with client)
    - Creates new invoice milestone: "CGT Computation & Submission — £5,000"
 
-6. New engagement letter is generated, dropped to the Alderton portal
+6. Generate the engagement letter out of band, then attach it in
+   `/app/copilot` for reviewed intake. Aethos does not currently provide a
+   general Alderton/client document portal; `/p/:token` is invoice-only.
 
 **Talking point**: *"When scope creeps, Sarah knows exactly what to charge because the system has history. The AI cited a comparable past matter — actual numbers, not a gut feel."*
 
@@ -815,8 +896,9 @@ can move forward.
    ```
 
 9. Go to **Reports** → **Revenue by Engagement** → Thornton:
-   - Shows USD revenue and GBP equivalent side by side
-   - Toggle: "Show in USD" vs "Show in GBP base"
+   - Verify the tenant-base GBP revenue and any transaction-currency detail the
+     current response actually supplies
+   - Limitation: there is no interactive USD/GBP report-currency toggle
    - **AR Aging** no longer includes the paid invoice
    - **Cash Flow** reflects the GBP base receipt
 
@@ -1061,6 +1143,13 @@ can move forward.
    - Cash Flow
    - Statutory Pack
 
+   Use **From month = 2026-06** and **To month = 2026-06** for the monthly
+   package. To exercise the implemented range control, use From 2026-04 and To
+   2026-06: Income Statement, Cash Flow, and Statutory Pack receive the full
+   inclusive range, while Balance Sheet and retained earnings are as of June.
+   Capture the actual network parameters and tie-out before calling this Q2 a
+   live PASS; the guide itself is not that evidence.
+
 8. In **Aethos Atlas**, type:
    > *"Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted."*
 
@@ -1214,21 +1303,22 @@ work.
 
 2. Go to **Settings** → **Security Roles**.
 
-3. Show the seeded Dynamics-style catalog:
-   - Tenant Owner
-   - Tenant Admin
-   - CFO
-   - Finance Controller
-   - Finance Ops Manager
-   - Finance Approver
-   - Procurement Manager
-   - AP Manager / AP Clerk
-   - AR Manager / Billing Specialist
-   - GL Accountant / Close Manager
-   - Auditor
-   - Executive Viewer
-   - AI Operations Admin
-   - Timesheet Employee
+3. Show all 22 seeded roles and their current legacy enforcement projection:
+   - `owner`: Tenant Owner
+   - `admin`: Tenant Admin, CFO, Finance Controller, GL Accountant, Close
+     Manager, AI Operations Admin
+   - `manager`: Finance Ops Manager, Procurement Manager, AP Manager, AP Clerk,
+     AR Manager, Billing Specialist, Collections Specialist, Engagement Manager,
+     Resource Manager
+   - `approver`: Finance Approver
+   - `member`: Finance Operator, Buyer / Requester
+   - `auditor`: Auditor
+   - `viewer`: Executive Viewer
+   - `employee`: Timesheet Employee
+
+   There is no Platform Administrator role in this catalogue. Platform support
+   and control-plane administration require a separately designed and tested
+   boundary; they must not be represented by Tenant Owner.
 
 4. Optional tenant-admin check: create a disposable role named
    **Demo Billing Reviewer** from seeded duties such as Finance read access,
@@ -1242,6 +1332,9 @@ work.
    - Finance Approver: security role `Finance Approver`
    - Finance Controller: security role `Finance Controller`
    - Read-only Auditor: security role `Auditor`
+
+   This four-person switch is only the short demo. The production launch run
+   must create and independently test all 22 configured roles.
 
 7. For each user, set or capture the initial password. Confirm the user row
    shows initial password change required.
@@ -1291,7 +1384,12 @@ work.
 15. Explain the current role model:
    - Main ERP users are assigned seeded security roles made of duties and
      privileges
-   - `tenant_users.role` remains only as a legacy projection during migration
+   - Each assignment projects to one legacy `tenant_users.role`; many API
+     endpoints still enforce that legacy hierarchy rather than an individual
+     catalogue privilege
+   - Distinct catalogue roles with the same projection can therefore have the
+     same effective behavior on legacy-gated routes; demonstrate the actual
+     positive and negative result, not the role label alone
    - Tenant Admins can create users, create tenant roles from seeded duties,
      assign non-owner roles, and set initial passwords
    - Only Tenant Owners can grant Tenant Owner authority
@@ -1568,7 +1666,13 @@ telemetry, and abuse-path behavior, not only happy-path finance workflows.
 > The demo shows role-aware approvals, read-only auditor access, decision trails, replay-safe run evidence, operational health, rate-limit status, and safe alert routing. The current model is AI-led operations with explicit controls around money, journals, statements, and external communications.
 
 **"What about GDPR / data privacy for our clients?"**
-> PII is masked before any data leaves your system and reaches an AI model. Bank account numbers, tax IDs, and full names are never sent to the LLM. The AI sees masked versions: `GB12*****89`, `[CLIENT NAME]`.
+> Aethos tenant access, source-document permissions, and operational telemetry
+> redaction are separate controls. The current build does not prove universal
+> pre-model masking of names, bank numbers, tax IDs, extracted document text, or
+> scanned images. Use only fictional or contractually approved data in this
+> demo, configure an approved model provider and retention policy, and review
+> the extracted proposal before posting it. Do not promise field-level masking
+> unless production evidence for that exact input path exists.
 
 **"We do payroll — can this handle PAYE, RTI?"**
 > Payroll in v1 handles the billing and time-tracking side — what you charge clients for payroll services, not the payroll bureau processing itself. The payroll processing integrations (Sage, Brightpay, Xero Payroll) are on the roadmap.

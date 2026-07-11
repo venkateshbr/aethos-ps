@@ -115,6 +115,43 @@ COMPOSE_PROFILES=worker
 Use the Supabase session pooler connection string on port `5432`, not the
 transaction pooler on `6543`, because Procrastinate uses LISTEN/NOTIFY.
 
+### Queue session budget
+
+Supabase currently allows 15 session-pool connections. Every Uvicorn process
+owns its own Procrastinate pool, and the background worker holds one additional
+LISTEN/NOTIFY connection outside its pool. Hostinger therefore uses these
+separate defaults:
+
+| Process | Pool setting | Maximum sessions |
+| --- | --- | ---: |
+| API, two Uvicorn workers | `1` minimum / `1` maximum per process | 2 |
+| Procrastinate worker | `1` minimum / `2` maximum | 2 |
+| Worker LISTEN/NOTIFY | Outside the worker pool | 1 |
+| **Normal maximum** | | **5** |
+
+Two overlapping deployment generations use at most 10 application sessions.
+That leaves five sessions for worker health probes, operator diagnostics, and
+provider overhead. Do not raise a pool maximum without recalculating both the
+normal and overlapping-deploy budgets against the provider limit.
+
+The Compose defaults can be overridden independently without exposing the
+database URL:
+
+```text
+QUEUE_API_DB_POOL_MIN_SIZE=1
+QUEUE_API_DB_POOL_MAX_SIZE=1
+QUEUE_API_DB_APPLICATION_NAME=aethos-ps-api
+QUEUE_WORKER_DB_POOL_MIN_SIZE=1
+QUEUE_WORKER_DB_POOL_MAX_SIZE=2
+QUEUE_WORKER_DB_APPLICATION_NAME=aethos-ps-worker
+```
+
+`QUEUE_REQUIRED=true` is enforced by the Hostinger manifest. The API aborts
+startup if its required queue connector cannot open, and Docker only marks the
+API healthy when `/health/ready` returns JSON with `status=ready`. The worker
+subscribes to `default`, `extraction`, `cron`, `billing`, and `fx`; do not rename
+these without updating the task decorators and deployment-contract tests.
+
 Do not use the direct Supabase host form:
 
 ```text
@@ -128,6 +165,41 @@ Docker. Use the Supabase pooler form instead:
 ```text
 postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 ```
+
+### Diagnose session-pool exhaustion
+
+Symptoms include `EMAXCONNSESSION`, a 30-second queue connector startup delay,
+or `/health/ready` reporting the queue as unavailable.
+
+1. Check readiness without printing environment values:
+
+   ```bash
+   curl -fsS https://aethos.ishirock.tech/health/ready \
+     | python -c "import json,sys; data=json.load(sys.stdin); print(json.dumps(data, indent=2)); raise SystemExit(0 if data.get('status') == 'ready' else 1)"
+   ```
+
+2. Check container state and scrubbed queue errors:
+
+   ```bash
+   docker compose --project-name aethos-ps -f docker-compose.hostinger.yml ps
+   docker compose --project-name aethos-ps -f docker-compose.hostinger.yml logs --tail=200 api worker \
+     | grep -E 'EMAXCONNSESSION|PoolTimeout|Procrastinate connector'
+   ```
+
+3. From the Supabase SQL editor, group active sessions by the safe diagnostic
+   name. Do not paste `DATABASE_URL` or credentials into issue comments:
+
+   ```sql
+   select application_name, state, count(*) as sessions
+   from pg_stat_activity
+   where application_name like 'aethos-ps-%'
+   group by application_name, state
+   order by application_name, state;
+   ```
+
+If the application total exceeds five in a steady deployment, confirm only one
+worker container and two API workers are running, inspect overridden pool-size
+variables, then roll back before increasing the Supabase limit.
 
 ## Optional Hermes-Powered Atlas Runtime
 
@@ -300,6 +372,8 @@ After deploy:
 
 ```bash
 curl -fsS https://aethos.ishirock.tech/health
+curl -fsS https://aethos.ishirock.tech/health/ready \
+  | python -c "import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get('status') == 'ready' else 1)"
 curl -fsS https://aethos.ishirock.tech/api/v1/ping
 curl -fsS https://timesheet.aethos.ishirock.tech/health.txt
 ```
