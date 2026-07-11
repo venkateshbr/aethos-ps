@@ -72,7 +72,10 @@ x-api-environment: &api-environment
   LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
 
   DATABASE_URL: "${DATABASE_URL:-}"
-  QUEUE_REQUIRED: "${QUEUE_REQUIRED:-false}"
+  QUEUE_DB_POOL_MIN_SIZE: "${QUEUE_API_DB_POOL_MIN_SIZE:-1}"
+  QUEUE_DB_POOL_MAX_SIZE: "${QUEUE_API_DB_POOL_MAX_SIZE:-1}"
+  QUEUE_DB_APPLICATION_NAME: "${QUEUE_API_DB_APPLICATION_NAME:-aethos-ps-api}"
+  QUEUE_REQUIRED: "true"
   EXTRACTION_MODE: "${EXTRACTION_MODE:-sync}"
   UPSTASH_REDIS_URL: "${UPSTASH_REDIS_URL:-}"
 
@@ -108,7 +111,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+          "import json, urllib.request; data=json.load(urllib.request.urlopen('http://localhost:8080/health/ready')); raise SystemExit(0 if data.get('status') == 'ready' else 1)",
         ]
       interval: 30s
       timeout: 10s
@@ -147,9 +150,13 @@ services:
       python -m procrastinate
       --app=app.workers.procrastinate_app.app
       worker
-      --queues=default,extractions,billing,fx
+      --queues=default,extraction,cron,billing,fx
       --concurrency=4
-    environment: *api-environment
+    environment:
+      <<: *api-environment
+      QUEUE_DB_POOL_MIN_SIZE: "${QUEUE_WORKER_DB_POOL_MIN_SIZE:-1}"
+      QUEUE_DB_POOL_MAX_SIZE: "${QUEUE_WORKER_DB_POOL_MAX_SIZE:-2}"
+      QUEUE_DB_APPLICATION_NAME: "${QUEUE_WORKER_DB_APPLICATION_NAME:-aethos-ps-worker}"
     depends_on:
       api:
         condition: service_healthy

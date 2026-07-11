@@ -24,7 +24,7 @@ jobs:
 
       - name: Run ruff
         working-directory: backend
-        run: uv run ruff check app/
+        run: uv run ruff check app/ tests/
 
   # ── 2. Backend tests ───────────────────────────────────────────────────────
   backend-test:
@@ -46,9 +46,11 @@ jobs:
         run: |
           uv run pytest tests/unit/ tests/property/ -v --tb=short
 
-  # ── 3. Frontend lint ───────────────────────────────────────────────────────
-  frontend-lint:
-    name: Frontend lint (ng lint)
+  # ── 3. Frontend checks ─────────────────────────────────────────────────────
+  # Angular lint is tracked separately because this workspace has no lint
+  # target. Typecheck, unit, and Playwright discovery are mandatory meanwhile.
+  frontend-check:
+    name: Frontend typecheck + unit
     runs-on: ubuntu-latest
     # Only run when frontend/ files are touched
     if: |
@@ -58,10 +60,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node 20.19
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -78,13 +80,21 @@ jobs:
         if: steps.check_pkg.outputs.exists == 'true'
         working-directory: frontend
         run: npm ci
-        continue-on-error: true
 
-      - name: Run ng lint
+      - name: Typecheck both applications and specs
         if: steps.check_pkg.outputs.exists == 'true'
         working-directory: frontend
-        run: npx ng lint
-        continue-on-error: true
+        run: npm run typecheck
+
+      - name: Run frontend unit tests
+        if: steps.check_pkg.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm run test:ci
+
+      - name: Validate Playwright discovery
+        if: steps.check_pkg.outputs.exists == 'true'
+        working-directory: frontend
+        run: npx playwright test --list --reporter=line
 
   # ── 4. Frontend build ──────────────────────────────────────────────────────
   frontend-build:
@@ -97,10 +107,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node 20.19
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -117,10 +127,8 @@ jobs:
         if: steps.check_pkg.outputs.exists == 'true'
         working-directory: frontend
         run: npm ci
-        continue-on-error: true
 
-      - name: Build (production)
+      - name: Build both applications (production)
         if: steps.check_pkg.outputs.exists == 'true'
         working-directory: frontend
-        run: npx ng build --configuration=production
-        continue-on-error: true
+        run: npm run build:all

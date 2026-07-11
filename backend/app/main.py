@@ -68,8 +68,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await queue_app.open_async()
         except Exception as exc:
             import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "Procrastinate connector failed to open — defers will degrade: %s", exc
+            queue_logger = _logging.getLogger(__name__)
+            if _queue_required(settings):
+                queue_logger.error(
+                    "Required Procrastinate connector failed to open — "
+                    "aborting startup (error_type=%s)",
+                    type(exc).__name__,
+                )
+                raise
+            queue_logger.warning(
+                "Procrastinate connector failed to open — defers will degrade "
+                "(error_type=%s)",
+                type(exc).__name__,
             )
             queue_app = None
 
@@ -199,7 +209,8 @@ async def health_ready() -> dict[str, object]:
             "status": "error",
             "configured": bool(runtime_settings.database_url),
             "required": queue_required,
-            "error": str(e)[:80],
+            "error": "connection_failed",
+            "error_type": type(e).__name__,
         }
 
     db_ready = checks.get("db", {}).get("status") == "ok"

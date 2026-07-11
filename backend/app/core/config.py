@@ -7,9 +7,10 @@ Never import this module before process startup (keep tests fast with patch.dict
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -180,10 +181,35 @@ class Settings(BaseSettings):
     # Use the SESSION pooler (5432) not transaction pooler (6543) — Procrastinate
     # needs LISTEN/NOTIFY which transaction pooling doesn't support.
     database_url: str = ""
+    # The queue connector owns a psycopg connection pool in every process.
+    # Keep the local minimum small; production services override the maximum
+    # independently to preserve Supabase session-pool headroom.
+    queue_db_pool_min_size: int = Field(default=1, ge=1)
+    queue_db_pool_max_size: int = Field(default=4, ge=1)
+    queue_db_application_name: str = "aethos-ps-local"
     # When true, /health/ready treats the Procrastinate queue as a required
     # dependency. Keep false for the pilot sync-mode default; set true in
     # deployments where scheduled workers are part of the serving contract.
     queue_required: bool = False
+
+    @field_validator("queue_db_application_name", mode="before")
+    @classmethod
+    def _validate_queue_db_application_name(cls, value: object) -> str:
+        application_name = str(value or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,62}", application_name):
+            raise ValueError(
+                "QUEUE_DB_APPLICATION_NAME must be 1-63 safe diagnostic characters"
+            )
+        return application_name
+
+    @model_validator(mode="after")
+    def _validate_queue_db_pool_bounds(self) -> Settings:
+        if self.queue_db_pool_max_size < self.queue_db_pool_min_size:
+            raise ValueError(
+                "QUEUE_DB_POOL_MAX_SIZE must be greater than or equal to "
+                "QUEUE_DB_POOL_MIN_SIZE"
+            )
+        return self
 
     # Legacy — kept so older test configs don't fail to load. Unused since the
     # ARQ → Procrastinate migration moved the queue into Supabase Postgres.

@@ -29,5 +29,5 @@ jobs:
             HOSTINGER_TIMESHEET_DOMAIN=timesheet.aethos.ishirock.tech
             TRAEFIK_ENTRYPOINT=${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}
             TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}
-            COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || '' }}
+            COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}
             AETHOS_IMAGE_TAG=${{ github.sha }}

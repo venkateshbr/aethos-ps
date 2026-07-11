@@ -28,6 +28,19 @@ from app.core.config import settings
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
 tenant_id_var: ContextVar[str] = ContextVar("tenant_id", default="")
 
+_QUIET_LOGGERS = (
+    "uvicorn.access",
+    "httpx",
+    # httpcore/hpack DEBUG records include low-level request headers and HTTP/2
+    # header-table contents. Never inherit application DEBUG for these loggers.
+    "httpcore",
+    "hpack",
+    # stripe-python DEBUG logs full request/response bodies (including
+    # SetupIntent client secrets); its urllib3 transport logs request paths.
+    "stripe",
+    "urllib3",
+)
+
 
 # ---------------------------------------------------------------------------
 # Custom formatter — injects context vars into every record
@@ -65,6 +78,12 @@ def configure_logging() -> None:
     Call once at application startup (lifespan hook).  Safe to call multiple
     times — subsequent calls are no-ops.
     """
+    # Uvicorn installs handlers before the application lifespan starts. Apply
+    # sensitive/noisy dependency levels even when root logging is already
+    # configured and this function otherwise has nothing to install.
+    for logger_name in _QUIET_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
     root = logging.getLogger()
     if root.handlers:
         # Already configured (e.g., during testing when multiple app instances spin up)
@@ -81,7 +100,3 @@ def configure_logging() -> None:
     log_level = logging.DEBUG if settings.debug else logging.INFO
     root.setLevel(log_level)
     root.addHandler(handler)
-
-    # Quiet down noisy libraries
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)

@@ -214,6 +214,41 @@ def test_health_ready_ready_when_required_queue_connected():
     assert isinstance(result["checks"]["queue"]["latency_ms"], int)
 
 
+def test_health_ready_queue_error_does_not_expose_connection_details():
+    """Public readiness output must not echo a DSN or provider error text."""
+    import asyncio
+
+    from app.main import health_ready
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+        MagicMock()
+    )
+
+    with (
+        patch("supabase.create_client", return_value=mock_client),
+        patch("app.core.config.settings") as mock_settings,
+        patch("app.workers.procrastinate_app.app") as queue_app,
+    ):
+        mock_settings.supabase_url = "https://fake.supabase.co"
+        mock_settings.supabase_anon_key = "fake-key"
+        mock_settings.database_url = "postgresql://postgres:secret@db.example.test/postgres"
+        mock_settings.queue_required = True
+        mock_settings.extraction_mode = "sync"
+        queue_app.check_connection_async = AsyncMock(
+            side_effect=RuntimeError(
+                "postgresql://postgres:do-not-return-me@db.example.test/postgres"
+            )
+        )
+
+        result = asyncio.run(health_ready())
+
+    assert result["status"] == "degraded"
+    assert result["checks"]["queue"]["error"] == "connection_failed"
+    assert result["checks"]["queue"]["error_type"] == "RuntimeError"
+    assert "do-not-return-me" not in repr(result)
+
+
 # ---------------------------------------------------------------------------
 # utcnow deprecation — static check
 # ---------------------------------------------------------------------------
