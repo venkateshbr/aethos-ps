@@ -33,6 +33,7 @@ out/
 *.pem
 *.key
 demo_credentials.json
+ishantech_e2e_credentials.json
 
 # --- IDE / OS ---
 .idea/

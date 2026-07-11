@@ -8,28 +8,34 @@
  * their week, a manager approves in the main ERP, and the result is that
  * only approved hours are eligible for billing (billing-gate verified by API).
  *
- * Setup: backend/scripts/seed-e2e.py seeds the tenant + employees; the seed
- * is stored at e2e/.auth/timesheet-e2e-seed.json.
+ * Setup: the run-scoped tenant from 00-signup.spec.ts is provisioned through
+ * authenticated APIs in beforeAll; the actual timesheet workflow remains UI-driven.
+ * The generated seed is stored at e2e/.auth/timesheet-e2e-seed.json and is
+ * removed with the run tenant by global teardown.
  *
  * Tests run serially (shared browser session within each describe block).
  * Each describe block keeps its own login context (owner vs employee).
  */
 
 import { test, expect, Page, BrowserContext, APIRequestContext } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const MAIN_URL    = process.env.AETHOS_PS_WEB_URL    ?? 'http://localhost:4200';
+const MAIN_URL    = process.env.AETHOS_PS_WEB_URL    ?? 'http://localhost:4201';
 const PORTAL_URL  = process.env.AETHOS_TS_WEB_URL    ?? 'http://localhost:4202';
 const API_URL     = process.env.AETHOS_PS_API_URL    ?? 'http://localhost:8011';
 const SEED_PATH   = path.join(__dirname, '.auth', 'timesheet-e2e-seed.json');
+const O2C_META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
+const O2C_STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const OWNER_STATE = path.join(__dirname, '.auth', 'ts-owner.json');
 const BOB_STATE   = path.join(__dirname, '.auth', 'ts-bob.json');
 const CAROL_STATE = path.join(__dirname, '.auth', 'ts-carol.json');
 const PROJECT_TABLE = 'mat-table, [mat-table], table[class*="mat"]';
 
 interface Seed {
+  playwright_run_id?: string;
   test_email: string;
   password: string;
   tenant_id: string;
@@ -40,7 +46,14 @@ interface Seed {
   project_id: string;
   project_code: string;
   project_name: string;
-  employees: { id: string; email: string; name: string; first_name: string }[];
+  employees: {
+    id: string;
+    email: string;
+    name: string;
+    first_name: string;
+    temporary_password: string;
+    password: string;
+  }[];
 }
 
 interface TimesheetEntry {
@@ -53,7 +66,9 @@ interface TimesheetEntry {
 
 function seed(): Seed {
   if (!fs.existsSync(SEED_PATH)) {
-    throw new Error(`Seed file not found: ${SEED_PATH}\nRun: cd backend && .venv/bin/python scripts/seed-e2e.py`);
+    throw new Error(
+      `Seed file not found: ${SEED_PATH}\nInclude 00-signup.spec.ts before the timesheet suite in the same Playwright run.`,
+    );
   }
   return JSON.parse(fs.readFileSync(SEED_PATH, 'utf-8')) as Seed;
 }
@@ -253,16 +268,268 @@ async function mainLogin(page: Page, context: BrowserContext, email: string, pas
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
   await context.storageState({ path: statePath });
+  fs.chmodSync(statePath, 0o600);
 }
 
 // Helper: sign in to the PORTAL and save storage state
-async function portalLogin(page: Page, context: BrowserContext, email: string, password: string, statePath: string): Promise<void> {
-  await page.goto(`${PORTAL_URL}/login`, { waitUntil: 'load' });
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL(/\/timesheet/, { timeout: 30_000 });
+async function portalLogin(
+  page: Page,
+  context: BrowserContext,
+  email: string,
+  password: string,
+  statePath: string,
+  replacementPassword?: string,
+): Promise<void> {
+  const signIn = async (candidatePassword: string): Promise<boolean> => {
+    await page.goto(`${PORTAL_URL}/login`, { waitUntil: 'load' });
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill(candidatePassword);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await Promise.race([
+      page.waitForURL(/\/(timesheet|change-password)/, { timeout: 30_000 }),
+      page.getByRole('alert').waitFor({ state: 'visible', timeout: 30_000 }),
+    ]);
+    return new URL(page.url()).pathname !== '/login';
+  };
+
+  let activePassword = password;
+  let temporaryPasswordRejected = false;
+  if (!await signIn(password)) {
+    temporaryPasswordRejected = true;
+    if (!replacementPassword || !await signIn(replacementPassword)) {
+      throw new Error('Could not sign in to the timesheet portal with the temporary or replacement password.');
+    }
+    activePassword = replacementPassword;
+  }
+
+  if (new URL(page.url()).pathname === '/change-password') {
+    if (!replacementPassword) {
+      throw new Error('Portal requires a first-login password change but no replacement password was provided.');
+    }
+    await expect(page.getByRole('heading', { name: /set a new password/i })).toBeVisible();
+    await page.locator('#ts-current-password').fill(activePassword);
+    await page.locator('#ts-new-password').fill(replacementPassword);
+    await page.locator('#ts-confirm-password').fill(replacementPassword);
+    await page.getByRole('button', { name: /update password/i }).click();
+    await page.waitForURL(/\/timesheet/, { timeout: 30_000 });
+
+    // Prove the provider password changed, rather than trusting only the
+    // membership flag cleared by the completion endpoint.
+    await page.getByRole('button', { name: /sign out/i }).click();
+    await page.waitForURL(/\/login/, { timeout: 30_000 });
+    temporaryPasswordRejected = !await signIn(password);
+    expect(
+      temporaryPasswordRejected,
+      'the temporary employee password must stop authenticating after rotation',
+    ).toBe(true);
+    expect(
+      await signIn(replacementPassword),
+      'the replacement employee password must authenticate after rotation',
+    ).toBe(true);
+  }
+  if (replacementPassword && replacementPassword !== password) {
+    expect(temporaryPasswordRejected, 'the temporary password must be rejected').toBe(true);
+  }
   await context.storageState({ path: statePath });
+  fs.chmodSync(statePath, 0o600);
+}
+
+interface O2CRunMeta {
+  email?: string;
+  password?: string;
+  tenantId?: string;
+  playwrightRunId?: string;
+}
+
+function tokenFromStorageState(storagePath: string): string {
+  if (!fs.existsSync(storagePath)) return '';
+  const storage = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as {
+    origins?: { localStorage?: { name?: string; value?: string }[] }[];
+  };
+  for (const origin of storage.origins ?? []) {
+    const direct = origin.localStorage?.find(item => item.name === 'aethos_token')?.value;
+    if (direct) return direct;
+    for (const item of origin.localStorage ?? []) {
+      if (!item.name?.startsWith('sb-') || !item.name.endsWith('-auth-token') || !item.value) continue;
+      try {
+        const token = (JSON.parse(item.value) as { access_token?: string }).access_token;
+        if (token) return token;
+      } catch {
+        // Ignore malformed non-Aethos storage entries.
+      }
+    }
+  }
+  return '';
+}
+
+async function postJson<T>(
+  request: APIRequestContext,
+  url: string,
+  headers: Record<string, string>,
+  data: Record<string, unknown>,
+): Promise<T> {
+  const response = await request.post(url, { headers, data, timeout: 60_000 });
+  if (!response.ok()) {
+    throw new Error(`Timesheet fixture provisioning failed at ${new URL(url).pathname}: HTTP ${response.status()}`);
+  }
+  return await response.json() as T;
+}
+
+async function ensureTimesheetSeed(
+  request: APIRequestContext,
+): Promise<{ seed: Seed; ownerToken: string }> {
+  const runId = process.env.AETHOS_E2E_RUN_ID ?? '';
+  if (!runId) throw new Error('AETHOS_E2E_RUN_ID is unavailable for timesheet fixture provisioning.');
+
+  const ownerToken = tokenFromStorageState(O2C_STORAGE_PATH);
+  if (!ownerToken) {
+    throw new Error(
+      'No current-run owner session. Run 00-signup.spec.ts in the same Playwright invocation before timesheet-e2e.spec.ts.',
+    );
+  }
+
+  if (fs.existsSync(SEED_PATH)) {
+    const existing = JSON.parse(fs.readFileSync(SEED_PATH, 'utf-8')) as Seed;
+    if (existing.playwright_run_id === runId) return { seed: existing, ownerToken };
+  }
+
+  if (!fs.existsSync(O2C_META_PATH)) {
+    throw new Error(
+      'Missing current-run signup metadata. Include 00-signup.spec.ts before the timesheet suite.',
+    );
+  }
+  const meta = JSON.parse(fs.readFileSync(O2C_META_PATH, 'utf-8')) as O2CRunMeta;
+  if (
+    meta.playwrightRunId !== runId
+    || !meta.tenantId
+    || !meta.email
+    || !meta.password
+  ) {
+    throw new Error('Current-run signup metadata is incomplete or belongs to a different Playwright run.');
+  }
+
+  for (const statePath of [OWNER_STATE, BOB_STATE, CAROL_STATE]) {
+    fs.rmSync(statePath, { force: true });
+  }
+
+  const headers = {
+    Authorization: `Bearer ${ownerToken}`,
+    'X-Tenant-ID': meta.tenantId,
+  };
+  const suffix = runId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toLowerCase();
+  const client = await postJson<{ id: string }>(
+    request,
+    `${API_URL}/api/v1/clients`,
+    headers,
+    {
+      name: `Timesheet E2E Client ${suffix}`,
+      kind: 'customer',
+      email: `timesheet-client-${suffix}@example.test`,
+      payment_terms_days: 30,
+    },
+  );
+  const engagementName = `Timesheet E2E Engagement ${suffix}`;
+  const engagement = await postJson<{ id: string; code?: string | null }>(
+    request,
+    `${API_URL}/api/v1/engagements`,
+    headers,
+    {
+      client_id: client.id,
+      name: engagementName,
+      billing_arrangement: 'time_and_materials',
+      currency: 'USD',
+      description: 'Run-scoped fixture for browser-driven timesheet approval and billing-gate proof.',
+      service_line: 'advisory',
+    },
+  );
+  const projectName = `Timesheet E2E Project ${suffix}`;
+  const project = await postJson<{ id: string; code: string }>(
+    request,
+    `${API_URL}/api/v1/projects`,
+    headers,
+    {
+      engagement_id: engagement.id,
+      name: projectName,
+      description: 'Active run-scoped project for Bob and Carol.',
+      status: 'active',
+      currency: 'USD',
+      budget: '25000.00',
+      budget_hours: '160.00',
+    },
+  );
+  if (!project.code) throw new Error('Timesheet fixture project did not receive a generated project code.');
+
+  const employeeSpecs = [
+    { firstName: 'Bob', lastName: 'Smith', email: `ts-bob-${suffix}@aethos-qa.dev` },
+    { firstName: 'Carol', lastName: 'Jones', email: `ts-carol-${suffix}@aethos-qa.dev` },
+  ];
+  const employees: Seed['employees'] = [];
+  for (const employeeSpec of employeeSpecs) {
+    const temporaryPassword = `Tmp!9aA-${randomBytes(18).toString('base64url')}`;
+    const replacementPassword = `Final!9aA-${randomBytes(18).toString('base64url')}`;
+    const employee = await postJson<{ id: string }>(
+      request,
+      `${API_URL}/api/v1/employees`,
+      headers,
+      {
+        first_name: employeeSpec.firstName,
+        last_name: employeeSpec.lastName,
+        email: employeeSpec.email,
+        title: 'Consultant',
+        department: 'Advisory',
+        employment_type: 'full_time',
+        default_bill_rate: '175.00',
+        default_bill_rate_currency: 'USD',
+        cost_rate: '85.00',
+        available_hours_per_week: '40.00',
+        target_billable_utilization_pct: '75.00',
+        practice_area: 'advisory',
+        seniority: 'associate',
+      },
+    );
+    await postJson(
+      request,
+      `${API_URL}/api/v1/employees/${employee.id}/invite`,
+      headers,
+      { password: temporaryPassword },
+    );
+    await postJson(
+      request,
+      `${API_URL}/api/v1/projects/${project.id}/assignments`,
+      headers,
+      {
+        employee_id: employee.id,
+        role: 'Consultant',
+        override_rate: '175.00',
+      },
+    );
+    employees.push({
+      id: employee.id,
+      email: employeeSpec.email,
+      name: `${employeeSpec.firstName} ${employeeSpec.lastName}`,
+      first_name: employeeSpec.firstName,
+      temporary_password: temporaryPassword,
+      password: replacementPassword,
+    });
+  }
+
+  const generated: Seed = {
+    playwright_run_id: runId,
+    test_email: meta.email,
+    password: meta.password,
+    tenant_id: meta.tenantId,
+    client_id: client.id,
+    engagement_id: engagement.id,
+    engagement_code: engagement.code ?? '',
+    engagement_name: engagementName,
+    project_id: project.id,
+    project_code: project.code,
+    project_name: projectName,
+    employees,
+  };
+  fs.writeFileSync(SEED_PATH, JSON.stringify(generated, null, 2), { mode: 0o600 });
+  fs.chmodSync(SEED_PATH, 0o600);
+  return { seed: generated, ownerToken };
 }
 
 // ─── Global setup: reserve a near-future week ────────────────────────────────
@@ -272,43 +539,17 @@ async function portalLogin(page: Page, context: BrowserContext, email: string, p
 // pushing week navigation farther into the future on every local run.
 test.beforeAll(async ({ request }, testInfo) => {
   testInfo.setTimeout(120_000);
-  const { test_email, password, tenant_id, project_id } = seed();
-  // 1. Sign in to get a JWT
-  const signinResp = await request.post(`${API_URL}/api/v1/auth/signin`, {
-    data: { email: test_email, password },
-  }).catch(() => null);
-
-  let token = '';
-  if (signinResp?.ok()) {
-    const body = await signinResp.json().catch(() => ({}));
-    token = body.access_token ?? '';
-  }
-
-  // Fallback: read the Supabase session token directly from the stored owner session
-  if (!token && fs.existsSync(OWNER_STATE)) {
-    const ownerState = JSON.parse(fs.readFileSync(OWNER_STATE, 'utf-8'));
-    for (const origin of ownerState.origins ?? []) {
-      for (const ls of origin.localStorage ?? []) {
-        // Prefer the Supabase session JSON (most up-to-date token)
-        if (ls.name?.startsWith('sb-') && ls.name?.endsWith('-auth-token')) {
-          try { token = JSON.parse(ls.value)?.access_token ?? ''; } catch { /* */ }
-        }
-        // Fallback to the aethos_token if sb- key not found
-        if (!token && ls.name === 'aethos_token') { token = ls.value; }
-      }
-      if (token) break;
-    }
-  }
-
-  if (!token) return;
+  const { seed: activeSeed, ownerToken } = await ensureTimesheetSeed(request);
+  const { tenant_id, project_id } = activeSeed;
 
   for (let w = RESERVED_WEEKS_AHEAD; w <= RESERVED_WEEKS_AHEAD + 8; w++) {
     const weekStart = isoMonday(w);
-    if (await clearProjectWeek(request, token, tenant_id, project_id, weekStart)) {
+    if (await clearProjectWeek(request, ownerToken, tenant_id, project_id, weekStart)) {
       WEEKS_AHEAD = w;
       return;
     }
   }
+  throw new Error('Could not reserve a clean future project week for the timesheet scenario.');
 });
 
 // ─── Suite 0: Login sessions ─────────────────────────────────────────────────
@@ -354,19 +595,33 @@ test.describe('S0 · Login sessions', () => {
   });
 
   test('Bob logs in to portal', async ({ page, context }) => {
-    test.setTimeout(30_000);
-    const { employees, password } = seed();
+    test.setTimeout(60_000);
+    const { employees } = seed();
     const bob = employees[0];
-    await portalLogin(page, context, bob.email, password, BOB_STATE);
+    await portalLogin(
+      page,
+      context,
+      bob.email,
+      bob.temporary_password,
+      BOB_STATE,
+      bob.password,
+    );
     await expect(page.getByText(/aethos timesheets/i).first()).toBeVisible();
     test.info().annotations.push({ type: 'bob-session', description: bob.email });
   });
 
   test('Carol logs in to portal', async ({ page, context }) => {
-    test.setTimeout(30_000);
-    const { employees, password } = seed();
+    test.setTimeout(60_000);
+    const { employees } = seed();
     const carol = employees[1];
-    await portalLogin(page, context, carol.email, password, CAROL_STATE);
+    await portalLogin(
+      page,
+      context,
+      carol.email,
+      carol.temporary_password,
+      CAROL_STATE,
+      carol.password,
+    );
     await expect(page.getByText(/aethos timesheets/i).first()).toBeVisible();
     test.info().annotations.push({ type: 'carol-session', description: carol.email });
   });
@@ -953,7 +1208,7 @@ test.describe('S5 · Portal — Carol sees rejection and re-edits', () => {
 
   test('Carol\'s rejected entries are editable again', async ({ page }) => {
     test.setTimeout(60_000);
-    const { employees, password, project_code, project_id } = seed();
+    const { employees, project_code, project_id } = seed();
     const carol = employees[1];
     const weekStart = isoMonday(WEEKS_AHEAD);
 
@@ -964,7 +1219,7 @@ test.describe('S5 · Portal — Carol sees rejection and re-edits', () => {
 
     await loadRejectedWeek();
     if (await page.getByRole('alert').isVisible().catch(() => false)) {
-      await portalLogin(page, page.context(), carol.email, password, CAROL_STATE);
+      await portalLogin(page, page.context(), carol.email, carol.password, CAROL_STATE);
       await loadRejectedWeek();
     }
 

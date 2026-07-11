@@ -80,6 +80,7 @@ async function loginViaUi(
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
   fs.mkdirSync(path.dirname(storagePath), { recursive: true });
   await page.context().storageState({ path: storagePath });
+  fs.chmodSync(storagePath, 0o600);
 }
 
 async function ensureAppRoute(page: Page, route: string): Promise<void> {
@@ -1435,6 +1436,7 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
         headers,
         data: {
           description: 'E2E locked-period API rejection',
+          reason: 'Verify that locked accounting periods reject manual journals.',
           entry_date: entryDate,
           reference: 'E2E-PERIOD-LOCK',
           lines: [
@@ -1461,6 +1463,9 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
       await expect(dialog).toBeVisible();
 
       await dialog.getByLabel('Description *').fill('E2E locked-period UI rejection');
+      await dialog.getByLabel('Business reason *').fill(
+        'Verify that locked accounting periods reject manual journals.',
+      );
       await dialog.getByLabel('Entry Date *').fill(entryDate);
       await dialog.getByLabel('Reference').fill('E2E-PERIOD-LOCK-UI');
 

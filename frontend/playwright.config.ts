@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -11,6 +12,10 @@ import * as path from 'node:path';
 // CI overrides these via the shell environment; local runs just work without extra setup.
 process.env.AETHOS_PS_WEB_URL ??= 'http://localhost:4201';
 process.env.AETHOS_PS_API_URL ??= 'http://localhost:8011';
+// Every Playwright runner owns only the tenants/auth files it creates. The ID
+// is inherited by setup, workers, and global teardown, preventing a focused
+// run from deleting another concurrent run's tenant.
+process.env.AETHOS_E2E_RUN_ID ??= randomUUID();
 
 const STORAGE_STATE = path.join(__dirname, 'e2e', '.auth', 'storage-state.json');
 if (!fs.existsSync(STORAGE_STATE)) {
@@ -29,6 +34,7 @@ if (!fs.existsSync(STORAGE_STATE)) {
  */
 export default defineConfig({
   testDir: './e2e',
+  globalTeardown: './e2e/global.teardown.ts',
   fullyParallel: false,             // single-session login; serial within project
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

@@ -675,22 +675,17 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
     await test.step('7. Copilot — send query, verify AI responds', async () => {
       await page.goto(`${WEB}/app/copilot`, { waitUntil: 'domcontentloaded' });
 
-      const copilotReady = page
-        .getByRole('button', { name: /new chat/i })
-        .or(page.getByPlaceholder(/message aethos/i));
-      await expect(copilotReady.first()).toBeVisible({ timeout: 20_000 });
+      const composer = page.getByRole('textbox', { name: 'Message input', exact: true });
+      await expect(composer).toBeVisible({ timeout: 20_000 });
       await shot(page, '21-copilot-fresh');
 
       // Start a new chat if needed
       const newChatBtn = page.getByRole('button', { name: /new chat/i });
       if (await newChatBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await newChatBtn.click();
-        await expect(
-          page.getByPlaceholder(/message aethos/i),
-        ).toBeVisible({ timeout: 10_000 });
+        await expect(composer).toBeVisible({ timeout: 10_000 });
       }
 
-      const composer = page.getByPlaceholder(/message aethos/i);
       await expect(composer).toBeVisible({ timeout: 10_000 });
       const copilotPrompt = `I just created a T&M engagement called "${ENG_NAME}" for Nexus Consulting. How many active engagements does the firm have right now?`;
       await composer.click();

@@ -24,6 +24,7 @@ const AUTH_DIR = path.join(__dirname, '.auth');
 const STORAGE_STATE_PATH = path.join(AUTH_DIR, 'storage-state.json');
 const O2C_STORAGE_STATE_PATH = path.join(AUTH_DIR, 'o2c-tenant.json');
 const O2C_META_PATH = path.join(AUTH_DIR, 'o2c-tenant.meta.json');
+const RUN_LOCK_PATH = path.join(AUTH_DIR, 'playwright-run.lock');
 
 interface O2CMeta {
   email?: string;
@@ -39,10 +40,31 @@ function loadO2CMeta(): O2CMeta | null {
   }
 }
 
+function acquireRunLock(): void {
+  const runId = process.env.AETHOS_E2E_RUN_ID;
+  if (!runId) throw new Error('AETHOS_E2E_RUN_ID is unavailable.');
+
+  try {
+    fs.writeFileSync(RUN_LOCK_PATH, runId, { flag: 'wx', mode: 0o600 });
+    return;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'EEXIST') throw error;
+  }
+
+  const owner = fs.readFileSync(RUN_LOCK_PATH, 'utf-8').trim();
+  if (owner === runId) return;
+  throw new Error(
+    'Another Playwright run owns e2e/.auth. Wait for it to finish or remove '
+    + 'e2e/.auth/playwright-run.lock after confirming no run is active.',
+  );
+}
+
 setup('frontend reachable + empty storage state', async ({ page }) => {
   setup.setTimeout(120_000);
   // Ensure the .auth directory exists
   fs.mkdirSync(AUTH_DIR, { recursive: true });
+  acquireRunLock();
 
   // Empty storage state is valid — Playwright treats absent cookies/localStorage
   // as a fresh anonymous browser. Specs that need auth set headers via
@@ -76,4 +98,5 @@ setup('frontend reachable + empty storage state', async ({ page }) => {
   expect(storage.tenantId, 'aethos_tenant_id must be set by global auth refresh').toBeTruthy();
 
   await page.context().storageState({ path: O2C_STORAGE_STATE_PATH });
+  fs.chmodSync(O2C_STORAGE_STATE_PATH, 0o600);
 });

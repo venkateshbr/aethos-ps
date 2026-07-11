@@ -9,6 +9,7 @@
  * - records screenshots, response excerpts, network failures, and visible gaps
  *
  * Run:
+ *   AETHOS_RUN_PRODUCTION_VALIDATION=true \
  *   AETHOS_PS_WEB_URL=https://aethos.ishirock.tech \
  *   AETHOS_TS_WEB_URL=https://timesheet.aethos.ishirock.tech \
  *   npx playwright test e2e/demo-v2-production-validation.spec.ts --project=chromium
@@ -20,6 +21,7 @@ import * as path from 'node:path';
 
 const WEB = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos.ishirock.tech';
 const TIMESHEET = process.env.AETHOS_TS_WEB_URL ?? 'https://timesheet.aethos.ishirock.tech';
+const PRODUCTION_VALIDATION_ENABLED = process.env.AETHOS_RUN_PRODUCTION_VALIDATION === 'true';
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const AUTH_STATE = path.join(__dirname, '.auth', 'o2c-tenant.json');
@@ -102,6 +104,7 @@ async function authenticate(page: Page): Promise<void> {
   await page.waitForURL(/\/app\/copilot(\?.*)?$/, { timeout: 90_000 });
   await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 30_000 });
   await page.context().storageState({ path: AUTH_STATE });
+  fs.chmodSync(AUTH_STATE, 0o600);
   record({
     id: 'auth',
     section: 'Authentication',
@@ -938,6 +941,11 @@ test.describe('Demo Guide v2 production browser validation', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('records complete Demo Guide v2 behavior on production', async ({ page }) => {
+    test.skip(
+      !PRODUCTION_VALIDATION_ENABLED,
+      'Set AETHOS_RUN_PRODUCTION_VALIDATION=true for the explicit production evidence run.',
+    );
+    expect(new URL(WEB).origin).toBe('https://aethos.ishirock.tech');
     test.setTimeout(7_200_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
     page.on('console', (msg) => {

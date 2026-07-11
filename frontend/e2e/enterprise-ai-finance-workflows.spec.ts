@@ -628,6 +628,14 @@ async function installAiFinanceMocks(page: Page, state: MockState): Promise<void
       });
       return;
     }
+    if (path === '/api/v1/chat/threads' && method === 'GET') {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (path.endsWith('/messages') && path.includes('/api/v1/chat/threads/') && method === 'GET') {
+      await route.fulfill({ json: [] });
+      return;
+    }
     if (path.endsWith('/messages') && path.includes('/api/v1/chat/threads/') && method === 'POST') {
       const body = JSON.parse(request.postData() ?? '{}') as { content?: string };
       state.prompts.push(body.content ?? '');
@@ -1016,6 +1024,10 @@ test.describe('Enterprise AI finance workflow proof (#310)', () => {
     await page.goto(`${BASE}/app/accounting/journals`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Journal Entries/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /^Month-end close$/i })).toBeVisible();
+    const closePeriod = page.getByLabel('Close period');
+    await closePeriod.fill(CLOSE_PERIOD);
+    await closePeriod.dispatchEvent('change');
+    await expect(closePeriod).toHaveValue(CLOSE_PERIOD);
     await page.getByRole('button', { name: /Close package/i }).click();
     await expect(page.getByText('Net income', { exact: true })).toBeVisible();
     await expect(page.getByText('Open AR/AP')).toBeVisible();
@@ -1034,15 +1046,18 @@ test.describe('Enterprise AI finance workflow proof (#310)', () => {
     await page.getByRole('tab', { name: /Balance Sheet/i }).click();
     await expect(page.getByText('Balance sheet balances')).toBeVisible();
     await page.getByRole('tab', { name: /Income Statement/i }).click();
-    await expect(page.getByText('Net Income')).toBeVisible();
-    await expect(page.getByText('18,250.00')).toBeVisible();
+    const incomeStatementPanel = page.getByLabel('Income Statement');
+    await expect(incomeStatementPanel.getByText('Net Income')).toBeVisible();
+    await expect(incomeStatementPanel.getByText('$18,250.00', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: /Statutory Pack/i }).click();
     await expect(page.getByText('Tax Payable')).toBeVisible();
 
     await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Agent Run Ledger' })).toBeVisible();
-    await expect(page.getByText('Finance Ops Manager', { exact: true })).toBeVisible();
-    await page.getByText('Finance Ops Manager', { exact: true }).click();
+    const agentRuns = page.getByLabel('Agent runs');
+    const financeOpsManagerRun = agentRuns.getByText('Finance Ops Manager', { exact: true });
+    await expect(financeOpsManagerRun).toBeVisible();
+    await financeOpsManagerRun.click();
     await expect(page.getByText('process_vendor_invoice')).toBeVisible();
     await expect(page.getByText('propose_bill_payment_batch')).toBeVisible();
     await expect(page.getByText('prepare_month_end_close')).toBeVisible();
