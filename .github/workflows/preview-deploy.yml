@@ -8,8 +8,9 @@ jobs:
   vercel-preview:
     name: Vercel preview deploy
     runs-on: ubuntu-latest
-    # Skip entirely if VERCEL_TOKEN secret is not configured yet
-    if: ${{ env.VERCEL_TOKEN != '' }}
+    # Job-level `if` cannot read the job's `env` block or repository secrets.
+    # Opt in only after the Vercel secrets and this repository variable exist.
+    if: ${{ vars.VERCEL_PREVIEW_ENABLED == 'true' }}
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
