@@ -117,6 +117,11 @@ class InvoiceResponse(BaseModel):
     subtotal: str
     tax_total: str
     total: str
+    base_currency: str | None = None
+    base_subtotal: str | None = None
+    base_tax_total: str | None = None
+    base_total: str | None = None
+    approval_fx_rate_id: str | None = None
     status: str
     issue_date: date | None
     due_date: date | None
@@ -164,6 +169,15 @@ class InvoiceResponse(BaseModel):
             subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
             tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
             total=total_str,
+            base_currency=row.get("base_currency"),
+            base_subtotal=serialise_money(row.get("base_subtotal")),
+            base_tax_total=serialise_money(row.get("base_tax_total")),
+            base_total=serialise_money(row.get("base_total")),
+            approval_fx_rate_id=(
+                str(row["approval_fx_rate_id"])
+                if row.get("approval_fx_rate_id")
+                else None
+            ),
             status=row.get("status", "draft"),
             issue_date=row.get("issue_date"),
             due_date=row.get("due_date"),

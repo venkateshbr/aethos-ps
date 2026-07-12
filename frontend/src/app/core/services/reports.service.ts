@@ -7,7 +7,13 @@ export interface AgingReport {
   '31_60': string;
   '61_90': string;
   over_90: string;
+  unallocated?: string;
   total: string;
+}
+
+export interface TenantAccountingContext {
+  tenant_id: string;
+  base_currency: string;
 }
 
 export interface PnlRow {
@@ -461,6 +467,9 @@ export function statementPeriodRangeError(periodStart: string, periodEnd: string
 export class ReportsService {
   private http = inject(HttpClient);
   private base = '/api/v1/reports';
+
+  getAccountingContext = (): Observable<TenantAccountingContext> =>
+    this.http.get<TenantAccountingContext>('/api/v1/tenants/accounting-context');
 
   getArAging = (): Observable<AgingReport> =>
     this.http.get<AgingReport>(`${this.base}/ar-aging`);

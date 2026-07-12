@@ -1,6 +1,15 @@
-# Aethos PS — Master Test Plan
+# Aethos PS — Master Test Plan (historical baseline)
 
-> **Owner**: Aksha (SDET) · **Status**: LIVE · **Started**: 2026-05-23 · **Charter**: founder direct
+> **Superseded for launch decisions on 2026-07-12.** This May baseline keeps
+> its original findings and counts for audit history; many paths, line numbers,
+> credentials, and conclusions below no longer describe the current product.
+> Use
+> [`ishantech-production-e2e-runbook-2026-07-11.md`](./ishantech-production-e2e-runbook-2026-07-11.md)
+> for the current exact-SHA, single-session production gate. Its production
+> browser run is not yet complete, so this document must not be interpreted as
+> launch approval.
+
+> **Owner**: Aksha (SDET) · **Status**: HISTORICAL / SUPERSEDED · **Started**: 2026-05-23 · **Charter**: founder direct
 >
 > Built in response to: every `status:in-qa` issue closed without UI + API verification. The Founder is blocking pilot launch until this plan is GREEN.
 

@@ -70,6 +70,34 @@ class _FakeDb:
     def __init__(self) -> None:
         due_date = (date.today() - timedelta(days=10)).isoformat()
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "journal_lines": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "direction": "DR",
+                    "base_amount": "250.00",
+                    "journal_entries": {
+                        "period": date.today().strftime("%Y-%m"),
+                        "entry_date": date.today().isoformat(),
+                        "posted_at": f"{date.today().isoformat()}T01:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "invoice-1",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "tenant_id": OTHER_TENANT_ID,
+                    "direction": "DR",
+                    "base_amount": "999.00",
+                    "journal_entries": {
+                        "period": date.today().strftime("%Y-%m"),
+                        "entry_date": date.today().isoformat(),
+                        "posted_at": f"{date.today().isoformat()}T01:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "invoice-foreign",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+            ],
             "invoices": [
                 {
                     "id": "invoice-1",

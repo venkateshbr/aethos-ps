@@ -11,13 +11,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify clean exact deployment source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          HOSTINGER_PROJECT_NAME: ${{ vars.HOSTINGER_PROJECT_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$HOSTINGER_PROJECT_NAME" ]; then
+            echo "ERROR: set HOSTINGER_PROJECT_NAME to the project confirmed in Hostinger hPanel/API." >&2
+            exit 1
+          fi
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "ERROR: checkout SHA mismatch: expected $EXPECTED_SHA, got $ACTUAL_SHA." >&2
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "ERROR: workflow source is dirty; refusing to deploy." >&2
+            git status --short >&2
+            exit 1
+          fi
 
       - name: Deploy Docker Compose app to Hostinger
         uses: hostinger/deploy-on-vps@v2
         with:
           api-key: ${{ secrets.HOSTINGER_API_KEY }}
           virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
-          project-name: aethos-ps-production
+          project-name: ${{ vars.HOSTINGER_PROJECT_NAME }}
           docker-compose-path: docker-compose.hostinger.yml
           environment-variables: |
             ${{ secrets.AETHOS_PRODUCTION_ENV }}

@@ -25,6 +25,27 @@ async function installMocks(page: Page): Promise<void> {
     const path = url.pathname;
     const method = request.method();
 
+    if (path === '/api/v1/security/me/permissions' && method === 'GET') {
+      await route.fulfill({
+        json: {
+          tenant_id: 'tenant-bill-pay-325',
+          user_id: 'user-bill-pay-325',
+          legacy_role: 'admin',
+          role_codes: ['tenant_admin'],
+          role_labels: ['Tenant Admin'],
+          privilege_codes: [
+            'bill_payments.read',
+            'bill_payments.prepare',
+            'bill_payments.approve',
+            'bill_payments.export',
+            'bill_payments.settle',
+          ],
+          must_change_password: false,
+        },
+      });
+      return;
+    }
+
     if (path === '/api/v1/bills' && method === 'GET') {
       await route.fulfill({
         json: {

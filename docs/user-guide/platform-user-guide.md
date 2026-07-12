@@ -8,7 +8,8 @@ Related docs:
 
 - Aethos Atlas prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
 - Atlas/Hermes technical architecture: [`docs/architecture/atlas-hermes-ai-agent-architecture.md`](../architecture/atlas-hermes-ai-agent-architecture.md)
-- Launch QA runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](../qa/launch-e2e-scenario-runbook-2026-06-24.md)
+- Current launch QA runbook: [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](../qa/ishantech-production-e2e-runbook-2026-07-11.md)
+- Historical launch scenario runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](../qa/launch-e2e-scenario-runbook-2026-06-24.md)
 - Enterprise E2E scenarios: [`docs/qa/enterprise-e2e-scenario-library.md`](../qa/enterprise-e2e-scenario-library.md)
 - Engagement to Cash test guide: [`docs/test/e2e_engagement_to_cash.md`](../test/e2e_engagement_to_cash.md)
 - Procure to Pay test guide: [`docs/test/e2e_procure_to_pay.md`](../test/e2e_procure_to_pay.md)
@@ -137,16 +138,16 @@ label or duty list alone.
 | Finance Ops Manager | `manager` | O2C/P2P operations, people/time, draft finance work, manager-threshold approvals | Cannot approve admin/owner-threshold work |
 | Finance Approver | `approver` | Manager-threshold Inbox/procurement approval only | Cannot create operational records or approve admin/owner work |
 | Finance Operator | `member` | Permitted finance drafts and operational work | Cannot pass manager/admin write gates |
-| Procurement Manager | `manager` | Procurement, PO/service-order flow, AP matching, payment packet preparation | Cannot approve elevated spend unless another role grants it |
+| Procurement Manager | `manager` | Procurement, PO/service-order flow, AP matching, payment packet preparation | Cannot self-approve a document it requested; amount thresholds still apply |
 | Buyer / Requester | `member` | Procurement intake and source evidence | Cannot pass manager/admin approval gates |
-| AP Manager | `manager` | Bills, AP evidence, payment preparation, AP exceptions | Current bill approval and bill-payment endpoints require projected `admin` |
-| AP Clerk | `manager` | Vendor bill intake and evidence review | Projection currently grants the general manager gate; validate least privilege |
-| AR Manager | `manager` | Billing, collections, receipts, AR reporting | Invoice approval/send/payment endpoints currently require projected `admin` |
-| Billing Specialist | `manager` | Draft invoices and WIP review | Invoice approval/send/payment endpoints currently require projected `admin` |
+| AP Manager | `manager` | Bills, AP evidence, payment preparation, AP exceptions | Bill and payment-batch actions honor their named `bills.*` and `bill_payments.*` privileges |
+| AP Clerk | `manager` | Vendor bill intake and evidence review | Seeded AP duty currently includes bill approval and all payment-batch mutation privileges; validate segregation for each tenant |
+| AR Manager | `manager` | Billing, collections, receipts, AR reporting | Invoice draft/post/send/receipt actions honor the matching invoice privileges |
+| Billing Specialist | `manager` | Draft, post, and send invoices and review WIP | Seeded Billing duty also includes receipt recording; validate segregation for each tenant |
 | Collections Specialist | `manager` | Reminder preparation and customer follow-up | External send remains approval-gated |
 | GL Accountant | `admin` | Journal preparation and accounting review | Shares broad legacy admin gates; same-user approval remains blocked where implemented |
 | Close Manager | `admin` | Close tasks, period locks, statement generation | Period unlock remains Tenant Owner-only |
-| Engagement Manager | `manager` | Clients, engagements, projects, WIP | Cannot bypass invoice/accounting/payment admin gates |
+| Engagement Manager | `manager` | Clients, engagements, projects, WIP | Cannot bypass named invoice, accounting, or payment privilege gates |
 | Resource Manager | `manager` | People, utilization, and time approvals | Cannot bypass finance posting/payment gates |
 | Auditor | `auditor` | Read permitted records, reports, Inbox history, and audit evidence | No mutation, approval, posting, payment, send, lock, or settings authority |
 | Executive Viewer | `viewer` | Read dashboards, reports, and operational summaries | Read-only |
@@ -202,20 +203,25 @@ Server-side guardrails:
 - Tenant-user and tenant-role audit events record invite, role update,
   assignment, deactivation, actor, target user, and role-code context.
 
-For production validation tenants, generated credentials are stored locally in
-the ignored `demo_credentials.json` under a run-specific key, such as
-`ishantech_launch_e2e_20260711`. Restrict the file to mode 0600. Treat it as
-secret material and do not paste passwords, session state, or set-password
-links into shared docs, screenshots, or issues.
+For the retained Ishantech production validation tenant, generated credentials
+are stored locally in the ignored `ishantech_e2e_credentials.json`, keyed by
+run ID in the manifest. Restrict the file to mode 0600. Treat it as secret
+material and do not paste passwords, session state, or set-password links into
+shared docs, screenshots, or issues. Each retained tenant must use a fresh
+manifest and one continuous video-recorded browser session. Switch roles by
+explicit sign-out/sign-in inside that same browser context; do not combine
+parallel profiles, tabs, or recordings as one tenant run.
 
 The user who registers a new tenant receives the seeded Tenant Owner security
 role. During the transition, this also projects to the legacy `owner` role so
 existing owner-only gates continue to work.
 
-The Bills/AP UI now disables read-only users from creating bills or procurement
-documents, approving procurement, converting purchase requests, or opening Pay
-Bills from the Bills page. Backend RBAC remains authoritative and returns 403
-for direct read-only mutation attempts.
+The Bills/AP UI now disables users without the named privileges from creating
+bills or procurement documents, approving procurement, or converting purchase
+requests. A user with `bill_payments.read` can open Pay Bills in read-only mode;
+prepare, approve, export, mark-sent, and settle controls are independently
+disabled without the corresponding mutation privilege. Backend RBAC remains
+authoritative and returns 403 for direct unauthorized attempts.
 
 Settings -> Approval Controls -> Finance role personas is a readable
 business-language summary. Settings -> Security Roles defines role/duty/
@@ -240,6 +246,11 @@ Inbox shows the required approval role on review cards and lets users filter by
 required role. The API enforces the same policy at approval time, including
 approve-with-edits and rejection, so a corrected payload or rejection cannot
 bypass a higher approval threshold.
+
+This table governs Inbox/task approval policy. It does not replace the direct
+ERP endpoint checks: procurement and bill-payment actions still require their
+named catalogue privileges, lifecycle state, and applicable requester/approver
+or amount-threshold controls.
 
 Users can ask Aethos Atlas for the role-aware approval controls read pack:
 
@@ -438,6 +449,10 @@ Current safeguards:
 
 - Drafting and approval are separate.
 - Invoice approval and send/payment remain explicit lifecycle steps.
+- Invoice draft, posting, send, token rotation, and manual receipt actions are
+  enforced by `invoices.draft`, `invoices.post`, `invoices.send`, and
+  `invoices.mark_paid`. A Finance Approver without `invoices.post` cannot post
+  an invoice merely because its legacy projection is `approver`.
 - Journal posting is guarded by accounting validation.
 - Reports should tie back to posted business records.
 
@@ -501,21 +516,34 @@ Procure to Pay covers vendors, bills, approvals, and payment batches.
 Typical workflow:
 
 1. Create or import a vendor.
-2. Upload a vendor invoice through Aethos Atlas or create a bill manually.
-3. Review extracted vendor, invoice number, lines, tax, project/account coding, and source document.
-4. Have a projected `admin` approve the bill when ready; AP Manager/AP Clerk
-   currently project to `manager` and cannot call the bill-approval endpoint.
-5. Ask Aethos Atlas to prepare a bill-pay run or use the Pay Bills UI.
-6. Have a projected `admin` create/review/approve the payment batch.
-7. Export the approved batch, mark it sent to bank, and confirm settlement.
-8. Review AP Aging and Cash Flow impact.
+2. When procurement control is required, have a user with `procurement.manage`
+   create a purchase request/order or service order.
+3. Have a different user with `procurement.approve` approve it. The requester
+   cannot approve their own document, and the manager/admin/owner amount
+   threshold still applies.
+4. Upload a vendor invoice through Aethos Atlas or create a bill manually.
+5. Review extracted vendor, invoice number, lines, tax, project/account coding, and source document.
+6. Have a user with `bills.approve` approve the bill when ready. The seeded AP
+   Manager and AP Clerk roles currently receive that privilege through the
+   Accounts Payable Management duty.
+7. Ask Aethos Atlas to propose a bill-pay run or have a user with
+   `bill_payments.prepare` create the batch in Pay Bills.
+8. Use `bill_payments.approve` to approve the draft and
+   `bill_payments.export` to download the bank file.
+9. Use `bill_payments.settle` to mark the exported batch sent and later confirm
+   settlement. Mark-sent deliberately uses the settlement privilege because it
+   advances an instruction into the external money-movement lifecycle.
+10. Review AP Aging and Cash Flow impact.
 
 Current implementation supports vendor invoice upload, AI-assisted exception
 evidence, bill creation after Inbox approval, bill-pay proposals, and
 payment-batch UI visibility. Pay Bills carries a batch through
 `draft -> approved -> sent_to_bank -> settled`; included bills remain approved
-until settlement and then become paid. Create/approve/export/mark-sent/settle
-currently require projected `admin`.
+until settlement and then become paid. Bill create/void and approval honor
+`bills.manage` and `bills.approve`. Payment-batch read, prepare/propose,
+approve, export, and settle lifecycle actions honor `bill_payments.read`,
+`bill_payments.prepare`, `bill_payments.approve`, `bill_payments.export`, and
+`bill_payments.settle`, respectively.
 
 Vendor invoice review now carries AI evidence into Inbox:
 
@@ -566,7 +594,7 @@ P2P edge cases and controls:
 | Missing source or coding evidence | Atlas flags payment readiness as blocked until source document and coding evidence are resolved |
 | Existing payment batch | Atlas shows draft/approved/sent/settled batch state without raw bank details or export hashes |
 | Paid or voided bill | Atlas explains that no payment action is appropriate |
-| High-value payment batch | Direct batch endpoints are already projected-`admin` gated; separately verify any configured Admin/Owner Inbox threshold rather than assuming a manager-under-cap path |
+| High-value payment batch | Direct actions require the matching `bill_payments.*` privilege and lifecycle state; separately verify configured Admin/Owner Inbox thresholds rather than treating privilege possession as a threshold bypass |
 | Missing vendor bank details | Current export has no proven vendor-bank-detail block and may emit blanks; stop before export/upload and record the control gap |
 | Viewer attempts AP mutation | UI hides or disables mutation controls and API returns 403 for create/approve/export/send/settle attempts |
 | Payment file already exported | Lifecycle state is visible, but a duplicate-download warning or bank idempotency control is not proven; never upload twice |
@@ -645,7 +673,13 @@ Current workflows:
 
 Close evidence now includes:
 
-- AR, AP, WIP, GL, and approval readiness evidence from real records.
+- Period-end AR and AP tied to posted tenant-base control-account activity, so
+  later receipts, settlements, or voids do not rewrite an earlier close. Any
+  unmatched control-account balance is shown as unallocated rather than hidden.
+- Period-end WIP reconstructed from approved time and invoice posting state;
+  valuation is explicitly a current-rate-card estimate because rate history is
+  not versioned.
+- GL and approval readiness evidence from real records.
 - Subledger, trial-balance, unposted-journal, close-review, and close-task lock blockers.
 - Supporting record references where the system can identify the source row.
 - Recorded close overrides with blocker code, reason, actor, role, timestamp,
@@ -696,6 +730,9 @@ submitted/rejected lifecycle evidence, #341 same-user approval denial, #347
 multi-currency base amounts, and #351 FX provenance:
 
 - Richer workpaper orchestration.
+- Persisted, immutable close snapshots and versioned/currency-aware rate-card
+  history for exact historical WIP valuation. Current AR/AP totals are
+  period-end GL-exact; WIP remains a labeled estimate.
 
 Scenario anchors: launch scenarios 8-10,
 `docs/test/e2e_record_to_report.md`, ENT-R2R-001, ENT-R2R-002, ENT-R2R-003,
@@ -785,6 +822,14 @@ Core report families:
 | Accounting | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack |
 | Operations | Action Queue, agent run ledger, workflow run visibility |
 
+AR Aging and AP Aging are current snapshots in the tenant's base currency. They
+use posted GL amounts in the `1200 Accounts Receivable` and `2000 Accounts
+Payable` control accounts, so partial receipts and payments reduce the open
+balance. **Unallocated GL** preserves any control-account balance that cannot be
+matched to an invoice or bill; the report total must still tie to the relevant
+posted control account. A close package calculates its aging as of the selected
+period end rather than using the public reports' current date.
+
 Users should cross-check AI summaries against report tabs when reviewing close,
 payment, or statement packages. AI should explain numbers sourced from tools and
 reports, not invent finance totals.
@@ -816,6 +861,9 @@ Settings are used for:
 - Firm and tenant configuration.
 - Tenant user invite, role update, deactivation, and access audit review.
 - Tax rates and market setup.
+- Read-only historical FX provenance lookup by currency pair and requested
+  date; it shows the matched rate date, row ID, source, and staleness without
+  creating or replacing a global rate.
 - Agent autonomy configuration.
 - Scheduled Finance Ops Manager cadence through Settings and the Agents API.
 - AI inference runtime and OpenRouter model routing.
@@ -870,6 +918,7 @@ Settings demo checklist:
 | --- | --- |
 | Services | Active service catalogue maps to engagements, invoice lines, and reporting |
 | Tax Rates | Market tax setup exists before invoice/bill posting |
+| Historical FX provenance | Requested pair/date resolves to the expected matched date, source, immutable row ID, and staleness; the panel is inspection-only |
 | Collections Policy | Reminder cadence and tone are configured before email tasks are approved |
 | Stripe Connect | Payment-link readiness or manual-payment fallback is clear |
 | Tenant Users | Owner/admin can invite ERP users, assigned users can log into the main app, role changes/deactivation are audited, and self-demotion/self-deactivation is blocked |
@@ -880,6 +929,11 @@ Settings demo checklist:
 | Agent Runs | Prompt, actions, evidence snapshots, risk class, and replay-safe validation are inspectable |
 | Workflow Runs | Scheduled manager, close, and specialist workflow status are visible |
 | Operational Health | Runtime/table/limiter/failure/alert signals are redacted and safe for support |
+
+Newly provisioned standard service rows use the tenant base currency. The
+standard service names are inherited from the current UK-oriented catalogue;
+non-UK tenants should review, deactivate, or replace those rows with their
+market-specific offerings before billing.
 
 Ops/Security slices under #286, #301, and #311:
 

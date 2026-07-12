@@ -20,11 +20,19 @@ def require_privilege(privilege_code: str) -> CurrentUser:
         db: Client = Depends(get_service_role_client),  # noqa: B008
     ) -> CurrentUser:
         service = SecurityService(db, tenant_id)
-        if not await service.has_privilege(current_user.user_id, privilege_code):
+        permissions = await service.effective_permissions(current_user.user_id)
+        if privilege_code not in set(permissions.privilege_codes):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission required: {privilege_code}",
             )
-        return current_user
+        # Downstream business rules (for example procurement amount thresholds)
+        # still need the verified legacy role. Do not pass through a generic
+        # Supabase JWT role such as ``authenticated`` after privilege resolution.
+        return CurrentUser(
+            user_id=current_user.user_id,
+            email=current_user.email,
+            role=permissions.legacy_role,
+        )
 
     return Depends(_check)

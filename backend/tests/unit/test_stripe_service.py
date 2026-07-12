@@ -248,6 +248,86 @@ def test_retrieve_setup_intent_succeeded(stripe_svc: StripeService) -> None:
     assert result["payment_method"] == "pm_test_123"
 
 
+def test_signup_readiness_verifies_test_account_and_all_30_price_contracts(
+    settings_mock: MagicMock,
+) -> None:
+    """Pre-signup proof validates credentials and every configured launch price."""
+    tiers = ("starter", "growth", "pro")
+    intervals = ("monthly", "annual")
+    currencies = ("usd", "gbp", "sgd", "inr", "aud")
+    for tier in tiers:
+        for interval in intervals:
+            for currency in currencies:
+                setattr(
+                    settings_mock,
+                    f"stripe_price_{tier}_{interval}_{currency}",
+                    f"price_{tier}_{interval}_{currency}",
+                )
+
+    def retrieve_price(price_id: str) -> MagicMock:
+        _, _tier, interval, currency = price_id.split("_")
+        price = MagicMock()
+        price.id = price_id
+        price.active = True
+        price.livemode = False
+        price.currency = currency
+        price.recurring.interval = "month" if interval == "monthly" else "year"
+        return price
+
+    service = StripeService(settings_mock)
+    with (
+        patch("stripe.Balance.retrieve", return_value=MagicMock()),
+        patch("stripe.Price.retrieve", side_effect=retrieve_price) as retrieve,
+    ):
+        result = asyncio.run(service.check_signup_readiness())
+
+    assert result == {
+        "status": "ok",
+        "configured": True,
+        "mode": "test",
+        "account_reachable": True,
+        "prices_checked": 30,
+    }
+    assert retrieve.call_count == 30
+
+
+def test_signup_readiness_rejects_a_price_from_the_wrong_mode(
+    settings_mock: MagicMock,
+) -> None:
+    for tier in ("starter", "growth", "pro"):
+        for interval in ("monthly", "annual"):
+            for currency in ("usd", "gbp", "sgd", "inr", "aud"):
+                setattr(
+                    settings_mock,
+                    f"stripe_price_{tier}_{interval}_{currency}",
+                    f"price_{tier}_{interval}_{currency}",
+                )
+
+    wrong_mode_price = MagicMock()
+    wrong_mode_price.active = True
+    wrong_mode_price.livemode = True
+    wrong_mode_price.currency = "usd"
+    wrong_mode_price.recurring.interval = "month"
+
+    service = StripeService(settings_mock)
+    with (
+        patch("stripe.Balance.retrieve", return_value=MagicMock()),
+        patch("stripe.Price.retrieve", return_value=wrong_mode_price),
+    ):
+        result = asyncio.run(service.check_signup_readiness())
+
+    assert result == {
+        "status": "error",
+        "configured": True,
+        "mode": "test",
+        "account_reachable": True,
+        "prices_checked": 0,
+        "error_code": "price_contract_mismatch",
+    }
+    assert "sk_test_placeholder" not in repr(result)
+    assert "price_starter_monthly_usd" not in repr(result)
+
+
 # ---------------------------------------------------------------------------
 # Price catalogue
 # ---------------------------------------------------------------------------

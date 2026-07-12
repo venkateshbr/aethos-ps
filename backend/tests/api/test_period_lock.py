@@ -183,8 +183,13 @@ def test_period_close_package_happy_path(admin_client_a: httpx.Client) -> None:
     assert body["close_status"]["period"] == period
     assert body["gl_summary"]["period"] == period
     assert body["trial_balance"]["is_balanced"] is True
-    assert {"ar_open_total", "ap_open_total", "wip_total"} == set(
-        body["working_capital"]
+    working_capital = body["working_capital"]
+    assert {"ar_open_total", "ap_open_total", "wip_total"} <= set(working_capital)
+    assert working_capital["base_currency"] == "USD"
+    assert working_capital["as_of_date"] == body["period_end"]
+    assert working_capital["ar_ap_basis"] == "posted_gl_base_currency"
+    assert working_capital["wip_basis"] == (
+        "approved_time_period_end_current_rate_estimate"
     )
     assert {row["code"] for row in body["variance_commentary"]} >= {
         "revenue_variance",

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.domain.currency import normalise_currency_code
 from app.domain.money import serialise_money
 from app.services.close_status_service import CloseStatusService
 from app.services.reports_service import ReportsService
@@ -53,23 +54,28 @@ class ClosePackageService:
         *,
         reports_service: ReportsService | None = None,
         close_status_service: CloseStatusService | None = None,
+        base_currency: str | None = None,
     ) -> None:
         self.db = db
         self.tenant_id = tenant_id
         self.reports = reports_service or ReportsService(db, tenant_id)
         self.close_status = close_status_service or CloseStatusService(db, tenant_id)
+        self._base_currency = (
+            normalise_currency_code(base_currency) if base_currency is not None else None
+        )
 
     def build_package(self, period: str) -> dict[str, object]:
         """Return a period close package suitable for review before lock."""
         bounds = period_bounds(period)
         previous_period = previous_period_for(period)
+        base_currency = self._tenant_base_currency()
         current_gl = self._period_gl_summary(period)
         previous_gl = self._period_gl_summary(previous_period)
         close_status = self.close_status.get_status(period)
         trial_balance = self.reports.trial_balance(as_of_period=period)
-        ar_aging = self.reports.ar_aging()
-        ap_aging = self.reports.ap_aging()
-        wip = self.reports.wip()
+        ar_aging = self.reports.ar_aging(as_of_date=bounds.end)
+        ap_aging = self.reports.ap_aging(as_of_date=bounds.end)
+        wip = self.reports.wip(as_of_date=bounds.end)
         service_line_margins = self.reports.margin_by_service_line(period)
         close_status_payload = close_status.as_dict()
 
@@ -90,8 +96,13 @@ class ClosePackageService:
                 "ar_open_total": serialise_money(ar_total),
                 "ap_open_total": serialise_money(ap_total),
                 "wip_total": serialise_money(wip_total),
+                "base_currency": base_currency,
+                "as_of_date": bounds.end,
+                "ar_ap_basis": "posted_gl_base_currency",
+                "wip_basis": "approved_time_period_end_current_rate_estimate",
             },
             "readiness_evidence": build_readiness_evidence(
+                as_of_date=bounds.end,
                 ar_total=ar_total,
                 ap_total=ap_total,
                 wip=wip,
@@ -117,6 +128,11 @@ class ClosePackageService:
                 service_line_margins=service_line_margins,
             ),
         }
+
+    def _tenant_base_currency(self) -> str:
+        if self._base_currency is not None:
+            return self._base_currency
+        return fetch_tenant_base_currency(self.db, self.tenant_id)
 
     def _period_gl_summary(self, period: str) -> PeriodGlSummary:
         rows = (
@@ -173,6 +189,26 @@ class ClosePackageService:
             expense_account_count=len(expense_accounts),
             journal_line_count=journal_line_count,
         )
+
+
+def fetch_tenant_base_currency(db: Client, tenant_id: str) -> str:
+    """Fetch one already-authorized tenant's verified accounting currency."""
+    rows = (
+        db.table("tenants")
+        .select("base_currency")
+        .eq("id", tenant_id)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        raise ValueError("Tenant base currency is required for a financial close package")
+    try:
+        return normalise_currency_code(rows[0].get("base_currency"))
+    except ValueError as exc:
+        raise ValueError(
+            "Tenant base currency is required for a financial close package"
+        ) from exc
 
 
 def build_variance_commentary(
@@ -260,6 +296,7 @@ def build_variance_commentary(
 
 def build_readiness_evidence(
     *,
+    as_of_date: str,
     ar_total: Decimal,
     ap_total: Decimal,
     wip: list[dict],
@@ -314,6 +351,8 @@ def build_readiness_evidence(
         "ar": {
             "status": "blocked" if ar_findings else "ready",
             "open_total": serialise_money(ar_total),
+            "as_of_date": as_of_date,
+            "basis": "posted_gl_base_currency",
             "blocker_count": len(ar_findings),
             "supporting_records": _supporting_records(ar_findings),
             "review_path": "/app/reports",
@@ -321,6 +360,8 @@ def build_readiness_evidence(
         "ap": {
             "status": "blocked" if ap_findings else "ready",
             "open_total": serialise_money(ap_total),
+            "as_of_date": as_of_date,
+            "basis": "posted_gl_base_currency",
             "blocker_count": len(ap_findings),
             "supporting_records": _supporting_records(ap_findings),
             "review_path": "/app/reports",
@@ -328,6 +369,8 @@ def build_readiness_evidence(
         "wip": {
             "status": "attention" if wip_total else "ready",
             "open_total": serialise_money(wip_total),
+            "as_of_date": as_of_date,
+            "basis": "approved_time_period_end_current_rate_estimate",
             "project_count": len(wip),
             "top_projects": _top_wip_projects(wip),
             "review_path": "/app/reports",

@@ -1029,6 +1029,7 @@ class _R2RReadDb(_DbBase):
         ] if include_tasks else []
         super().__init__(
             {
+                "tenants": [{"id": TENANT_ID, "base_currency": "USD"}],
                 "period_locks": period_locks,
                 "journal_entries": [
                     _journal_entry(
@@ -1230,6 +1231,7 @@ class _R2RNoDataDb(_DbBase):
     def __init__(self) -> None:
         super().__init__(
             {
+                "tenants": [{"id": TENANT_ID, "base_currency": "USD"}],
                 "period_locks": [],
                 "journal_entries": [
                     _journal_entry(

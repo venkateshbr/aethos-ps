@@ -4,7 +4,7 @@
 > **Base Currency**: GBP (£)
 > **Service Lines**: Accounting & Advisory · Tax Services · Company Secretarial · Payroll
 > **Markets**: UK (primary), Singapore, US (cross-border clients)
-> **Guide version**: 2.3 · 2026-07-11
+> **Guide version**: 2.4 · 2026-07-12
 
 ## Current Product Boundaries
 
@@ -12,6 +12,12 @@ This is a scenario script, not evidence that each scenario passed on the
 current production build. Run it at `${PRODUCTION_URL}` only after the canonical
 hostname is confirmed, and record actual IDs, journals, reports, and screenshots
 in the current launch-readiness runbook.
+
+For production validation, use one continuous video-recorded browser context
+per tenant from signup through final evidence capture. When validating another
+role, explicitly sign out and sign in as that user inside the same context.
+Parallel profiles, incognito windows, or tabs are not part of the recorded
+single-session proof; start a separate recording only for a different tenant.
 
 Authenticated browser routes use the `/app/*` namespace. The current routes
 used in this guide are `/app/copilot`, `/app/inbox`, `/app/clients`,
@@ -112,12 +118,12 @@ follow the production E2E runbook instead of seeding business data.
 2. Log in as `marcus@meridianadvisory.co.uk` (Managing Partner — owner role)
 3. The Aethos Atlas home appears — this is Meridian's operations hub
 
-Store generated validation credentials only in the ignored local
-`demo_credentials.json` under a run-specific key and set mode 0600. Historical
-scenario-library runs used `production_scenario_library_latest`; the current
-Ishantech run uses `ishantech_launch_e2e_20260711`. Treat the file as secret:
-never paste passwords, links, tokens, or sessions into decks, guides, tickets,
-or screenshots.
+Store generated validation credentials only in the ignored local credential
+manifest specified by the runbook and set mode 0600. The retained Ishantech
+runner uses `ishantech_e2e_credentials.json`; generic disposable demo runs may
+use `demo_credentials.json`. Treat either file as secret: never paste
+passwords, links, tokens, or sessions into decks, guides, tickets, or
+screenshots.
 
 ---
 
@@ -633,9 +639,14 @@ controlled.
 11. **Inbox** → approve the bill-pay proposal. Then go to **Pay Bills**:
    - Draft payment batch exists
    - Forster & Reid is selected with due-date rationale
-   - A projected `admin` user performs create/approve/export/send/settle; AP
-     Manager and AP Clerk currently project to `manager` and cannot perform
-     those batch mutations
+   - An AP Manager/AP Clerk with `bills.approve` can approve the source bill
+   - Use an AP Manager with `bill_payments.prepare`,
+     `bill_payments.approve`, `bill_payments.export`, and
+     `bill_payments.settle` for the batch lifecycle; no legacy-role fallback is
+     required
+   - The seeded AP Clerk duty currently includes those same broad payment
+     privileges, so using a separate AP Manager here demonstrates process
+     segregation rather than claiming the default Clerk role enforces it
    - Export CSV/NACHA file where available
    - Mark batch sent
    - Confirm settlement when bank confirmation is received
@@ -679,10 +690,15 @@ can move forward.
    > *"Prepare a payment approval packet for bills due in the next 10 days. Include vendor, amount, due date, coding evidence, duplicate status, cash impact, and the approver role required for the batch."*
 
 7. Payment edge checks:
-   - Direct batch mutations currently require projected `admin`; separately
-     verify any configured Admin/Owner high-value Inbox threshold
+   - Direct batch actions enforce `bill_payments.prepare`,
+     `bill_payments.approve`, `bill_payments.export`, and
+     `bill_payments.settle`; prove AP Manager succeeds without admin fallback
+   - Bill create/void and approval separately enforce `bills.manage` and
+     `bills.approve`; verify a seeded AP role succeeds without admin fallback
    - Finance Approver can approve/reject manager-threshold Inbox/procurement reviews but cannot create bills, create procurement documents, or approve Admin/Owner-threshold spend
-   - Viewer and Auditor users cannot create bills, approve bills, open Pay Bills, export files, mark sent, or settle batches
+   - Viewer and Auditor users can inspect Pay Bills when granted
+     `bill_payments.read`, but cannot create/approve a batch, export files,
+     mark sent, or settle it
    - Limitation: vendor-bank validation is not a proven execution block and the
      current export can contain blank/placeholder bank fields. Stop before
      download/upload and record the gap.
@@ -861,6 +877,10 @@ can move forward.
    Annual statutory accounts: $18,000 fixed
    ```
 
+   Before posting, use **Settings** -> **Historical FX provenance** to look up
+   USD -> GBP for the invoice date. Record the requested date, matched date,
+   rate, source, immutable FX row ID, and staleness. This panel is read-only.
+
 3. Go to **Billing Runs** → invoice for April 2026 advisory:
    ```
    Advisory Retainer — April 2026    $4,500.00 USD
@@ -880,7 +900,7 @@ can move forward.
 
 7. Go to **Accounting** → **Journal Entries** → show the payment journal:
    ```
-   DR  Bank — USD Account (1102)     $4,500.00  [£3,560.28 @ 1.2641 GBP/USD]
+   DR  Bank (1100)                   $4,500.00  [£3,560.28 @ 1.2641 GBP/USD]
    CR  Accounts Receivable            $4,500.00  [£3,560.28 @ 1.2641 GBP/USD]
    ```
    - `base_amount` = £3,560.28 locked at the payment-date rate
@@ -892,7 +912,7 @@ can move forward.
    - Realised FX service posts the base-currency adjustment:
    ```
    DR  Realized FX Loss (7900)    £68.10
-   CR  Bank                       £68.10
+   CR  Accounts Receivable        £68.10
    ```
 
 9. Go to **Reports** → **Revenue by Engagement** → Thornton:
@@ -1028,7 +1048,12 @@ can move forward.
 8. Check:
    - **Workflow Runs** → close workflow completed with waiting-on-human steps resolved
    - **Action Queue** → close items are no longer stale
-   - **Close Package** → AR/AP/WIP/GL readiness and override reasons are visible
+   - **Close Package** → period-end AR/AP tie to posted base-currency control
+     accounts even if a later receipt/settlement exists; unmatched control
+     activity is shown as unallocated
+   - **Close Package** → WIP is visibly labeled a current-rate-card estimate,
+     because historical rate-card values are not versioned
+   - **Close Package** → GL readiness and override reasons are visible
 
 ---
 
@@ -1070,8 +1095,8 @@ can move forward.
    4001   Revenue — Tax             £38,200.00
    4002   Revenue — COSEC           £18,400.00
    4003   Revenue — Payroll          £8,640.00
-   5000   Direct Costs — Salaries   £68,240.00
-   5100   Subcontractor Costs        £9,180.00
+   5000   Expenses                  £68,240.00
+   5100   Employee Expenses          £9,180.00
    7900   Realized FX Gain/Loss        £240.35
    ──────────────────────────────────────────────────────
    Total                          £343,479.80   £343,479.80
@@ -1083,6 +1108,13 @@ can move forward.
 ---
 
 ## 5.4 Management Reporting Snapshot
+
+Before presenting AR or AP Aging, explain that each public report is a current
+snapshot in the tenant's base currency. Partial receipts and payments reduce
+the posted control-account balance, the total ties to `1200 Accounts
+Receivable` or `2000 Accounts Payable`, and **Unallocated GL** preserves any
+control-account amount that cannot be matched to an invoice or bill. A close
+package instead calculates its aging as of the selected period end.
 
 1. **Reports** → **Project P&L** → sort by Gross Margin descending:
    - Thornton Series A: 92% (exceptional)
@@ -1343,10 +1375,10 @@ work.
    Store it only in the secure demo credential file or your password manager,
    not in shared screenshots.
 
-9. Open a second browser profile or incognito window and log in as each invited
-   user at the main Aethos app, not the timesheet portal. Confirm the first
-   screen is Account/Profile and that changing the initial password is required
-   before normal app navigation.
+9. Continue in the tenant's same recorded browser context. Explicitly sign out,
+   then log in sequentially as each invited user at the main Aethos app, not the
+   timesheet portal. Confirm the first screen is Account/Profile and that
+   changing the initial password is required before normal app navigation.
 
 10. Validate the Finance Ops Manager can:
    - Open **Aethos Atlas**
@@ -1361,8 +1393,9 @@ work.
    - Can approve or reject manager-threshold Inbox/procurement review work
    - Cannot create clients, engagements, bills, procurement documents, journals,
      or tenant settings
-   - Cannot approve Admin/Owner-threshold payment batches, accounting work, or
-     high-risk AI actions
+   - Cannot directly approve payment batches because the seeded role lacks
+     `bill_payments.approve`, and cannot approve Admin/Owner-threshold
+     accounting or high-risk AI work
 
 12. Validate the Finance Controller:
    - Can inspect accounting, journals, close, statements, and audit evidence
@@ -1387,6 +1420,9 @@ work.
    - Each assignment projects to one legacy `tenant_users.role`; many API
      endpoints still enforce that legacy hierarchy rather than an individual
      catalogue privilege
+   - Invoice, bill, payment-batch, and procurement endpoints now enforce their
+     named catalogue privileges; procurement approval also preserves amount
+     thresholds and rejects requester self-approval
    - Distinct catalogue roles with the same projection can therefore have the
      same effective behavior on legacy-gated routes; demonstrate the actual
      positive and negative result, not the role label alone
@@ -1461,7 +1497,7 @@ without editing deployment files.
      Approver; money-out, accounting, and high-risk AI stay Admin/Owner gated
    - Finance role personas catalog
 
-4. Log in as Finance Approver in a second tab:
+4. In the same recorded browser context, sign out and log in as Finance Approver:
    > *"What can I approve now, what requires Admin or Owner, and which actions are intentionally blocked for the Finance Approver role?"*
 
 5. Check:
@@ -1469,7 +1505,7 @@ without editing deployment files.
    - Create/edit/post/pay/send/settings actions remain blocked
    - Admin/Owner-threshold money-out, accounting, and high-risk AI work remains blocked
 
-6. Log in as Auditor in a second tab:
+6. In that same context, sign out and log in as Auditor:
    > *"As a read-only auditor, show me the records I can inspect for this bill-payment batch and which actions are intentionally blocked for my role."*
 
 7. Check:
@@ -1692,4 +1728,4 @@ python3 scripts/generate_demo_assets.py
 - `alderton_sgd_dividend_notice.pdf` — Singapore dividend income statement in SGD
 - `thornton_cosec_instruction.pdf` — New director appointment instruction letter
 
-> **Tip for demos**: Keep separate browser profiles ready for Marcus (Tenant Owner), Finance Controller, Finance Ops Manager, Finance Approver, Auditor, and Executive Viewer. Use `demo_credentials.json` for generated production scenario tenants. Switch tabs to show privilege-based access: the manager operates, the approver decides manager-threshold reviews, the controller handles accounting controls, the auditor inspects evidence only, and Marcus keeps owner-only settings and approvals.
+> **Tip for demos**: Keep the mode-0600 credential manifest ready, but perform role changes by explicit sign-out/sign-in in one continuous recorded browser context per tenant. This preserves a single auditable recording while showing that the manager operates, the approver decides manager-threshold reviews, the controller handles accounting controls, the auditor inspects evidence only, and Marcus keeps owner-only settings and approvals.

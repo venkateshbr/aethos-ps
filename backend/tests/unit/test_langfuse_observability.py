@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
+import langfuse
 import pytest
 
 from app.agents import base
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _reset_tracked_langfuse_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(base, "_langfuse_client", None)
 
 
 class _FakeCompletions:
@@ -29,6 +39,14 @@ class _FakeClient:
     def __init__(self, **kwargs: Any) -> None:
         self.init_kwargs = kwargs
         self.chat = _FakeChat()
+
+
+class _FakeTelemetryClient:
+    def __init__(self) -> None:
+        self.flush_calls = 0
+
+    def flush(self) -> None:
+        self.flush_calls += 1
 
 
 def _configure_langfuse_settings(monkeypatch: pytest.MonkeyPatch, *, enabled: bool) -> None:
@@ -55,6 +73,7 @@ def test_langfuse_client_injects_trace_and_business_metadata(
     _configure_langfuse_settings(monkeypatch, enabled=True)
     monkeypatch.setattr(base, "LangfuseAsyncOpenAI", _make_fake_client)
     monkeypatch.setattr(base, "LangfuseOpenAI", _make_fake_client)
+    monkeypatch.setattr(base, "LangfuseGetClient", _FakeTelemetryClient)
     trace_token = base.trace_id_var.set("0123456789abcdef0123456789abcdef")
     tenant_token = base.tenant_id_var.set("tenant-from-context")
 
@@ -120,3 +139,79 @@ def test_langfuse_disabled_uses_standard_openai_client(
         "api_key": "or-test",
         "base_url": "https://openrouter.example.test",
     }
+
+
+def test_shutdown_flush_does_not_lazily_initialize_langfuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry_client = _FakeTelemetryClient()
+    get_client_calls = 0
+
+    def _get_client() -> _FakeTelemetryClient:
+        nonlocal get_client_calls
+        get_client_calls += 1
+        return telemetry_client
+
+    _configure_langfuse_settings(monkeypatch, enabled=True)
+    monkeypatch.setattr(base, "LangfuseAsyncOpenAI", _FakeClient)
+    monkeypatch.setattr(base, "LangfuseOpenAI", _FakeClient)
+    monkeypatch.setattr(base, "_langfuse_client", None, raising=False)
+    monkeypatch.setattr(langfuse, "get_client", _get_client)
+
+    base.flush_langfuse()
+
+    assert get_client_calls == 0
+    assert telemetry_client.flush_calls == 0
+
+
+def test_instrumented_call_tracks_and_flushes_initialized_langfuse_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry_client = _FakeTelemetryClient()
+    get_client_calls = 0
+
+    def _get_client() -> _FakeTelemetryClient:
+        nonlocal get_client_calls
+        get_client_calls += 1
+        return telemetry_client
+
+    _configure_langfuse_settings(monkeypatch, enabled=True)
+    monkeypatch.setattr(base, "LangfuseAsyncOpenAI", _FakeClient)
+    monkeypatch.setattr(base, "LangfuseOpenAI", _FakeClient)
+    monkeypatch.setattr(base, "LangfuseGetClient", _get_client, raising=False)
+    monkeypatch.setattr(base, "_langfuse_client", None, raising=False)
+
+    client = base.make_async_llm_client(agent_name="reporting_agent")
+    assert get_client_calls == 0
+
+    client.chat.completions.create(model="test-model", messages=[])
+    assert get_client_calls == 1
+
+    base.flush_langfuse()
+    assert get_client_calls == 1
+    assert telemetry_client.flush_calls == 1
+
+
+def test_configured_langfuse_import_exits_without_shutdown_traceback() -> None:
+    backend_dir = Path(__file__).resolve().parents[2]
+    env = {
+        **os.environ,
+        "LANGFUSE_TRACING_ENABLED": "true",
+        "LANGFUSE_PUBLIC_KEY": "pk-test",
+        "LANGFUSE_SECRET_KEY": "sk-test",
+        "LANGFUSE_BASE_URL": "http://127.0.0.1:9",
+    }
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.agents.base"],
+        cwd=backend_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0
+    assert "langfuse_flush_failed" not in result.stderr
+    assert "cannot schedule new futures after interpreter shutdown" not in result.stderr

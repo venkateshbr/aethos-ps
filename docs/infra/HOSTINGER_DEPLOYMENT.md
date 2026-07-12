@@ -83,19 +83,33 @@ HOSTINGER_SSH_PORT=22
 HOSTINGER_APP_DIR=/opt/aethos-ps
 HOSTINGER_DEPLOY_SOURCE=git
 HOSTINGER_BRANCH=main
+HOSTINGER_DEPLOY_SHA=<full-40-character-reviewed-commit-sha>
 ```
 
-Use `HOSTINGER_DEPLOY_SOURCE=local` for a first rollout before the Hostinger
-deployment files have been committed and pushed. In local mode, the deploy
-script syncs only:
+`HOSTINGER_DEPLOY_SHA` defaults to the current full local `HEAD`. If
+`AETHOS_IMAGE_TAG` is supplied, it must equal that SHA exactly; the deployed
+image metadata can therefore never claim a different reviewed commit.
+
+Use `HOSTINGER_DEPLOY_SOURCE=local` only for a committed, clean local checkout.
+Local mode refuses tracked or untracked changes, requires the requested SHA to
+equal local `HEAD`, creates a temporary `git archive` of that commit, and
+rsyncs only the archived:
 
 - `backend/`
 - `frontend/`
 - `integrations/`
 - `docker-compose.hostinger.yml`
 
-After the deployment files are on `main`, switch back to
-`HOSTINGER_DEPLOY_SOURCE=git` so production deploys come from reviewed source.
+Ignored build products and other workspace files are not copied. Local mode is
+not an escape hatch for uncommitted deployment files.
+
+In `HOSTINGER_DEPLOY_SOURCE=git` mode, the server fetches
+`HOSTINGER_BRANCH` only to verify that the requested commit belongs to that
+branch. Before fetching, it refuses tracked, staged, or ordinary untracked
+files in the remote checkout; ignored runtime files such as `.env.hostinger`
+remain allowed. It then uses a detached checkout of `HOSTINGER_DEPLOY_SHA` and
+verifies the resulting full `HEAD`; it never pulls a possibly advanced branch
+tip.
 
 ## Background Worker
 
@@ -303,8 +317,8 @@ The script:
    - `FRONTEND_BASE_URL=https://aethos.ishirock.tech`
    - `CORS_ORIGINS=https://aethos.ishirock.tech,https://timesheet.aethos.ishirock.tech`
 5. SSHes to the VPS.
-6. Clones/updates the repo in `/opt/aethos-ps`, or syncs local app sources when
-   `HOSTINGER_DEPLOY_SOURCE=local`.
+6. Verifies the requested full commit SHA. Git mode checks out that exact commit
+   on the VPS; local mode syncs a clean archive of that same commit.
 7. Runs:
 
 ```bash
@@ -330,6 +344,17 @@ Required GitHub Actions secret:
 Required GitHub Actions variable:
 
 - `HOSTINGER_VM_ID=1695814`
+- `HOSTINGER_PROJECT_NAME=<project confirmed in Hostinger hPanel/API>`
+
+The workflow fails before deployment when `HOSTINGER_PROJECT_NAME` is absent.
+Repository/manual Compose documentation consistently uses `aethos-ps`, while a
+previous workflow used `aethos-ps-production`. Hostinger defines this input as
+the project identifier shown in its dashboard and sends it as `project_name` to
+the VPS Docker API. Confirm the existing production project in hPanel or via the
+Hostinger API before setting the variable; do not infer it from the repository
+name or change it merely to make the two strings match. The official action
+contract is documented in
+[`hostinger/deploy-on-vps`](https://github.com/hostinger/deploy-on-vps/blob/v2/action.yaml).
 
 Recommended GitHub Actions secret:
 
@@ -337,6 +362,11 @@ Recommended GitHub Actions secret:
 
 `AETHOS_PRODUCTION_ENV` should contain the production app env lines, excluding
 deployment-only values such as `HOSTINGER_API_KEY`.
+
+The workflow explicitly checks out and verifies the clean immutable
+`${{ github.sha }}`. Hostinger's v2 action also builds its compose-source URL
+with that SHA, and `AETHOS_IMAGE_TAG` receives the same value. A branch moving
+after workflow dispatch therefore cannot change the deployed source.
 
 Optional GitHub Actions variables:
 

@@ -10,6 +10,7 @@ import logging
 
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel, Field
 
 from app.core.auth import CurrentUser
 from app.core.config import settings
@@ -17,12 +18,49 @@ from app.core.db import get_service_role_client
 from app.core.finance_personas import finance_persona_catalog
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
+from app.domain.currency import normalise_currency_code
 from app.services.operational_telemetry import TenantHealthService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class TenantAccountingContextResponse(BaseModel):
+    """Minimal verified tenant context needed for financial write composers."""
+
+    tenant_id: str
+    base_currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+@router.get("/accounting-context", response_model=TenantAccountingContextResponse)
+async def tenant_accounting_context(
+    _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
+    tenant_id: str = Depends(get_tenant_id),
+    db: Client = Depends(get_service_role_client),  # noqa: B008
+) -> TenantAccountingContextResponse:
+    """Return the verified tenant base currency; never infer a write default."""
+    result = (
+        db.table("tenants")
+        .select("id,base_currency")
+        .eq("id", tenant_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    try:
+        currency = normalise_currency_code(result.data[0].get("base_currency"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tenant base currency is not configured",
+        ) from exc
+    return TenantAccountingContextResponse(
+        tenant_id=tenant_id,
+        base_currency=currency,
+    )
 
 
 @router.get("/health")

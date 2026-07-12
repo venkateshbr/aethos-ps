@@ -95,87 +95,145 @@ class ReportsService:
     # 1. AR Aging
     # ------------------------------------------------------------------
 
-    def ar_aging(self) -> dict:
-        """Bucket outstanding invoices by days past due date."""
-        today = date.today()
-        invoices = (
-            self.db.table("invoices")
-            .select("id, total, currency, due_date, status")
+    def ar_aging(self, *, as_of_date: date | str | None = None) -> dict:
+        """Return posted base-currency AR aging, current or at a selected date."""
+        return self._control_account_aging_as_of(
+            as_of_date=as_of_date or date.today(),
+            account_code="1200",
+            normal_direction="DR",
+            document_table="invoices",
+            reference_types={"invoice", "payment", "fx_gain_loss"},
+        )
+
+    def _control_account_aging_as_of(
+        self,
+        *,
+        as_of_date: date | str,
+        account_code: str,
+        normal_direction: str,
+        document_table: str,
+        reference_types: set[str],
+    ) -> dict[str, str]:
+        """Return base-currency aging tied to posted control-account activity."""
+        snapshot_date = (
+            as_of_date
+            if isinstance(as_of_date, date)
+            else date.fromisoformat(str(as_of_date)[:10])
+        )
+        as_of_period = snapshot_date.isoformat()[:7]
+        rows = (
+            self.db.table("journal_lines")
+            .select(
+                "direction,base_amount,"
+                "journal_entries!journal_entry_id("
+                "period,entry_date,posted_at,reference_type,reference_id),"
+                "accounts!account_id(code)"
+            )
             .eq("tenant_id", self.tenant_id)
-            .in_("status", ["approved", "sent", "overdue"])
-            .is_("deleted_at", "null")
             .execute()
             .data
             or []
         )
+
+        control_total = Decimal("0")
+        balances_by_document: dict[str, Decimal] = {}
+        for row in rows:
+            account = _embedded_one(row.get("accounts"))
+            entry = _embedded_one(row.get("journal_entries"))
+            if str(account.get("code") or "") != account_code:
+                continue
+            entry_date_raw = entry.get("entry_date")
+            try:
+                entry_date = date.fromisoformat(str(entry_date_raw)[:10])
+            except (TypeError, ValueError):
+                # Journal entry dates are required by schema. Exclude corrupt
+                # embedded rows rather than leaking them into an as-of report.
+                continue
+            if (
+                not entry.get("posted_at")
+                or str(entry.get("period") or "") > as_of_period
+                or entry_date > snapshot_date
+            ):
+                continue
+
+            amount = Decimal(str(row.get("base_amount") or "0"))
+            signed = amount if str(row.get("direction")) == normal_direction else -amount
+            control_total += signed
+
+            reference_type = str(entry.get("reference_type") or "")
+            reference_id = str(entry.get("reference_id") or "")
+            if reference_type in reference_types and reference_id:
+                balances_by_document[reference_id] = (
+                    balances_by_document.get(reference_id, Decimal("0")) + signed
+                )
+
+        documents: dict[str, dict] = {}
+        if balances_by_document:
+            document_rows = (
+                self.db.table(document_table)
+                .select("id,due_date")
+                .eq("tenant_id", self.tenant_id)
+                .in_("id", list(balances_by_document))
+                .execute()
+                .data
+                or []
+            )
+            documents = {str(row["id"]): row for row in document_rows}
 
         buckets: dict[str, Decimal] = {
             "0_30": Decimal("0"),
             "31_60": Decimal("0"),
             "61_90": Decimal("0"),
             "over_90": Decimal("0"),
-            "total": Decimal("0"),
         }
-
-        for inv in invoices:
-            if not inv.get("due_date"):
+        allocated_total = Decimal("0")
+        for document_id, balance in balances_by_document.items():
+            document = documents.get(document_id)
+            if document is None or balance == Decimal("0"):
                 continue
-            days = (today - date.fromisoformat(str(inv["due_date"]))).days
-            amount = Decimal(str(inv.get("total", "0")))
-            buckets["total"] += amount
+            due_date_raw = document.get("due_date")
+            days = (
+                (snapshot_date - date.fromisoformat(str(due_date_raw)[:10])).days
+                if due_date_raw
+                else 0
+            )
             if days <= 30:
-                buckets["0_30"] += amount
+                bucket = "0_30"
             elif days <= 60:
-                buckets["31_60"] += amount
+                bucket = "31_60"
             elif days <= 90:
-                buckets["61_90"] += amount
+                bucket = "61_90"
             else:
-                buckets["over_90"] += amount
+                bucket = "over_90"
+            buckets[bucket] += balance
+            allocated_total += balance
 
-        return {k: str(v) for k, v in buckets.items()}
+        unallocated = control_total - allocated_total
+
+        def _aging_money(value: Decimal) -> str:
+            # Decimal preserves a signed zero. Aging JSON should not expose
+            # visually confusing ``-0.00`` after exact control-account ties.
+            return serialise_money(Decimal("0") if value.is_zero() else value) or "0.00"
+
+        return {
+            **{key: _aging_money(value) for key, value in buckets.items()},
+            "unallocated": _aging_money(unallocated),
+            "total": _aging_money(control_total),
+        }
 
     # ------------------------------------------------------------------
     # 2. AP Aging
     # ------------------------------------------------------------------
 
-    def ap_aging(self) -> dict:
-        """Bucket outstanding bills by days past due date."""
-        today = date.today()
-        bills = (
-            self.db.table("bills")
-            .select("id, total, currency, due_date, status")
-            .eq("tenant_id", self.tenant_id)
-            .in_("status", ["approved", "partially_paid"])
-            .is_("deleted_at", "null")
-            .execute()
-            .data
-            or []
+    def ap_aging(self, *, as_of_date: date | str | None = None) -> dict:
+        """Return posted base-currency AP aging, current or at a selected date."""
+        return self._control_account_aging_as_of(
+            as_of_date=as_of_date or date.today(),
+            account_code="2000",
+            normal_direction="CR",
+            document_table="bills",
+            reference_types={"bill", "bill_payment", "bill_void"},
         )
-
-        buckets: dict[str, Decimal] = {
-            "0_30": Decimal("0"),
-            "31_60": Decimal("0"),
-            "61_90": Decimal("0"),
-            "over_90": Decimal("0"),
-            "total": Decimal("0"),
-        }
-
-        for bill in bills:
-            if not bill.get("due_date"):
-                continue
-            days = (today - date.fromisoformat(str(bill["due_date"]))).days
-            amount = Decimal(str(bill.get("total", "0")))
-            buckets["total"] += amount
-            if days <= 30:
-                buckets["0_30"] += amount
-            elif days <= 60:
-                buckets["31_60"] += amount
-            elif days <= 90:
-                buckets["61_90"] += amount
-            else:
-                buckets["over_90"] += amount
-
-        return {k: str(v) for k, v in buckets.items()}
 
     # ------------------------------------------------------------------
     # 3. Project P&L
@@ -325,14 +383,30 @@ class ReportsService:
     # 5. Work In Progress (WIP)
     # ------------------------------------------------------------------
 
-    def wip(self, engagement_id: str | None = None) -> list[dict]:
+    def wip(
+        self,
+        engagement_id: str | None = None,
+        *,
+        as_of_date: date | str | None = None,
+    ) -> list[dict]:
         """Unbilled effort x average rate per project.
 
         Rate card lives on the engagement (``engagements.rate_card_id``), not
         on the project — there is no per-project rate-card override in the
         current schema. We join through the engagement to find the applicable
         rate card. See bug #99.
+
+        ``as_of_date`` reconstructs whether approved time was still unbilled
+        at the selected period end.  It deliberately labels the valuation as
+        an estimate because rate-card lines are not historically versioned.
         """
+        snapshot_date = (
+            as_of_date
+            if isinstance(as_of_date, date)
+            else date.fromisoformat(str(as_of_date)[:10])
+            if as_of_date is not None
+            else None
+        )
         # Embed the parent engagement so we can pick up its rate_card_id in
         # the same round-trip. PostgREST returns embedded foreign tables as a
         # nested dict when the FK is many-to-one.
@@ -348,18 +422,69 @@ class ReportsService:
 
         hours_by_project: dict[str, Decimal] = {}
         if project_ids:
-            entries = (
-                self.db.table("time_entries")
-                .select("project_id, hours")
-                .eq("tenant_id", self.tenant_id)
-                .in_("project_id", project_ids)
-                .eq("billing_status", "unbilled")
-                .eq("billable", True)
-                .is_("deleted_at", "null")
-                .execute()
-                .data
-                or []
-            )
+            if snapshot_date is None:
+                entries = (
+                    self.db.table("time_entries")
+                    .select("project_id, hours")
+                    .eq("tenant_id", self.tenant_id)
+                    .in_("project_id", project_ids)
+                    .eq("billing_status", "unbilled")
+                    .eq("billable", True)
+                    .is_("deleted_at", "null")
+                    .execute()
+                    .data
+                    or []
+                )
+            else:
+                entries = (
+                    self.db.table("time_entries")
+                    .select(
+                        "project_id,hours,date,billable,billing_status,invoice_id,"
+                        "status,approved_at,created_at,deleted_at"
+                    )
+                    .eq("tenant_id", self.tenant_id)
+                    .in_("project_id", project_ids)
+                    .lte("date", snapshot_date.isoformat())
+                    .eq("billable", True)
+                    .execute()
+                    .data
+                    or []
+                )
+                invoice_ids = {
+                    str(entry.get("invoice_id"))
+                    for entry in entries
+                    if entry.get("billing_status") == "billed" and entry.get("invoice_id")
+                }
+                billed_as_of: set[str] = set()
+                if invoice_ids:
+                    journal_rows = (
+                        self.db.table("journal_entries")
+                        .select("period,posted_at,reference_type,reference_id")
+                        .eq("tenant_id", self.tenant_id)
+                        .eq("reference_type", "invoice")
+                        .in_("reference_id", list(invoice_ids))
+                        .execute()
+                        .data
+                        or []
+                    )
+                    as_of_period = snapshot_date.isoformat()[:7]
+                    billed_as_of = {
+                        str(row.get("reference_id"))
+                        for row in journal_rows
+                        if row.get("posted_at")
+                        and row.get("reference_type") == "invoice"
+                        and str(row.get("period") or "") <= as_of_period
+                        and row.get("reference_id")
+                    }
+                entries = [
+                    entry
+                    for entry in entries
+                    if _time_entry_is_wip_as_of(
+                        entry,
+                        snapshot_date=snapshot_date,
+                        billed_invoice_ids=billed_as_of,
+                    )
+                ]
             for entry in entries:
                 project_id_value = str(entry.get("project_id") or "")
                 hours_by_project[project_id_value] = hours_by_project.get(
@@ -398,15 +523,21 @@ class ReportsService:
             rate = rate_cache.get(str(rate_card_id), Decimal("0"))
 
             value = (hours * rate).quantize(Decimal("0.01"))
-            result.append(
-                {
-                    "project_id": proj["id"],
-                    "project_name": proj["name"],
-                    "unbilled_hours": str(hours),
-                    "avg_rate": str(rate),
-                    "wip_value": str(value),
-                }
-            )
+            row = {
+                "project_id": proj["id"],
+                "project_name": proj["name"],
+                "unbilled_hours": str(hours),
+                "avg_rate": str(rate),
+                "wip_value": str(value),
+            }
+            if snapshot_date is not None:
+                row.update(
+                    {
+                        "as_of_date": snapshot_date.isoformat(),
+                        "valuation_basis": "current_rate_card_estimate",
+                    }
+                )
+            result.append(row)
         return result
 
     # ------------------------------------------------------------------
@@ -4096,6 +4227,44 @@ def _practice_dashboard_row(
 def _append_unique(values: list[str], value: str) -> None:
     if value and value not in values:
         values.append(value)
+
+
+def _time_entry_is_wip_as_of(
+    entry: dict,
+    *,
+    snapshot_date: date,
+    billed_invoice_ids: set[str],
+) -> bool:
+    """Whether current time-entry history proves open approved WIP at a date."""
+    snapshot_text = snapshot_date.isoformat()
+    if not entry.get("billable"):
+        return False
+    if str(entry.get("date") or "")[:10] > snapshot_text:
+        return False
+
+    created_at = str(entry.get("created_at") or "")[:10]
+    if created_at and created_at > snapshot_text:
+        return False
+    deleted_at = str(entry.get("deleted_at") or "")[:10]
+    if deleted_at and deleted_at <= snapshot_text:
+        return False
+
+    # New entries have explicit approval timestamps.  Legacy entries were
+    # backfilled as approved without one, so creation date is their best
+    # available lower bound.
+    if str(entry.get("status") or "") != "approved":
+        return False
+    approved_at = str(entry.get("approved_at") or "")[:10]
+    if approved_at and approved_at > snapshot_text:
+        return False
+
+    billing_status = str(entry.get("billing_status") or "")
+    if billing_status == "unbilled":
+        return True
+    if billing_status != "billed":
+        return False
+    invoice_id = str(entry.get("invoice_id") or "")
+    return bool(invoice_id) and invoice_id not in billed_invoice_ids
 
 
 def _embedded_one(value: object) -> dict:

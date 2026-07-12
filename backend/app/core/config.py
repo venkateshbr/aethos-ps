@@ -21,6 +21,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Public, non-secret deployment identity. Production injects the exact Git
+    # SHA/image tag so operators can prove which reviewed build is serving.
+    build_sha: str = "unknown"
+
     # ------------------------------------------------------------------
     # Supabase
     # ------------------------------------------------------------------

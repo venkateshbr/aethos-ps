@@ -15,6 +15,7 @@ import { TenantHealthComponent } from './tenant-health.component';
 import { TenantUsersComponent } from './tenant-users.component';
 import { AiSettingsComponent } from './ai-settings.component';
 import { SecurityRolesComponent } from './security-roles.component';
+import { FxRatesInspectorComponent } from './fx-rates-inspector.component';
 
 @Component({
   selector: 'app-settings',
@@ -36,6 +37,7 @@ import { SecurityRolesComponent } from './security-roles.component';
     TenantUsersComponent,
     AiSettingsComponent,
     SecurityRolesComponent,
+    FxRatesInspectorComponent,
   ],
   template: `
     <div class="p-6 bg-surface-base min-h-full">
@@ -85,6 +87,13 @@ import { SecurityRolesComponent } from './security-roles.component';
             Tax Rates
           </h2>
           <app-tax-rates />
+        </section>
+
+        <section aria-labelledby="fx-rates-heading">
+          <h2 id="fx-rates-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            FX Rates
+          </h2>
+          <app-fx-rates-inspector />
         </section>
 
         <section aria-labelledby="collections-heading">

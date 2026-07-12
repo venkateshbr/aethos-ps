@@ -14,6 +14,7 @@ import { ProjectsListComponent } from '../projects/projects-list.component';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 
 /** Minimal unbilled-time row used to drive the invoice draft picker. */
 interface UnbilledTimeEntry {
@@ -44,6 +45,19 @@ interface EmployeeMeta {
   first_name: string;
   last_name: string;
   default_bill_rate?: string | number | null;
+}
+
+interface TaxRateMeta {
+  id: string;
+  name: string;
+  rate: string;
+  market: string | null;
+  is_system: boolean;
+  is_active: boolean;
+}
+
+interface TenantBillingProfile {
+  country: string;
 }
 
 @Component({
@@ -115,6 +129,9 @@ interface EmployeeMeta {
               type="button"
               class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               (click)="openInvoiceDrawer()"
+              [disabled]="!canDraftInvoice()"
+              [attr.aria-disabled]="!canDraftInvoice()"
+              [attr.title]="canDraftInvoice() ? null : 'Requires invoice draft permission'"
               aria-label="Draft an invoice for this engagement"
             >
               <mat-icon class="text-base leading-none">receipt</mat-icon>
@@ -290,6 +307,30 @@ interface EmployeeMeta {
               </div>
             </div>
 
+            <div>
+              <label for="inv-tax-rate" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                Tax rate for invoice lines
+              </label>
+              <select
+                id="inv-tax-rate"
+                [ngModel]="selectedTaxRateId()"
+                (ngModelChange)="selectedTaxRateId.set($event)"
+                name="inv-tax-rate"
+                class="w-full px-3 py-2 bg-surface border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              >
+                <option value="">No tax / zero-rated</option>
+                @for (rate of taxRates(); track rate.id) {
+                  <option [value]="rate.id">{{ taxRateOptionLabel(rate) }}</option>
+                }
+              </select>
+              <p class="text-xs text-text-muted mt-1">Applied to every selected time entry and manual line.</p>
+              @if (taxRatesError()) {
+                <p class="text-xs text-confidence-med mt-1" role="status">
+                  Could not load tax rates. You can still draft without tax.
+                </p>
+              }
+            </div>
+
             <!-- Unbilled time picker -->
             <div>
               <div class="flex items-center justify-between mb-2">
@@ -359,12 +400,26 @@ interface EmployeeMeta {
             </div>
 
             <!-- Totals -->
-            <div class="border-t border-border-default pt-4 flex items-center justify-between">
-              <span class="text-sm text-text-muted">Subtotal</span>
-              <span class="text-base font-semibold font-mono tabular-nums text-text-primary">
-                {{ subtotal() | money: engagement()!.currency }}
-              </span>
-            </div>
+            <dl class="border-t border-border-default pt-4 space-y-2" aria-label="Invoice totals preview">
+              <div class="flex items-center justify-between">
+                <dt class="text-sm text-text-muted">Subtotal</dt>
+                <dd class="text-sm font-mono tabular-nums text-text-primary">
+                  {{ subtotal() | money: engagement()!.currency }}
+                </dd>
+              </div>
+              <div class="flex items-center justify-between">
+                <dt class="text-sm text-text-muted">Tax</dt>
+                <dd class="text-sm font-mono tabular-nums text-text-primary">
+                  {{ taxAmount() | money: engagement()!.currency }}
+                </dd>
+              </div>
+              <div class="border-t border-border-subtle pt-2 flex items-center justify-between">
+                <dt class="text-sm font-medium text-text-primary">Grand total</dt>
+                <dd class="text-base font-semibold font-mono tabular-nums text-text-primary">
+                  {{ grandTotal() | money: engagement()!.currency }}
+                </dd>
+              </div>
+            </dl>
 
             <!-- Error -->
             @if (drawerError()) {
@@ -381,7 +436,7 @@ interface EmployeeMeta {
               (click)="closeInvoiceDrawer()" [disabled]="submitting()">Cancel</button>
             <button type="button"
               class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              [disabled]="!canSubmit() || submitting()"
+              [disabled]="!canDraftInvoice() || !canSubmit() || submitting()"
               (click)="submitDraft()">
               @if (submitting()) { Drafting… } @else { Create draft invoice }
             </button>
@@ -406,6 +461,7 @@ export class EngagementDetailComponent implements OnInit {
   private router = inject(Router);
   private engagementService = inject(EngagementService);
   private http = inject(HttpClient);
+  private permissions = inject(CurrentPermissionsService);
 
   loading = signal(true);
   error = signal<string | null>(null);
@@ -422,6 +478,9 @@ export class EngagementDetailComponent implements OnInit {
   projects = signal<ProjectMeta[]>([]);
   assignments = signal<AssignmentMeta[]>([]);
   employees = signal<EmployeeMeta[]>([]);
+  taxRates = signal<TaxRateMeta[]>([]);
+  selectedTaxRateId = signal('');
+  taxRatesError = signal(false);
   submitting = signal(false);
   drawerError = signal<string | null>(null);
 
@@ -438,18 +497,35 @@ export class EngagementDetailComponent implements OnInit {
     return list.length > 0 && list.every(e => this.selectedIds().has(e.id));
   });
 
-  subtotal = computed(() => {
-    let sum = 0;
+  private selectedLineAmountsInMinorUnits = computed(() => {
+    const amounts: bigint[] = [];
     for (const e of this.unbilledEntries()) {
-      if (this.selectedIds().has(e.id)) sum += this.lineAmountNumeric(e);
+      if (this.selectedIds().has(e.id)) amounts.push(this.lineAmountInMinorUnits(e));
     }
     if (this.includeExtra()) {
-      const q = Number(this.extraQty() ?? 0);
-      const p = Number(this.extraUnitPrice() ?? 0);
-      if (Number.isFinite(q) && Number.isFinite(p)) sum += q * p;
+      amounts.push(this.multiplyAndRoundMoney(this.extraQty(), this.extraUnitPrice()));
     }
-    return sum.toFixed(2);
+    return amounts;
   });
+
+  private subtotalInMinorUnits = computed(() =>
+    this.selectedLineAmountsInMinorUnits().reduce((sum, amount) => sum + amount, 0n),
+  );
+
+  private taxInMinorUnits = computed(() => {
+    const selectedRate = this.taxRates().find(rate => rate.id === this.selectedTaxRateId());
+    if (!selectedRate) return 0n;
+    return this.selectedLineAmountsInMinorUnits().reduce(
+      (sum, amount) => sum + this.percentageOfMinorUnits(amount, selectedRate.rate),
+      0n,
+    );
+  });
+
+  subtotal = computed(() => this.formatMinorUnits(this.subtotalInMinorUnits()));
+  taxAmount = computed(() => this.formatMinorUnits(this.taxInMinorUnits()));
+  grandTotal = computed(() =>
+    this.formatMinorUnits(this.subtotalInMinorUnits() + this.taxInMinorUnits()),
+  );
 
   canSubmit = computed(() => {
     if (this.selectedIds().size > 0) return true;
@@ -461,8 +537,12 @@ export class EngagementDetailComponent implements OnInit {
     }
     return false;
   });
+  canDraftInvoice = computed(() =>
+    this.permissions.hasPrivilege('invoices.draft'),
+  );
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/app/engagements']);
@@ -556,7 +636,7 @@ export class EngagementDetailComponent implements OnInit {
 
   openInvoiceDrawer(): void {
     const eng = this.engagement();
-    if (!eng) return;
+    if (!eng || !this.canDraftInvoice()) return;
     this.drawerOpen.set(true);
     this.drawerError.set(null);
     this.selectedIds.set(new Set());
@@ -564,8 +644,12 @@ export class EngagementDetailComponent implements OnInit {
     this.extraDescription.set('');
     this.extraQty.set('');
     this.extraUnitPrice.set('');
+    this.selectedTaxRateId.set('');
+    this.taxRates.set([]);
+    this.taxRatesError.set(false);
     this.issueDate = this.todayIso();
     this.dueDate = this.thirtyDaysIso();
+    void this.loadDrawerTaxRates();
     void this.loadDrawerData(eng.id);
   }
 
@@ -618,6 +702,41 @@ export class EngagementDetailComponent implements OnInit {
     }
   }
 
+  /** Tax lookup is optional drawer enrichment and never blocks billable data. */
+  private async loadDrawerTaxRates(): Promise<void> {
+    try {
+      const [profile, taxResp] = await Promise.all([
+        firstValueFrom(this.http.get<TenantBillingProfile>('/api/v1/billing/profile')),
+        firstValueFrom(this.http.get<TaxRateMeta[]>('/api/v1/tax-rates')),
+      ]);
+      const tenantMarket = this.marketForCountry(profile.country);
+      this.taxRates.set((taxResp ?? []).filter(rate =>
+        rate.is_active && (!rate.is_system || rate.market === tenantMarket),
+      ));
+    } catch {
+      this.taxRates.set([]);
+      this.taxRatesError.set(true);
+    }
+  }
+
+  taxRateOptionLabel(rate: TaxRateMeta): string {
+    const market = rate.market ?? 'All markets';
+    const provenance = rate.is_system ? 'System' : 'Custom';
+    return `${rate.name} — ${rate.rate}% · ${market} · ${provenance}`;
+  }
+
+  private marketForCountry(country: string): string {
+    const markets: Record<string, string> = {
+      US: 'US',
+      GB: 'UK',
+      UK: 'UK',
+      SG: 'SG',
+      IN: 'IN',
+      AU: 'AU',
+    };
+    return markets[country.trim().toUpperCase()] ?? country.trim().toUpperCase();
+  }
+
   isSelected(id: string): boolean {
     return this.selectedIds().has(id);
   }
@@ -658,18 +777,85 @@ export class EngagementDetailComponent implements OnInit {
   }
 
   lineAmount(entry: UnbilledTimeEntry): string {
-    return this.lineAmountNumeric(entry).toFixed(2);
+    return this.formatMinorUnits(this.lineAmountInMinorUnits(entry));
   }
 
-  private lineAmountNumeric(entry: UnbilledTimeEntry): number {
-    const h = Number(entry.hours);
-    const r = Number(this.rateFor(entry));
-    return Number.isFinite(h) && Number.isFinite(r) ? h * r : 0;
+  private lineAmountInMinorUnits(entry: UnbilledTimeEntry): bigint {
+    return this.multiplyAndRoundMoney(entry.hours, this.rateFor(entry));
+  }
+
+  /** Match backend Decimal.quantize(0.01): exact decimal multiplication, half-even. */
+  private multiplyAndRoundMoney(
+    quantity: string | number | null | undefined,
+    unitPrice: string | number | null | undefined,
+  ): bigint {
+    const quantityParts = this.decimalParts(quantity);
+    const priceParts = this.decimalParts(unitPrice);
+    if (!quantityParts || !priceParts) return 0n;
+    return this.quantizeHalfEven(
+      quantityParts.coefficient * priceParts.coefficient,
+      quantityParts.scale + priceParts.scale,
+      2,
+    );
+  }
+
+  /** Backend calculates and rounds tax independently for every invoice line. */
+  private percentageOfMinorUnits(amount: bigint, percentage: string): bigint {
+    const percentageParts = this.decimalParts(percentage);
+    if (!percentageParts) return 0n;
+    const denominator = 100n * (10n ** BigInt(percentageParts.scale));
+    return this.divideHalfEven(amount * percentageParts.coefficient, denominator);
+  }
+
+  private decimalParts(
+    value: string | number | null | undefined,
+  ): { coefficient: bigint; scale: number } | null {
+    const text = String(value ?? '').trim();
+    const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(text);
+    if (!match) return null;
+    const fraction = match[3] ?? '';
+    const sign = match[1] === '-' ? -1n : 1n;
+    return {
+      coefficient: sign * BigInt(`${match[2]}${fraction}`),
+      scale: fraction.length,
+    };
+  }
+
+  private quantizeHalfEven(coefficient: bigint, fromScale: number, toScale: number): bigint {
+    if (fromScale <= toScale) {
+      return coefficient * (10n ** BigInt(toScale - fromScale));
+    }
+    return this.divideHalfEven(coefficient, 10n ** BigInt(fromScale - toScale));
+  }
+
+  private divideHalfEven(numerator: bigint, denominator: bigint): bigint {
+    if (denominator <= 0n) return 0n;
+    const sign = numerator < 0n ? -1n : 1n;
+    const absolute = numerator < 0n ? -numerator : numerator;
+    const quotient = absolute / denominator;
+    const remainder = absolute % denominator;
+    const halfwayComparison = remainder * 2n - denominator;
+    const shouldRoundUp = halfwayComparison > 0n
+      || (halfwayComparison === 0n && quotient % 2n !== 0n);
+    return sign * (shouldRoundUp ? quotient + 1n : quotient);
+  }
+
+  private formatMinorUnits(value: bigint): string {
+    const sign = value < 0n ? '-' : '';
+    const absolute = value < 0n ? -value : value;
+    const major = absolute / 100n;
+    const minor = String(absolute % 100n).padStart(2, '0');
+    return `${sign}${major}.${minor}`;
   }
 
   async submitDraft(): Promise<void> {
     const eng = this.engagement();
-    if (!eng || !this.canSubmit() || this.submitting()) return;
+    if (
+      !eng
+      || !this.canDraftInvoice()
+      || !this.canSubmit()
+      || this.submitting()
+    ) return;
     this.submitting.set(true);
     this.drawerError.set(null);
 
@@ -684,6 +870,7 @@ export class EngagementDetailComponent implements OnInit {
         unit_price: this.rateFor(entry),
         time_entry_id: entry.id,
         service_catalogue_id: eng.service_catalogue_id ?? null,
+        tax_rate_id: this.selectedTaxRateId() || null,
       });
     }
     if (this.includeExtra()) {
@@ -692,6 +879,7 @@ export class EngagementDetailComponent implements OnInit {
         quantity: String(this.extraQty() ?? '0'),
         unit_price: String(this.extraUnitPrice() ?? '0'),
         service_catalogue_id: eng.service_catalogue_id ?? null,
+        tax_rate_id: this.selectedTaxRateId() || null,
       });
     }
 

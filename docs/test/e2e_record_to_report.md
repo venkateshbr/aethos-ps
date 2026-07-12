@@ -65,8 +65,8 @@ journal is claimed. Reconcile the tenant-level Trial Balance separately.
 | # | Report | Expected behavior |
 | --- | --- | --- |
 | 9 | P&L by engagement | Revenue, direct cost, gross margin in the report's supported tenant-base presentation; no general currency toggle |
-| 10 | AR aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `invoices` table |
-| 11 | AP aging | 0-30 / 31-60 / 61-90 / 90+ buckets; matches `bills` table |
+| 10 | AR aging | Current snapshot in tenant base currency; 0-30 / 31-60 / 61-90 / 90+ buckets use posted `1200 Accounts Receivable` control-account amounts, net of partial settlements. The total must tie to posted AR, with unmatched control balance preserved as `unallocated`. |
+| 11 | AP aging | Current snapshot in tenant base currency; 0-30 / 31-60 / 61-90 / 90+ buckets use posted `2000 Accounts Payable` control-account amounts, net of partial settlements. The total must tie to posted AP, with unmatched control balance preserved as `unallocated`. |
 | 12 | Utilization | Billable hours / available hours per employee |
 | 13 | WIP | Unbilled effort × rate per project |
 | 14 | Trial balance | DR total = CR total for the period; if not, raise alarm |
@@ -97,7 +97,12 @@ journal is claimed. Reconcile the tenant-level Trial Balance separately.
 - **§2.1 Multi-currency limitation**: reports render tenant-base values; there is
   no general engagement/invoice-currency toggle. Validate any explicit
   transaction-currency buckets from the response instead.
-- **§2.2 Mid-month report**: WIP and AR aging accept any date range; period close not required.
+- **§2.2 Current versus period-end evidence**: the public AR/AP aging and WIP
+  endpoints are current snapshots and do not accept an arbitrary date range or
+  as-of parameter. A close package internally passes its selected period end to
+  the posted-control-account aging and WIP reconstruction calculations. The
+  historical WIP value remains a labeled current-rate-card estimate because
+  rate-card history is not versioned.
 - **§2.3 Comparative report**: side-by-side last month vs. this month.
 - **§2.4 Statement range**: equal From/To months are monthly; inclusive ranges
   feed flow statements/statutory pack and the ending month is the balance-sheet

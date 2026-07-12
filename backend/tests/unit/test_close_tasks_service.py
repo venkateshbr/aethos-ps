@@ -106,6 +106,62 @@ def test_incomplete_blocking_tasks_treats_missing_table_as_empty() -> None:
     assert service.incomplete_blocking_tasks("2026-06") == []
 
 
+def test_period_lock_action_is_not_its_own_precondition() -> None:
+    db = _Db(
+        [
+            {
+                "id": "task-review",
+                "tenant_id": TENANT_ID,
+                "period": "2026-06",
+                "code": "trial_balance_review",
+                "status": "done",
+                "order_index": 40,
+                "deleted_at": None,
+            },
+            {
+                "id": "task-lock",
+                "tenant_id": TENANT_ID,
+                "period": "2026-06",
+                "code": "period_lock",
+                "status": "open",
+                "order_index": 50,
+                "deleted_at": None,
+            },
+        ]
+    )
+    service = CloseTasksService(db, TENANT_ID)  # type: ignore[arg-type]
+
+    assert service.incomplete_blocking_tasks("2026-06") == []
+
+
+@pytest.mark.asyncio
+async def test_successful_period_lock_action_completes_its_checklist_item() -> None:
+    db = _Db(
+        [
+            {
+                "id": "task-lock",
+                "tenant_id": TENANT_ID,
+                "period": "2026-06",
+                "code": "period_lock",
+                "status": "open",
+                "order_index": 50,
+                "deleted_at": None,
+            }
+        ]
+    )
+    service = CloseTasksService(db, TENANT_ID)  # type: ignore[arg-type]
+
+    updated = await service.mark_period_lock_task(
+        period="2026-06",
+        actor_id="admin-1",
+        locked=True,
+    )
+
+    assert updated is not None
+    assert updated["status"] == "done"
+    assert updated["completed_by"] == "admin-1"
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_tasks_returns_empty_when_table_is_missing() -> None:
     service = CloseTasksService(_MissingCloseTasksDb(), TENANT_ID)  # type: ignore[arg-type]

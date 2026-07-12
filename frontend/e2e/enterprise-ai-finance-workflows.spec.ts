@@ -388,7 +388,15 @@ function closePackage(state: MockState): Record<string, unknown> {
     },
     gl_summary: { net_income: '18250.00' },
     previous_gl_summary: { net_income: '14100.00' },
-    working_capital: { ar_open_total: '4200.00', ap_open_total: '1180.00', wip_total: '9500.00' },
+    working_capital: {
+      ar_open_total: '4200.00',
+      ap_open_total: '1180.00',
+      wip_total: '9500.00',
+      base_currency: 'USD',
+      as_of_date: '2026-06-30',
+      ar_ap_basis: 'posted_gl_base_currency',
+      wip_basis: 'approved_time_period_end_current_rate_estimate',
+    },
     readiness_evidence: {
       ar: { status: 'ready', open_total: '4200.00', blocker_count: 0 },
       ap: { status: state.overrideCreated ? 'overridden' : 'blocked', open_total: '1180.00', blocker_count: 1 },
@@ -899,6 +907,15 @@ async function installAiFinanceMocks(page: Page, state: MockState): Promise<void
       });
       return;
     }
+    if (path === '/api/v1/tenants/accounting-context' && method === 'GET') {
+      await route.fulfill({
+        json: {
+          tenant_id: 'tenant-ai-finance',
+          base_currency: 'USD',
+        },
+      });
+      return;
+    }
     if (path === '/api/v1/stripe/connect/status') {
       await route.fulfill({ json: { connected: false } });
       return;
@@ -1030,7 +1047,10 @@ test.describe('Enterprise AI finance workflow proof (#310)', () => {
     await expect(closePeriod).toHaveValue(CLOSE_PERIOD);
     await page.getByRole('button', { name: /Close package/i }).click();
     await expect(page.getByText('Net income', { exact: true })).toBeVisible();
-    await expect(page.getByText('Open AR/AP')).toBeVisible();
+    await expect(page.getByText('Period-end AR/AP', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('USD base-currency GL · as of 2026-06-30', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText('AP exposure remains low after Aster Cloud bill review.')).toBeVisible();
 
     await page.getByLabel('Close blocker to override').selectOption('close_tasks');

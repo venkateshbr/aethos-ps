@@ -8,6 +8,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import {
   ReportsService,
   AgingReport,
+  TenantAccountingContext,
   PnlRow,
   ProjectHealthRow,
   CapacityRow,
@@ -41,7 +42,20 @@ import {
   imports: [CommonModule, FormsModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe],
   template: `
     <div class="min-h-full bg-surface-base p-6">
-      <h1 class="text-2xl font-semibold text-text-primary mb-6">Reports</h1>
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-2">
+        <h1 class="text-2xl font-semibold text-text-primary">Reports</h1>
+        @if (accountingContextLoading()) {
+          <span class="text-xs text-text-muted" role="status">Loading reporting currency…</span>
+        } @else if (accountingContextError()) {
+          <span class="text-xs text-confidence-low" role="alert" data-testid="reporting-currency-error">
+            Reporting currency unavailable; amounts use a neutral currency marker.
+          </span>
+        } @else if (baseCurrency()) {
+          <span class="rounded border border-border-default bg-surface-raised px-2.5 py-1 text-xs text-text-muted" data-testid="reporting-currency">
+            {{ baseCurrency() }} base currency
+          </span>
+        }
+      </div>
 
       <mat-tab-group
         animationDuration="150ms"
@@ -59,7 +73,7 @@ import {
               } @else if (!arData()) {
                 <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'AR aging data' }" />
               } @else {
-                <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: arData()! }" />
+                <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: arData()!, report: 'AR' }" />
               }
             } @placeholder {
               <div><ng-container *ngTemplateOutlet="agingSkeleton" /></div>
@@ -80,7 +94,7 @@ import {
               } @else if (!apData()) {
                 <ng-container *ngTemplateOutlet="emptyState; context: { $implicit: 'AP aging data' }" />
               } @else {
-                <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: apData()! }" />
+                <ng-container *ngTemplateOutlet="agingCards; context: { $implicit: apData()!, report: 'AP' }" />
               }
             } @placeholder {
               <div><ng-container *ngTemplateOutlet="agingSkeleton" /></div>
@@ -109,15 +123,15 @@ import {
                     </ng-container>
                     <ng-container matColumnDef="revenue">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Revenue</th>
-                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.revenue | money: row.currency }}</td>
+                      <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono">{{ row.revenue | money: displayCurrency(row.currency) }}</td>
                     </ng-container>
                     <ng-container matColumnDef="direct_cost">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Direct Cost</th>
-                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.direct_cost | money: row.currency }}</td>
+                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.direct_cost | money: displayCurrency(row.currency) }}</td>
                     </ng-container>
                     <ng-container matColumnDef="gross_margin">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Gross Margin</th>
-                      <td mat-cell *matCellDef="let row" class="text-sm font-mono font-medium" [class]="marginAmountClass(row.gross_margin_pct)">{{ row.gross_margin | money: row.currency }}</td>
+                      <td mat-cell *matCellDef="let row" class="text-sm font-mono font-medium" [class]="marginAmountClass(row.gross_margin_pct)">{{ row.gross_margin | money: displayCurrency(row.currency) }}</td>
                     </ng-container>
                     <ng-container matColumnDef="gross_margin_pct">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Margin %</th>
@@ -303,15 +317,15 @@ import {
                         </ng-container>
                         <ng-container matColumnDef="contracted_value">
                           <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Contract</th>
-                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.contracted_value | money: row.currency }}</td>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.contracted_value | money: displayCurrency(row.currency) }}</td>
                         </ng-container>
                         <ng-container matColumnDef="recognized_backlog">
                           <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Backlog</th>
-                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.recognized_backlog | money: row.currency }}</td>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-primary tabular-nums">{{ row.recognized_backlog | money: displayCurrency(row.currency) }}</td>
                         </ng-container>
                         <ng-container matColumnDef="unbilled_wip">
                           <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">WIP</th>
-                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-secondary tabular-nums">{{ row.unbilled_wip | money: row.currency }}</td>
+                          <td mat-cell *matCellDef="let row" class="text-right font-mono text-sm text-text-secondary tabular-nums">{{ row.unbilled_wip | money: displayCurrency(row.currency) }}</td>
                         </ng-container>
                         <ng-container matColumnDef="next_milestone_due_date">
                           <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Next Due</th>
@@ -393,11 +407,11 @@ import {
                       </ng-container>
                       <ng-container matColumnDef="revenue">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
-                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: displayCurrency(row.currency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="total_cost">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Cost</th>
-                        <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono text-right">{{ row.total_cost | money: (row.currency || 'USD') }}</td>
+                        <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono text-right">{{ row.total_cost | money: displayCurrency(row.currency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="gross_margin_pct">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
@@ -436,11 +450,11 @@ import {
                       </ng-container>
                       <ng-container matColumnDef="revenue">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
-                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: displayCurrency(row.currency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="gross_margin">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
-                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.gross_margin | money: (row.currency || 'USD') }}</td>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.gross_margin | money: displayCurrency(row.currency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="gross_margin_pct">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin %</th>
@@ -476,7 +490,7 @@ import {
                       </ng-container>
                       <ng-container matColumnDef="revenue">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Revenue</th>
-                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: (row.currency || 'USD') }}</td>
+                        <td mat-cell *matCellDef="let row" class="text-text-primary text-sm font-mono text-right">{{ row.revenue | money: displayCurrency(row.currency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="gross_margin_pct">
                         <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Margin</th>
@@ -528,7 +542,7 @@ import {
                       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                         <div>
                           <p class="text-xs text-text-muted uppercase tracking-wide">Revenue</p>
-                          <p class="text-sm text-text-primary font-mono">{{ row.revenue | money }}</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.revenue | money: reportCurrency() }}</p>
                         </div>
                         <div>
                           <p class="text-xs text-text-muted uppercase tracking-wide">Margin</p>
@@ -720,7 +734,7 @@ import {
                         </div>
                         <div>
                           <p class="text-xs text-text-muted uppercase tracking-wide">Fee adjustment</p>
-                          <p class="text-sm text-text-primary font-mono">{{ row.suggested_fee_adjustment | money }}</p>
+                          <p class="text-sm text-text-primary font-mono">{{ row.suggested_fee_adjustment | money: reportCurrency() }}</p>
                         </div>
                         <div>
                           <p class="text-xs text-text-muted uppercase tracking-wide">Comparables</p>
@@ -816,11 +830,11 @@ import {
                     </ng-container>
                     <ng-container matColumnDef="avg_rate">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">Avg Rate</th>
-                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.avg_rate | money }}/h</td>
+                      <td mat-cell *matCellDef="let row" class="text-text-secondary text-sm font-mono">{{ row.avg_rate | money: reportCurrency() }}/h</td>
                     </ng-container>
                     <ng-container matColumnDef="wip_value">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide">WIP Value</th>
-                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold">{{ row.wip_value | money }}</td>
+                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold">{{ row.wip_value | money: reportCurrency() }}</td>
                     </ng-container>
                     <tr mat-header-row *matHeaderRowDef="wipColumns" class="bg-surface-base/50"></tr>
                     <tr mat-row *matRowDef="let row; columns: wipColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
@@ -854,7 +868,7 @@ import {
                     </ng-container>
                     <ng-container matColumnDef="total_invoiced">
                       <th mat-header-cell *matHeaderCellDef class="text-text-muted text-xs uppercase tracking-wide text-right">Total Invoiced</th>
-                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold text-right tabular-nums">{{ row.total_invoiced | money }}</td>
+                      <td mat-cell *matCellDef="let row" class="text-accent-light text-sm font-mono font-bold text-right tabular-nums">{{ row.total_invoiced | money: displayCurrency(row.currency) }}</td>
                     </ng-container>
                     <tr mat-header-row *matHeaderRowDef="revColumns" class="bg-surface-base/50"></tr>
                     <tr mat-row *matRowDef="let row; columns: revColumns;" class="border-border-default hover:bg-surface/40 transition-colors"></tr>
@@ -983,15 +997,15 @@ import {
                 <div class="rounded-lg border border-border-default bg-surface-raised p-4 text-sm">
                   <div class="flex items-center justify-between py-1">
                     <span class="text-text-muted">Beginning cash</span>
-                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.beginning_cash | money }}</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.beginning_cash | money: reportCurrency() }}</span>
                   </div>
                   <div class="flex items-center justify-between py-1">
                     <span class="text-text-muted">Net cash change</span>
-                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.net_change_in_cash | money }}</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.net_change_in_cash | money: reportCurrency() }}</span>
                   </div>
                   <div class="mt-2 flex items-center justify-between border-t border-border-subtle pt-3 font-semibold">
                     <span class="text-text-primary">Ending cash</span>
-                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.ending_cash | money }}</span>
+                    <span class="font-mono text-text-primary tabular-nums">{{ cashFlowData()!.ending_cash | money: reportCurrency() }}</span>
                   </div>
                 </div>
               }
@@ -1049,15 +1063,15 @@ import {
                   <div class="grid divide-y divide-border-subtle p-4 md:grid-cols-3 md:divide-x md:divide-y-0">
                     <div class="pb-3 md:pb-0 md:pr-4">
                       <p class="text-xs uppercase tracking-wide text-text-muted">Output Tax</p>
-                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_output_tax_payable_balance | money }}</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_output_tax_payable_balance | money: reportCurrency() }}</p>
                     </div>
                     <div class="py-3 md:px-4 md:py-0">
                       <p class="text-xs uppercase tracking-wide text-text-muted">Input Tax</p>
-                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_input_tax_recoverable_balance | money }}</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_input_tax_recoverable_balance | money: reportCurrency() }}</p>
                     </div>
                     <div class="pt-3 md:pl-4 md:pt-0">
                       <p class="text-xs uppercase tracking-wide text-text-muted">Net Tax</p>
-                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_net_tax_payable | money }}</p>
+                      <p class="mt-1 font-mono text-lg font-semibold text-text-primary tabular-nums">{{ statutoryPackData()!.tax_summary.ledger_net_tax_payable | money: reportCurrency() }}</p>
                     </div>
                   </div>
                   <div class="overflow-x-auto border-t border-border-subtle">
@@ -1074,9 +1088,9 @@ import {
                         @for (bucket of statutoryPackData()!.tax_summary.transaction_currency_buckets; track bucket.currency) {
                           <tr>
                             <td class="px-4 py-2.5 text-text-secondary">{{ bucket.currency }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.output_tax_collected | money }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.input_tax_recoverable | money }}</td>
-                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.net_tax_payable | money }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.output_tax_collected | money: displayCurrency(bucket.currency) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.input_tax_recoverable | money: displayCurrency(bucket.currency) }}</td>
+                            <td class="px-4 py-2.5 text-right font-mono text-text-primary tabular-nums">{{ bucket.net_tax_payable | money: displayCurrency(bucket.currency) }}</td>
                           </tr>
                         } @empty {
                           <tr>
@@ -1164,10 +1178,10 @@ import {
                             </span>
                           </td>
                           <td class="py-2.5 px-4 text-right font-mono text-slate-200 tabular-nums">
-                            {{ line.total_dr !== '0.00' ? (line.total_dr | money) : '&mdash;' }}
+                            {{ line.total_dr !== '0.00' ? (line.total_dr | money: reportCurrency()) : '&mdash;' }}
                           </td>
                           <td class="py-2.5 px-4 text-right font-mono text-slate-200 tabular-nums">
-                            {{ line.total_cr !== '0.00' ? (line.total_cr | money) : '&mdash;' }}
+                            {{ line.total_cr !== '0.00' ? (line.total_cr | money: reportCurrency()) : '&mdash;' }}
                           </td>
                         </tr>
                       }
@@ -1175,8 +1189,8 @@ import {
                     <tfoot>
                       <tr class="border-t-2 border-slate-600 font-semibold text-slate-200 bg-surface-base/30">
                         <td colspan="3" class="py-3 px-4 text-text-muted uppercase text-xs tracking-wide">Total</td>
-                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_dr | money }}</td>
-                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_cr | money }}</td>
+                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_dr | money: reportCurrency() }}</td>
+                        <td class="py-3 px-4 text-right font-mono tabular-nums">{{ tbData()!.grand_total_cr | money: reportCurrency() }}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -1234,7 +1248,7 @@ import {
     <ng-template #statementMetric let-label="label" let-value="value">
       <div class="rounded-lg border border-border-default bg-surface-raised p-4">
         <p class="text-xs uppercase tracking-wide text-text-muted">{{ label }}</p>
-        <p class="mt-1 font-mono text-xl font-semibold text-text-primary tabular-nums">{{ value | money }}</p>
+        <p class="mt-1 font-mono text-xl font-semibold text-text-primary tabular-nums">{{ value | money: reportCurrency() }}</p>
       </div>
     </ng-template>
 
@@ -1251,14 +1265,14 @@ import {
               <div class="grid grid-cols-[4rem_1fr_auto] items-center gap-3 px-4 py-2.5 text-sm">
                 <span class="font-mono text-xs text-text-muted">{{ line.account_code }}</span>
                 <span class="text-text-secondary">{{ line.account_name }}</span>
-                <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money }}</span>
+                <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money: reportCurrency() }}</span>
               </div>
             }
           }
         </div>
         <div class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm font-semibold">
           <span class="text-text-primary">{{ totalLabel }}</span>
-          <span class="font-mono text-text-primary tabular-nums">{{ total | money }}</span>
+          <span class="font-mono text-text-primary tabular-nums">{{ total | money: reportCurrency() }}</span>
         </div>
       </section>
     </ng-template>
@@ -1276,7 +1290,7 @@ import {
               <div class="px-4 py-2.5 text-sm">
                 <div class="flex items-start justify-between gap-3">
                   <span class="text-text-secondary">{{ line.description }}</span>
-                  <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money }}</span>
+                  <span class="font-mono text-text-primary tabular-nums">{{ line.amount | money: reportCurrency() }}</span>
                 </div>
                 @if (line.reference_type || line.period) {
                   <p class="mt-1 text-xs text-text-muted">
@@ -1289,35 +1303,41 @@ import {
         </div>
         <div class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm font-semibold">
           <span class="text-text-primary">Net cash</span>
-          <span class="font-mono text-text-primary tabular-nums">{{ total | money }}</span>
+          <span class="font-mono text-text-primary tabular-nums">{{ total | money: reportCurrency() }}</span>
         </div>
       </section>
     </ng-template>
 
     <!-- Aging metric cards -->
-    <ng-template #agingCards let-data>
-      <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
-        <div class="bg-surface-raised border border-border-default rounded-lg p-4">
-          <p class="text-xs text-text-muted uppercase tracking-wide mb-1">0–30 days</p>
-          <p class="text-xl font-bold text-text-primary font-mono">{{ data['0_30'] | money }}</p>
+    <ng-template #agingCards let-data let-report="report">
+      <section [attr.data-testid]="report.toLowerCase() + '-aging-cards'">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-5 mb-6">
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-1">0–30 days</p>
+            <p class="text-xl font-bold text-text-primary font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-0-30'">{{ data['0_30'] | money: reportCurrency() }}</p>
+          </div>
+          <div class="bg-surface-raised border border-confidence-med/40/50 rounded-lg p-4">
+            <p class="text-xs text-confidence-med uppercase tracking-wide mb-1">31–60 days</p>
+            <p class="text-xl font-bold text-confidence-med font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-31-60'">{{ data['31_60'] | money: reportCurrency() }}</p>
+          </div>
+          <div class="bg-surface-raised border border-orange-700/50 rounded-lg p-4">
+            <p class="text-xs text-orange-400 uppercase tracking-wide mb-1">61–90 days</p>
+            <p class="text-xl font-bold text-orange-400 font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-61-90'">{{ data['61_90'] | money: reportCurrency() }}</p>
+          </div>
+          <div class="bg-surface-raised border border-red-700/50 rounded-lg p-4">
+            <p class="text-xs text-confidence-low uppercase tracking-wide mb-1">90+ days</p>
+            <p class="text-xl font-bold text-confidence-low font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-over-90'">{{ data['over_90'] | money: reportCurrency() }}</p>
+          </div>
+          <div class="bg-surface-raised border border-border-default rounded-lg p-4">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-1">Unallocated GL</p>
+            <p class="text-xl font-bold text-text-primary font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-unallocated'">{{ (data.unallocated || '0.00') | money: reportCurrency() }}</p>
+          </div>
         </div>
-        <div class="bg-surface-raised border border-confidence-med/40/50 rounded-lg p-4">
-          <p class="text-xs text-confidence-med uppercase tracking-wide mb-1">31–60 days</p>
-          <p class="text-xl font-bold text-confidence-med font-mono">{{ data['31_60'] | money }}</p>
+        <div class="bg-surface-raised border border-border-default rounded-lg p-4 flex items-center justify-between">
+          <p class="text-sm text-text-muted uppercase tracking-wide font-medium">Total open {{ report }} · {{ reportCurrency() }} base currency</p>
+          <p class="text-3xl font-bold text-text-primary font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-total'">{{ data.total | money: reportCurrency() }}</p>
         </div>
-        <div class="bg-surface-raised border border-orange-700/50 rounded-lg p-4">
-          <p class="text-xs text-orange-400 uppercase tracking-wide mb-1">61–90 days</p>
-          <p class="text-xl font-bold text-orange-400 font-mono">{{ data['61_90'] | money }}</p>
-        </div>
-        <div class="bg-surface-raised border border-red-700/50 rounded-lg p-4">
-          <p class="text-xs text-confidence-low uppercase tracking-wide mb-1">90+ days</p>
-          <p class="text-xl font-bold text-confidence-low font-mono">{{ data['over_90'] | money }}</p>
-        </div>
-      </div>
-      <div class="bg-surface-raised border border-border-default rounded-lg p-4 flex items-center justify-between">
-        <p class="text-sm text-text-muted uppercase tracking-wide font-medium">Total Outstanding</p>
-        <p class="text-3xl font-bold text-text-primary font-mono">{{ data.total | money }}</p>
-      </div>
+      </section>
     </ng-template>
 
     <!-- Aging skeleton -->
@@ -1411,6 +1431,10 @@ import {
 })
 export class ReportsComponent implements OnInit {
   private svc = inject(ReportsService);
+
+  accountingContextLoading = signal(false);
+  accountingContextError = signal(false);
+  baseCurrency = signal<string | null>(null);
 
   // AR Aging
   arLoading = signal(false);
@@ -1546,6 +1570,7 @@ export class ReportsComponent implements OnInit {
   readonly revColumns = ['engagement_id', 'total_invoiced'];
 
   ngOnInit(): void {
+    this.loadAccountingContext();
     this.loadAr();
     this.loadAp();
     this.loadPnl();
@@ -1554,6 +1579,40 @@ export class ReportsComponent implements OnInit {
     this.loadRevenue();
     this.loadFinancialStatements();
     this.loadTrialBalance();
+  }
+
+  loadAccountingContext(): void {
+    this.accountingContextLoading.set(true);
+    this.accountingContextError.set(false);
+    this.svc.getAccountingContext().subscribe({
+      next: (context: TenantAccountingContext) => {
+        const currency = context.base_currency?.trim().toUpperCase();
+        if (!currency || !/^[A-Z]{3}$/.test(currency)) {
+          this.baseCurrency.set(null);
+          this.accountingContextError.set(true);
+        } else {
+          this.baseCurrency.set(currency);
+        }
+        this.accountingContextLoading.set(false);
+      },
+      error: () => {
+        this.baseCurrency.set(null);
+        this.accountingContextError.set(true);
+        this.accountingContextLoading.set(false);
+      },
+    });
+  }
+
+  /** A neutral marker avoids silently mislabelling base-currency values as USD. */
+  reportCurrency(): string {
+    return this.baseCurrency() ?? 'XXX';
+  }
+
+  /** Preserve a valid transaction currency; otherwise use the verified tenant base. */
+  displayCurrency(currency: string | null | undefined): string {
+    if (!currency) return this.reportCurrency();
+    const normalised = currency.trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(normalised) ? normalised : 'XXX';
   }
 
   onTabChanged(index: number): void {

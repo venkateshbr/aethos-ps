@@ -349,6 +349,7 @@ def test_settle_batch_posts_ap_clearing_journal(mock_db: MagicMock) -> None:
         "id": "batch-settle-001",
         "status": "sent_to_bank",
         "currency": "USD",
+        "pay_date": "2026-04-28",
         "items": [
             {
                 "id": "item-001",
@@ -391,6 +392,7 @@ def test_settle_batch_posts_ap_clearing_journal(mock_db: MagicMock) -> None:
     call_kwargs = mock_post.call_args.kwargs
     assert call_kwargs["reference_type"] == "bill_payment"
     assert call_kwargs["reference_id"] == "11111111-1111-1111-1111-111111111111"
+    assert call_kwargs["entry_date"] == "2026-04-28"
     lines = call_kwargs["lines"]
     assert lines[0].direction == "DR"
     assert lines[0].account_code == "2000"

@@ -1,7 +1,8 @@
-"""FX rate service — tenant-scoped lookup with staleness detection.
+"""FX rate service — tenant-scoped lookup with immutable provenance.
 
-Wraps the domain-level ``get_fx_rate`` helper and adds:
-- Staleness flag (rate age > 72 hours → stale=True)
+Wraps the domain-level ``get_fx_rate_record`` helper and adds:
+- requested-date versus matched-date staleness
+- immutable row id and source provenance
 - Endpoint-friendly response dict
 """
 
@@ -10,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime
 
-from app.domain.fx import get_fx_rate
+from app.domain.fx import get_fx_rate_record
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,9 @@ async def get_fx_rate_with_staleness(
     Returns
     -------
     dict with keys:
-        from_currency, to_currency, rate (str), refreshed_at (ISO str), stale (bool)
+        from_currency, to_currency, rate (str), refreshed_at (ISO str), stale
+        (bool), requested_rate_date (ISO date), rate_date (matched ISO date),
+        fx_rate_id (immutable row id or None), source, and staleness_days.
 
     Raises
     ------
@@ -46,7 +49,7 @@ async def get_fx_rate_with_staleness(
     from_currency = from_currency.upper()
     to_currency = to_currency.upper()
 
-    rate = await get_fx_rate(from_currency, to_currency, rate_date, db)
+    record = await get_fx_rate_record(from_currency, to_currency, rate_date, db)
 
     # Fetch the rate row to get refreshed_at / rate_date. The migration only
     # guarantees created_at on fx_rates; fetched_at may exist in newer DBs, but
@@ -71,6 +74,9 @@ async def get_fx_rate_with_staleness(
     except (ValueError, AttributeError):
         refreshed_at = datetime.now(UTC)
 
+    staleness_days = max((rate_date - record.rate_date).days, 0)
+    # Preserve the legacy response contract: ``stale`` describes source-row
+    # refresh age. Historical requested-vs-matched lag is ``staleness_days``.
     stale = is_stale(refreshed_at)
     if stale:
         logger.warning(
@@ -83,7 +89,12 @@ async def get_fx_rate_with_staleness(
     return {
         "from_currency": from_currency,
         "to_currency": to_currency,
-        "rate": str(rate),
+        "rate": str(record.rate),
         "refreshed_at": refreshed_at.isoformat(),
         "stale": stale,
+        "requested_rate_date": rate_date.isoformat(),
+        "rate_date": record.rate_date.isoformat(),
+        "fx_rate_id": record.id,
+        "source": record.source or "unknown",
+        "staleness_days": staleness_days,
     }

@@ -9,7 +9,9 @@ Tests:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -144,3 +146,62 @@ async def test_get_fx_rate_with_staleness_fresh_rate() -> None:
 
     assert result["stale"] is False
     assert result["rate"] == "0.79"
+
+
+@pytest.mark.asyncio
+async def test_historical_lookup_returns_immutable_rate_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import date
+
+    from app.services import fx_rate_service
+
+    db = MagicMock()
+    table_chain = MagicMock()
+    db.table.return_value = table_chain
+    table_chain.select.return_value = table_chain
+    table_chain.eq.return_value = table_chain
+    table_chain.lte.return_value = table_chain
+    table_chain.order.return_value = table_chain
+    table_chain.limit.return_value = table_chain
+    refreshed_at = (datetime.now(UTC) - timedelta(hours=12)).isoformat()
+    metadata = MagicMock()
+    metadata.data = [{"created_at": refreshed_at}]
+    table_chain.execute.return_value = metadata
+
+    record_lookup = AsyncMock(
+        return_value=SimpleNamespace(
+            from_currency="USD",
+            to_currency="SGD",
+            rate_date=date(2026, 5, 30),
+            rate=Decimal("1.350000"),
+            id="fx-usd-sgd-2026-05-30",
+            source="openexchangerates",
+        )
+    )
+    monkeypatch.setattr(
+        fx_rate_service,
+        "get_fx_rate_record",
+        record_lookup,
+        raising=False,
+    )
+    result = await fx_rate_service.get_fx_rate_with_staleness(
+        "usd",
+        "sgd",
+        date(2026, 5, 31),
+        db,
+    )
+
+    record_lookup.assert_awaited_once_with("USD", "SGD", date(2026, 5, 31), db)
+    assert result == {
+        "from_currency": "USD",
+        "to_currency": "SGD",
+        "rate": "1.350000",
+        "refreshed_at": refreshed_at,
+        "stale": False,
+        "requested_rate_date": "2026-05-31",
+        "rate_date": "2026-05-30",
+        "fx_rate_id": "fx-usd-sgd-2026-05-30",
+        "source": "openexchangerates",
+        "staleness_days": 1,
+    }

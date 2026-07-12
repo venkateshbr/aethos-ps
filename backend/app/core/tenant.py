@@ -14,8 +14,10 @@ Two layers cooperate:
 2. ``get_tenant_id`` FastAPI dependency — runs only on protected routes that
    inject it. It decodes the JWT (via ``get_current_user``), then verifies
    the JWT subject is an active member of the claimed tenant by querying
-   ``tenant_users``. Raises 401 (no JWT) / 403 (no header) / 404 (not a
-   member, or soft-deleted membership).
+   ``tenant_users``. The verified membership role also keeps legacy
+   ``employee`` accounts inside the Timesheet Portal API. Raises 401 (no JWT)
+   / 403 (no header or employee ERP access) / 404 (not a member, or
+   soft-deleted membership).
 
 Why a dependency rather than middleware:
 
@@ -96,6 +98,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 _VERIFIED_TENANT_STATE_KEY = "_aethos_verified_tenant_id"
 _VERIFIED_TENANT_ROLE_STATE_KEY = "_aethos_verified_tenant_role"
 _VERIFIED_TENANT_MUST_CHANGE_PASSWORD_STATE_KEY = "_aethos_verified_tenant_must_change_password"
+_VERIFIED_TENANT_ACCESS_STATE_KEY = "_aethos_verified_tenant_access_checked"
 
 _PASSWORD_CHANGE_ALLOWED_PATHS = frozenset(
     {
@@ -103,6 +106,23 @@ _PASSWORD_CHANGE_ALLOWED_PATHS = frozenset(
         "/api/v1/security/me/permissions",
     }
 )
+
+_EMPLOYEE_ALLOWED_PATHS = frozenset(
+    {
+        "/api/v1/auth/complete-password-change",
+        "/api/v1/security/me/permissions",
+    }
+)
+_EMPLOYEE_TIMESHEET_PATH = "/api/v1/timesheet"
+
+
+def _employee_path_is_allowed(path: str) -> bool:
+    """Return whether a legacy employee may use this tenant-scoped path."""
+    return (
+        path in _EMPLOYEE_ALLOWED_PATHS
+        or path == _EMPLOYEE_TIMESHEET_PATH
+        or path.startswith(f"{_EMPLOYEE_TIMESHEET_PATH}/")
+    )
 
 
 def _lookup_active_membership(
@@ -213,7 +233,10 @@ def get_tenant_id(
     # Per-request memoization (defensive — Depends already dedupes)
     # ------------------------------------------------------------------
     cached: str | None = getattr(request.state, _VERIFIED_TENANT_STATE_KEY, None)
-    if cached is not None:
+    access_checked = bool(
+        getattr(request.state, _VERIFIED_TENANT_ACCESS_STATE_KEY, False)
+    )
+    if cached is not None and access_checked:
         return cached
 
     # ------------------------------------------------------------------
@@ -268,9 +291,18 @@ def get_tenant_id(
     # Also refresh the logging context var so subsequent log lines carry the
     # verified id (the middleware may have stashed an unverified header value).
     tenant_id_var.set(tenant_uuid)
+    if (
+        str(membership.get("role") or "").strip().lower() == "employee"
+        and not _employee_path_is_allowed(request.url.path)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="TIMESHEET_PORTAL_ONLY",
+        )
     if membership.get("must_change_password") and request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PASSWORD_CHANGE_REQUIRED",
         )
+    setattr(request.state, _VERIFIED_TENANT_ACCESS_STATE_KEY, True)
     return tenant_uuid

@@ -34,6 +34,8 @@ interface JournalLine {
   account_name?: string;
   amount: string;
   currency: string;
+  base_amount: string;
+  fx_rate_id?: string | null;
   description?: string | null;
 }
 
@@ -43,6 +45,7 @@ interface JournalEntry {
   description: string;
   reason?: string | null;
   entry_date: string;
+  period?: string;
   reference?: string | null;
   reference_type:
     | 'manual'
@@ -52,9 +55,11 @@ interface JournalEntry {
     | 'bill'
     | 'payment'
     | 'year_end_close';
-  posted_by?: string | null;
+  created_by?: string;
+  posted_by: string;
+  posted_at?: string;
   total_dr: string;
-  lines?: JournalLine[];
+  lines: JournalLine[];
 }
 
 interface ManualJournalPendingApproval {
@@ -68,7 +73,12 @@ interface ManualJournalPendingApproval {
   message: string;
 }
 
-type ManualJournalSubmitResponse = JournalEntry | ManualJournalPendingApproval;
+interface PostedJournalResponse {
+  id: string;
+  entry_number: string;
+}
+
+type ManualJournalSubmitResponse = PostedJournalResponse | ManualJournalPendingApproval;
 
 interface Account {
   id: string;
@@ -90,6 +100,20 @@ interface CloseTask {
   completed_by?: string | null;
   evidence: Record<string, unknown>;
   order_index: number;
+}
+
+interface AccountingPeriodStatus {
+  period: string;
+  locked: boolean;
+  locked_at: string | null;
+  locked_by: string | null;
+}
+
+interface PeriodLockActionResponse {
+  period: string;
+  action: 'locked' | 'unlocked';
+  message: string;
+  override_count: number;
 }
 
 interface CloseProposalResponse {
@@ -169,6 +193,11 @@ interface ClosePackage {
   readiness_evidence?: Record<string, Record<string, unknown>>;
   close_overrides?: CloseOverride[];
   variance_commentary: CloseVarianceComment[];
+}
+
+interface TenantAccountingContext {
+  tenant_id: string;
+  base_currency: string;
 }
 
 interface CloseReadinessArea {
@@ -322,6 +351,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
                 type="month"
                 [value]="closePeriod()"
                 (change)="selectClosePeriod($event)"
+                [disabled]="periodAction() !== null"
                 aria-label="Close period"
                 class="rounded border border-border-default bg-surface-base px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
@@ -350,6 +380,101 @@ type FilterChip = 'all' | 'manual' | 'auto';
             }
           </div>
         </div>
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border-default bg-surface-base/40"
+          aria-label="Period close status"
+        >
+          @if (periodStatusesLoading()) {
+            <p class="text-xs text-text-muted" role="status">Loading period status…</p>
+          } @else if (periodStatusesError()) {
+            <p class="text-xs text-confidence-low" role="alert">{{ periodStatusesError() }}</p>
+          } @else {
+            @if (selectedPeriodStatus(); as periodStatus) {
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="font-mono text-text-primary">{{ periodStatus.period }}</span>
+                <span
+                  class="rounded px-2 py-0.5 font-medium"
+                  [class]="periodStatus.locked
+                    ? 'bg-confidence-med/15 text-confidence-med'
+                    : 'bg-accent/15 text-accent-light'"
+                >{{ periodStatus.locked ? 'Locked' : 'Open' }}</span>
+                @if (periodStatus.locked && periodStatus.locked_by) {
+                  <span class="text-text-muted">by {{ periodStatus.locked_by }}</span>
+                }
+                @if (periodStatus.locked && periodStatus.locked_at) {
+                  <span class="text-text-disabled">· {{ formatPeriodLockTimestamp(periodStatus.locked_at) }}</span>
+                }
+              </div>
+              <div class="flex items-center gap-2">
+                @if (!periodStatus.locked && canClose()) {
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-accent-on transition-colors hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    (click)="requestPeriodActionConfirmation('lock')"
+                    [disabled]="periodAction() !== null"
+                  >
+                    <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">lock</mat-icon>
+                    Lock period
+                  </button>
+                }
+                @if (periodStatus.locked && canUnlock()) {
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded border border-confidence-med/40 bg-confidence-med/10 px-3 py-1.5 text-xs font-medium text-confidence-med transition-colors hover:bg-confidence-med/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-med"
+                    (click)="requestPeriodActionConfirmation('unlock')"
+                    [disabled]="periodAction() !== null"
+                  >
+                    <mat-icon class="text-sm leading-none" style="font-size:1rem;width:1rem;height:1rem;">lock_open</mat-icon>
+                    Unlock period
+                  </button>
+                }
+              </div>
+            } @else {
+              <p class="text-xs text-text-muted">{{ closePeriod() }} · Status unavailable</p>
+            }
+          }
+        </div>
+        @if (periodConfirmation(); as action) {
+          <div
+            class="border-b border-confidence-med/30 bg-confidence-med/10 px-4 py-4"
+            role="alertdialog"
+            aria-modal="false"
+            aria-labelledby="period-action-confirmation-title"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 id="period-action-confirmation-title" class="text-sm font-semibold text-text-primary">
+                  {{ action === 'lock' ? 'Lock' : 'Unlock' }} {{ closePeriod() }}?
+                </h3>
+                <p class="mt-1 text-xs text-text-muted">
+                  @if (action === 'lock') {
+                    New journal entries dated in this period will be blocked after reconciliation checks pass.
+                  } @else {
+                    New journal entries can be posted into this previously closed period. Unlocking is owner-only and audited.
+                  }
+                </p>
+              </div>
+              <div class="flex items-center gap-2 flex-none">
+                <button
+                  type="button"
+                  class="rounded px-3 py-1.5 text-xs text-text-muted transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  (click)="cancelPeriodActionConfirmation()"
+                >Cancel</button>
+                <button
+                  type="button"
+                  class="rounded bg-confidence-med px-3 py-1.5 text-xs font-medium text-slate-950 transition-colors hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-confidence-med"
+                  [disabled]="periodAction() !== null"
+                  (click)="confirmPeriodAction()"
+                >Confirm {{ action }}</button>
+              </div>
+            </div>
+          </div>
+        }
+        @if (periodActionError()) {
+          <div class="border-b border-border-default px-4 py-3 text-sm text-confidence-low" role="alert">
+            {{ periodActionError() }}
+          </div>
+        }
         @if (closePackageError()) {
           <div class="px-4 py-3 text-sm text-confidence-low border-b border-border-default" role="alert">{{ closePackageError() }}</div>
         }
@@ -358,22 +483,26 @@ type FilterChip = 'all' | 'manual' | 'auto';
             <div class="grid gap-3 md:grid-cols-3 mb-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-text-muted">Net income</p>
-                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('gl_summary', 'net_income') | money }}</p>
-                <p class="text-xs text-text-disabled">Prior {{ closePackageValue('previous_gl_summary', 'net_income') | money }}</p>
+                <p class="text-sm font-mono text-text-primary">{{ closePackageValue('gl_summary', 'net_income') | money: closePackageCurrency() }}</p>
+                <p class="text-xs text-text-disabled">Prior {{ closePackageValue('previous_gl_summary', 'net_income') | money: closePackageCurrency() }}</p>
               </div>
               <div>
-                <p class="text-xs uppercase tracking-wide text-text-muted">Open AR/AP</p>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Period-end AR/AP</p>
                 <p class="text-sm font-mono text-text-primary">
-                  {{ closePackageValue('working_capital', 'ar_open_total') | money }}
+                  {{ closePackageValue('working_capital', 'ar_open_total') | money: closePackageCurrency() }}
                   /
-                  {{ closePackageValue('working_capital', 'ap_open_total') | money }}
+                  {{ closePackageValue('working_capital', 'ap_open_total') | money: closePackageCurrency() }}
                 </p>
-                <p class="text-xs text-text-disabled">AR / AP exposure</p>
+                <p class="text-xs text-text-disabled">
+                  {{ closePackageCurrency() }} base-currency GL · as of {{ closePackageValue('working_capital', 'as_of_date') }}
+                </p>
               </div>
               <div>
-                <p class="text-xs uppercase tracking-wide text-text-muted">WIP</p>
+                <p class="text-xs uppercase tracking-wide text-text-muted">Estimated WIP at period end</p>
                 <p class="text-sm font-mono text-text-primary">{{ closePackageValue('working_capital', 'wip_total') | money }}</p>
-                <p class="text-xs text-text-disabled">Generated {{ closePackage()!.generated_at.slice(0, 10) }}</p>
+                <p class="text-xs text-text-disabled">
+                  Approved time · current rate card · as of {{ closePackageValue('working_capital', 'as_of_date') }}
+                </p>
               </div>
             </div>
             @if (closeReadinessAreas().length) {
@@ -715,6 +844,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <table
             mat-table
             [dataSource]="filteredEntries()"
+            multiTemplateDataRows
             class="w-full bg-surface-base"
             aria-label="Journal entries"
           >
@@ -800,16 +930,21 @@ type FilterChip = 'all' | 'manual' | 'auto';
               </th>
               <td mat-cell *matCellDef="let row"
                   class="px-4 py-3 border-b border-border-subtle w-12">
-                <button
-                  type="button"
-                  class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
-                  [attr.aria-label]="expandedRow() === row.id ? 'Collapse journal lines' : 'Expand journal lines'"
-                  (click)="toggleRow($event, row.id)"
-                >
-                  <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">
-                    {{ expandedRow() === row.id ? 'expand_less' : 'expand_more' }}
-                  </mat-icon>
-                </button>
+                @if (hasLineDetails(row)) {
+                  <button
+                    type="button"
+                    data-testid="journal-expand-toggle"
+                    [attr.data-journal-id]="row.id"
+                    [attr.data-journal-entry-number]="row.entry_number"
+                    class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+                    [attr.aria-label]="expandedRow() === row.id ? 'Collapse journal lines' : 'Expand journal lines'"
+                    (click)="toggleRow($event, row)"
+                  >
+                    <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">
+                      {{ expandedRow() === row.id ? 'expand_less' : 'expand_more' }}
+                    </mat-icon>
+                  </button>
+                }
               </td>
             </ng-container>
 
@@ -818,27 +953,49 @@ type FilterChip = 'all' | 'manual' | 'auto';
               <td mat-cell *matCellDef="let row"
                   [attr.colspan]="displayedColumns.length"
                   class="p-0 border-b border-border-default bg-surface-raised">
-                @if (expandedRow() === row.id) {
-                  <div class="px-6 py-4">
+                  <div
+                    class="px-6 py-4"
+                    [class.hidden]="!hasLineDetails(row) || expandedRow() !== row.id"
+                  >
                     @if (row.reason) {
                       <div class="mb-3 border-l-2 border-border-subtle bg-surface px-3 py-2">
                         <p class="text-xs uppercase tracking-wide text-text-muted">Business reason</p>
                         <p class="mt-1 text-sm text-text-primary">{{ row.reason }}</p>
                       </div>
                     }
-                    @if (row.lines && row.lines.length > 0) {
-                      <table class="w-full text-sm" [attr.aria-label]="'Journal lines for ' + row.entry_number">
+                    @if (hasLineDetails(row)) {
+                      <table
+                        class="w-full text-sm"
+                        data-testid="journal-lines"
+                        [attr.data-journal-id]="row.id"
+                        [attr.data-journal-entry-number]="row.entry_number"
+                        [attr.data-journal-reference]="row.reference"
+                        [attr.aria-label]="'Journal lines for ' + row.entry_number"
+                      >
                         <thead>
                           <tr class="text-text-muted text-xs uppercase tracking-wide border-b border-border-subtle">
                             <th scope="col" class="text-left py-2 pr-4 w-8">D/C</th>
                             <th scope="col" class="text-left py-2 pr-4">Account</th>
-                            <th scope="col" class="text-right py-2 pr-4 w-36">Amount</th>
+                            <th scope="col" class="text-right py-2 pr-4 w-36">Transaction</th>
+                            <th scope="col" class="text-left py-2 pr-4">Base / FX</th>
                             <th scope="col" class="text-left py-2">Note</th>
                           </tr>
                         </thead>
                         <tbody>
                           @for (line of row.lines; track line.id) {
-                            <tr class="border-b border-border-subtle last:border-0">
+                            <tr
+                              class="border-b border-border-subtle last:border-0"
+                              data-testid="journal-line"
+                              [attr.data-journal-id]="row.id"
+                              [attr.data-journal-line-id]="line.id"
+                              [attr.data-direction]="line.direction"
+                              [attr.data-account-id]="line.account_id"
+                              [attr.data-account-code]="line.account_code"
+                              [attr.data-amount]="line.amount"
+                              [attr.data-currency]="line.currency"
+                              [attr.data-base-amount]="line.base_amount"
+                              [attr.data-fx-rate-id]="line.fx_rate_id"
+                            >
                               <td class="py-2 pr-4">
                                 <span class="font-mono text-xs font-bold"
                                       [class]="line.direction === 'DR' ? 'text-blue-400' : 'text-emerald-400'">
@@ -847,12 +1004,20 @@ type FilterChip = 'all' | 'manual' | 'auto';
                               </td>
                               <td class="py-2 pr-4 text-text-secondary">
                                 @if (line.account_code) {
-                                  <span class="font-mono text-xs text-text-muted mr-2">{{ line.account_code }}</span>
+                                  <span data-testid="journal-line-account-code" class="font-mono text-xs text-text-muted mr-2">{{ line.account_code }}</span>
                                 }
                                 {{ line.account_name ?? line.account_id }}
                               </td>
                               <td class="py-2 pr-4 text-right font-mono text-text-primary tabular-nums">
-                                {{ line.amount | money: line.currency }}
+                                {{ line.currency }} {{ line.amount }}
+                              </td>
+                              <td class="py-2 pr-4 text-xs text-text-muted">
+                                <span data-testid="journal-line-base-amount" class="font-mono tabular-nums">Base {{ line.base_amount }}</span>
+                                @if (line.fx_rate_id) {
+                                  <span data-testid="journal-line-fx-rate-id" class="ml-2 font-mono">FX {{ line.fx_rate_id }}</span>
+                                } @else {
+                                  <span class="ml-2">No FX conversion</span>
+                                }
                               </td>
                               <td class="py-2 text-text-muted text-xs">
                                 {{ line.description ?? '—' }}
@@ -861,12 +1026,11 @@ type FilterChip = 'all' | 'manual' | 'auto';
                           }
                         </tbody>
                       </table>
-                    } @else {
-                      <p class="text-text-disabled text-xs">No line detail available.</p>
                     }
-                    <app-decision-timeline entityType="journal_entry" [entityId]="row.id" title="Journal approval timeline" />
-                    @if (canPost() && row.reference_type === 'manual') {
-                      <div class="mt-4 border-t border-border-subtle pt-3">
+                    @if (expandedRow() === row.id) {
+                      <app-decision-timeline entityType="journal_entry" [entityId]="row.id" title="Journal approval timeline" />
+                      @if (canPost() && row.reference_type === 'manual') {
+                        <div class="mt-4 border-t border-border-subtle pt-3">
                         @if (reversalRowId() !== row.id) {
                           <button
                             type="button"
@@ -922,23 +1086,31 @@ type FilterChip = 'all' | 'manual' | 'auto';
                             <p class="mt-1 text-xs text-confidence-low" role="alert">{{ reversalError() }}</p>
                           }
                         }
-                      </div>
+                        </div>
+                      }
                     }
                   </div>
-                }
               </td>
             </ng-container>
 
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row
                 *matRowDef="let row; columns: displayedColumns"
-                class="hover:bg-surface-raised transition-colors cursor-pointer"
-                (click)="toggleRow($event, row.id)"
-                [attr.aria-expanded]="expandedRow() === row.id"
+                data-testid="journal-entry-row"
+                [attr.data-journal-id]="row.id"
+                [attr.data-journal-entry-number]="row.entry_number"
+                [attr.data-journal-reference]="row.reference"
+                [attr.data-reference-type]="row.reference_type"
+                class="hover:bg-surface-raised transition-colors"
+                [class.cursor-pointer]="hasLineDetails(row)"
+                (click)="toggleRow($event, row)"
+                [attr.aria-expanded]="hasLineDetails(row) ? expandedRow() === row.id : null"
             ></tr>
             <tr mat-row
-                *matRowDef="let row; columns: ['expandedDetail']; when: isExpandedRow"
+                *matRowDef="let row; columns: ['expandedDetail']"
                 class="detail-row"
+                [class.hidden]="!hasLineDetails(row) || expandedRow() !== row.id"
+                [attr.aria-hidden]="!hasLineDetails(row) || expandedRow() !== row.id"
             ></tr>
           </table>
         </div>
@@ -1049,6 +1221,27 @@ type FilterChip = 'all' | 'manual' | 'auto';
                   placeholder="e.g. Month-end accrual"
                 />
               </div>
+            </div>
+
+            <div>
+              <label for="jnl-currency" class="block text-xs uppercase tracking-wide text-text-muted mb-2">
+                Journal currency <span class="text-confidence-low">*</span>
+              </label>
+              @if (accountingContextLoading()) {
+                <p class="text-sm text-text-muted" role="status">Loading tenant base currency…</p>
+              } @else if (accountingContextError()) {
+                <p class="text-sm text-confidence-low" role="alert">{{ accountingContextError() }}</p>
+              } @else {
+                <input
+                  id="jnl-currency"
+                  type="text"
+                  formControlName="currency"
+                  readonly
+                  aria-label="Manual journal currency"
+                  class="w-32 px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary uppercase font-mono focus:outline-none"
+                />
+                <p class="mt-1 text-xs text-text-disabled">Verified tenant base currency</p>
+              }
             </div>
           } @else {
             <div class="grid grid-cols-2 gap-4">
@@ -1237,12 +1430,12 @@ type FilterChip = 'all' | 'manual' | 'auto';
             <div class="flex items-center gap-4">
               <span class="text-text-muted">DR Total</span>
               <span class="font-mono font-semibold text-text-primary tabular-nums">
-                {{ drTotal() | money }}
+                {{ drTotal() | money: composerCurrency() }}
               </span>
               <span class="text-text-disabled mx-1">=</span>
               <span class="text-text-muted">CR Total</span>
               <span class="font-mono font-semibold text-text-primary tabular-nums">
-                {{ crTotal() | money }}
+                {{ crTotal() | money: composerCurrency() }}
               </span>
             </div>
             @if (isBalanced()) {
@@ -1279,7 +1472,7 @@ type FilterChip = 'all' | 'manual' | 'auto';
           <button
             type="button"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            [disabled]="!isBalanced() || journalForm.invalid || submitting()"
+            [disabled]="!isBalanced() || journalForm.invalid || !tenantBaseCurrency() || submitting()"
             (click)="formMode() === 'recurring' ? submitRecurringTemplate() : submitJournal()"
           >
             @if (submitting()) {
@@ -1331,6 +1524,12 @@ export class JournalEntriesListComponent implements OnInit {
   closeTasksLoading = signal(false);
   closeTasksError = signal<string | null>(null);
   closeTaskAction = signal<string | null>(null);
+  periodStatuses = signal<AccountingPeriodStatus[]>([]);
+  periodStatusesLoading = signal(false);
+  periodStatusesError = signal<string | null>(null);
+  periodConfirmation = signal<'lock' | 'unlock' | null>(null);
+  periodAction = signal<'lock' | 'unlock' | null>(null);
+  periodActionError = signal<string | null>(null);
   closeProposalAction = signal<string | null>(null);
   closePackage = signal<ClosePackage | null>(null);
   closePackageLoading = signal(false);
@@ -1346,6 +1545,9 @@ export class JournalEntriesListComponent implements OnInit {
   closeYear = computed(() => this.closePeriod().slice(0, 4));
   completedCloseTasks = computed(() =>
     this.closeTasks().filter(task => ['done', 'waived'].includes(task.status)).length,
+  );
+  selectedPeriodStatus = computed(() =>
+    this.periodStatuses().find(status => status.period === this.closePeriod()) ?? null,
   );
 
   // RBAC: read role from localStorage (set by login flow).
@@ -1363,6 +1565,14 @@ export class JournalEntriesListComponent implements OnInit {
     try {
       const raw = localStorage.getItem('aethos_role');
       return raw === 'admin' || raw === 'owner';
+    } catch {
+      return false;
+    }
+  });
+
+  canUnlock = computed(() => {
+    try {
+      return localStorage.getItem('aethos_role') === 'owner';
     } catch {
       return false;
     }
@@ -1396,6 +1606,9 @@ export class JournalEntriesListComponent implements OnInit {
   showForm  = signal(false);
   submitting = signal(false);
   formError  = signal<string | null>(null);
+  tenantBaseCurrency = signal<string | null>(null);
+  accountingContextLoading = signal(false);
+  accountingContextError = signal<string | null>(null);
   successToast = signal<string | null>(null);
   reversalRowId = signal<string | null>(null);
   reversalAction = signal<string | null>(null);
@@ -1424,7 +1637,7 @@ export class JournalEntriesListComponent implements OnInit {
     start_period: ['', [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)]],
     end_period:   [''],
     schedule_day: [31, [Validators.required, Validators.min(1), Validators.max(31)]],
-    currency:     ['USD', [Validators.required, Validators.pattern(/^[A-Za-z]{3}$/)]],
+    currency:     ['', [Validators.required, Validators.pattern(/^[A-Za-z]{3}$/)]],
     lines: this.fb.array([
       this.buildLine(),
       this.buildLine('CR'),
@@ -1450,6 +1663,7 @@ export class JournalEntriesListComponent implements OnInit {
     this.loadEntries();
     this.loadCloseTasks();
     this.loadRecurringTemplates();
+    this.loadPeriodStatuses();
   }
 
   // ── List operations ──────────────────────────────────────────────────
@@ -1466,6 +1680,116 @@ export class JournalEntriesListComponent implements OnInit {
       error: (err: unknown) => {
         this.error.set(userMessageForError(err, 'Journal Entries'));
         this.loading.set(false);
+      },
+    });
+  }
+
+  loadPeriodStatuses(): void {
+    this.periodStatusesLoading.set(true);
+    this.periodStatusesError.set(null);
+    this.http.get<{ periods: AccountingPeriodStatus[] }>('/api/v1/accounting/periods').subscribe({
+      next: (res) => {
+        this.periodStatuses.set(res.periods ?? []);
+        this.periodStatusesLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.periodStatuses.set([]);
+        this.periodStatusesError.set(userMessageForError(err, 'Accounting Periods'));
+        this.periodStatusesLoading.set(false);
+      },
+    });
+  }
+
+  formatPeriodLockTimestamp(value: string): string {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return `${parsed.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  }
+
+  requestPeriodActionConfirmation(action: 'lock' | 'unlock'): void {
+    const status = this.selectedPeriodStatus();
+    const allowed = action === 'lock'
+      ? this.canClose() && status?.locked === false
+      : this.canUnlock() && status?.locked === true;
+    if (!allowed) return;
+    this.periodActionError.set(null);
+    this.periodConfirmation.set(action);
+  }
+
+  cancelPeriodActionConfirmation(): void {
+    this.periodConfirmation.set(null);
+  }
+
+  confirmPeriodAction(): void {
+    const action = this.periodConfirmation();
+    const status = this.selectedPeriodStatus();
+    const period = this.closePeriod();
+    const allowed = action === 'lock'
+      ? this.canClose() && status?.locked === false
+      : action === 'unlock' && this.canUnlock() && status?.locked === true;
+    if (!action || !allowed || this.periodAction()) return;
+
+    this.periodConfirmation.set(null);
+    this.periodActionError.set(null);
+    this.periodAction.set(action);
+
+    const observer = {
+      next: (response: PeriodLockActionResponse) => {
+        this.refreshPeriodStatusesAfterAction(response, period, action === 'lock');
+      },
+      error: (err: unknown) => {
+        this.periodActionError.set(
+          journalErrorMessage(err) ?? userMessageForError(err, `Period ${action}`),
+        );
+        this.periodAction.set(null);
+      },
+    };
+
+    if (action === 'lock') {
+      this.http.post<PeriodLockActionResponse>(
+        `/api/v1/accounting/periods/${period}/lock`,
+        {},
+      ).subscribe(observer);
+    } else {
+      this.http.delete<PeriodLockActionResponse>(
+        `/api/v1/accounting/periods/${period}/lock`,
+      ).subscribe(observer);
+    }
+  }
+
+  private refreshPeriodStatusesAfterAction(
+    response: PeriodLockActionResponse,
+    period: string,
+    expectedLocked: boolean,
+  ): void {
+    this.periodStatuses.set([]);
+    this.periodStatusesLoading.set(true);
+    this.periodStatusesError.set(null);
+    this.http.get<{ periods: AccountingPeriodStatus[] }>('/api/v1/accounting/periods').subscribe({
+      next: (res) => {
+        const statuses = res.periods ?? [];
+        const confirmed = statuses.find(status => status.period === period);
+        this.periodStatuses.set(statuses);
+        this.periodStatusesLoading.set(false);
+        this.periodAction.set(null);
+        if (!confirmed || confirmed.locked !== expectedLocked) {
+          this.periodActionError.set(
+            `${response.message} The refreshed period status did not confirm the change. Reload before taking another close action.`,
+          );
+          return;
+        }
+        this.successToast.set(response.message);
+        setTimeout(() => this.successToast.set(null), 5000);
+        if (this.closePackage()) this.loadClosePackage();
+      },
+      error: () => {
+        this.periodStatuses.set([]);
+        this.periodStatusesLoading.set(false);
+        this.periodStatusesError.set('Period status could not be refreshed.');
+        this.periodActionError.set(
+          `${response.message} Status refresh failed; reload before taking another close action.`,
+        );
+        this.periodAction.set(null);
       },
     });
   }
@@ -1504,6 +1828,8 @@ export class JournalEntriesListComponent implements OnInit {
     this.closePackage.set(null);
     this.closePackageError.set(null);
     this.closeOverrideError.set(null);
+    this.periodConfirmation.set(null);
+    this.periodActionError.set(null);
     this.yearEndCloseResult.set(null);
     this.yearEndCloseError.set(null);
     this.loadCloseTasks();
@@ -1665,17 +1991,21 @@ export class JournalEntriesListComponent implements OnInit {
     });
   }
 
-  toggleRow(event: Event, id: string): void {
-    // Don't toggle when clicking the button inside the row (it handles itself)
+  hasLineDetails(row: JournalEntry): boolean {
+    return Array.isArray(row.lines) && row.lines.length > 0;
+  }
+
+  toggleRow(event: Event, row: JournalEntry): void {
+    if (!this.hasLineDetails(row)) return;
+    // Ignore row actions, and prevent the explicit expand button click from
+    // bubbling into the row handler and immediately collapsing the same row.
     const target = event.target as HTMLElement;
     if (target.closest('button') && !target.closest('[aria-label*="Expand"]') && !target.closest('[aria-label*="Collapse"]')) {
       return;
     }
-    this.expandedRow.set(this.expandedRow() === id ? null : id);
+    event.stopPropagation();
+    this.expandedRow.set(this.expandedRow() === row.id ? null : row.id);
   }
-
-  /** Row predicate for the expandedDetail row definition. */
-  isExpandedRow = (_index: number, row: JournalEntry) => this.expandedRow() === row.id;
 
   // ── Form operations ─────────────────────────────────────────────────
   openForm(): void {
@@ -1690,7 +2020,7 @@ export class JournalEntriesListComponent implements OnInit {
       start_period: today.slice(0, 7),
       end_period: '',
       schedule_day: 31,
-      currency: 'USD',
+      currency: '',
     });
     // Clear lines array and add 2 fresh lines
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
@@ -1711,6 +2041,7 @@ export class JournalEntriesListComponent implements OnInit {
 
     // Load chart of accounts
     this.loadAccounts();
+    this.loadTenantAccountingContext();
     this.showForm.set(true);
   }
 
@@ -1725,7 +2056,7 @@ export class JournalEntriesListComponent implements OnInit {
       start_period: this.closePeriod(),
       end_period: '',
       schedule_day: 31,
-      currency: 'USD',
+      currency: '',
     });
     while (this.linesArray.length > 0) this.linesArray.removeAt(0);
     this.linesArray.push(this.buildLine('DR'));
@@ -1740,6 +2071,7 @@ export class JournalEntriesListComponent implements OnInit {
     this.filteredAccounts.set([]);
 
     this.loadAccounts();
+    this.loadTenantAccountingContext();
     this.showForm.set(true);
   }
 
@@ -1774,7 +2106,7 @@ export class JournalEntriesListComponent implements OnInit {
     const value = this.reversalForm.getRawValue();
     this.reversalAction.set(row.id);
     this.reversalError.set(null);
-    this.http.post<JournalEntry>(
+    this.http.post<PostedJournalResponse>(
       `/api/v1/accounting/journal-entries/${row.id}/reverse`,
       {
         entry_date: value.entry_date,
@@ -1782,7 +2114,7 @@ export class JournalEntriesListComponent implements OnInit {
       },
     ).subscribe({
       next: (created) => {
-        this.entries.update(list => [created, ...list]);
+        this.loadEntries();
         this.reversalAction.set(null);
         this.closeReversalForm();
         this.successToast.set(`Reversal ${created.entry_number} posted.`);
@@ -1804,6 +2136,38 @@ export class JournalEntriesListComponent implements OnInit {
       },
       error: () => { /* non-blocking — user sees no suggestions */ },
     });
+  }
+
+  loadTenantAccountingContext(): void {
+    this.tenantBaseCurrency.set(null);
+    this.accountingContextLoading.set(true);
+    this.accountingContextError.set(null);
+    this.http.get<TenantAccountingContext>('/api/v1/tenants/accounting-context').subscribe({
+      next: (context) => {
+        const currency = String(context.base_currency ?? '').trim().toUpperCase();
+        if (!/^[A-Z]{3}$/.test(currency)) {
+          this.accountingContextLoading.set(false);
+          this.accountingContextError.set('Tenant base currency is not configured.');
+          return;
+        }
+        this.tenantBaseCurrency.set(currency);
+        this.accountingContextLoading.set(false);
+        if (this.formMode() === 'journal' || !this.journalForm.controls.currency.value) {
+          this.journalForm.controls.currency.setValue(currency);
+        }
+      },
+      error: () => {
+        this.accountingContextLoading.set(false);
+        this.accountingContextError.set(
+          'Tenant base currency could not be verified. Close this panel and try again.',
+        );
+      },
+    });
+  }
+
+  composerCurrency(): string {
+    const value = this.journalForm.controls.currency.value.trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(value) ? value : 'USD';
   }
 
   buildLine(direction: 'DR' | 'CR' = 'DR') {
@@ -1895,6 +2259,11 @@ export class JournalEntriesListComponent implements OnInit {
   submitJournal(): void {
     this.recomputeTotals();
     if (!this.isBalanced()) return;
+    const baseCurrency = this.tenantBaseCurrency();
+    if (!baseCurrency) {
+      this.formError.set('Tenant base currency must be verified before posting.');
+      return;
+    }
     if (this.journalForm.invalid) {
       this.journalForm.markAllAsTouched();
       this.linesArray.controls.forEach(c => c.markAllAsTouched());
@@ -1914,6 +2283,7 @@ export class JournalEntriesListComponent implements OnInit {
         direction:   l.direction,
         account_id:  l.account_id,
         amount:      parseFloat(l.amount).toFixed(2),
+        currency:    baseCurrency,
         description: l.line_description || undefined,
       })),
     };
@@ -1929,7 +2299,7 @@ export class JournalEntriesListComponent implements OnInit {
           setTimeout(() => this.successToast.set(null), 5000);
           return;
         }
-        this.entries.update(list => [created, ...list]);
+        this.loadEntries();
         this.submitting.set(false);
         this.closeForm();
         this.successToast.set(`Journal ${created.entry_number} posted successfully.`);
@@ -1946,6 +2316,10 @@ export class JournalEntriesListComponent implements OnInit {
   submitRecurringTemplate(): void {
     this.recomputeTotals();
     if (!this.isBalanced()) return;
+    if (!this.tenantBaseCurrency()) {
+      this.formError.set('Tenant base currency must be verified before creating a template.');
+      return;
+    }
     if (this.journalForm.invalid) {
       this.journalForm.markAllAsTouched();
       this.linesArray.controls.forEach(c => c.markAllAsTouched());
@@ -2104,6 +2478,11 @@ export class JournalEntriesListComponent implements OnInit {
     const value = pkg?.[section]?.[key];
     if (value === null || value === undefined) return '0.00';
     return String(value);
+  }
+
+  closePackageCurrency(): string {
+    const value = String(this.closePackage()?.working_capital?.['base_currency'] ?? '').toUpperCase();
+    return /^[A-Z]{3}$/.test(value) ? value : 'USD';
   }
 
   varianceSeverityClass(severity: string | undefined): string {

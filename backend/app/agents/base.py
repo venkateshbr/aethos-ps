@@ -6,7 +6,6 @@ Never send un-masked text to an external LLM API.
 
 from __future__ import annotations
 
-import atexit
 import base64
 import logging
 import os
@@ -25,11 +24,16 @@ from supabase import Client
 logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - exercised through factory tests with monkeypatching.
+    from langfuse import get_client as LangfuseGetClient
     from langfuse.openai import AsyncOpenAI as LangfuseAsyncOpenAI
     from langfuse.openai import OpenAI as LangfuseOpenAI
 except Exception:  # pragma: no cover - dependency may be absent in old envs.
+    LangfuseGetClient = None  # type: ignore[assignment]
     LangfuseAsyncOpenAI = None  # type: ignore[assignment]
     LangfuseOpenAI = None  # type: ignore[assignment]
+
+
+_langfuse_client: Any | None = None
 
 
 @dataclass
@@ -158,15 +162,27 @@ async def resolve_model_chain(db: Client | object, tenant_id: str) -> list[str]:
 
 
 def flush_langfuse() -> None:
-    """Flush queued Langfuse events during process shutdown."""
-    if not _langfuse_available():
+    """Flush queued events only when this process initialized Langfuse."""
+    client = _langfuse_client
+    if client is None:
         return
     try:
-        from langfuse import get_client
-
-        get_client().flush()
+        client.flush()
     except Exception:
         logger.warning("langfuse_flush_failed", exc_info=True)
+
+
+def _initialise_langfuse_client() -> None:
+    """Remember the real SDK client before the first instrumented call.
+
+    Initializing here (during normal runtime) lets FastAPI flush an active
+    client without creating executor-backed SDK state during interpreter
+    teardown. Langfuse registers its own worker-process shutdown hook when this
+    client is created, so CLI workers retain graceful telemetry delivery.
+    """
+    global _langfuse_client
+    if _langfuse_client is None and LangfuseGetClient is not None:
+        _langfuse_client = LangfuseGetClient()
 
 
 def _langfuse_available() -> bool:
@@ -174,7 +190,7 @@ def _langfuse_available() -> bool:
         return False
     if not settings.langfuse_public_key or not settings.langfuse_secret_key:
         return False
-    if LangfuseAsyncOpenAI is None or LangfuseOpenAI is None:
+    if LangfuseGetClient is None or LangfuseAsyncOpenAI is None or LangfuseOpenAI is None:
         logger.warning("langfuse_sdk_missing")
         return False
 
@@ -301,6 +317,7 @@ class _InstrumentedCompletions:
         self._default_name = default_name
 
     def create(self, *args: Any, **kwargs: Any) -> Any:
+        _initialise_langfuse_client()
         return self._completions.create(
             *args,
             **_merge_langfuse_call_kwargs(
@@ -312,9 +329,6 @@ class _InstrumentedCompletions:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._completions, name)
-
-
-atexit.register(flush_langfuse)
 
 
 def build_document_content(

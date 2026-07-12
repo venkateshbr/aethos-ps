@@ -1,9 +1,11 @@
-# Ishantech Production End-to-End Runbook — 2026-07-11
+# Ishantech Production End-to-End Runbook — 2026-07-11 (updated 2026-07-12)
 
-Status: PREFLIGHT AND BRANCH VERIFICATION COMPLETE; PRODUCTION BROWSER
-EXECUTION BLOCKED. The required in-app Browser is not currently available, so
-production mutation remains NOT RUN and no Ishantech production tenant or
-business record has been created.
+Status: PREFLIGHT AND DEDICATED PLAYWRIGHT HARNESS COMPLETE; BRANCH RELEASE
+VERIFICATION IS BLOCKED AT THE UNAPPLIED MIGRATION-0102 GATE; EXACT-SHA
+DEPLOYMENT AND PRODUCTION EXECUTION PENDING. Production Ishantech mutation
+remains NOT RUN and no Ishantech production tenant or business record has been
+created. The run will use real Chromium UI automation in one recorded
+BrowserContext for the tenant; an in-app Browser is not required.
 
 Purpose: create a new fictional tenant through the public UI, exercise every
 configured tenant-visible role, run engagement-to-cash, procure-to-pay, and
@@ -20,7 +22,7 @@ not convert an expected result into PASS without primary evidence.
 | --- | --- | --- |
 | Production URL | https://aethos.ishirock.tech/ | Confirmed canonical host |
 | Run ID | ISH-E2E-20260711 | |
-| Execution date/timezone | 2026-07-11 / Asia/Singapore | Preflight and branch verification only; production browser run not started |
+| Execution date/timezone | 2026-07-12 / Asia/Singapore | Preflight and branch verification only; production browser run not started |
 | Test company | Ishantech Advisory Pte. Ltd. | |
 | Country/base currency | Singapore / SGD | |
 | Fiscal calendar | January–December | |
@@ -33,8 +35,8 @@ not convert an expected result into PASS without primary evidence.
 | Subscription/customer IDs | <redacted Stripe test-mode IDs> | |
 | Email provider mode | Test/sandbox; owned ishirock.tech aliases only | |
 | Stripe mode | Test mode only | |
-| Worker/version health | <URL, timestamp, result> | `/health/ready` 200; queue `ok` but `required:false`; deployed SHA not exposed |
-| Evidence root | docs/qa/ishantech-production-e2e-2026-07-11/ | |
+| Worker/version health | <URL, timestamp, result> | Current deployment `/health/ready` 200 but does not expose SHA. The release branch adds exact `build_sha`, required-queue, DB, and secret-free Stripe-mode proof; production execution is gated on those values. |
+| Evidence root | Redacted: docs/qa/ishantech-production-e2e-2026-07-11/; private recording: ishantech_e2e_private_evidence/ISH-E2E-20260711/ | |
 | GitHub issue/PR | #368 / <PR URL> | |
 
 Stop before signup if the browser origin differs from
@@ -49,29 +51,33 @@ cell below, and cannot change a production workflow from NOT RUN to PASS.
 
 | Check | Verified branch result | Remaining limit |
 | --- | --- | --- |
-| Backend unit/property and lint | `1084 passed, 2 expected xfails` ([#103](https://github.com/venkateshbr/aethos-ps/issues/103)); Ruff clean | One Starlette/httpx deprecation warning; branch-only, not deployed production evidence |
-| Real-stack API | `214 passed, 1 expected xfail` ([#95](https://github.com/venkateshbr/aethos-ps/issues/95)) in 422.35 seconds | 100 dependency deprecation warnings; API evidence is not production browser E2E |
-| Frontend unit/typecheck/build | `22/22` tests, including the robust SSE split-boundary regression; app, spec, and timesheet TypeScript typechecks; both production builds passed | Main bundle is 670.25 kB and triggers its budget warning; optional-chain and Sass warnings remain |
-| Clean full local Chromium release run (post-repair) | `151 passed, 2 production-only specs skipped, 0 failed, 0 flaky` in 13.5 minutes; teardown cleaned two run-scoped tenants | Primary local PASS; production-only specs and Ishantech production E2E remain NOT RUN |
-| Full local Chromium release run (pre-repair history) | `126 passed, 11 failed, 1 flaky, 3 skipped, 12 did not run` in 21.1 minutes | Superseded by the clean full result; retained as failure/repair history |
+| Backend unit/property and lint | `1226 passed, 2 expected xfails` ([#103](https://github.com/venkateshbr/aethos-ps/issues/103)); 79.56% exact coverage; Ruff clean | One Starlette/httpx deprecation warning; reporting agent and FX refresh worker have 0% unit coverage; branch-only, not deployed production evidence |
+| Real-stack API | Latest full run: `209 passed, 5 failed, 1 expected xfail` in 268.12 seconds; refreshed focused close-package and exact-denial checks passed afterward | Three approval tests intentionally return HTTP 503 until migration 0102 is deployed; 98 dependency warnings; API evidence is not production browser E2E |
+| Frontend unit/typecheck/build | `71/71` tests; app, spec, and timesheet TypeScript typechecks; both production builds passed | Main bundle is 671.43 kB and triggers its budget warning; optional-chain and Sass warnings remain |
+| Current full local Chromium release run | `128 passed, 18 failed, 3 skipped, 4 did not run` in 13.6 minutes; teardown verified two run-scoped tenants deleted | Twelve failures stop at migration 0102. Six deterministic mocks/labels were repaired and the affected enterprise suites passed `11/11`; full clean rerun requires the deployment migration. |
+| Prior clean local Chromium history | `151 passed, 2 production-only specs skipped, 0 failed, 0 flaky` in 13.5 minutes | Historical 2026-07-11 result predates the current document-FX and exact-privilege changes |
+| Full local Chromium release run (older pre-repair history) | `126 passed, 11 failed, 1 flaky, 3 skipped, 12 did not run` in 21.1 minutes | Historical failure/repair evidence only |
 | Focused R2R/period/P2P/operations | Period-lock reason, AI chat mocks/selectors, and operational-health harness were repaired; focused R2R, period, P2P, and ops checks passed | Targeted branch evidence only; AI chat mocks are supplemental |
 | Signup plus action-plan | Isolated flow passed `3/3` | Targeted branch evidence, not production E2E |
 | Signup plus bill-pay | Isolated flow passed `3/3` | Targeted branch evidence, not production E2E |
-| Remaining isolated workflows and log-time repair | Initial batch passed `8/9`, with log-time failing. After the UI consumed `tool_start` and `tool_result` stream events, the unchanged signup plus log-time flow passed `3/3` in 22.3 seconds | Targeted repair evidence; the later clean full local suite also passed |
+| Remaining isolated workflows and log-time repair | Initial batch passed `8/9`, with log-time failing. After the UI consumed `tool_start` and `tool_result` stream events, the unchanged signup plus log-time flow passed `3/3` in 22.3 seconds | Targeted historical repair evidence; current full release gate remains migration-blocked |
 | Daily finance | Isolated flow passed `3/3` | Targeted branch evidence, not production E2E |
 | Signup plus timesheet | First run exposed the missing standalone forced-password-change flow and a dev-server overlay. After the branch product fix, the unchanged rerun passed `21/21` in 1.3 minutes with browser-driven temporary-password rotation, Bob and Carol time, approval/rejection, and the billing gate; teardown cleaned one owned tenant | The completion endpoint still trusts the client's changed-password claim; production security retest remains open |
 | Signup plus S0 password proof | Typecheck passed; focused flow passed `5/5` in 28.4 seconds; browser proof rejects old temporary passwords and accepts unique replacement passwords; teardown cleaned one run-scoped tenant | Positive/negative visible behavior passes, but the completion endpoint trust boundary remains open in [#375](https://github.com/venkateshbr/aethos-ps/issues/375) |
-| Meridian soft coverage | Latest reporter result: `17 PASS / 0 FAIL / 26 SKIP`, then incorrect `Verdict: PASS` | Missing fixtures and false-positive verdict make this non-gating soft coverage |
+| Meridian soft coverage | Latest artifact: `16 PASS / 0 FAIL / 27 SKIP`, then incorrect `Verdict: PASS`; branch reporter now emits `INCOMPLETE` for any skip and labels master data as reference-only | Deterministic fixtures and a clean rerun are still missing, so this remains non-gating soft coverage |
 | Invoice-list inspection | Invoice records render | No visible Client column; client-level review gap remains ([#387](https://github.com/venkateshbr/aethos-ps/issues/387)) |
 | Playwright isolation and teardown ([#386](https://github.com/venkateshbr/aethos-ps/issues/386)) | Exclusive-lock contention fails before signup/mutation; run ownership, mode-0600 state, positive cleanup, and owned-tenant teardown were verified | Full release rerun remains required |
 | Provider/transport log suppression ([#374](https://github.com/venkateshbr/aethos-ps/issues/374)) | Focused regression covers `uvicorn.access`, `httpx`, `httpcore`, `hpack`, `stripe`, and `urllib3` | Partial privacy fix only; classified-field, document/OCR, model-context, trace/artifact, and provider-retention gaps remain open |
 
-The clean full local run removed two run-scoped tenants. The focused signup plus
-timesheet and signup plus S0 runs each cleaned one owned tenant, and the
-previously recorded isolated action flows also cleaned their owned tenants.
-Meridian's skipped cases do not add coverage or cleanup evidence. No production
-Ishantech credentials were consumed and no production business record was
-mutated. Resume at SU-01 only after an in-app Browser is available on
+The current full local run verified two run-scoped Playwright tenants deleted.
+Nine historical `acme/bravo-aksha-*` API-fixture tenants remain active pending
+explicit cleanup approval; future API fixture cleanup now uses verified soft
+deletion and raises on failure. The queue also contains 372 unattempted `cron`
+jobs pending separately approved maintenance. Meridian's skipped cases do not
+add coverage or cleanup evidence. No production Ishantech credentials were
+consumed and no production Ishantech business record was mutated. Start SU-01
+only after the exact reviewed SHA is deployed and the dedicated production
+Playwright preflight passes on
 `https://aethos.ishirock.tech/`.
 
 ## 2. Safety, evidence, and execution rules
@@ -98,8 +104,10 @@ mutated. Resume at SU-01 only after an in-app Browser is available on
 7. For each write, capture the resulting record ID, status, journal/event IDs,
    and downstream report effect. A page render or an Atlas response containing
    keywords is not proof that a transaction occurred.
-8. Use a fresh browser context for each role. Log out between roles; do not
-   reuse another user's storage state.
+8. Use one continuous browser context per tenant so the complete journey is a
+   single recording. Log out through the visible UI between roles, sign in
+   sequentially with each independent account, and never inject or reuse a
+   different user's storage state.
 9. Record HTTP 4xx/5xx, console errors, worker failures, timeouts, and retries.
    A controlled expected 4xx can pass; an unexplained 5xx cannot.
 10. Prefix all names, references, invoice descriptions, and journal reasons with
@@ -112,9 +120,12 @@ mutated. Resume at SU-01 only after an in-app Browser is available on
 ### Evidence convention
 
 Use evidence filenames of the form STEP-ID-short-description.png or
-STEP-ID-response-redacted.json. For every business transaction capture:
+STEP-ID-response-redacted.json. The continuous video and trace are the primary
+before/during/after evidence; the runner also writes a masked post-step
+screenshot and a private transaction checkpoint. For every business
+transaction preserve:
 
-- the input/form immediately before submission;
+- the input/form and submission action in the continuous trace/video;
 - the success/detail page with the record ID or reference;
 - the corresponding journal, financial event, or webhook record;
 - the affected aging/report/close surface;
@@ -128,6 +139,50 @@ as a browser-only E2E result and requires a fresh browser-created record.
 Redact tokens, passwords, Stripe secrets, complete email addresses, cookies,
 authorization headers, and private document contents. Keep timestamps, tenant
 ID, record IDs, amounts, currency, status, and actor role visible.
+
+### Continuous recording and replay artifacts
+
+Run only `frontend/e2e/ishantech-production-ui.spec.ts` with
+`frontend/playwright.production-ui.config.ts`. The dedicated config has no
+global setup or teardown, one worker, zero retries, one test, video and trace
+always on, an exact-host/SHA/run-ID gate, and explicit production-mutation
+consent. It retains the tenant and refuses to run under the ordinary Playwright
+configuration.
+
+The private ignored directory contains the complete video, Playwright trace,
+HTML report, JUnit/JSON results, per-step masked screenshots, persisted source
+identifiers/statuses, and a timestamped execution ledger. Keep it mode 0700
+(files 0600 where practical). The Tenant Users and People invite secrets are
+visually blurred before their success surfaces appear; the raw trace still
+remains private because DOM snapshots may contain sensitive values. Only
+redacted screenshots and the redacted execution summary may be copied into Git
+or GitHub.
+
+From `frontend/`, execute the retained run only after the exact SHA is live:
+
+~~~bash
+AETHOS_RUN_ISHANTECH_PRODUCTION_UI=I_UNDERSTAND_THIS_MUTATES_PRODUCTION \
+AETHOS_PS_WEB_URL=https://aethos.ishirock.tech \
+AETHOS_EXPECTED_DEPLOY_SHA=<40-character deployed Git SHA> \
+AETHOS_ISHANTECH_RUN_ID=ISH-E2E-20260711 \
+npx playwright test \
+  --config=playwright.production-ui.config.ts \
+  --project=chromium \
+  --workers=1 \
+  --retries=0
+~~~
+
+The runner itself sets headed Chromium, a 1440x900 viewport, and slow motion so
+the recording remains human-reviewable. Do not add the ordinary config, setup,
+or teardown to this command.
+
+The mutation run is intentionally non-resumable: one tenant must correspond to
+one continuous BrowserContext and recording. If Chromium or the runner exits,
+preserve the partial tenant, credentials, trace, and checkpoint; do not replay
+irreversible actions. Create a fresh run ID, credentials manifest, and tenant
+for the clean retest. The manifest writes `pending_password` before each
+rotation and promotes it only after visible success, so either the prior or
+pending credential remains available for controlled recovery after a crash.
 
 ## 3. Credential handling
 
@@ -249,7 +304,7 @@ Test same-user creator/approver separation on money and journal actions.
 | ISH-E2E-20260711 Cloud Harbor SG | SGD / GST 9% | April cloud expense | |
 | ISH-E2E-20260711 Kinetic Contractors SG | SGD / GST 9% | May contractor PO/SO | |
 | ISH-E2E-20260711 LedgerCloud SG | SGD / GST 9% | June annual prepaid software | |
-| ISH-E2E-20260711 Vector Data Inc. | USD / zero tax | June foreign vendor bill | |
+| ISH-E2E-20260711 Vector Data Inc. | USD / zero tax | May foreign vendor bill | |
 
 Create an approved PO or service order for the Kinetic Contractors bill with
 quantity and price that match exactly. Configure test-only remittance details;
@@ -262,18 +317,21 @@ Receivable, Accounts Payable, Service Revenue, Operating Expense, Prepaid
 Software, Input GST, Output GST, Payroll Accrual, Owner Capital, Accumulated
 Depreciation, Depreciation Expense, and Realised FX Gain/Loss.
 
-Create or verify frozen, sourced rates:
+Use the read-only Historical FX provenance panel in Settings to verify the
+immutable rows used by the transaction engine. The runner derives two-decimal
+USD document amounts that round exactly to the stated SGD approval bases; it
+never writes or replaces a global FX row.
 
-| Rate date | Pair | Rate | Purpose | Actual FX row ID |
-| --- | --- | ---: | --- | --- |
-| 2026-05-15 | USD to SGD | 1.350000 | USD customer invoice and USD vendor bill base oracle | |
-| 2026-06-20 | USD to SGD | 1.360000 | USD customer receipt | |
+| Requested date | Pair | Required match | Purpose | Actual rate / matched date / FX row ID / source |
+| --- | --- | --- | --- | --- |
+| 2026-05-20 | USD to SGD | most recent immutable row no more than 3 days old | Derive TX-08 and TX-16 USD amounts that post SGD 6,750 and SGD 1,350 respectively | |
+| 2026-07-12 | USD to SGD | exact-date row from the controlled current FX refresh | TX-12 receipt and realised FX gain/loss | |
 
-If production cannot store or select these exact historical test rates, stop
-the FX oracle steps. If no visible browser control can create/select the needed
-rate, mark **BLOCKED — NO UI**; a direct API/DB insert is prohibited. Record any
-read-only sourced rate, recompute only as a proposed reviewed attachment, and
-file the configuration gap. Do not silently change the expected numbers.
+Stop before approving a foreign document if either provenance lookup is absent,
+the historical lag exceeds three days, the current row is not dated 2026-07-12,
+or the immutable IDs are missing. A direct API/DB insert from the browser test
+is prohibited. The current row comes from one separately audited operational FX
+refresh after stale queue maintenance; the end-user journey itself remains UI-only.
 
 ## 6. Transaction ledger and posting oracles
 
@@ -287,68 +345,130 @@ must be completed during execution.
 | TX-03 | Apr 25 | Full receipt for TX-02 | DR Cash 13,080 / CR AR 13,080 | | |
 | TX-04 | Apr 8 | Cloud bill: expense 3,000; GST 270; total 3,270 | DR Expense 3,000 / DR Input GST 270 / CR AP 3,270 | | |
 | TX-05 | Apr 28 | Settle TX-04 | DR AP 3,270 / CR Cash 3,270 | | |
-| TX-06 | May 5 | T&M invoice: net 18,000; GST 1,620; total 19,620 | DR AR 19,620 / CR Revenue 18,000 / CR Output GST 1,620 | | |
+| TX-06 | May 31 | T&M invoice for approved May 4–15 time: net 18,000; GST 1,620; total 19,620 | DR AR 19,620 / CR Revenue 18,000 / CR Output GST 1,620 | | |
 | TX-07 | May 31 | Partial receipt against TX-06: 10,000 | DR Cash 10,000 / CR AR 10,000 | | |
-| TX-08 | May 15 | USD 5,000 invoice; zero tax; base 6,750 at 1.35 | DR AR 6,750 / CR Revenue 6,750 | | |
+| TX-08 | May 20 | USD amount calculated from the captured historical rate; zero tax; frozen base 6,750 | DR AR 6,750 / CR Revenue 6,750; all lines retain the matched FX row ID | | |
 | TX-09 | May 10 | Matched contractor bill: expense 8,000; GST 720; total 8,720 | DR Expense 8,000 / DR Input GST 720 / CR AP 8,720 | | |
 | TX-10 | Jun 5 | Settle TX-09 | DR AP 8,720 / CR Cash 8,720 | | |
 | TX-11 | Jun 15 | Remaining receipt against TX-06: 9,620 | DR Cash 9,620 / CR AR 9,620 | | |
-| TX-12 | Jun 20 | Settle USD 5,000 invoice for base cash 6,800 at 1.36 | DR Cash 6,800 / CR AR 6,750 / CR Realised FX Gain 50 | | |
+| TX-12 | Jul 12 | Settle the TX-08 USD amount using the exact-date current row | DR Cash `<captured payment base>` plus realised FX gain/loss versus 6,750 / CR AR 6,750; July posting is excluded from Q2 statements | | |
 | TX-13 | Jun 10 | Milestone invoice: net 25,000; GST 2,250; total 27,250; leave unpaid | DR AR 27,250 / CR Revenue 25,000 / CR Output GST 2,250 | | |
 | TX-14 | Jun 1 | Annual software bill: prepaid 12,000; GST 1,080; total 13,080 | DR Prepaid Software 12,000 / DR Input GST 1,080 / CR AP 13,080 | | |
 | TX-15 | Jun 2 | Settle TX-14 | DR AP 13,080 / CR Cash 13,080 | | |
-| TX-16 | Jun 18 | USD 1,000 vendor bill, zero tax; base 1,350; leave unpaid | DR Expense 1,350 / CR AP 1,350 | | |
+| TX-16 | May 20 | USD amount calculated from the captured historical rate; zero tax; frozen base 1,350; leave unpaid | DR Expense 1,350 / CR AP 1,350; all lines retain the matched FX row ID | | |
+| TX-16A | Jun 1 | Fictional equipment contributed in kind, fair value 600 | DR Equipment 600 / CR Owner Capital 600; disclose as non-cash financing | | |
 | TX-17 | Jun 30 | Payroll accrual journal 15,000 | DR Payroll Expense 15,000 / CR Payroll Accrual 15,000 | | |
 | TX-18 | Jun 30 | Depreciation journal 600 | DR Depreciation Expense 600 / CR Accumulated Depreciation 600 | | |
 | TX-19 | Jun 30 | One month prepaid amortization 1,000 | DR Software Expense 1,000 / CR Prepaid Software 1,000 | | |
+
+### Line-level journal evidence gate
+
+TX-08, TX-16, TX-12, and the retained manual journals pass only when the
+recorded browser expands the corresponding journal and visibly proves every
+line's account code, DR/CR direction, transaction amount and ISO currency,
+base amount and immutable FX rate row ID where conversion applies. The
+Playwright journey uses the stable journal row/line evidence attributes only
+to locate those visible values; it does not inspect an API response or query
+the database.
+
+TX-08 and TX-16 must show their USD transaction amounts, exact frozen SGD base
+amounts, and the same `FX_APPROVAL_RATE_ID` captured in MD-07B on both sides of
+each balanced journal. TX-12 requires both the receipt journal and the realised
+FX journal: the receipt lines must show the USD amount, receipt-date SGD base,
+and `FX_PAYMENT_RATE_ID`; the realised gain/loss lines must show the expected
+SGD delta and account directions, with no second FX conversion.
+
+TX-01, TX-16A, TX-17, TX-18, and TX-19 must visibly show the stated SGD
+transaction and base amounts on their dedicated account codes, with no FX rate
+ID. A USD default, converted base, missing account code, absent FX provenance,
+or unmatched amount is a blocking discrepancy rather than acceptable
+rounding. A journal summary row or total alone is not PASS evidence.
+
+For each successful proof, retain the visible journal UUID and entry number in
+the private checkpoint/report using the transaction-specific
+`*_JOURNAL_ID` and `*_JOURNAL_ENTRY_NUMBER` keys. These identifiers link the
+continuous trace/video and masked screenshot to the transaction ledger without
+storing credentials or tokens.
 
 ### Monthly and quarter-end expected results
 
 | Oracle | April | May | June | Q2 / Jun 30 ending |
 | --- | ---: | ---: | ---: | ---: |
-| Net income | 9,000 | 16,750 | 7,100 | 32,850 |
-| Ending cash | 109,810 | 119,810 | 114,430 | 114,430 |
-| Ending AR | 0 | 16,370 | 27,250 | 27,250 |
-| Ending AP | 0 | 8,720 | 1,350 | 1,350 |
+| Net income | 9,000 | 15,400 | 8,400 | 32,800 |
+| Ending cash | 109,810 | 119,810 | 107,630 | 107,630 |
+| Ending AR | 0 | 16,370 | 34,000 | 34,000 |
+| Ending AP | 0 | 10,070 | 1,350 | 1,350 |
+
+### Close-package period-end evidence gate
+
+Before completing each monthly checklist, open the close package and preserve
+the visible Period-end AR/AP card in the continuous recording and step
+screenshot. Its base-currency AR and AP values must equal the monthly oracle
+for April, May, and June, and the displayed as-of date must be April 30, May 31,
+and June 30 respectively. A current-date subledger total cannot substitute for
+the historical period-end values, and a close-package network response without
+the corresponding visible card is not PASS evidence.
+
+The evidence card must identify the reporting unit explicitly as
+`SGD base-currency GL · as of YYYY-MM-DD`; a bare or USD-labelled amount does
+not prove the Ishantech tenant's SGD close.
+
+### Current aging evidence gate
+
+After the final July transactions, use the visible Reports tabs to preserve
+the current AR and AP aging cards in the continuous recording. The reporting
+currency badge and each total must say `SGD base currency`: AR must visibly
+equal SGD 27,250.00 after TX-12 clears TX-08 and TX-13 remains open, while AP
+must visibly equal SGD 1,350.00 for the unpaid TX-16 bill. For each report, the
+unallocated GL amount must be SGD 0.00 so the aging buckets reconcile to the
+base-currency control account.
+
+A numeric match with a USD or missing currency label is not PASS. These are
+current-date controls after all retained transactions; they complement, but do
+not replace, the April 30, May 31, and June 30 close-package evidence above.
 
 Quarter statement oracle:
 
 | Measure | Expected SGD |
 | --- | ---: |
-| Trial Balance debits | 183,700 |
-| Trial Balance credits | 183,700 |
+| Trial Balance debits | 184,250 |
+| Trial Balance credits | 184,250 |
 | Revenue | 61,750 |
-| Realised FX gain | 50 |
+| Realised FX gain/loss | 0 in Q2; TX-12 is a July event recorded separately |
 | Expenses | 28,950 |
-| Net income | 32,850 |
-| Cash | 114,430 |
-| Accounts receivable | 27,250 |
+| Net income | 32,800 |
+| Cash | 107,630 |
+| Accounts receivable | 34,000 |
 | Accounts payable | 1,350 |
 | Prepaid asset, net | 11,000 |
 | Input GST | 2,070 |
 | Output GST | 4,950 |
 | Net GST payable | 2,880 |
+| Equipment, gross | 600 |
 | Accumulated depreciation | (600) |
-| Total assets, gross GST presentation and net of accumulated depreciation | 154,150 |
+| Equipment, net | 0 |
+| Total assets, gross GST presentation and net of accumulated depreciation | 154,700 |
 | Liabilities, gross GST presentation | 21,300 |
-| Contributed capital | 100,000 |
-| Current earnings | 32,850 |
-| Equity including current earnings | 132,850 |
-| Operating cash flow | 14,430 |
+| Contributed capital | 100,600 |
+| Current earnings | 32,800 |
+| Equity including current earnings | 133,400 |
+| Operating cash flow | 7,630 |
 | Financing cash flow | 100,000 |
-| Ending cash flow balance | 114,430 |
+| Ending cash flow balance | 107,630 |
 
 If the statement offsets recoverable input GST against output GST, the equally
-valid presentation is total assets 152,080 and liabilities 19,230, with net GST
-payable 2,880 and equity unchanged at 132,850. Record the presentation used;
+valid presentation is total assets 152,630 and liabilities 19,230, with net GST
+payable 2,880 and equity unchanged at 133,400. Record the presentation used;
 the underlying Input GST 2,070 and Output GST 4,950 ledgers must still reconcile.
+The SGD 600 equipment contribution is a non-cash financing disclosure and does
+not change the SGD 100,000 financing cash flow.
 
 Sub-ledger controls:
 
 - Invoice gross base value: 66,700.
-- AR settlements at invoice base: 39,450.
-- Cash received: 39,500; the 50 difference is realised FX gain.
-- Ending AR: 27,250.
+- Q2 AR settlements at invoice base: 32,700.
+- Q2 cash receipts: 32,700; TX-12 cash and realised FX are dated in July.
+- Ending Q2 AR: 34,000; TX-12 subsequently clears the remaining 6,750 base balance.
 - Bill gross base value: 26,420.
 - AP settlements: 25,070.
 - Ending AP: 1,350.
@@ -380,30 +500,32 @@ side effect, not only a success message.
 | MD-03 | Engagement Manager | Contacts | Create two customers and four vendors with test-only details | | | |
 | MD-04 | Resource Manager | People | Create/link staff records needed for timesheets and approvals | | | |
 | MD-05 | Engagement Manager | Engagements/Projects | Create four engagements and three projects with correct billing models | | | |
-| MD-06 | Procurement Manager | Procurement | Create/approve exact-match Kinetic PO or service order | | | |
-| MD-07 | Controller | Accounting/Settings | Map account IDs, GST codes, and exact frozen FX rates | | | |
+| MD-06 | Procurement Manager + Finance Approver | Procurement | Procurement Manager creates the exact-match Kinetic PO/SO and is denied self-approval; Finance Approver approves with `procurement.approve` | | | |
+| MD-07 | Controller | Accounting/Settings | Map account IDs and GST codes; visibly capture immutable historical/current FX provenance | | | |
 | O2C-01 | Owner/Controller | Journals | Post TX-01; balanced journal and audit event exist | | | |
-| O2C-02 | Billing Specialist | Billing/Invoices | Produce TX-02 from retainer; approve/send under correct actor separation | | | |
-| O2C-03 | AR Manager | Public invoice/Payments | Open valid public link; post TX-03; paid status and AR aging update | | | |
-| P2P-01 | AP Clerk/AP Manager | Bills/Pay Bills | Create, approve, and settle TX-04/TX-05; AP and GL agree | | | |
+| O2C-02 | Billing Specialist + Finance Approver negative | Billing/Invoices | Produce TX-02; Finance Approver without `invoices.post` is visibly denied, then Billing Specialist posts/sends with catalogue privileges | | | |
+| O2C-03 | AR Manager | Invoices/Payments | Post TX-03 with `invoices.mark_paid`; paid status and receipt journal update | | | |
+| P2P-01 | AP Clerk + AP Manager | Bills/Pay Bills | AP Clerk creates; AP Manager approves with `bills.approve` and performs prepare/approve/export/mark-sent/settle with the matching `bill_payments.*` privileges; TX-04/TX-05 AP and GL agree | | | |
 | CL-APR-01 | Close Manager | Close/Reports | Reconcile April, complete tasks, export statements, lock April | | | |
 | CL-APR-02 | GL Accountant | Journals | Try Apr posting after lock; controlled rejection and no journal | | | |
+| CL-APR-03 | Owner | Journals/Close | Unlock April through the audited visible control, prove Open, then relock and prove Locked | | | |
 | O2C-04 | Timesheet/Resource/Billing roles | Time/Approvals/Billing | Log/approve T&M delivery and create TX-06 | | | |
 | O2C-05 | AR Manager | Payments | Post TX-07 partial receipt; invoice remains partially paid at 9,620 | | | |
 | O2C-06 | Billing Specialist/Controller | Invoices/FX | Create TX-08 in USD; stored transaction/base values and FX ID match | | | |
-| P2P-02 | Buyer/AP/Procurement actors | Procurement/Bills | Create TX-09 against PO/SO; exact match, approval, AP journal | | | |
+| P2P-02 | AP Clerk + AP Manager | Procurement/Bills | AP Clerk creates TX-09 against the approved PO/SO; AP Manager verifies exact match and approves the AP journal | | | |
 | CL-MAY-01 | Close Manager | Close/Reports | Reconcile May, export statements, lock May with open AR/AP visible | | | |
 | CL-MAY-02 | Billing/AP actors | Invoices/Bills | Try May-dated writes after lock; controlled rejection and no posting | | | |
-| P2P-03 | AP roles | Pay Bills | Settle TX-09 as TX-10; payment lifecycle and bank/AP journals agree | | | |
+| P2P-03 | AP Manager | Pay Bills | Prepare, approve, export, mark sent, and settle TX-09 as TX-10; payment lifecycle and bank/AP journals agree | | | |
 | O2C-07 | AR Manager | Payments | Post TX-11; TX-06 becomes fully paid and leaves AR aging | | | |
-| O2C-08 | AR Manager/Controller | Payments/FX | Post TX-12; 50 gain, frozen rates, cash and AR all agree | | | |
+| O2C-08 | AR Manager/Controller | Payments/FX | Post July TX-12; captured payment-base and realised gain/loss journal clear the 6,750 base AR exactly | | | |
 | O2C-09 | Billing/Approver | Billing/Invoices | Produce TX-13 from milestone; approve/send and leave unpaid | | | |
-| P2P-04 | AP/Approver | Bills/Pay Bills | Create and settle TX-14/TX-15; classify prepaid, not current expense | | | |
-| P2P-05 | AP roles | Bills/FX | Create TX-16 USD bill; store 1,350 base and leave unpaid | | | |
+| P2P-04 | AP Clerk + AP Manager | Bills/Pay Bills | AP Clerk creates TX-14; AP Manager approves and completes TX-15 settlement; classify prepaid, not current expense | | | |
+| P2P-05 | AP Clerk + AP Manager | Bills/FX | AP Clerk creates TX-16 USD bill; AP Manager approves, proves 1,350 base and immutable FX ID, and leaves it unpaid | | | |
+| R2R-00 | GL Accountant/Approver | Journals | Post TX-16A equipment contribution; gross asset and non-cash capital evidence exist | | | |
 | R2R-01 | GL Accountant/Approver | Journals/Inbox | Submit TX-17 with reason; threshold approval by different user; post once | | | |
 | R2R-02 | GL Accountant | Journals | Post TX-18 with reason and evidence | | | |
 | R2R-03 | GL Accountant | Journals/Prepaids | Post/generate TX-19; prepaid roll-forward equals 11,000 | | | |
-| R2R-04 | Controller | Reports | AR/AP, GST, FX, prepaid, payroll, and fixed-asset schedules tie to GL | | | |
+| R2R-04 | Controller | Reports | Current AR aging visibly equals SGD 27,250.00 and AP aging SGD 1,350.00 with SGD labels and zero unallocated GL; GST, FX, prepaid, payroll, and fixed-asset schedules tie to GL | | | |
 | R2R-05 | Close Manager | Close | Complete June checklist, resolve/waive only with evidence and reason | | | |
 | R2R-06 | Close Manager | Reports | Generate June P&L, balance sheet, cash flow, TB; match oracle | | | |
 | R2R-07 | Close Manager | Close | Lock June; subsequent June posting and re-date attempts denied | | | |
@@ -431,17 +553,25 @@ must prove that no source record, payment, journal, or event was created.
 | Engagements/projects | Invalid dates; missing service/rate; inactive service; over-cap; blocked delete with WIP | Controlled validation; no orphan business records | |
 | Time/expenses | Zero/negative/excess precision; future/locked date; DST boundary; duplicate submit; non-billable | Correct validation/status/WIP and no duplicate | |
 | O2C | Blank line; due date before invoice; zero/negative/precision; duplicate approval; partial/overpayment; invalid/rotated public token; missing FX; locked period | Correct status, one journal, AR/report tie-out, controlled token error | |
+| FX | Read-only historical/current provenance lookup; stale or absent rate; rate administration/write UI | Immutable rate/date/ID visible; missing write surface remains a product gap | |
 | Collections | Paid invoice excluded; reminder draft vs send authority; duplicate reminder | No reminder for paid item; approval/audit boundary | |
 | Procurement | Blank request; inactive vendor; self-approval; duplicate submit; threshold approval | Correct separation, status and audit | |
 | Bills/matching | Duplicate vendor invoice; no PO; quantity mismatch; price mismatch; missing bank; service-period mismatch; prepaid coding | Match status and approval block are explicit | |
 | Pay bills | High value; cross-currency batch; double submit; paid/voided item; export retry; settlement retry | No live bank send; idempotent status/journal | |
 | Journals | Missing/short reason; imbalanced; extra precision; missing FX; threshold; self-approval; rejection; reversal; duplicate reversal | Only valid approved journals post once with audit chain | |
-| Close | Open sub-ledger blocker; unapproved journal; override/waive reason; no-activity period; reopen attempt; lock race | Readiness guard, audit, and correct authorization | |
+| Close | Open sub-ledger blocker; unapproved journal; override/waive reason; no-activity period; Owner unlock/relock; concurrent lock/write race | Readiness guard, visible open-to-locked audit, and correct authorization; concurrent race remains open | |
 | Reporting | Empty/data states; April/May/June; true Apr–Jun quarter range; refresh/export/drilldown; balance warning | Period is honored; totals trace to source and tie | |
 | Documents/AI | Unsupported type/size; low confidence; prompt injection; LLM/provider unavailable; keyword-only success response | Safe degradation; no unapproved side effects; source provenance | |
 | Public invoice | Anonymous valid link; malformed/expired/rotated token; back/refresh; payment retry | No auth leak; controlled errors; one receipt | |
 | Resilience/UI | Back/forward; hard refresh; two tabs/stale action; narrow viewport; long notes; timeout/retry | No silent loss, double write, broken layout, or unexplained console/500 | |
 | Audit/export | Actor, timestamp, old/new state, reason, source and tenant; CSV/PDF contents | Complete tenant-scoped evidence with secrets redacted | |
+
+Ordinary period locking, locked-period journal rejection, and Owner-only April
+unlock followed by relock are executable in the visible UI and must be tested;
+do not report a generic period-lock or reopen gap. The remaining close-control
+gap is the concurrent lock/write race. Historical and current FX provenance is
+also visible through the read-only inspector; the missing FX surface is rate
+administration/write UI, not rate lookup.
 
 Quarterly reporting is a launch blocker if the UI can select only one month or
 if the service sends the same month as both range boundaries. Do not label three
@@ -473,13 +603,14 @@ Launch sign-off requires all of the following:
   match effective privileges;
 - platform-administrator ownership is either implemented and tested or accepted
   explicitly as a documented launch gap;
-- every TX-01 through TX-19 record and its downstream journal/event exists
-  exactly once and was created through visible browser actions;
+- every TX-01 through TX-19 record, including TX-16A, and its downstream
+  journal/event exists exactly once and was created through visible browser
+  actions;
 - AR, AP, GST, FX, prepaid, payroll, fixed-asset, cash, and GL controls tie;
 - April, May, and June close successfully and locked-period writes are denied;
 - monthly statements and a true Apr–Jun Q2 range match the exact oracles;
-- Trial Balance debits equal credits at 183,700 and the balance sheet ties at
-  either documented GST presentation (154,150 gross or 152,080 net);
+- Trial Balance debits equal credits at 184,250 and the balance sheet ties at
+  either documented GST presentation (154,700 gross or 152,630 net);
 - no unresolved P0/P1 defect, unexplained 5xx, cross-tenant exposure, live
   payment, secret leak, or unapproved money-moving side effect remains;
 - all discrepancies have issues, fix SHAs, deployment evidence, and production
@@ -494,4 +625,4 @@ blocker until a visible end-user flow is implemented, deployed, and rerun.
 | Finance/controller reviewer | | | NOT RUN | |
 | Security/RBAC reviewer | | | NOT RUN | |
 | Product owner | | | NOT RUN | |
-| Launch authority | | | NOT READY / NO-GO | Production mutation NOT RUN; in-app Browser unavailable |
+| Launch authority | | | NOT READY / NO-GO | Production mutation NOT RUN; exact-SHA deployment and recorded Playwright run pending |

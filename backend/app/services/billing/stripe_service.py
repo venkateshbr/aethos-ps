@@ -18,6 +18,7 @@ Design decisions:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import stripe
@@ -27,6 +28,10 @@ from app.domain.exceptions import BillingError
 from app.services.localization_service import country_to_currency as _country_to_currency
 
 logger = logging.getLogger(__name__)
+
+_SIGNUP_PRICE_TIERS = ("starter", "growth", "pro")
+_SIGNUP_PRICE_INTERVALS = ("monthly", "annual")
+_SIGNUP_PRICE_CURRENCIES = ("usd", "gbp", "sgd", "inr", "aud")
 
 def country_to_currency(country: str) -> str:
     """Return the ISO 4217 currency code for a 2-letter country code.
@@ -56,6 +61,85 @@ class StripeService:
         stripe.api_key = settings.stripe_secret_key
         self.webhook_secret = settings.stripe_webhook_secret
         self._settings = settings
+
+    async def check_signup_readiness(self) -> dict[str, object]:
+        """Verify Stripe credentials and every configured launch Price.
+
+        This is a read-only provider capability check used before public
+        signup mutation. It returns only aggregate, non-secret evidence.
+        """
+
+        def _check() -> dict[str, object]:
+            secret = self._settings.stripe_secret_key
+            if secret.startswith("sk_test_"):
+                mode = "test"
+                expected_livemode = False
+            elif secret.startswith("sk_live_"):
+                mode = "live"
+                expected_livemode = True
+            else:
+                return {
+                    "status": "error",
+                    "configured": bool(secret),
+                    "mode": "unknown" if secret else "not_configured",
+                    "account_reachable": False,
+                    "prices_checked": 0,
+                    "error_code": "invalid_secret_key_mode",
+                }
+
+            checked = 0
+            try:
+                stripe.Balance.retrieve()
+                for tier in _SIGNUP_PRICE_TIERS:
+                    for interval in _SIGNUP_PRICE_INTERVALS:
+                        for currency in _SIGNUP_PRICE_CURRENCIES:
+                            field = f"stripe_price_{tier}_{interval}_{currency}"
+                            price_id = str(getattr(self._settings, field, "") or "")
+                            if not price_id.startswith("price_"):
+                                return {
+                                    "status": "error",
+                                    "configured": True,
+                                    "mode": mode,
+                                    "account_reachable": True,
+                                    "prices_checked": checked,
+                                    "error_code": "invalid_price_configuration",
+                                }
+                            price = stripe.Price.retrieve(price_id)
+                            expected_interval = "month" if interval == "monthly" else "year"
+                            if (
+                                not bool(price.active)
+                                or bool(price.livemode) is not expected_livemode
+                                or str(price.currency).lower() != currency
+                                or str(price.recurring.interval) != expected_interval
+                            ):
+                                return {
+                                    "status": "error",
+                                    "configured": True,
+                                    "mode": mode,
+                                    "account_reachable": True,
+                                    "prices_checked": checked,
+                                    "error_code": "price_contract_mismatch",
+                                }
+                            checked += 1
+            except stripe.StripeError as exc:
+                return {
+                    "status": "error",
+                    "configured": True,
+                    "mode": mode,
+                    "account_reachable": False,
+                    "prices_checked": checked,
+                    "error_code": getattr(exc, "code", None) or "stripe_unreachable",
+                }
+
+            return {
+                "status": "ok",
+                "configured": True,
+                "mode": mode,
+                "account_reachable": True,
+                "prices_checked": checked,
+            }
+
+        return await asyncio.to_thread(_check)
 
     # ------------------------------------------------------------------
     # Customer

@@ -5,6 +5,8 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { SupabaseService } from '../../core/services/supabase.service';
+import { TimesheetPortalNavigationService } from '../../core/services/timesheet-portal-navigation.service';
+import { isTimesheetEmployeeRole } from '../../core/utils/timesheet-portal-url';
 
 /**
  * LoginComponent — sign in for returning pilot tenants.
@@ -119,6 +121,7 @@ export class LoginComponent {
   private router = inject(Router);
   private auth = inject(AuthService);
   private supabaseSvc = inject(SupabaseService);
+  private timesheetPortal = inject(TimesheetPortalNavigationService);
 
   protected form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -178,6 +181,10 @@ export class LoginComponent {
         this.auth.setTenantId(membership.tenant_id);
         this.auth.setRole(membership.role);
         this.auth.setMustChangePassword(Boolean(membership.must_change_password));
+        if (isTimesheetEmployeeRole(membership.role)) {
+          this.timesheetPortal.redirectToLogin();
+          return;
+        }
       }
 
       this.router.navigate([this.auth.getMustChangePassword() ? '/app/profile' : '/app/copilot']);

@@ -4,12 +4,14 @@ import { provideRouter, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { SupabaseService } from '../../core/services/supabase.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { TimesheetPortalNavigationService } from '../../core/services/timesheet-portal-navigation.service';
 import { LoginComponent } from './login.component';
 
 describe('LoginComponent', () => {
   let fixture: ComponentFixture<LoginComponent>;
   let auth: jasmine.SpyObj<AuthService & { setRole: (role: string) => void }>;
   let navigate: jasmine.Spy;
+  let portalAssign: jasmine.Spy;
   let membership: {
     tenant_id: string;
     role: string;
@@ -24,6 +26,7 @@ describe('LoginComponent', () => {
   };
 
   beforeEach(async () => {
+    portalAssign = jasmine.createSpy('assign');
     auth = jasmine.createSpyObj<AuthService & { setRole: (role: string) => void }>(
       'AuthService',
       [
@@ -89,6 +92,10 @@ describe('LoginComponent', () => {
             meta: () => ({ lockupSrc: '/assets/test-lockup.svg', label: 'test' }),
           },
         },
+        {
+          provide: TimesheetPortalNavigationService,
+          useValue: { redirectToLogin: portalAssign },
+        },
       ],
     }).compileComponents();
 
@@ -128,5 +135,27 @@ describe('LoginComponent', () => {
 
     expect(auth.setMustChangePassword).toHaveBeenCalledOnceWith(true);
     expect(navigate).toHaveBeenCalledOnceWith(['/app/profile']);
+  });
+
+  it('redirects a Timesheet Employee login to the separate portal instead of the ERP', async () => {
+    membership = {
+      ...membership,
+      role: 'employee',
+      must_change_password: true,
+    };
+    const component = fixture.componentInstance as unknown as {
+      form: { setValue(value: { email: string; password: string }): void };
+      submit(): Promise<void>;
+    };
+
+    component.form.setValue({
+      email: 'employee@example.com',
+      password: 'temporary-password',
+    });
+    await component.submit();
+
+    expect(auth.setRole).toHaveBeenCalledOnceWith('employee');
+    expect(portalAssign).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

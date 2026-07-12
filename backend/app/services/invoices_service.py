@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import uuid
 from datetime import UTC, date
 from datetime import datetime as _dt
 from decimal import Decimal, InvalidOperation
@@ -29,7 +30,11 @@ from app.models.invoices import (
 from app.repositories.invoices_repo import InvoicesRepository
 from app.services._validation import assert_belongs_to_tenant
 from app.services.fx_gain_loss_service import post_fx_gain_loss_if_needed
-from app.services.payment_fx_service import payment_fx_amounts
+from app.services.payment_fx_service import (
+    missing_document_fx_columns,
+    payment_fx_amounts,
+    payment_rate_date,
+)
 from app.services.retainer_ledger_service import record_retainer_draw
 from supabase import Client
 
@@ -46,6 +51,18 @@ def _to_decimal(value: str | int | float | None, default: str = "0") -> Decimal:
 
 def _quantize_money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"))
+
+
+def _normalise_payment_timestamp(value: object) -> str:
+    """Canonicalise equivalent ISO timestamps for retry detection."""
+    text = str(value or "")
+    try:
+        parsed = _dt.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
 
 
 def _line_amount(line: InvoiceLineCreate) -> Decimal:
@@ -299,11 +316,45 @@ class InvoicesService:
                 detail=f"Invoice is already {row['status']} — cannot approve",
             )
 
+        missing_fx_columns = missing_document_fx_columns(row)
+        if missing_fx_columns:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Database migration 0102 is required before invoice approval; "
+                    "document FX persistence columns are unavailable."
+                ),
+            )
+
         total = _to_decimal(row.get("total"))
         subtotal = _to_decimal(row.get("subtotal"))
         tax_total = _to_decimal(row.get("tax_total"))
-        currency = row.get("currency", "USD")
+        currency = str(row.get("currency") or "USD").upper()
         invoice_number = row.get("invoice_number", invoice_id[:8])
+        entry_date = row.get("issue_date") or date.today().isoformat()
+
+        try:
+            fx_amounts = await payment_fx_amounts(
+                db=self.db,
+                tenant_id=self.tenant_id,
+                amount=total,
+                currency=currency,
+                paid_at=str(entry_date),
+            )
+        except FxRateNotFoundError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Missing FX rate for invoice approval: "
+                    f"{exc.from_currency} to {exc.to_currency} on {exc.rate_date}."
+                ),
+            ) from exc
+
+        # Convert tax separately, then allocate the rounding residual to revenue
+        # so AR always equals revenue + tax exactly in tenant base currency.
+        base_total = fx_amounts.base_amount
+        base_tax_total = _quantize_money(tax_total * fx_amounts.rate)
+        base_subtotal = base_total - base_tax_total
 
         # Resolve account IDs by code
         account_codes = ["1200", "4000"]
@@ -319,6 +370,8 @@ class InvoicesService:
                 description=f"AR for invoice {invoice_number}",
                 account_id=acct_map.get("1200"),
                 currency=currency,
+                base_amount=base_total,
+                fx_rate_id=fx_amounts.fx_rate_id,
             ),
             JournalLineSpec(
                 direction="CR",
@@ -327,6 +380,8 @@ class InvoicesService:
                 description=f"Revenue for invoice {invoice_number}",
                 account_id=acct_map.get("4000"),
                 currency=currency,
+                base_amount=base_subtotal,
+                fx_rate_id=fx_amounts.fx_rate_id,
             ),
         ]
         if tax_total > Decimal("0"):
@@ -338,14 +393,10 @@ class InvoicesService:
                     description=f"Sales tax payable for invoice {invoice_number}",
                     account_id=acct_map.get("2300"),
                     currency=currency,
+                    base_amount=base_tax_total,
+                    fx_rate_id=fx_amounts.fx_rate_id,
                 )
             )
-
-        entry_date = (
-            row.get("issue_date")
-            if row.get("issue_date")
-            else date.today().isoformat()
-        )
 
         try:
             post_journal(
@@ -362,7 +413,17 @@ class InvoicesService:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        updated = await self._repo.update(invoice_id, {"status": "approved"})
+        updated = await self._repo.update(
+            invoice_id,
+            {
+                "status": "approved",
+                "base_currency": fx_amounts.base_currency,
+                "base_subtotal": serialise_money(base_subtotal),
+                "base_tax_total": serialise_money(base_tax_total),
+                "base_total": serialise_money(base_total),
+                "approval_fx_rate_id": fx_amounts.fx_rate_id,
+            },
+        )
         if updated is None:
             raise HTTPException(status_code=404, detail="Invoice not found after update")
 
@@ -399,11 +460,11 @@ class InvoicesService:
         """Record a payment received outside of Stripe (wire, cheque, cash, etc.).
 
         Mirrors the Stripe-webhook code path so accounting comes out identical:
-        1. Validate the invoice exists, is approved/sent, and isn't already paid.
+        1. Validate status, cumulative balance, currency, and retry fingerprint.
         2. Insert a payments row (no stripe_payment_intent_id).
-        3. Update invoice → paid + set paid_at.
-        4. Back-link any line.time_entry_id → time_entries.invoice_id/billing_status='billed'.
-        5. Post the offsetting journal: DR 1100 Bank / CR 1200 AR.
+        3. Post DR 1100 Bank / CR 1200 AR, compensating the row on rejection.
+        4. Mark the invoice paid only when cumulative receipts settle it.
+        5. Back-link line time entries and post any final realised FX difference.
 
         Currency defaults to the invoice currency; paid_at defaults to now.
         """
@@ -424,10 +485,61 @@ class InvoicesService:
         if amount <= 0:
             raise HTTPException(status_code=422, detail="Payment amount must be > 0")
 
-        invoice_currency = row.get("currency", "USD")
+        invoice_currency = str(row.get("currency") or "USD").upper()
         pay_currency = (currency or invoice_currency).upper()
+        if pay_currency != invoice_currency:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Manual payments must use the invoice currency "
+                    f"({invoice_currency}) so the remaining balance is deterministic"
+                ),
+            )
         paid_at = paid_at_iso or _dt.now(tz=UTC).isoformat()
+        payment_date = payment_rate_date(paid_at)
         invoice_number = row.get("invoice_number", invoice_id[:8])
+        prior_payments = await asyncio.to_thread(
+            lambda: self.db.table("payments")
+            .select("id,amount,currency,base_amount,paid_at,notes")
+            .eq("tenant_id", self.tenant_id)
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+        duplicate_receipt = any(
+            _to_decimal(payment.get("amount")) == amount
+            and str(payment.get("currency") or "").upper() == pay_currency
+            and _normalise_payment_timestamp(payment.get("paid_at"))
+            == _normalise_payment_timestamp(paid_at)
+            and (payment.get("notes") or None) == (notes or None)
+            for payment in prior_payments
+        )
+        if duplicate_receipt:
+            raise HTTPException(
+                status_code=409,
+                detail="Duplicate manual payment receipt",
+            )
+        previously_paid = sum(
+            (_to_decimal(payment.get("amount")) for payment in prior_payments),
+            start=Decimal("0"),
+        )
+        invoice_total = _to_decimal(row.get("total"))
+        remaining_balance = invoice_total - previously_paid
+        if remaining_balance <= Decimal("0"):
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice has no remaining balance",
+            )
+        if amount > remaining_balance:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Payment exceeds remaining balance of "
+                    f"{serialise_money(remaining_balance)} {invoice_currency}"
+                ),
+            )
+        fully_paid = amount == remaining_balance
         try:
             fx_amounts = await payment_fx_amounts(
                 db=self.db,
@@ -445,52 +557,34 @@ class InvoicesService:
                 ),
             ) from exc
 
-        # 1. payments row
-        payment_data: dict = {
-            "tenant_id": self.tenant_id,
-            "invoice_id": invoice_id,
-            "amount": str(amount),
-            "currency": pay_currency,
-            "base_amount": str(fx_amounts.base_amount),
-            "fx_rate_id": fx_amounts.fx_rate_id,
-            "paid_at": paid_at,
-        }
-        if notes:
-            payment_data["notes"] = notes
-
-        await asyncio.to_thread(
-            lambda: self.db.table("payments").insert(payment_data).execute()
-        )
-
-        # 2. invoice → paid
-        await asyncio.to_thread(
-            lambda: self.db.table("invoices")
-            .update({"status": "paid", "paid_at": paid_at})
-            .eq("id", invoice_id)
-            .eq("tenant_id", self.tenant_id)
-            .execute()
-        )
-
-        # 3. back-link invoiced time entries
-        line_rows = await asyncio.to_thread(
-            lambda: self.db.table("invoice_lines")
-            .select("time_entry_id")
-            .eq("invoice_id", invoice_id)
-            .execute()
-            .data
-            or []
-        )
-        te_ids = [r["time_entry_id"] for r in line_rows if r.get("time_entry_id")]
-        if te_ids:
-            await asyncio.to_thread(
-                lambda: self.db.table("time_entries")
-                .update({"invoice_id": invoice_id, "billing_status": "billed"})
-                .in_("id", te_ids)
-                .eq("tenant_id", self.tenant_id)
-                .execute()
+        if (
+            invoice_currency != fx_amounts.base_currency
+            and (
+                row.get("base_total") in (None, "")
+                or row.get("base_currency") in (None, "")
+            )
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Foreign-currency invoice has no frozen approval base total; "
+                    "it cannot be settled without corrupting realised FX."
+                ),
+            )
+        frozen_base_currency = str(row.get("base_currency") or "").upper()
+        if (
+            frozen_base_currency
+            and frozen_base_currency != fx_amounts.base_currency
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Invoice approval base currency does not match the tenant base "
+                    "currency; settlement requires controlled currency migration."
+                ),
             )
 
-        # 4. journal: DR 1100 Bank / CR 1200 AR
+        # Resolve and validate the journal before mutating the AR sub-ledger.
         acct_map = await self._repo.get_account_ids_by_codes(["1100", "1200"])
         journal_lines = [
             JournalLineSpec(
@@ -514,39 +608,121 @@ class InvoicesService:
                 fx_rate_id=fx_amounts.fx_rate_id,
             ),
         ]
+
+        # 1. Insert a client-generated payment id so a rejected journal can
+        # compensate by deleting exactly this receipt (never another retry).
+        payment_id = str(uuid.uuid4())
+        payment_data: dict = {
+            "id": payment_id,
+            "tenant_id": self.tenant_id,
+            "invoice_id": invoice_id,
+            "amount": str(amount),
+            "currency": pay_currency,
+            "base_amount": str(fx_amounts.base_amount),
+            "fx_rate_id": fx_amounts.fx_rate_id,
+            "paid_at": paid_at,
+        }
+        if notes:
+            payment_data["notes"] = notes
+
+        await asyncio.to_thread(
+            lambda: self.db.table("payments").insert(payment_data).execute()
+        )
+
+        # 2. journal: DR 1100 Bank / CR 1200 AR
         try:
             post_journal(
                 db=self.db,
                 tenant_id=self.tenant_id,
                 created_by=recorded_by,
                 description=f"Payment received for invoice {invoice_number}",
-                entry_date=date.today().isoformat(),
+                # The journal belongs to the actual receipt date. The FX rate
+                # used may legitimately come from an earlier available date.
+                entry_date=payment_date.isoformat(),
                 reference_type="payment",
                 reference_id=invoice_id,
                 lines=journal_lines,
             )
-        except ValueError as exc:
-            # accounting_guardian rejection — the payment row is already in,
-            # surface a clear 422 so the caller knows the journal didn't land.
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            try:
+                await asyncio.to_thread(
+                    lambda: self.db.table("payments")
+                    .delete()
+                    .eq("id", payment_id)
+                    .eq("tenant_id", self.tenant_id)
+                    .execute()
+                )
+            except Exception:
+                logger.critical(
+                    "Failed to compensate manual payment after journal failure",
+                    exc_info=True,
+                    extra={
+                        "invoice_id": invoice_id,
+                        "payment_id": payment_id,
+                        "tenant_id": self.tenant_id,
+                    },
+                )
+            if isinstance(exc, ValueError):
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise
 
-        try:
-            await post_fx_gain_loss_if_needed(
-                db=self.db,
-                tenant_id=self.tenant_id,
-                invoice=row,
-                payment_amount=amount,
-                payment_currency=pay_currency,
-                payment_base_amount=fx_amounts.base_amount,
-                base_currency=fx_amounts.base_currency,
-                payment_date=fx_amounts.rate_date,
+        # 3. Mark the invoice paid only when cumulative receipts settle it.
+        # Partial receipts intentionally preserve the approved/sent status;
+        # O2C read models derive the remaining balance from payment rows.
+        if fully_paid:
+            await asyncio.to_thread(
+                lambda: self.db.table("invoices")
+                .update({"status": "paid", "paid_at": paid_at})
+                .eq("id", invoice_id)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
             )
-        except Exception:
-            logger.error(
-                "Failed to post FX gain/loss journal for manual payment",
-                exc_info=True,
-                extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
+
+        # 4. back-link invoiced time entries
+        line_rows = await asyncio.to_thread(
+            lambda: self.db.table("invoice_lines")
+            .select("time_entry_id")
+            .eq("invoice_id", invoice_id)
+            .execute()
+            .data
+            or []
+        )
+        te_ids = [r["time_entry_id"] for r in line_rows if r.get("time_entry_id")]
+        if te_ids:
+            await asyncio.to_thread(
+                lambda: self.db.table("time_entries")
+                .update({"invoice_id": invoice_id, "billing_status": "billed"})
+                .in_("id", te_ids)
+                .eq("tenant_id", self.tenant_id)
+                .execute()
             )
+
+        if fully_paid:
+            cumulative_base_amount = fx_amounts.base_amount + sum(
+                (
+                    _to_decimal(payment.get("base_amount") or payment.get("amount"))
+                    for payment in prior_payments
+                ),
+                start=Decimal("0"),
+            )
+            try:
+                await post_fx_gain_loss_if_needed(
+                    db=self.db,
+                    tenant_id=self.tenant_id,
+                    invoice=row,
+                    payment_amount=invoice_total,
+                    payment_currency=pay_currency,
+                    payment_base_amount=cumulative_base_amount,
+                    base_currency=fx_amounts.base_currency,
+                    payment_date=payment_date,
+                    created_by=recorded_by,
+                )
+            except Exception:
+                logger.error(
+                    "Failed to post FX gain/loss journal for manual payment",
+                    exc_info=True,
+                    extra={"invoice_id": invoice_id, "tenant_id": self.tenant_id},
+                )
 
         updated = await self._repo.get_by_id(invoice_id)
         invoice_lines = await self._repo.list_lines(invoice_id)

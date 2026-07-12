@@ -179,11 +179,40 @@ class CloseTasksService:
         return result.data[0] if result.data else None
 
     def incomplete_blocking_tasks(self, period: str) -> list[dict[str, Any]]:
+        """Return review tasks that must finish before the lock action.
+
+        ``period_lock`` represents the action being attempted, so treating its
+        initial open state as a precondition creates a circular close workflow.
+        The endpoint marks that item done only after the lock row is persisted.
+        """
         return [
             row
             for row in self.list_tasks(period)
-            if str(row.get("status") or "open") not in _DONE_STATUSES
+            if str(row.get("code") or "") != "period_lock"
+            and str(row.get("status") or "open") not in _DONE_STATUSES
         ]
+
+    async def mark_period_lock_task(
+        self,
+        *,
+        period: str,
+        actor_id: str,
+        locked: bool,
+    ) -> dict[str, Any] | None:
+        """Synchronise the checklist action with an authoritative lock change."""
+        tasks = await asyncio.to_thread(lambda: self.list_tasks(period))
+        task = next(
+            (row for row in tasks if str(row.get("code") or "") == "period_lock"),
+            None,
+        )
+        if task is None:
+            return None
+        return await self.update_task(
+            period=period,
+            task_id=str(task["id"]),
+            patch={"status": "done" if locked else "open"},
+            actor_id=actor_id,
+        )
 
 
 def _period_due_date(period: str) -> date:

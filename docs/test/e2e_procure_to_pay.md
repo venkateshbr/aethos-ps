@@ -16,14 +16,20 @@ coverage.
   Universal CSV downloaded as an out-of-band instruction, and settlement
   journals posted.
 
+For production validation, execute the tenant workflow in one continuous
+video-recorded browser context. Switch actors only by explicit sign-out/sign-in
+inside that context; do not splice parallel profiles, tabs, or incognito
+windows into one tenant's evidence. Start a new recorded session for a different
+tenant.
+
 ## Actors & Pre-conditions
 
 | Actor | Role |
 | --- | --- |
-| Alice | Tenant Owner → legacy `owner` |
-| Bob | Finance Controller → legacy `admin` (current bill/payment approval gate) |
-| Carol | AP Clerk → legacy `manager` (bill intake/draft, not final approval) |
-| Dave | Executive Viewer → legacy `viewer` |
+| Alice | Tenant Owner → legacy `owner`; owns tenant/owner-threshold controls |
+| Bob | Finance Controller → legacy `admin`; designated reviewer here and has the required `bills.*` / `bill_payments.*` privileges |
+| Carol | AP Clerk → legacy `manager`; used for intake in this scenario, although the current seeded AP duty also grants bill approval and payment-batch mutations |
+| Dave | Executive Viewer → legacy `viewer`; read-only finance privileges |
 | Eve | Other tenant |
 
 Pre-conditions:
@@ -52,24 +58,24 @@ Pre-conditions:
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 3 | Bob | Approves bill draft from `/app/bills` or Inbox | Current bill approval endpoint requires projected legacy `admin`; reviewed coding/source evidence persists and approval posts DR `5000 Expense` (or `1500 Asset`) / CR `2000 Accounts Payable` |
+| 3 | Bob | Approves bill draft from `/app/bills` or Inbox | Direct bill approval requires `bills.approve`; reviewed coding/source evidence persists and approval posts DR `5000 Expense` (or `1500 Asset`) / CR `2000 Accounts Payable` |
 
 ### §1.3 Schedule payment
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 4 | Bob | `/app/billing-runs` → Pay Bills, or asks Atlas at `/app/copilot` to prepare bills due within 7 days | `bill_pay_agent` can propose a reviewed batch; batch create/approve/export/send/settle endpoints currently require projected legacy `admin` |
+| 4 | Bob | `/app/billing-runs` → Pay Bills, or asks Atlas at `/app/copilot` to prepare bills due within 7 days | `bill_pay_agent` can propose a reviewed batch; propose/create requires `bill_payments.prepare` |
 | 5 | Bob | Reviews batch in `BillPayBatchCard` | UI shows total outflow, per-bill amounts |
-| 6 | Bob | Approves batch | Batch moves from `draft` to `approved`; item rows remain pending until settlement. Current direct endpoint is projected-`admin` gated. |
+| 6 | Bob | Approves batch | Batch moves from `draft` to `approved`; item rows remain pending until settlement. Direct approval requires `bill_payments.approve`. |
 
 ### §1.4 Export and execute
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 7 | Bob | Clicks "Export NACHA" (US) or "Export Universal CSV" | File generated, validated against spec, downloaded |
+| 7 | Bob | Clicks "Export NACHA" (US) or "Export Universal CSV" | `bill_payments.export` is required; file is generated and downloaded |
 | 8 | Bob (out of band) | Uploads the downloaded file to the bank's own portal | External action; Aethos has no bank portal or direct bank submission in this flow |
-| 9 | Bob | Returns to UI; clicks "Mark batch sent" | Batch `status=sent_to_bank`; included bills remain approved until settlement |
-| 10 | (later) | Operator confirms settlement manually | Batch/items become settled, bills become paid, and each settlement posts DR `2000 Accounts Payable` / CR `1100 Bank` |
+| 9 | Bob | Returns to UI; clicks "Mark batch sent" | `bill_payments.settle` is required because this advances the external money-movement lifecycle; batch `status=sent_to_bank` and included bills remain approved until settlement |
+| 10 | (later) | Operator confirms settlement manually | `bill_payments.settle` is required; batch/items become settled, bills become paid, and each settlement posts DR `2000 Accounts Payable` / CR `1100 Bank` |
 
 ---
 
@@ -98,7 +104,7 @@ Pre-conditions:
 | §3.4 | Duplicate bill (same vendor_invoice_number + vendor_id) | Detection at draft stage; Inbox shows duplicate review exception; approve-as-is returns 409; approve-with-edits must include duplicate override with reason |
 | §3.5 | Direct vendor-pay webhook/reconciliation | Not part of the current export/manual-settlement flow; no current E2E evidence |
 | §3.6 | Period locked when approving bill | 422 `period_locked`; UI offers to date in current period |
-| §3.7 | AP Manager (projected `manager`) attempts any batch approval | Current bill-payment API returns 403 because create/approve/export/send/settle require projected `admin`; a manager-under-cap path must not be claimed. Separately test configured Admin/Owner high-value approval policy where that workflow applies. |
+| §3.7 | User has an adjacent payment privilege but lacks `bill_payments.approve` | Direct batch approval returns 403 regardless of the user's projected legacy rank; AP Manager succeeds when its effective catalogue includes the exact privilege. Separately test configured Admin/Owner high-value Inbox policy where that workflow applies. |
 | §3.8 | Cross-tenant bill access | 404 for other tenant |
 | §3.9 | Concurrent/open batches include the same bill twice | No complete same-bill/open-batch uniqueness proof exists; test for duplicates and file a P0/P1 control issue if both persist |
 | §3.10 | Imbalanced AP journal attempted | `accounting_guardian` rejects |
@@ -121,21 +127,27 @@ Pre-conditions:
 
 ## §5 RBAC Matrix
 
-| Action | Owner | Admin | Manager | Member | Viewer | Other-tenant |
-| --- | --- | --- | --- | --- | --- | --- |
-| Upload source document | ✅ | ✅ | ✅ | ✅ | ✅ (current upload API is auth-only) | Own-tenant upload only |
-| Create bill | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ 403/404 |
-| Approve bill | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
-| Create payment batch | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
-| Approve payment batch | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
-| Export NACHA / CSV | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
-| Mark batch sent / settle | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
-| View AP aging | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ 404 |
+| Action | Required privilege/control | Positive seeded-role example | Read-only result |
+| --- | --- | --- | --- |
+| Upload source document | Current upload API is authenticated-user only | Any tenant user | Allowed for viewer; track as a least-privilege gap |
+| View procurement | `procurement.read` | Finance-read roles | Allowed |
+| Create/convert procurement | `procurement.manage` | Procurement Manager | 403; UI disabled |
+| Approve procurement | `procurement.approve`, separate requester/approver, amount threshold | Finance Approver approves another user's manager-threshold request | 403; UI disabled |
+| Create bill | `bills.manage` | AP Manager / AP Clerk | 403; UI disabled |
+| Approve bill | `bills.approve` | AP Manager / AP Clerk | 403; UI disabled |
+| View payment batches | `bill_payments.read` | Finance-read roles | Allowed |
+| Propose/create payment batch | `bill_payments.prepare` | AP Manager | 403; UI disabled |
+| Approve payment batch | `bill_payments.approve` | AP Manager | 403; UI disabled |
+| Export NACHA / CSV | `bill_payments.export` plus approved state | AP Manager | 403; UI disabled |
+| Mark batch sent / settle | `bill_payments.settle` plus lifecycle state | AP Manager | 403; UI disabled |
+| View AP aging | Current authenticated tenant read | AP/finance users | Allowed within the tenant |
 
-The table records projected legacy-role gates. It is not a proof that AP
-Manager, AP Clerk, Procurement Manager, and other catalogue labels are enforced
-independently. The source-document upload row exposes a current least-privilege
-gap that should be tested and dispositioned rather than hidden in the guide.
+The API evaluates the named catalogue privilege rather than inferring access
+from a role label or projected legacy rank. The seeded AP Clerk duty remains
+broad and currently includes bill approval and all payment-batch mutation
+privileges; test tenant-specific segregation rather than assuming the label is
+least-privilege. The source-document upload row exposes a separate current gap
+that should be dispositioned rather than hidden in the guide.
 
 ---
 

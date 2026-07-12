@@ -54,4 +54,15 @@ describe('ReportsService statement periods', () => {
     expect(req.request.method).toBe('GET');
     req.flush({});
   });
+
+  it('loads the viewer-safe tenant accounting context from its dedicated endpoint', () => {
+    let result: { tenant_id: string; base_currency: string } | undefined;
+
+    service.getAccountingContext().subscribe(value => { result = value; });
+
+    const req = http.expectOne('/api/v1/tenants/accounting-context');
+    expect(req.request.method).toBe('GET');
+    req.flush({ tenant_id: 'tenant-1', base_currency: 'SGD' });
+    expect(result).toEqual({ tenant_id: 'tenant-1', base_currency: 'SGD' });
+  });
 });

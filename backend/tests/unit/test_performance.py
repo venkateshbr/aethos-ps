@@ -75,10 +75,88 @@ def test_subscription_status_defaults_missing_fields():
 # ---------------------------------------------------------------------------
 
 
+def test_health_exposes_the_deployed_build_sha(monkeypatch: pytest.MonkeyPatch):
+    """Operators must be able to tie a public health response to a Git build."""
+    import asyncio
+
+    from app import main
+
+    monkeypatch.setattr(main.settings, "build_sha", "abc123def456")
+
+    assert asyncio.run(main.health()) == {
+        "status": "ok",
+        "version": "0.1.0",
+        "build_sha": "abc123def456",
+    }
+
+
 async def _call_health_ready():
     from app.main import health_ready
 
     return await health_ready()
+
+
+def test_signup_readiness_requires_a_real_stripe_account_and_price_catalogue():
+    """Public preflight proves provider capability before creating a tenant."""
+    import asyncio
+
+    from app import main
+
+    main.clear_signup_readiness_cache()
+    billing_check = {
+        "status": "ok",
+        "configured": True,
+        "mode": "test",
+        "account_reachable": True,
+        "prices_checked": 30,
+    }
+    with patch(
+        "app.services.billing.stripe_service.StripeService.check_signup_readiness",
+        new=AsyncMock(return_value=billing_check),
+    ) as check:
+        result = asyncio.run(main.signup_ready())
+
+    assert result == {
+        "status": "ready",
+        "build_sha": main.settings.build_sha,
+        "checks": {"billing": billing_check},
+    }
+    check.assert_awaited_once()
+
+
+def test_signup_readiness_single_flights_concurrent_public_probes():
+    """A cache-expiry burst must not amplify Stripe provider traffic."""
+    import asyncio
+
+    from app import main
+
+    main.clear_signup_readiness_cache()
+    billing_check = {
+        "status": "ok",
+        "configured": True,
+        "mode": "test",
+        "account_reachable": True,
+        "prices_checked": 30,
+    }
+
+    async def delayed_check() -> dict[str, object]:
+        await asyncio.sleep(0)
+        return billing_check
+
+    async def exercise() -> list[dict[str, object]]:
+        with patch(
+            "app.services.billing.stripe_service.StripeService.check_signup_readiness",
+            new=AsyncMock(side_effect=delayed_check),
+        ) as check:
+            results = await asyncio.gather(*(main.signup_ready() for _ in range(12)))
+        check.assert_awaited_once()
+        return results
+
+    results = asyncio.run(exercise())
+
+    assert len(results) == 12
+    assert all(result["status"] == "ready" for result in results)
+    assert all(result["checks"] == {"billing": billing_check} for result in results)
 
 
 def test_health_ready_structure_on_db_ok():
@@ -153,6 +231,37 @@ def test_health_ready_queue_not_configured_when_database_url_missing():
         "required": False,
     }
     assert result["status"] == "ready"
+
+
+def test_health_ready_reports_test_billing_mode_without_exposing_credentials():
+    """Signup preflight can prove Stripe mode without returning the secret."""
+    import asyncio
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+        MagicMock()
+    )
+
+    with (
+        patch("supabase.create_client", return_value=mock_client),
+        patch("app.core.config.settings") as mock_settings,
+    ):
+        mock_settings.supabase_url = "https://fake.supabase.co"
+        mock_settings.supabase_anon_key = "fake-key"
+        mock_settings.database_url = ""
+        mock_settings.queue_required = False
+        mock_settings.stripe_secret_key = "sk_test_do-not-return-me"
+        mock_settings.build_sha = "abc123"
+
+        result = asyncio.run(_call_health_ready())
+
+    assert result["build_sha"] == "abc123"
+    assert result["checks"]["billing"] == {
+        "status": "ok",
+        "configured": True,
+        "mode": "test",
+    }
+    assert "do-not-return-me" not in repr(result)
 
 
 def test_health_ready_degrades_when_required_queue_missing():

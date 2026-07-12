@@ -39,7 +39,10 @@ def ar_aging(
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> dict:
-    """AR aging buckets — outstanding invoices by days overdue."""
+    """Current AR aging snapshot from posted account 1200 GL base-currency amounts.
+
+    Partial settlements are netted; unmatched control balance is ``unallocated``.
+    """
     return svc.ar_aging()
 
 
@@ -48,7 +51,10 @@ def ap_aging(
     svc: ReportsService = Depends(_service),  # noqa: B008
     _user: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> dict:
-    """AP aging buckets — outstanding bills by days overdue."""
+    """Current AP aging snapshot from posted account 2000 GL base-currency amounts.
+
+    Partial settlements are netted; unmatched control balance is ``unallocated``.
+    """
     return svc.ap_aging()
 
 

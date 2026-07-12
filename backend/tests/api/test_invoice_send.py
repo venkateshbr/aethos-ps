@@ -21,22 +21,10 @@ pytestmark = [
 
 @pytest.fixture
 def admin_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
-    """Sender role — POST /invoices/{id}/send requires admin or higher."""
+    """Catalog-authorized owner used for positive and tenant-isolation sends."""
     u = world.tenant_a.owner
     h = {
         "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='admin')}",
-        "X-Tenant-ID": world.tenant_a.tenant_id,
-    }
-    with httpx.Client(base_url=api_base_url, headers=h, timeout=15.0) as c:
-        yield c
-
-
-@pytest.fixture
-def manager_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
-    """Lower-role client — used to prove RBAC rejects sends by non-admins."""
-    u = world.tenant_a.members["manager"]
-    h = {
-        "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='manager')}",
         "X-Tenant-ID": world.tenant_a.tenant_id,
     }
     with httpx.Client(base_url=api_base_url, headers=h, timeout=15.0) as c:
@@ -78,9 +66,13 @@ def test_send_cross_tenant_invoice_returns_404(
     )
 
 
-def test_send_manager_role_rejected_403(manager_a: httpx.Client) -> None:
-    """RBAC: only admin+ may POST /invoices/{id}/send."""
-    r = manager_a.post("/api/v1/invoices/00000000-0000-0000-0000-000000000000/send")
+def test_send_without_catalog_privilege_rejected_403(
+    client_a_viewer: httpx.Client,
+) -> None:
+    """RBAC: invoice send requires the exact ``invoices.send`` privilege."""
+    r = client_a_viewer.post(
+        "/api/v1/invoices/00000000-0000-0000-0000-000000000000/send"
+    )
     assert r.status_code == 403, r.text
 
 

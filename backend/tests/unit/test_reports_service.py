@@ -71,28 +71,74 @@ def _route_tables(mock_db: MagicMock, tables: dict[str, list[dict]]) -> None:
 
 
 def test_ar_aging_buckets_sum_to_total(mock_db: MagicMock) -> None:
-    """AR aging buckets must sum to the total field."""
+    """Current AR is base-currency GL aging with partial receipts applied."""
     today = date.today()
-
-    invoices = [
-        # 10 days overdue — 0_30 bucket
-        {"id": "inv-1", "total": "500.00", "currency": "USD", "due_date": (today - timedelta(days=10)).isoformat(), "status": "sent"},
-        # 45 days overdue — 31_60 bucket
-        {"id": "inv-2", "total": "300.00", "currency": "USD", "due_date": (today - timedelta(days=45)).isoformat(), "status": "overdue"},
-        # 75 days overdue — 61_90 bucket
-        {"id": "inv-3", "total": "200.00", "currency": "USD", "due_date": (today - timedelta(days=75)).isoformat(), "status": "overdue"},
-        # 100 days overdue — over_90 bucket
-        {"id": "inv-4", "total": "100.00", "currency": "USD", "due_date": (today - timedelta(days=100)).isoformat(), "status": "overdue"},
-    ]
-
-    mock_db.table.return_value = _chain(invoices)
+    current_period = today.strftime("%Y-%m")
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": "DR",
+                    "base_amount": "1350.00",
+                    "journal_entries": {
+                        "period": current_period,
+                        "entry_date": today.isoformat(),
+                        "posted_at": f"{today.isoformat()}T01:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "CR",
+                    "base_amount": "500.00",
+                    "journal_entries": {
+                        "period": current_period,
+                        "entry_date": today.isoformat(),
+                        "posted_at": f"{today.isoformat()}T02:00:00+00:00",
+                        "reference_type": "payment",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "DR",
+                    "base_amount": "1000.00",
+                    "journal_entries": {
+                        "period": current_period,
+                        "entry_date": today.isoformat(),
+                        "posted_at": f"{today.isoformat()}T03:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "inv-sgd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+            ],
+            "invoices": [
+                {
+                    "id": "inv-usd",
+                    "total": "1000.00",
+                    "currency": "USD",
+                    "due_date": (today - timedelta(days=10)).isoformat(),
+                },
+                {
+                    "id": "inv-sgd",
+                    "total": "1000.00",
+                    "currency": "SGD",
+                    "due_date": (today - timedelta(days=45)).isoformat(),
+                },
+            ],
+        },
+    )
     svc = _make_svc(mock_db)
     result = svc.ar_aging()
 
-    assert result["0_30"] == "500.00"
-    assert result["31_60"] == "300.00"
-    assert result["61_90"] == "200.00"
-    assert result["over_90"] == "100.00"
+    assert result["0_30"] == "850.00"
+    assert result["31_60"] == "1000.00"
+    assert result["61_90"] == "0.00"
+    assert result["over_90"] == "0.00"
+    assert result["unallocated"] == "0.00"
 
     # total = sum of all buckets
     total = Decimal(result["total"])
@@ -102,7 +148,136 @@ def test_ar_aging_buckets_sum_to_total(mock_db: MagicMock) -> None:
         + Decimal(result["61_90"])
         + Decimal(result["over_90"])
     )
-    assert total == bucket_sum == Decimal("1100.00")
+    assert total == bucket_sum == Decimal("1850.00")
+
+
+def test_ar_aging_as_of_date_ignores_later_receipts(mock_db: MagicMock) -> None:
+    """A receipt in July must not rewrite the June close package's AR evidence."""
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": "DR",
+                    "base_amount": "250.00",
+                    "journal_entries": {
+                        "period": "2026-06",
+                        "entry_date": "2026-06-30",
+                        "posted_at": "2026-07-01T01:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "inv-june",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "CR",
+                    "base_amount": "250.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-12",
+                        "posted_at": "2026-07-12T03:00:00+00:00",
+                        "reference_type": "payment",
+                        "reference_id": "inv-june",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+            ],
+            "invoices": [
+                {
+                    "id": "inv-june",
+                    "due_date": "2026-06-20",
+                    "invoice_number": "INV-0001",
+                }
+            ],
+        },
+    )
+
+    result = _make_svc(mock_db).ar_aging(as_of_date="2026-06-30")
+
+    assert result == {
+        "0_30": "250.00",
+        "31_60": "0.00",
+        "61_90": "0.00",
+        "over_90": "0.00",
+        "unallocated": "0.00",
+        "total": "250.00",
+    }
+
+
+def test_ar_aging_as_of_date_uses_posted_base_amount_for_partial_fx_receipts(
+    mock_db: MagicMock,
+) -> None:
+    """Historical AR is a base-currency GL balance, never a raw-currency sum."""
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": "DR",
+                    "base_amount": "1350.00",
+                    "journal_entries": {
+                        "period": "2026-06",
+                        "entry_date": "2026-06-01",
+                        "posted_at": "2026-06-01T01:00:00+00:00",
+                        "reference_type": "invoice",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "CR",
+                    "base_amount": "675.00",
+                    "journal_entries": {
+                        "period": "2026-06",
+                        "entry_date": "2026-06-20",
+                        "posted_at": "2026-06-20T01:00:00+00:00",
+                        "reference_type": "payment",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "CR",
+                    "base_amount": "674.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-02",
+                        "posted_at": "2026-07-02T01:00:00+00:00",
+                        "reference_type": "payment",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+                {
+                    "direction": "CR",
+                    "base_amount": "1.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-02",
+                        "posted_at": "2026-07-02T01:00:01+00:00",
+                        "reference_type": "fx_gain_loss",
+                        "reference_id": "inv-usd",
+                    },
+                    "accounts": {"code": "1200"},
+                },
+            ],
+            "invoices": [
+                {
+                    "id": "inv-usd",
+                    "total": "1000.00",
+                    "currency": "USD",
+                    "base_total": "1350.00",
+                    "base_currency": "SGD",
+                    "due_date": "2026-06-15",
+                }
+            ],
+        },
+    )
+
+    result = _make_svc(mock_db).ar_aging(as_of_date="2026-06-30")
+
+    assert result["0_30"] == "675.00"
+    assert result["total"] == "675.00"
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +291,163 @@ def test_ap_aging_empty_returns_zero_buckets(mock_db: MagicMock) -> None:
     svc = _make_svc(mock_db)
     result = svc.ap_aging()
 
-    assert result["0_30"] == "0"
-    assert result["31_60"] == "0"
-    assert result["61_90"] == "0"
-    assert result["over_90"] == "0"
-    assert result["total"] == "0"
+    assert result["0_30"] == "0.00"
+    assert result["31_60"] == "0.00"
+    assert result["61_90"] == "0.00"
+    assert result["over_90"] == "0.00"
+    assert result["unallocated"] == "0.00"
+    assert result["total"] == "0.00"
+
+
+def test_ap_aging_current_uses_posted_base_currency_not_raw_bill_total(
+    mock_db: MagicMock,
+) -> None:
+    today = date.today()
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": "CR",
+                    "base_amount": "1350.00",
+                    "journal_entries": {
+                        "period": today.strftime("%Y-%m"),
+                        "entry_date": today.isoformat(),
+                        "posted_at": f"{today.isoformat()}T01:00:00+00:00",
+                        "reference_type": "bill",
+                        "reference_id": "bill-usd",
+                    },
+                    "accounts": {"code": "2000"},
+                }
+            ],
+            "bills": [
+                {
+                    "id": "bill-usd",
+                    "total": "1000.00",
+                    "currency": "USD",
+                    "due_date": (today - timedelta(days=5)).isoformat(),
+                }
+            ],
+        },
+    )
+
+    result = _make_svc(mock_db).ap_aging()
+
+    assert result["0_30"] == "1350.00"
+    assert result["total"] == "1350.00"
+
+
+def test_ap_aging_as_of_date_ignores_later_settlement(mock_db: MagicMock) -> None:
+    """A July settlement must leave the June AP close evidence unchanged."""
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": "CR",
+                    "base_amount": "100.00",
+                    "journal_entries": {
+                        "period": "2026-06",
+                        "entry_date": "2026-06-18",
+                        "posted_at": "2026-06-18T01:00:00+00:00",
+                        "reference_type": "bill",
+                        "reference_id": "bill-june",
+                    },
+                    "accounts": {"code": "2000"},
+                },
+                {
+                    "direction": "DR",
+                    "base_amount": "100.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-12",
+                        "posted_at": "2026-07-12T03:00:00+00:00",
+                        "reference_type": "bill_payment",
+                        "reference_id": "bill-june",
+                    },
+                    "accounts": {"code": "2000"},
+                },
+            ],
+            "bills": [{"id": "bill-june", "due_date": "2026-05-15"}],
+        },
+    )
+
+    result = _make_svc(mock_db).ap_aging(as_of_date="2026-06-30")
+
+    assert result == {
+        "0_30": "0.00",
+        "31_60": "100.00",
+        "61_90": "0.00",
+        "over_90": "0.00",
+        "unallocated": "0.00",
+        "total": "100.00",
+    }
+
+
+@pytest.mark.parametrize(
+    ("report_method", "account_code", "normal_direction", "document_table", "reference_type"),
+    [
+        ("ar_aging", "1200", "DR", "invoices", "invoice"),
+        ("ap_aging", "2000", "CR", "bills", "bill"),
+    ],
+    ids=["ar", "ap"],
+)
+def test_aging_excludes_future_entry_in_same_snapshot_month(
+    mock_db: MagicMock,
+    report_method: str,
+    account_code: str,
+    normal_direction: str,
+    document_table: str,
+    reference_type: str,
+) -> None:
+    """A same-period future-dated posting is not part of today's aging."""
+    _route_tables(
+        mock_db,
+        {
+            "journal_lines": [
+                {
+                    "direction": normal_direction,
+                    "base_amount": "100.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-10",
+                        "posted_at": "2026-07-10T01:00:00+00:00",
+                        "reference_type": reference_type,
+                        "reference_id": "document-current",
+                    },
+                    "accounts": {"code": account_code},
+                },
+                {
+                    "direction": normal_direction,
+                    "base_amount": "900.00",
+                    "journal_entries": {
+                        "period": "2026-07",
+                        "entry_date": "2026-07-31",
+                        "posted_at": "2026-07-10T02:00:00+00:00",
+                        "reference_type": reference_type,
+                        "reference_id": "document-future",
+                    },
+                    "accounts": {"code": account_code},
+                },
+            ],
+            document_table: [
+                {"id": "document-current", "due_date": "2026-07-01"},
+                {"id": "document-future", "due_date": "2026-07-01"},
+            ],
+        },
+    )
+
+    result = getattr(_make_svc(mock_db), report_method)(as_of_date="2026-07-12")
+
+    assert result == {
+        "0_30": "100.00",
+        "31_60": "0.00",
+        "61_90": "0.00",
+        "over_90": "0.00",
+        "unallocated": "0.00",
+        "total": "100.00",
+    }
+    assert "-0.00" not in result.values()
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +541,146 @@ def test_wip_value_is_hours_times_rate(mock_db: MagicMock) -> None:
     assert Decimal(row["unbilled_hours"]) == Decimal("8.0")
     assert Decimal(row["avg_rate"]) == Decimal("150.00")
     assert Decimal(row["wip_value"]) == Decimal("1200.00")
+
+
+def test_wip_as_of_date_retains_time_billed_in_a_later_period(mock_db: MagicMock) -> None:
+    """July invoicing must not erase approved June WIP from June close evidence."""
+    projects = [
+        {
+            "id": "proj-2",
+            "name": "Beta",
+            "engagement_id": "eng-2",
+            "engagements": {"rate_card_id": "rc-1"},
+        }
+    ]
+    time_entries = [
+        {
+            "project_id": "proj-2",
+            "hours": "5.0",
+            "date": "2026-06-10",
+            "billable": True,
+            "billing_status": "billed",
+            "invoice_id": "inv-july",
+            "status": "approved",
+            "approved_at": "2026-06-11T02:00:00+00:00",
+            "created_at": "2026-06-10T02:00:00+00:00",
+            "deleted_at": None,
+        }
+    ]
+    invoice_journals = [
+        {
+            "period": "2026-07",
+            "posted_at": "2026-07-02T02:00:00+00:00",
+            "reference_type": "invoice",
+            "reference_id": "inv-july",
+        }
+    ]
+    rate_lines = [{"rate_card_id": "rc-1", "rate": "150.00"}]
+    _route_tables(
+        mock_db,
+        {
+            "projects": projects,
+            "time_entries": time_entries,
+            "journal_entries": invoice_journals,
+            "rate_card_lines": rate_lines,
+        },
+    )
+
+    result = _make_svc(mock_db).wip(as_of_date="2026-06-30")
+
+    assert result == [
+        {
+            "project_id": "proj-2",
+            "project_name": "Beta",
+            "unbilled_hours": "5.0",
+            "avg_rate": "150.00",
+            "wip_value": "750.00",
+            "as_of_date": "2026-06-30",
+            "valuation_basis": "current_rate_card_estimate",
+        }
+    ]
+
+
+def test_wip_as_of_date_excludes_time_billed_in_selected_period(mock_db: MagicMock) -> None:
+    """Approved time invoiced in June is no longer June period-end WIP."""
+    _route_tables(
+        mock_db,
+        {
+            "projects": [
+                {
+                    "id": "proj-2",
+                    "name": "Beta",
+                    "engagement_id": "eng-2",
+                    "engagements": {"rate_card_id": "rc-1"},
+                }
+            ],
+            "time_entries": [
+                {
+                    "project_id": "proj-2",
+                    "hours": "5.0",
+                    "date": "2026-06-10",
+                    "billable": True,
+                    "billing_status": "billed",
+                    "invoice_id": "inv-june",
+                    "status": "approved",
+                    "approved_at": "2026-06-11T02:00:00+00:00",
+                    "created_at": "2026-06-10T02:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "journal_entries": [
+                {
+                    "period": "2026-06",
+                    "posted_at": "2026-07-01T02:00:00+00:00",
+                    "reference_type": "invoice",
+                    "reference_id": "inv-june",
+                }
+            ],
+            "rate_card_lines": [{"rate_card_id": "rc-1", "rate": "150.00"}],
+        },
+    )
+
+    result = _make_svc(mock_db).wip(as_of_date="2026-06-30")
+
+    assert result[0]["unbilled_hours"] == "0"
+    assert result[0]["wip_value"] == "0.00"
+
+
+def test_wip_as_of_date_excludes_time_approved_after_period_end(mock_db: MagicMock) -> None:
+    """Backdated time approved in July is not evidence for the June close."""
+    _route_tables(
+        mock_db,
+        {
+            "projects": [
+                {
+                    "id": "proj-2",
+                    "name": "Beta",
+                    "engagement_id": "eng-2",
+                    "engagements": {"rate_card_id": "rc-1"},
+                }
+            ],
+            "time_entries": [
+                {
+                    "project_id": "proj-2",
+                    "hours": "5.0",
+                    "date": "2026-06-10",
+                    "billable": True,
+                    "billing_status": "unbilled",
+                    "invoice_id": None,
+                    "status": "approved",
+                    "approved_at": "2026-07-01T02:00:00+00:00",
+                    "created_at": "2026-06-10T02:00:00+00:00",
+                    "deleted_at": None,
+                }
+            ],
+            "rate_card_lines": [{"rate_card_id": "rc-1", "rate": "150.00"}],
+        },
+    )
+
+    result = _make_svc(mock_db).wip(as_of_date="2026-06-30")
+
+    assert result[0]["unbilled_hours"] == "0"
+    assert result[0]["wip_value"] == "0.00"
 
 
 # ---------------------------------------------------------------------------

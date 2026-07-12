@@ -11,7 +11,7 @@ import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { SkeletonRowsComponent } from '../../shared/components/skeleton-rows.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { userMessageForError } from '../../core/utils/error-message';
-import { AuthService } from '../../core/services/auth.service';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 
 export interface VendorOption {
   id: string;
@@ -50,6 +50,7 @@ export interface ProcurementDocumentSummary {
   currency: string;
   total: string;
   remaining_total: string;
+  requested_by?: string | null;
 }
 
 interface PoMatchSource {
@@ -93,7 +94,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
             type="button"
             (click)="openNewOrderForm()"
             [disabled]="!canCreateApDocument()"
-            [matTooltip]="canCreateApDocument() ? 'Create a purchase request, purchase order, or service order' : 'Requires manager role'"
+            [matTooltip]="canCreateApDocument() ? 'Create a purchase request, purchase order, or service order' : 'Requires procurement management permission'"
             class="inline-flex items-center gap-2 border border-border-strong hover:border-accent text-text-secondary hover:text-text-primary font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             [class.opacity-50]="!canCreateApDocument()"
             [class.cursor-not-allowed]="!canCreateApDocument()"
@@ -105,11 +106,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           <button
             type="button"
             (click)="openNewBillForm()"
-            [disabled]="!canCreateApDocument()"
-            [matTooltip]="canCreateApDocument() ? 'Create a draft vendor bill' : 'Requires manager role'"
+            [disabled]="!canManageBills()"
+            [matTooltip]="canManageBills() ? 'Create a draft vendor bill' : 'Requires bill management permission'"
             class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            [class.opacity-50]="!canCreateApDocument()"
-            [class.cursor-not-allowed]="!canCreateApDocument()"
+            [class.opacity-50]="!canManageBills()"
+            [class.cursor-not-allowed]="!canManageBills()"
             aria-label="Create new bill"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
@@ -118,11 +119,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
           <button
             type="button"
             (click)="goToPayBills()"
-            [disabled]="!canApproveApAction()"
-            [matTooltip]="canApproveApAction() ? 'Prepare and approve bill payment batches' : 'Requires admin role'"
+            [disabled]="!canAccessBillPayments()"
+            [matTooltip]="canAccessBillPayments() ? 'Open bill payment batches' : 'Requires bill payment read permission'"
             class="inline-flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white font-medium px-4 py-2 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-            [class.opacity-50]="!canApproveApAction()"
-            [class.cursor-not-allowed]="!canApproveApAction()"
+            [class.opacity-50]="!canAccessBillPayments()"
+            [class.cursor-not-allowed]="!canAccessBillPayments()"
             aria-label="Go to Pay Bills wizard"
           >
             <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">payments</mat-icon>
@@ -194,8 +195,8 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                     <button
                       type="button"
                       class="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
-                      [disabled]="orderActionLoading() === order.id || !canApproveApAction()"
-                      [matTooltip]="canApproveApAction() ? 'Approve this procurement document' : 'Requires admin role'"
+                      [disabled]="orderActionLoading() === order.id || !canApproveProcurementDocument(order)"
+                      [matTooltip]="procurementApprovalTooltip(order)"
                       (click)="approveOrder(order)"
                     >
                       <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">verified</mat-icon>
@@ -206,7 +207,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
                       type="button"
                       class="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
                       [disabled]="orderActionLoading() === order.id || !canCreateApDocument()"
-                      [matTooltip]="canCreateApDocument() ? 'Convert this request to an order' : 'Requires manager role'"
+                      [matTooltip]="canCreateApDocument() ? 'Convert this request to an order' : 'Requires procurement management permission'"
                       (click)="convertRequest(order)"
                     >
                       <mat-icon class="text-sm" style="font-size:14px;width:14px;height:14px;">call_split</mat-icon>
@@ -983,7 +984,7 @@ export class BillsListComponent implements OnInit {
   private http   = inject(HttpClient);
   private router = inject(Router);
   private fb     = inject(FormBuilder);
-  private auth   = inject(AuthService);
+  private permissions = inject(CurrentPermissionsService);
 
   loading     = signal(true);
   error       = signal<string | null>(null);
@@ -1043,12 +1044,29 @@ export class BillsListComponent implements OnInit {
     { label: 'Paid',     value: 'paid' },
     { label: 'Overdue',  value: 'overdue' },
   ];
-  canCreateApDocument = () => this.roleRank(this.auth.role()) >= this.roleRank('manager');
-  canApproveApAction = () => this.roleRank(this.auth.role()) >= this.roleRank('admin');
+  canCreateApDocument = () => this.permissions.hasPrivilege('procurement.manage');
+  canApproveProcurement = () => this.permissions.hasPrivilege('procurement.approve');
+  canAccessBillPayments = () => this.permissions.hasPrivilege('bill_payments.read');
+  canManageBills = () => this.permissions.hasPrivilege('bills.manage');
+
+  canApproveProcurementDocument(order: ProcurementDocumentSummary): boolean {
+    return this.canApproveProcurement() && !this.isOwnProcurementRequest(order);
+  }
+
+  procurementApprovalTooltip(order: ProcurementDocumentSummary): string {
+    if (!this.canApproveProcurement()) {
+      return 'Requires procurement approval permission';
+    }
+    if (this.isOwnProcurementRequest(order)) {
+      return 'Segregation of duties: the requester cannot approve their own procurement document';
+    }
+    return 'Approve this procurement document';
+  }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     this.loadVendors();
     this.loadPurchaseOrders();
     this.loadBills();
@@ -1137,7 +1155,7 @@ export class BillsListComponent implements OnInit {
   }
 
   openNewBillForm(): void {
-    if (!this.canCreateApDocument()) return;
+    if (!this.canManageBills()) return;
     // Reset form to defaults
     while (this.lines.length > 1) this.lines.removeAt(1);
     this.newBillForm.reset({
@@ -1357,7 +1375,7 @@ export class BillsListComponent implements OnInit {
   }
 
   submitNewBill(): void {
-    if (!this.canCreateApDocument()) return;
+    if (!this.canManageBills()) return;
     if (this.newBillForm.invalid || this.creating() || this.lines.length === 0) {
       this.newBillForm.markAllAsTouched();
       return;
@@ -1472,7 +1490,7 @@ export class BillsListComponent implements OnInit {
   }
 
   approveOrder(order: ProcurementDocumentSummary): void {
-    if (!this.canApproveApAction()) return;
+    if (!this.canApproveProcurementDocument(order)) return;
     this.orderActionLoading.set(order.id);
     this.orderActionMessage.set(null);
     this.http.post<ProcurementDocumentSummary>(`/api/v1/procurement/documents/${order.id}/approve`, {}).subscribe({
@@ -1644,21 +1662,12 @@ export class BillsListComponent implements OnInit {
   }
 
   goToPayBills(): void {
-    if (!this.canApproveApAction()) return;
+    if (!this.canAccessBillPayments()) return;
     this.router.navigate(['/app/billing-runs']);
   }
 
-  private roleRank(role: string | null | undefined): number {
-    const ranks: Record<string, number> = {
-      owner: 5,
-      admin: 4,
-      manager: 3,
-      approver: 2,
-      member: 2,
-      auditor: 1,
-      viewer: 1,
-      employee: 0,
-    };
-    return ranks[role ?? 'viewer'] ?? 1;
+  private isOwnProcurementRequest(order: ProcurementDocumentSummary): boolean {
+    const userId = this.permissions.userId();
+    return !!userId && !!order.requested_by && order.requested_by === userId;
   }
 }

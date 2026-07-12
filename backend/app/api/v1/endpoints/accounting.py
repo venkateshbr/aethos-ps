@@ -59,7 +59,10 @@ from app.services.close_override_service import (
     CloseOverride,
     CloseOverrideService,
 )
-from app.services.close_package_service import ClosePackageService
+from app.services.close_package_service import (
+    ClosePackageService,
+    fetch_tenant_base_currency,
+)
 from app.services.close_reconciliation_service import CloseReconciliationService
 from app.services.close_status_service import (
     CloseStatusService,
@@ -401,11 +404,17 @@ async def close_package(
     _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_user_rls_client),  # noqa: B008
+    service_db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> PeriodClosePackageResponse:
     """Return a review-ready close package with deterministic commentary."""
     _validate_period(period)
     try:
-        result = ClosePackageService(db, tenant_id).build_package(period)
+        base_currency = fetch_tenant_base_currency(service_db, tenant_id)
+        result = ClosePackageService(
+            db,
+            tenant_id,
+            base_currency=base_currency,
+        ).build_package(period)
     except Exception as exc:
         logger.exception(
             "Failed to build close package for tenant %s period %s",
@@ -626,6 +635,8 @@ async def create_recurring_journal_template(
             payload,
             created_by=current_user.user_id,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception(
             "Failed to create recurring journal template for tenant %s",
@@ -993,6 +1004,23 @@ async def lock_period(
             detail="An internal error occurred",
         ) from exc
 
+    try:
+        await CloseTasksService(db, tenant_id).mark_period_lock_task(
+            period=period,
+            actor_id=current_user.user_id,
+            locked=True,
+        )
+    except Exception:
+        # The lock row is authoritative and already persisted. A stale display
+        # checklist must not turn a successful accounting lock into a retry
+        # that reports failure or risks duplicate operator action.
+        logger.warning(
+            "Period locked but checklist action could not be synchronised: period=%s tenant=%s",
+            period,
+            tenant_id,
+            exc_info=True,
+        )
+
     logger.info(
         "Period locked: period=%s tenant=%s user=%s",
         period,
@@ -1047,6 +1075,20 @@ async def unlock_period(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Period {period} is not locked",
+        )
+
+    try:
+        await CloseTasksService(db, tenant_id).mark_period_lock_task(
+            period=period,
+            actor_id=current_user.user_id,
+            locked=False,
+        )
+    except Exception:
+        logger.warning(
+            "Period unlocked but checklist action could not be reopened: period=%s tenant=%s",
+            period,
+            tenant_id,
+            exc_info=True,
         )
 
     logger.info(

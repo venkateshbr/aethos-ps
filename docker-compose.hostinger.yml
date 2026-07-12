@@ -9,6 +9,7 @@
 
 x-api-environment: &api-environment
   PORT: "8080"
+  BUILD_SHA: "${AETHOS_IMAGE_TAG:-unknown}"
   ENVIRONMENT: "${ENVIRONMENT:-production}"
   DEBUG: "${DEBUG:-false}"
   FRONTEND_BASE_URL: "${FRONTEND_BASE_URL:-https://aethos.ishirock.tech}"

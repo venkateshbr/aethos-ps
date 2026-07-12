@@ -8,7 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
-import { AuthService } from '../../core/services/auth.service';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 import { userMessageForError } from '../../core/utils/error-message';
 
 export interface InvoiceSummary {
@@ -53,7 +53,7 @@ type InvoiceListResponse = InvoiceSummary[];
           [attr.aria-disabled]="!canDraftInvoice()"
           [class.opacity-50]="!canDraftInvoice()"
           [class.cursor-not-allowed]="!canDraftInvoice()"
-          [matTooltip]="canDraftInvoice() ? 'Draft an invoice from an engagement' : 'Requires manager role'"
+          [matTooltip]="canDraftInvoice() ? 'Draft an invoice from an engagement' : 'Requires invoice draft permission'"
           (click)="goToNewInvoice()"
         >
           <mat-icon class="text-base leading-none">add</mat-icon>
@@ -67,6 +67,13 @@ type InvoiceListResponse = InvoiceSummary[];
              role="status" aria-live="polite">
           <mat-icon class="text-base">check_circle</mat-icon>
           {{ sentMessage() }}
+        </div>
+      }
+      @if (actionError()) {
+        <div class="mb-4 rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low flex items-center gap-2"
+             role="alert">
+          <mat-icon class="text-base">error_outline</mat-icon>
+          {{ actionError() }}
         </div>
       }
 
@@ -189,7 +196,7 @@ type InvoiceListResponse = InvoiceSummary[];
                       [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
                       mat-stroked-button
                       class="text-xs text-accent-light border-accent/40 hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      [matTooltip]="canPostInvoiceAction() ? 'Approve — posts AR journal' : 'Requires admin role'"
+                      [matTooltip]="canPostInvoiceAction() ? 'Approve — posts AR journal' : 'Requires invoice posting permission'"
                       [attr.aria-label]="'Approve invoice ' + (row.invoice_number)"
                     >
                       <mat-icon class="text-sm">task_alt</mat-icon>
@@ -199,10 +206,10 @@ type InvoiceListResponse = InvoiceSummary[];
                   @if (row.status === 'approved') {
                     <button
                       (click)="$event.stopPropagation(); sendInvoice(row)"
-                      [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
+                      [disabled]="actioningId() === row.id || !canSendInvoice()"
                       mat-stroked-button
                       class="text-xs text-indigo-400 border-indigo-700 hover:bg-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      [matTooltip]="canPostInvoiceAction() ? 'Send this invoice to the client' : 'Requires admin role'"
+                      [matTooltip]="canSendInvoice() ? 'Send this invoice to the client' : 'Requires invoice send permission'"
                       [attr.aria-label]="'Send invoice ' + (row.invoice_number)"
                     >
                       <mat-icon class="text-sm">send</mat-icon>
@@ -225,10 +232,10 @@ type InvoiceListResponse = InvoiceSummary[];
                   @if (row.status === 'approved' || row.status === 'sent') {
                     <button
                       (click)="$event.stopPropagation(); openMarkPaid(row)"
-                      [disabled]="actioningId() === row.id || !canPostInvoiceAction()"
+                      [disabled]="actioningId() === row.id || !canMarkInvoicePaid()"
                       mat-stroked-button
                       class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      [matTooltip]="canPostInvoiceAction() ? 'Record a payment received outside Stripe' : 'Requires admin role'"
+                      [matTooltip]="canMarkInvoicePaid() ? 'Record a payment received outside Stripe' : 'Requires invoice payment permission'"
                       [attr.aria-label]="'Mark invoice ' + (row.invoice_number) + ' paid'"
                     >
                       <mat-icon class="text-sm">payments</mat-icon>
@@ -322,7 +329,7 @@ type InvoiceListResponse = InvoiceSummary[];
 export class InvoicesListComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
-  private auth = inject(AuthService);
+  private permissions = inject(CurrentPermissionsService);
 
   loading     = signal(true);
   error       = signal<string | null>(null);
@@ -330,6 +337,7 @@ export class InvoicesListComponent implements OnInit {
   /** Generic in-flight signal used by Approve / Send / Mark paid actions. */
   actioningId = signal<string | null>(null);
   sentMessage = signal<string | null>(null);
+  actionError = signal<string | null>(null);
 
   // -------- Mark paid modal state --------
   payingInvoice = signal<InvoiceSummary | null>(null);
@@ -339,10 +347,21 @@ export class InvoicesListComponent implements OnInit {
   payError = signal<string | null>(null);
 
   displayedColumns = ['invoice_number', 'client_name', 'status', 'total_amount', 'due_date', 'actions'];
-  canDraftInvoice = computed(() => this.roleRank(this.auth.role()) >= this.roleRank('manager'));
-  canPostInvoiceAction = computed(() => this.roleRank(this.auth.role()) >= this.roleRank('admin'));
+  canDraftInvoice = computed(() =>
+    this.permissions.hasPrivilege('invoices.draft'),
+  );
+  canPostInvoiceAction = computed(() =>
+    this.permissions.hasPrivilege('invoices.post'),
+  );
+  canSendInvoice = computed(() =>
+    this.permissions.hasPrivilege('invoices.send'),
+  );
+  canMarkInvoicePaid = computed(() =>
+    this.permissions.hasPrivilege('invoices.mark_paid'),
+  );
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     this.http.get<InvoiceListResponse>('/api/v1/invoices').subscribe({
       next: (res) => {
         this.invoices.set(res);
@@ -360,6 +379,7 @@ export class InvoicesListComponent implements OnInit {
     if (!this.canPostInvoiceAction()) return;
     this.actioningId.set(invoice.id);
     this.sentMessage.set(null);
+    this.actionError.set(null);
     this.http.patch<{ status: string }>(`/api/v1/invoices/${invoice.id}/approve`, {}).subscribe({
       next: () => {
         this.invoices.set(
@@ -371,17 +391,18 @@ export class InvoicesListComponent implements OnInit {
         this.sentMessage.set(`Invoice ${invoice.invoice_number} approved — AR journal posted.`);
         setTimeout(() => this.sentMessage.set(null), 6000);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.actioningId.set(null);
-        this.sentMessage.set('Could not approve the invoice. Please try again.');
+        this.actionError.set(this.actionFailure(err, 'Approve invoice'));
       },
     });
   }
 
   sendInvoice(invoice: InvoiceSummary): void {
-    if (!this.canPostInvoiceAction()) return;
+    if (!this.canSendInvoice()) return;
     this.actioningId.set(invoice.id);
     this.sentMessage.set(null);
+    this.actionError.set(null);
 
     this.http.post<{ payment_link_url?: string; stripe_payment_link_url?: string | null }>(
       `/api/v1/invoices/${invoice.id}/send`, {},
@@ -404,15 +425,16 @@ export class InvoicesListComponent implements OnInit {
         );
         setTimeout(() => this.sentMessage.set(null), 8000);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.actioningId.set(null);
         this.sentMessage.set(null);
+        this.actionError.set(this.actionFailure(err, 'Send invoice'));
       },
     });
   }
 
   openMarkPaid(invoice: InvoiceSummary): void {
-    if (!this.canPostInvoiceAction()) return;
+    if (!this.canMarkInvoicePaid()) return;
     this.payingInvoice.set(invoice);
     this.payAmount = invoice.total_amount ?? '';
     this.payDate = new Date().toISOString().split('T')[0];
@@ -427,7 +449,7 @@ export class InvoicesListComponent implements OnInit {
 
   submitMarkPaid(): void {
     const invoice = this.payingInvoice();
-    if (!invoice) return;
+    if (!invoice || !this.canMarkInvoicePaid()) return;
     const amount = String(this.payAmount ?? '').trim();
     if (!amount || Number(amount) <= 0) {
       this.payError.set('Enter a positive payment amount.');
@@ -441,10 +463,10 @@ export class InvoicesListComponent implements OnInit {
     if (this.payNotes.trim()) body['notes'] = this.payNotes.trim();
 
     this.http.post<{ status: string }>(`/api/v1/invoices/${invoice.id}/payments`, body).subscribe({
-      next: () => {
+      next: (updated) => {
         this.invoices.set(
           this.invoices().map(inv =>
-            inv.id === invoice.id ? { ...inv, status: 'paid' } : inv,
+            inv.id === invoice.id ? { ...inv, status: updated.status } : inv,
           ),
         );
         this.actioningId.set(null);
@@ -488,20 +510,6 @@ export class InvoicesListComponent implements OnInit {
     return labels[status] ?? status;
   }
 
-  private roleRank(role: string | null): number {
-    const ranks: Record<string, number> = {
-      owner: 5,
-      admin: 4,
-      manager: 3,
-      approver: 2,
-      member: 2,
-      auditor: 1,
-      viewer: 1,
-      employee: 0,
-    };
-    return ranks[role ?? 'viewer'] ?? 1;
-  }
-
   /**
    * Invoices are generated from engagements — navigate there to start the
    * draft-invoice flow rather than opening a standalone create form.
@@ -513,5 +521,10 @@ export class InvoicesListComponent implements OnInit {
   goToNewInvoice(): void {
     if (!this.canDraftInvoice()) return;
     this.router.navigate(['/app/engagements']);
+  }
+
+  private actionFailure(err: unknown, surface: string): string {
+    const detail = (err as { error?: { detail?: unknown } } | null)?.error?.detail;
+    return typeof detail === 'string' ? detail : userMessageForError(err, surface);
   }
 }

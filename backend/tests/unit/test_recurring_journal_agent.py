@@ -139,6 +139,16 @@ def test_build_recurring_journal_proposal_caps_schedule_day_to_month_end() -> No
     assert proposal.journal_entry["lines"][0]["currency"] == "USD"
 
 
+def test_generated_journal_lines_inherit_frozen_template_currency() -> None:
+    tables = _base_tables()
+    tables["recurring_journal_templates"][0]["currency"] = "SGD"
+
+    proposal = build_recurring_journal_proposals(_deps(tables), "2026-02")[0]
+
+    assert proposal.currency == "SGD"
+    assert {line["currency"] for line in proposal.journal_entry["lines"]} == {"SGD"}
+
+
 def test_build_recurring_journal_respects_template_end_period() -> None:
     tables = _base_tables()
     tables["recurring_journal_templates"][0]["end_period"] = "2026-03"

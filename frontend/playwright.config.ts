@@ -34,6 +34,9 @@ if (!fs.existsSync(STORAGE_STATE)) {
  */
 export default defineConfig({
   testDir: './e2e',
+  // The retained-production journey has its own no-teardown config and an
+  // explicit mutation opt-in. Never let the ordinary suite discover it.
+  testIgnore: /ishantech-production-ui\.spec\.ts/,
   globalTeardown: './e2e/global.teardown.ts',
   fullyParallel: false,             // single-session login; serial within project
   forbidOnly: !!process.env.CI,
