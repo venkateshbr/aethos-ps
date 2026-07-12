@@ -52,11 +52,6 @@ jobs:
   frontend-check:
     name: Frontend typecheck + unit
     runs-on: ubuntu-latest
-    # Only run when frontend/ files are touched
-    if: |
-      contains(toJson(github.event.commits[*].modified), 'frontend/') ||
-      contains(toJson(github.event.commits[*].added), 'frontend/') ||
-      github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
@@ -100,10 +95,6 @@ jobs:
   frontend-build:
     name: Frontend build (production)
     runs-on: ubuntu-latest
-    if: |
-      contains(toJson(github.event.commits[*].modified), 'frontend/') ||
-      contains(toJson(github.event.commits[*].added), 'frontend/') ||
-      github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
