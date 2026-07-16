@@ -62,7 +62,7 @@ jobs:
           build_push aethos-ps-hermes    integrations/hermes   Dockerfile
           build_push aethos-ps-timesheet frontend              Dockerfile.timesheet.prod
 
-      - name: Render registry-only compose (strip build: so the VPS pulls, never builds)
+      - name: Render registry-only compose so the VPS pulls and never builds
         run: |
           set -euo pipefail
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
