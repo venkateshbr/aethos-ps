@@ -407,6 +407,19 @@ deploy (below) — do not trust the green checkmark alone. Embedding a token in 
 compose URL (`https://x-access-token:TOKEN@github.com/...`) does **not** help —
 the Docker Manager normalises the URL and drops the credentials.
 
+### The `content` field is capped at 8192 characters
+
+The Hostinger deploy API rejects `content` longer than **8192 chars**
+(`"The content field must not be greater than 8192 characters."`). Our compose is
+~10 KB (~9.9 KB even with comments stripped), so you **cannot** pass the compose
+as raw YAML to skip the clone — you must pass a short **URL**, which is what makes
+the Docker Manager clone (and hit the private-repo problem above). A validated
+GHCR build works (`.github/workflows/deploy-hostinger.yml` builds the 4 images in
+Actions and pushes them to `ghcr.io/venkateshbr/aethos-ps-*`), but delivering the
+registry compose to the VPS still requires either a cloneable URL (git creds) or
+a public URL (e.g. a public gist) plus GHCR pull auth on the VPS. There is no
+first-class registry-credential endpoint on the Hostinger docker API.
+
 ### To make a deploy succeed, the repo must be cloneable by the VPS
 
 Pick one (the first is how prod worked previously):
