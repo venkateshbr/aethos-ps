@@ -33,9 +33,11 @@ from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
+from app.core.logging import trace_id_var
 from app.core.tenant import get_tenant_id
 from app.models.ai_settings import AiSettingsResponse
 from app.repositories.chat_repo import ChatRepository
+from app.services.agent_run_ledger import AgentRunLedger
 from app.services.ai_settings_service import AiSettingsService, default_ai_settings_response
 from app.services.atlas_deterministic_responses import (
     SemanticAtlasResponse,
@@ -327,6 +329,24 @@ async def send_message(
             )
             runtime_model = f"nous:{runtime.name}"
 
+            # The Basic runtime records its own agent_run inside the graph loop.
+            # Record one for the Hermes runtime here so Hermes turns also appear
+            # in the Agent Run Ledger with runtime, status, and trace.
+            hermes_ledger: AgentRunLedger | None = None
+            hermes_run_id: str | None = None
+            if runtime.name == "hermes_agent":
+                hermes_ledger = AgentRunLedger(db, tenant_id)
+                hermes_run_id = await hermes_ledger.start_run(
+                    agent_name="nous_hermes_runtime",
+                    trigger_type="chat",
+                    user_id=str(current_user.user_id),
+                    input_payload={"message": payload.content[:2000]},
+                    prompt_version="hermes-v1",
+                    model_version=runtime_model,
+                    trace_id=trace_id_var.get("") or None,
+                    replay_pointer=f"chat_threads/{thread_id}",
+                )
+
             async for frame in runtime.stream_message(
                 user_message=payload.content,
                 thread_id=thread_id,
@@ -365,6 +385,17 @@ async def send_message(
                         exc_info=True,
                         extra={"tenant_id": tenant_id, "thread_id": thread_id},
                     )
+
+            if hermes_ledger is not None:
+                await hermes_ledger.complete_run(
+                    hermes_run_id,
+                    status="failed" if had_error else "succeeded",
+                    output_payload={
+                        "finish_reason": finish_reason,
+                        "chars": len(assistant_content or ""),
+                    },
+                    model_version=runtime_model,
+                )
 
         response_order = ai_settings.atlas_response_order or ["semantic_intent", "atlas_runtime"]
         for stage in response_order:
