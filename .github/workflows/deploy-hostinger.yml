@@ -1,5 +1,12 @@
 name: Deploy Hostinger Production
 
+# GOTCHA (see docs/infra/HOSTINGER_DEPLOYMENT.md "How the Hostinger deploy
+# actually works"): the Hostinger Docker Manager git-clones this repo on the VPS
+# and builds from source. This repo is PRIVATE, so the Docker Manager needs git
+# credentials (configured in hPanel) or the clone fails — and this workflow still
+# reports SUCCESS while nothing deploys. After running, ALWAYS verify the live
+# container image tag via the Hostinger API; a stale tag means the clone failed.
+
 on:
   workflow_dispatch:
 

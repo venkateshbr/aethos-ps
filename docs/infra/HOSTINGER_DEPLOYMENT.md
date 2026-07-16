@@ -344,7 +344,8 @@ Required GitHub Actions secret:
 Required GitHub Actions variable:
 
 - `HOSTINGER_VM_ID=1695814`
-- `HOSTINGER_PROJECT_NAME=<project confirmed in Hostinger hPanel/API>`
+- `HOSTINGER_PROJECT_NAME=aethos-ps` (confirmed via the Hostinger API — the live
+  project is named `aethos-ps`; see the troubleshooting section below)
 
 The workflow fails before deployment when `HOSTINGER_PROJECT_NAME` is absent.
 Repository/manual Compose documentation consistently uses `aethos-ps`, while a
@@ -374,6 +375,85 @@ Optional GitHub Actions variables:
 - `TRAEFIK_CERT_RESOLVER`
 - `COMPOSE_PROFILES=worker`
 - `COMPOSE_PROFILES=worker,hermes` when testing Hermes-powered Nous
+
+## How the Hostinger deploy actually works (READ THIS FIRST)
+
+Hard-won detail — do not rediscover it. The `hostinger/deploy-on-vps@v2` action
+and the underlying Hostinger VPS Docker Manager API do **not** ship pre-built
+images and do **not** upload the repo. They do this instead:
+
+1. The action `POST`s to
+   `https://developers.hostinger.com/api/vps/v1/virtual-machines/1695814/docker`
+   with a JSON body: `{ project_name, content, environment }`, where `content`
+   is a GitHub URL to `docker-compose.hostinger.yml` **at the deployed SHA**.
+2. The VPS Docker Manager **git-clones the repo at that SHA on the VPS**, then
+   builds the images from source (`build:` contexts) and runs `docker compose up`.
+
+Because it clones, **a private repo requires the Docker Manager to have git
+credentials.** `venkateshbr/aethos-ps` is private. When the clone has no creds
+the build log shows:
+
+```text
+Trying SSH clone: git@github.com:venkateshbr/aethos-ps.git
+Trying HTTPS clone: https://github.com/venkateshbr/aethos-ps.git
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+Failed to clone repository
+```
+
+**Critical failure mode:** the deploy API returns `200`/SUCCESS and the workflow
+goes green, but the clone fails server-side, so the old containers keep running
+and **nothing actually deploys**. Always verify the running image tag after a
+deploy (below) — do not trust the green checkmark alone. Embedding a token in the
+compose URL (`https://x-access-token:TOKEN@github.com/...`) does **not** help —
+the Docker Manager normalises the URL and drops the credentials.
+
+### To make a deploy succeed, the repo must be cloneable by the VPS
+
+Pick one (the first is how prod worked previously):
+
+- **Configure git credentials on the Hostinger Docker Manager** (hPanel → VPS →
+  Docker Manager → connect GitHub / add an access token or deploy key). This is
+  the durable fix and requires hPanel access.
+- **Local source-syncing deploy** — run `scripts/deploy/hostinger-deploy.sh` from
+  a machine that can SSH to the VPS. It clones/rsyncs the source to the VPS
+  itself and runs `docker compose up --build`, bypassing the Docker Manager's
+  clone entirely. (VPS SSH port 22 is firewalled to trusted IPs, so this must run
+  from an allowed host.)
+- **Temporarily make the repo public**, deploy, then re-private it (exposes the
+  code/history during the window — least preferred).
+
+### Hostinger API cheatsheet (for diagnosing a deploy)
+
+`VM_ID=1695814`, `PROJECT=aethos-ps`. Auth: `Authorization: Bearer $HOSTINGER_API_KEY`.
+The API is behind Cloudflare and **bans non-browser user agents** — use `curl`
+(works), not Python `urllib`/`requests` (returns Cloudflare `1010` / HTTP 403).
+
+```bash
+BASE=https://developers.hostinger.com/api/vps/v1/virtual-machines/1695814/docker
+# List projects + running container images and uptimes (is the new tag live?):
+curl -s -H "Authorization: Bearer $HOSTINGER_API_KEY" "$BASE"
+# Container detail for the project:
+curl -s -H "Authorization: Bearer $HOSTINGER_API_KEY" "$BASE/aethos-ps/containers"
+# Build + service logs — filter service == "[build]" for the clone/build result:
+curl -s -H "Authorization: Bearer $HOSTINGER_API_KEY" "$BASE/aethos-ps/logs"
+# Trigger a deploy (what deploy-on-vps does):
+curl -s -X POST -H "Authorization: Bearer $HOSTINGER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"project_name":"aethos-ps","content":"<compose URL at SHA>","environment":"<KEY=VALUE lines>"}' \
+  "$BASE"
+```
+
+If the running image tag still shows the previous short SHA (e.g.
+`aethos-ps-api:a48c1a1` "Up 2 weeks") after a deploy, the clone/build failed —
+check `/aethos-ps/logs`.
+
+### Database note
+
+Production (`aethos.ishirock.tech`) uses the **same Supabase project** as the
+local `.env` (`SUPABASE_URL` → `glcljucaayeesvrsjths`). There is not a separate
+prod database. Consequences: DB migrations only need to be applied once to that
+shared project, and a tenant/user created during testing already exists in
+"prod". The deploy only ships new **code** to the VPS; it does not touch the DB.
 
 ## Production Integrations To Update
 
