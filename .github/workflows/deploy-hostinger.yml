@@ -66,6 +66,11 @@ jobs:
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
           yq eval 'del(.services[].build)' docker-compose.hostinger.yml > deploy-compose.yml
+          # Bake the image tag (not a secret) into the compose — the Docker Manager
+          # does not substitute ${AETHOS_IMAGE_TAG} for image resolution, so without
+          # this it would pull :latest (which does not exist) and 403.
+          sed -i "s|\${AETHOS_IMAGE_TAG:-latest}|$TAG|g" deploy-compose.yml
+          echo "Image refs in deploy-compose.yml:"; grep -E 'image:' deploy-compose.yml
           GHTML="$(gh gist create --public --desc "aethos-ps deploy $TAG" deploy-compose.yml)"
           GID="${GHTML##*/}"
           RAW="$(gh api "gists/$GID" --jq '.files[].raw_url')"
