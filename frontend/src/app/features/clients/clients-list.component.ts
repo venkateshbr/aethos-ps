@@ -84,7 +84,7 @@ interface ClientSummary {
           @if (contacts().length === 0) {
             <p class="text-text-secondary font-medium">No contacts yet</p>
             <p class="text-text-disabled text-sm mt-1 max-w-md">
-              Add a contact manually or process an engagement letter through Aethos Atlas.
+              Add a contact manually or process an engagement letter through Aethos Nous.
             </p>
             <button
               type="button"

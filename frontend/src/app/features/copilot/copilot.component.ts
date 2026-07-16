@@ -146,7 +146,7 @@ export function collectCompleteSseLines(
             <mat-icon class="text-accent-light text-base leading-none">auto_awesome</mat-icon>
           </div>
           <div class="min-w-0">
-            <h1 class="text-sm font-semibold text-text-primary">Aethos Atlas</h1>
+            <h1 class="text-sm font-semibold text-text-primary">Aethos Nous</h1>
             <p class="text-xs text-text-muted truncate" [attr.title]="activeThreadTitle()">
               {{ activeThreadTitle() }}
             </p>
@@ -167,7 +167,7 @@ export function collectCompleteSseLines(
               <div class="w-14 h-14 rounded-full bg-accent/15 border border-accent/40 flex items-center justify-center mb-5">
                 <mat-icon class="text-accent-light" style="font-size:1.75rem;width:1.75rem;height:1.75rem;">auto_awesome</mat-icon>
               </div>
-              <p class="text-text-primary font-semibold text-base mb-2">Welcome to Aethos Atlas</p>
+              <p class="text-text-primary font-semibold text-base mb-2">Welcome to Aethos Nous</p>
               <p class="text-text-muted text-sm text-center max-w-xs leading-relaxed mb-6">
                 Drop your most recent engagement letter or invoice and I'll set up your first client.
               </p>
@@ -280,7 +280,7 @@ export function collectCompleteSseLines(
                 @if (msg.content || msg.streaming) {
                   <div
                     class="bg-surface border border-border-strong text-text-primary rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
-                    [attr.aria-label]="'Atlas: ' + msg.content"
+                    [attr.aria-label]="'Nous: ' + msg.content"
                   >
                     {{ msg.content }}@if (msg.streaming) {
                       <span
@@ -346,7 +346,7 @@ export function collectCompleteSseLines(
             </div>
           }
 
-          <div class="mb-2 flex flex-wrap gap-2" role="group" aria-label="Atlas quick actions">
+          <div class="mb-2 flex flex-wrap gap-2" role="group" aria-label="Nous quick actions">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-default text-xs text-text-muted
@@ -400,7 +400,7 @@ export function collectCompleteSseLines(
               (focus)="composerFocused.set(true)"
               (blur)="composerFocused.set(false)"
               rows="1"
-              placeholder="Message Atlas…"
+              placeholder="Message Nous…"
               class="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-disabled
                      resize-none outline-none leading-relaxed min-h-[1.5rem] max-h-36 overflow-y-auto"
               [disabled]="streaming()"
@@ -567,7 +567,7 @@ export class CopilotComponent implements OnInit {
         await this.loadMessages(data[0].id);
       }
     } catch (err) {
-      console.error('Failed to load Atlas threads:', err);
+      console.error('Failed to load Nous threads:', err);
     }
   }
 
@@ -589,7 +589,7 @@ export class CopilotComponent implements OnInit {
           }))
       );
     } catch (err) {
-      console.error('Failed to load Atlas messages:', err);
+      console.error('Failed to load Nous messages:', err);
       this.error.set('Could not load this conversation. Please try again.');
     }
   }
@@ -783,7 +783,7 @@ export class CopilotComponent implements OnInit {
           }
 
           if (typeof payload['error'] === 'string') {
-            const safeMessage = 'Atlas is temporarily unavailable. Please try again.';
+            const safeMessage = 'Nous is temporarily unavailable. Please try again.';
             this.error.set(safeMessage);
             this.messages.update(msgs =>
               msgs.map(m =>
@@ -805,7 +805,7 @@ export class CopilotComponent implements OnInit {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Atlas send error:', message);
+      console.error('Nous send error:', message);
       this.error.set('Something went wrong. Please try again.');
       this.messages.update(msgs => {
         const assistantMsg = msgs.find(m => m.id === assistantId);
@@ -828,7 +828,7 @@ export class CopilotComponent implements OnInit {
 
   /**
    * Handle file selection from the hidden <input type="file">.
-   * Atlas attachments are uploaded with process=false so selecting a file does
+   * Nous attachments are uploaded with process=false so selecting a file does
    * not create Inbox work until the user sends instructions in the composer.
    */
   onFileSelected(event: Event): void {

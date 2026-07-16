@@ -215,18 +215,18 @@ If the application total exceeds five in a steady deployment, confirm only one
 worker container and two API workers are running, inspect overridden pool-size
 variables, then roll back before increasing the Supabase limit.
 
-## Optional Hermes-Powered Atlas Runtime
+## Optional Hermes-Powered Nous Runtime
 
-Atlas now supports configurable AI runtimes behind the same `/api/v1/chat/*`
+Nous now supports configurable AI runtimes behind the same `/api/v1/chat/*`
 routes:
 
 ```text
-ATLAS_AI_RUNTIME=aethos_basic   # default, current built-in Atlas AI
-ATLAS_AI_RUNTIME=hermes_agent   # advanced Hermes-powered Atlas runtime
+ATLAS_AI_RUNTIME=aethos_basic   # default, current built-in Nous AI
+ATLAS_AI_RUNTIME=hermes_agent   # advanced Hermes-powered Nous runtime
 ```
 
 The Hermes container is optional and behind the Compose profile `hermes`. The
-current Hostinger production deployment runs Hermes as the primary Atlas runtime
+current Hostinger production deployment runs Hermes as the primary Nous runtime
 with the built-in Aethos runtime enabled as a fallback:
 
 ```text
@@ -254,16 +254,16 @@ AGENT_MODELS=google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4
 ```
 
 Hermes is private on the internal Docker network. Do not add Traefik labels for
-the in-app Atlas migration. A public route should only be added later for
+the in-app Nous migration. A public route should only be added later for
 external-channel webhooks, and the Hermes API server/dashboard should remain
 private.
 
-The Hermes-powered Atlas runtime uses a private Aethos Tool Broker:
+The Hermes-powered Nous runtime uses a private Aethos Tool Broker:
 
 - Aethos API exposes `/api/v1/atlas-tools/execute` on the internal network.
 - Hermes accesses it only through the bundled `aethos` MCP server in the
   `aethos-ps-hermes` image.
-- Aethos signs a short-lived `context_ref` per Atlas turn. Hermes passes that
+- Aethos signs a short-lived `context_ref` per Nous turn. Hermes passes that
   opaque value to tools; tenant and user scope are derived by Aethos, not by
   model-supplied arguments.
 - The initial MCP allowlist includes read-only finance tools plus guarded
@@ -272,22 +272,22 @@ The Hermes-powered Atlas runtime uses a private Aethos Tool Broker:
   bill-pay proposal, month-end/year-end close preparation, and statement
   package generation. Guarded workflows use Aethos policy and Inbox; they do
   not directly approve invoices, payments, journals, statements, or emails.
-- `AETHOS_HERMES_REFRESH_PROFILE=true` keeps the managed Atlas profile, skills,
+- `AETHOS_HERMES_REFRESH_PROFILE=true` keeps the managed Nous profile, skills,
   and MCP config current across image upgrades without deleting Hermes memory or
   session data.
 - Default OpenRouter routing for Aethos-owned inference is Gemma 4 31B free,
   then OpenRouter's free model router, then Claude Haiku 4.5:
   `google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5`.
   Tenant admins can view and override runtime/model routing from Settings ->
-  Agent Autonomy -> AI Inference Settings. The same card controls whether Atlas
+  Agent Autonomy -> AI Inference Settings. The same card controls whether Nous
   tries the confidence-gated semantic intent router before the configured model
   runtime. These tenant settings apply to Aethos Basic, the built-in fallback
   path, semantic-router response order, and tenant-scoped document/reporting
-  agents. Hermes still uses the mounted Atlas profile for its primary model
+  agents. Hermes still uses the mounted Nous profile for its primary model
   until Hermes exposes dynamic per-tenant model selection.
 - Hermes provider/control-plane failures are classified by the Aethos API as
   `quota`, `auth`, `rate_limit`, `timeout`, `upstream_outage`, or `unknown`.
-  Atlas should show a short user-safe unavailable message or fall back to the
+  Nous should show a short user-safe unavailable message or fall back to the
   built-in runtime; it must not show provider URLs, billing/key-limit text,
   traces, or raw tool output to end users. The API records safe operational
   counters such as `atlas_provider_quota` and `atlas_provider_rate_limit` for
@@ -373,7 +373,7 @@ Optional GitHub Actions variables:
 - `TRAEFIK_ENTRYPOINT`
 - `TRAEFIK_CERT_RESOLVER`
 - `COMPOSE_PROFILES=worker`
-- `COMPOSE_PROFILES=worker,hermes` when testing Hermes-powered Atlas
+- `COMPOSE_PROFILES=worker,hermes` when testing Hermes-powered Nous
 
 ## Production Integrations To Update
 

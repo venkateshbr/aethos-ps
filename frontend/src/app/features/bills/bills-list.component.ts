@@ -251,7 +251,7 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'paid' | 'overdue';
         <app-empty-state
           icon="upload_file"
           heading="No bills yet"
-          message="Attach a vendor invoice in Aethos Atlas, then send a processing prompt to create the review draft."
+          message="Attach a vendor invoice in Aethos Nous, then send a processing prompt to create the review draft."
         />
       }
 

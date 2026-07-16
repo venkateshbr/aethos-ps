@@ -325,6 +325,7 @@ async def send_message(
                 db_client=db,
                 ai_settings=settings,
             )
+            runtime_model = f"nous:{runtime.name}"
 
             async for frame in runtime.stream_message(
                 user_message=payload.content,
@@ -354,7 +355,7 @@ async def send_message(
                         role="assistant",
                         content=assistant_content,
                         finish_reason=finish_reason,
-                        model="claude-sonnet-4-6",
+                        model=runtime_model,
                     )
                 except Exception:
                     # Non-fatal: the user got their response; persistence failure

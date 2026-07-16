@@ -142,7 +142,7 @@ async function authenticate(page: Page, role: MockRole = 'admin'): Promise<void>
 
 async function sendCopilotBusinessPrompt(page: Page, prompt: string): Promise<void> {
   await page.goto(`${BASE}/app/copilot`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Aethos Atlas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aethos Nous' })).toBeVisible();
   await page.getByLabel('Message input').fill(prompt);
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByLabel(`You: ${prompt}`)).toBeVisible();

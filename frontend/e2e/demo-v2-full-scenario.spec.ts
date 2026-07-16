@@ -701,7 +701,7 @@ test.describe('Demo v2 — full UI-driven engagement-to-cash walkthrough', () =>
       // LLM/tool dependencies disabled, so record that as a demo gap instead
       // of failing the rest of the walkthrough.
       const assistantOutput = page
-        .locator('[aria-label^="Atlas:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
+        .locator('[aria-label^="Nous:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
         .last();
       if (!(await assistantOutput.isVisible({ timeout: 60_000 }).catch(() => false))) {
         noteGap('Copilot', 'No assistant response or tool output visible after query', page);

@@ -1,4 +1,4 @@
-"""Deterministic Atlas responses for high-control finance operations.
+"""Deterministic Nous responses for high-control finance operations.
 
 The LLM runtimes remain the conversational layer, but core ERP read/action
 intents should not fail just because an upstream model is slow or rate-limited.
@@ -42,7 +42,7 @@ _MONTHS = {
     "december": "12",
 }
 
-# Most action intents are implemented by the Atlas runtime tool loop. The
+# Most action intents are implemented by the Nous runtime tool loop. The
 # deterministic responder must not claim success unless it actually creates
 # the review artifact. Finance Ops action plans and manual journals are the
 # action routes in this module that call materializing tools directly.
@@ -634,7 +634,7 @@ class _DeterministicAtlasResponder:
                 "Configuration and telemetry readiness is summarized with user-safe status flags.",
                 "Approval controls: role and threshold policy are active; high-risk Inbox items require role review.",
                 "Scheduled Finance Ops Manager settings: cadence, escalation windows, last run, and open scheduled plans should be reviewed before enablement.",
-                "Atlas runtime: configurable between Aethos basic AI and Hermes-powered Atlas; fallback can route degraded Hermes turns to basic Atlas.",
+                "Nous runtime: configurable between Aethos basic AI and Hermes-powered Nous; fallback can route degraded Hermes turns to basic Nous.",
                 "Langfuse observability: configured state, base URL status, and sample rate are summarized as safe status flags; low-level diagnostics stay internal.",
                 "Operational alerts: show alert route and active alert items for background failures, workflow failures, and degraded health.",
                 "Public abuse-path controls: rate limits, abuse alerts, and sanitized public endpoint reporting protect public invoice/payment paths.",
@@ -876,7 +876,7 @@ class _DeterministicAtlasResponder:
                 "Manual journal review should stay in Inbox until approval.",
                 f"Balance: {checks.get('balance') or 'verify debits equal credits'}; account validity: {checks.get('account_validity') or 'verify active GL accounts'}; period lock status: {checks.get('period_lock_status') or 'check close calendar'}.",
                 f"Business reason: {packet.get('business_reason') or 'required before approval'}. Supporting evidence: {packet.get('supporting_evidence') or 'attach source support before approval'}.",
-                "Approval role and segregation: controller/admin approval may be required, and the approver must be different from the submitter for threshold or Atlas-prepared journals. Do not post without Inbox approval.",
+                "Approval role and segregation: controller/admin approval may be required, and the approver must be different from the submitter for threshold or Nous-prepared journals. Do not post without Inbox approval.",
             ]
         )
 

@@ -63,7 +63,7 @@ const FALLBACK_MODEL_OPTIONS: AiModelId[] = [
                 }
               </div>
             } @else {
-              <p class="mt-1 text-xs text-text-muted">OpenRouter runtime and model routing for Atlas and Aethos Basic fallback.</p>
+              <p class="mt-1 text-xs text-text-muted">OpenRouter runtime and model routing for Nous and Aethos Basic fallback.</p>
             }
           </div>
         </div>
@@ -92,12 +92,12 @@ const FALLBACK_MODEL_OPTIONS: AiModelId[] = [
         <form [formGroup]="form" (ngSubmit)="save()" class="space-y-5 px-6 py-5" novalidate>
           <div class="grid gap-4 lg:grid-cols-2">
             <label class="block">
-              <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">Atlas runtime</span>
+              <span class="mb-2 block text-xs uppercase tracking-wide text-text-muted">Nous runtime</span>
               <select
                 formControlName="atlas_runtime"
                 class="w-full rounded border border-border-default bg-surface-base px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
-                <option value="hermes_agent">Advanced Atlas powered by Hermes</option>
+                <option value="hermes_agent">Advanced Nous powered by Hermes</option>
                 <option value="aethos_basic">Aethos Basic AI</option>
               </select>
             </label>
@@ -153,7 +153,7 @@ const FALLBACK_MODEL_OPTIONS: AiModelId[] = [
             </div>
             @if (form.controls.atlas_runtime.value === 'hermes_agent') {
               <p class="mt-3 text-xs leading-5 text-text-muted">
-                Hermes uses the mounted Atlas profile for its primary model. These model-chain settings are applied by Aethos Basic and by the built-in fallback path.
+                Hermes uses the mounted Nous profile for its primary model. These model-chain settings are applied by Aethos Basic and by the built-in fallback path.
               </p>
             }
           </div>
@@ -161,7 +161,7 @@ const FALLBACK_MODEL_OPTIONS: AiModelId[] = [
           <div class="rounded border border-border-subtle bg-surface-base px-3 py-3">
             <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div class="text-xs uppercase tracking-wide text-text-muted">Atlas response routing</div>
+                <div class="text-xs uppercase tracking-wide text-text-muted">Nous response routing</div>
                 <p class="mt-1 text-xs leading-5 text-text-muted">
                   High-confidence operational prompts can be answered through Aethos tools before the model runtime.
                 </p>
@@ -351,7 +351,7 @@ export class AiSettingsComponent implements OnInit {
   }
 
   responseStageLabel(stage: AtlasResponseStage): string {
-    return stage === 'semantic_intent' ? 'Semantic intent router' : 'Configured Atlas runtime';
+    return stage === 'semantic_intent' ? 'Semantic intent router' : 'Configured Nous runtime';
   }
 
   confidenceLabel(): string {

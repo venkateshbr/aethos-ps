@@ -1,4 +1,4 @@
-"""Opaque context references for Atlas-to-Aethos internal tool calls."""
+"""Opaque context references for Nous-to-Aethos internal tool calls."""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ _CONTEXT_REF_PREFIX = "ctx_"
 
 
 class AtlasContextError(ValueError):
-    """Raised when an Atlas context reference is missing, expired, or invalid."""
+    """Raised when an Nous context reference is missing, expired, or invalid."""
 
 
 @dataclass(frozen=True)
 class AtlasToolContext:
-    """Verified tenant/user/thread context for an internal Atlas tool call."""
+    """Verified tenant/user/thread context for an internal Nous tool call."""
 
     tenant_id: str
     user_id: str
@@ -91,7 +91,7 @@ def verify_atlas_context_ref(
     required_scope: str = _DEFAULT_SCOPE,
     now: int | None = None,
 ) -> AtlasToolContext:
-    """Verify and decode an Atlas context reference."""
+    """Verify and decode an Nous context reference."""
     current_time = int(time.time()) if now is None else now
     if context_ref.startswith(_CONTEXT_REF_PREFIX):
         return _verify_compact_context_ref(
@@ -143,7 +143,7 @@ def _context_signing_secret() -> bytes:
         or settings.aethos_hermes_tool_token
     )
     if not secret:
-        raise AtlasContextError("Atlas context signing secret is not configured")
+        raise AtlasContextError("Nous context signing secret is not configured")
     return secret.encode("utf-8")
 
 

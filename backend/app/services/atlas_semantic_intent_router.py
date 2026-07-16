@@ -1,10 +1,10 @@
-"""Semantic intent routing for Atlas operational finance prompts.
+"""Semantic intent routing for Nous operational finance prompts.
 
 The router is deterministic and local: it does not call an LLM. It maps user
 language into Aethos operational intents using concept groups, action-mode
 signals, negation handling, entities, and a confidence score. High-confidence
 routes can be answered by Aethos services before the request reaches the model
-runtime; low-confidence prompts fall back to Hermes/basic Atlas.
+runtime; low-confidence prompts fall back to Hermes/basic Nous.
 """
 
 from __future__ import annotations
@@ -511,7 +511,7 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
 
 
 class AtlasSemanticIntentRouter:
-    """Classify an Atlas prompt into a high-level operational intent."""
+    """Classify an Nous prompt into a high-level operational intent."""
 
     def classify(self, message: str) -> AtlasIntentRoute | None:
         normalized = _normalize(message)
