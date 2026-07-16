@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    # Optional separate credential for the built-in Atlas fallback runtime. When
+    # Optional separate credential for the built-in Nous fallback runtime. When
     # empty, the fallback uses OPENROUTER_API_KEY.
     atlas_basic_openrouter_api_key: str = ""
     atlas_basic_openrouter_base_url: str = ""
@@ -106,9 +106,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     # ------------------------------------------------------------------
-    # Atlas AI runtime
+    # Nous AI runtime
     # ------------------------------------------------------------------
-    # aethos_basic keeps the current built-in Atlas/Copilot agent path.
+    # aethos_basic keeps the current built-in Nous/Copilot agent path.
     # hermes_agent is the future advanced runtime powered by a private Hermes
     # service and Aethos tool broker.
     atlas_ai_runtime: str = "aethos_basic"

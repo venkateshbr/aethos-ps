@@ -545,15 +545,15 @@ async function askAtlas(page: Page, result: TenantResult): Promise<void> {
     await page.goto(`${WEB}/app/copilot`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     const newChat = page.getByRole('button', { name: /new chat|start new chat/i }).first();
     if (await newChat.isVisible({ timeout: 8_000 }).catch(() => false)) await newChat.click();
-    const before = await page.locator('[aria-label^="Atlas:"]').count();
+    const before = await page.locator('[aria-label^="Nous:"]').count();
     const input = page.getByLabel('Message input');
     await expect(input).toBeEnabled({ timeout: 45_000 });
     await input.fill(result.spec.prompt);
     await page.getByRole('button', { name: /send message/i }).click();
-    await page.locator('[aria-label^="Atlas:"]').nth(before).waitFor({ state: 'visible', timeout: 180_000 }).catch(() => undefined);
+    await page.locator('[aria-label^="Nous:"]').nth(before).waitFor({ state: 'visible', timeout: 180_000 }).catch(() => undefined);
     await expect(input).toBeEnabled({ timeout: 180_000 }).catch(() => undefined);
     await page.waitForTimeout(1000);
-    const response = await page.locator('[aria-label^="Atlas:"]').last().innerText().catch(() => '');
+    const response = await page.locator('[aria-label^="Nous:"]').last().innerText().catch(() => '');
     const screenshot = await shot(page, `${result.spec.id}-atlas-response`);
     const required = [new RegExp(result.spec.client.split(' ')[0], 'i'), /engagement|project|billing|finance|WIP|readiness/i];
     const missing = required.filter((pattern) => !pattern.test(response)).map((pattern) => pattern.source);

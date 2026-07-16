@@ -284,6 +284,8 @@ def test_chat_message_stream_uses_runtime_interface(
     write_db = _ChatWriteDb()
 
     class _Runtime:
+        name = "aethos_basic"
+
         async def stream_message(self, *, user_message: str, thread_id: str):
             assert user_message == "hello Atlas"
             assert thread_id == "thread-1"
@@ -547,6 +549,8 @@ def test_first_user_message_names_blank_chat_thread(
     write_db.tables["chat_threads"][0]["title"] = "New conversation"
 
     class _Runtime:
+        name = "aethos_basic"
+
         async def stream_message(self, *, user_message: str, thread_id: str):
             assert user_message == "Show me active engagements"
             assert thread_id == "thread-1"

@@ -289,7 +289,7 @@ async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number)
   if (!step.sameThread) await startNewChat(page);
   const notes = await attachDocument(page, step);
   if (attempt > 1) notes.push(`Retry attempt ${attempt} after no assistant response was captured.`);
-  const beforeAssistant = await page.locator('[aria-label^="Atlas:"]').count();
+  const beforeAssistant = await page.locator('[aria-label^="Nous:"]').count();
   const beforeToolCards = await page.locator('[aria-label^="Running tool:"], [aria-label^="Tool completed:"]').count();
   try {
     const input = page.getByLabel('Message input');
@@ -297,14 +297,14 @@ async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number)
     await input.fill(step.prompt);
     await screenshot(page, `${step.id}-prompt`);
     await page.getByRole('button', { name: /send message/i }).click();
-    await page.locator('[aria-label^="Atlas:"]').nth(beforeAssistant).waitFor({
+    await page.locator('[aria-label^="Nous:"]').nth(beforeAssistant).waitFor({
       state: 'visible',
       timeout: step.timeoutMs ?? 180_000,
     }).catch(() => undefined);
     await expect(input).toBeEnabled({ timeout: step.timeoutMs ?? 180_000 }).catch(() => undefined);
     await page.waitForTimeout(1_000);
     const shot = await screenshot(page, `${step.id}-response`);
-    const response = await page.locator('[aria-label^="Atlas:"]').last().innerText().catch(() => '');
+    const response = await page.locator('[aria-label^="Nous:"]').last().innerText().catch(() => '');
     const afterToolCards = await page.locator('[aria-label^="Running tool:"], [aria-label^="Tool completed:"]').count();
     const matched = (step.expected ?? []).filter((pattern) => pattern.test(response)).length;
     if ((step.expected ?? []).length && matched < (step.expected ?? []).length) {
@@ -427,7 +427,7 @@ function writeReport(): void {
 }
 
 const routes = [
-  ['copilot', 'Aethos Atlas', `${WEB}/app/copilot`],
+  ['copilot', 'Aethos Nous', `${WEB}/app/copilot`],
   ['documents', 'Documents', `${WEB}/app/documents`],
   ['inbox', 'Inbox', `${WEB}/app/inbox`],
   ['engagements', 'Engagements', `${WEB}/app/engagements`],

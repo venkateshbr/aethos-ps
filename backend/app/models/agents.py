@@ -236,7 +236,7 @@ class ApprovalControlsPersonaSummary(BaseModel):
 
 
 class ApprovalControlsPolicyRule(BaseModel):
-    """Business-readable approval policy rule for Atlas and Settings."""
+    """Business-readable approval policy rule for Nous and Settings."""
 
     id: str
     label: str
@@ -289,7 +289,7 @@ class O2CCollectionsReminderSummary(BaseModel):
 
 
 class O2CCollectionsInvoiceSummary(BaseModel):
-    """Invoice-level O2C collections and payment state for Atlas."""
+    """Invoice-level O2C collections and payment state for Nous."""
 
     id: str
     invoice_number: str
@@ -359,7 +359,7 @@ class P2PPaymentBatchSummary(BaseModel):
 
 
 class P2PBillSummary(BaseModel):
-    """Bill-level P2P payment-risk and evidence state for Atlas."""
+    """Bill-level P2P payment-risk and evidence state for Nous."""
 
     id: str
     bill_number: str

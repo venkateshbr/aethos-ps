@@ -1,4 +1,4 @@
-"""Runtime adapters behind the Aethos Atlas chat interface."""
+"""Runtime adapters behind the Aethos Nous chat interface."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ from app.core.config import settings
 from app.models.ai_settings import AiSettingsResponse
 from app.services.ai_settings_service import AiSettingsService, default_ai_settings_response
 from app.services.atlas_context import AtlasContextError, create_atlas_context_ref
-from app.services.hermes_client import HermesClient, extract_response_text
+from app.services.circuit_breaker import get_circuit_breaker
+from app.services.hermes_client import HermesClient
 from app.services.operational_telemetry import telemetry
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,12 @@ ProviderFailureCategory = Literal[
     "unknown",
 ]
 _ALLOWED_RUNTIMES = {"aethos_basic", "hermes_agent"}
+
+# How much of the opening assistant text to buffer and classify before the first
+# user-visible token. Provider-error and unsafe-output text from Hermes appears
+# at the very start of a turn, so a short prefix is enough to gate fallback while
+# still letting real answers stream token-by-token afterwards.
+_CLASSIFY_PREFIX_CHARS = 160
 
 
 class HermesProviderError(RuntimeError):
@@ -68,7 +75,7 @@ _INTERNAL_OUTPUT_PATTERNS = (
 
 
 class AtlasRuntime(Protocol):
-    """Stable interface used by the chat router for all Atlas runtimes."""
+    """Stable interface used by the chat router for all Nous runtimes."""
 
     name: AtlasRuntimeName
 
@@ -78,12 +85,12 @@ class AtlasRuntime(Protocol):
         user_message: str,
         thread_id: str,
     ) -> AsyncIterator[str]:
-        """Yield SSE frames for a single Atlas message turn."""
+        """Yield SSE frames for a single Nous message turn."""
 
 
 @dataclass
 class AethosBasicRuntimeAdapter:
-    """Current built-in Atlas agent path, wrapped behind the runtime seam."""
+    """Current built-in Nous agent path, wrapped behind the runtime seam."""
 
     deps: CopilotDeps
     name: AtlasRuntimeName = "aethos_basic"
@@ -104,7 +111,7 @@ class AethosBasicRuntimeAdapter:
 
 @dataclass
 class HermesAgentRuntimeAdapter:
-    """Hermes-powered Atlas runtime adapter."""
+    """Hermes-powered Nous runtime adapter."""
 
     tenant_id: str
     user_id: str
@@ -124,23 +131,41 @@ class HermesAgentRuntimeAdapter:
             user_id=self.user_id,
             thread_id=thread_id,
         )
+        breaker = get_circuit_breaker(f"hermes:{getattr(self.client, 'base_url', 'default')}")
+        if not breaker.allow():
+            # Hermes is tripped; skip the connect/timeout wait and serve the
+            # fallback immediately so the user is not penalised per request.
+            _record_provider_failure(
+                category="upstream_outage",
+                tenant_id=self.tenant_id,
+                thread_id=thread_id,
+                runtime=self.name,
+            )
+            if self.fallback_runtime is not None:
+                async for frame in self.fallback_runtime.stream_message(
+                    user_message=user_message,
+                    thread_id=thread_id,
+                ):
+                    yield frame
+                return
+            yield f"data: {json.dumps({'error': 'Nous is temporarily unavailable. Please try again shortly.'})}\n\n"
+            return
         try:
-            response = await self.client.create_response(
-                input_text=user_message,
+            emitted_any = False
+            async for text in self._safe_hermes_deltas(
+                user_message=user_message,
                 conversation=conversation,
                 instructions=instructions,
-            )
-            text = extract_response_text(response)
-            provider_failure = _provider_failure_category_from_text(text)
-            if provider_failure is not None:
-                raise HermesProviderError(provider_failure)
-            unsafe_output = _unsafe_output_category_from_text(text)
-            if unsafe_output is not None:
-                raise HermesUnsafeOutputError(unsafe_output)
-            if text:
+            ):
+                emitted_any = True
                 yield f"data: {json.dumps({'delta': text})}\n\n"
+            if not emitted_any:
+                # Nothing safe to say — treat as unsafe/empty and fall back.
+                raise HermesUnsafeOutputError("empty")
+            breaker.record_success()
             yield f"data: {json.dumps({'done': True, 'finish_reason': 'stop'})}\n\n"
         except HermesProviderError as exc:
+            breaker.record_failure()
             _record_provider_failure(
                 category=exc.category,
                 tenant_id=self.tenant_id,
@@ -154,7 +179,7 @@ class HermesAgentRuntimeAdapter:
                 ):
                     yield frame
                 return
-            yield f"data: {json.dumps({'error': 'Atlas is temporarily unavailable. Please try again shortly.'})}\n\n"
+            yield f"data: {json.dumps({'error': 'Nous is temporarily unavailable. Please try again shortly.'})}\n\n"
         except HermesUnsafeOutputError as exc:
             _record_provider_failure(
                 category="unknown",
@@ -177,10 +202,11 @@ class HermesAgentRuntimeAdapter:
                 ):
                     yield frame
                 return
-            yield f"data: {json.dumps({'error': 'Atlas could not produce a safe answer. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'error': 'Nous could not produce a safe answer. Please try again.'})}\n\n"
         except Exception as exc:
             provider_failure = _provider_failure_category_from_exception(exc)
             if provider_failure is not None:
+                breaker.record_failure()
                 _record_provider_failure(
                     category=provider_failure,
                     tenant_id=self.tenant_id,
@@ -194,7 +220,7 @@ class HermesAgentRuntimeAdapter:
                     ):
                         yield frame
                     return
-                yield f"data: {json.dumps({'error': 'Atlas is temporarily unavailable. Please try again shortly.'})}\n\n"
+                yield f"data: {json.dumps({'error': 'Nous is temporarily unavailable. Please try again shortly.'})}\n\n"
                 return
             logger.warning(
                 "hermes_agent_runtime_failed",
@@ -209,6 +235,67 @@ class HermesAgentRuntimeAdapter:
                     yield frame
                 return
             yield f"data: {json.dumps({'error': 'Hermes Agent runtime is unavailable'})}\n\n"
+
+    async def _safe_hermes_deltas(
+        self,
+        *,
+        user_message: str,
+        conversation: str,
+        instructions: str,
+    ) -> AsyncIterator[str]:
+        """Stream user-safe assistant text, gating fallback on the opening prefix.
+
+        Provider-error and unsafe-output text is only raised **before** the first
+        token is yielded, so the caller's fallback path never double-emits after
+        the user has already seen text. Once streaming has started, any tail that
+        leaks tool internals is suppressed by stopping the stream.
+        """
+        buffer = ""
+        gated = False
+        async for delta in self.client.stream_response(
+            input_text=user_message,
+            conversation=conversation,
+            instructions=instructions,
+        ):
+            if not delta:
+                continue
+            if gated:
+                if _has_internal_control_text(delta):
+                    return
+                yield delta
+                continue
+            buffer += delta
+            if len(buffer) < _CLASSIFY_PREFIX_CHARS:
+                continue
+            _raise_if_unsafe_prefix(buffer)
+            gated = True
+            yield buffer
+            buffer = ""
+
+        if not gated:
+            # Short turn that never reached the classification threshold.
+            _raise_if_unsafe_prefix(buffer)
+            if buffer:
+                yield buffer
+
+
+def _raise_if_unsafe_prefix(text: str) -> None:
+    """Raise a fallback-triggering error for provider or tool-internal text.
+
+    Only called before any user-visible token is emitted. Empty text is allowed
+    through so the caller can treat a genuinely empty turn as an unsafe/empty
+    fallback after the stream ends.
+    """
+    provider_failure = _provider_failure_category_from_text(text)
+    if provider_failure is not None:
+        raise HermesProviderError(provider_failure)
+    if _has_internal_control_text(text):
+        raise HermesUnsafeOutputError("internal_control_text")
+
+
+def _has_internal_control_text(text: str) -> bool:
+    """True when text leaks tool names, context refs, or model control phrasing."""
+    return any(pattern.search(text) for pattern in _INTERNAL_OUTPUT_PATTERNS)
 
 
 def _looks_like_provider_error(text: str) -> bool:
@@ -286,10 +373,10 @@ def _record_provider_failure(
 
 
 def normalise_atlas_runtime_name(value: str | None) -> AtlasRuntimeName:
-    """Return a validated Atlas runtime name."""
+    """Return a validated Nous runtime name."""
     runtime = (value or "").strip().lower()
     if runtime not in _ALLOWED_RUNTIMES:
-        raise ValueError("Atlas AI runtime must be 'aethos_basic' or 'hermes_agent'")
+        raise ValueError("Nous AI runtime must be 'aethos_basic' or 'hermes_agent'")
     return runtime  # type: ignore[return-value]
 
 
@@ -301,7 +388,7 @@ async def build_atlas_runtime(
     runtime_name: str | None = None,
     ai_settings: AiSettingsResponse | None = None,
 ) -> AtlasRuntime:
-    """Build the configured Atlas runtime adapter for a request."""
+    """Build the configured Nous runtime adapter for a request."""
     if ai_settings is None:
         try:
             ai_settings = await AiSettingsService(db_client, tenant_id).get_effective_settings()  # type: ignore[arg-type]
@@ -359,7 +446,7 @@ def _basic_runtime_base_url() -> str:
 
 
 _ATLAS_HERMES_INSTRUCTIONS = (
-    "You are Aethos Atlas, the AI interface for Aethos. "
+    "You are Aethos Nous, the AI interface for Aethos. "
     "Aethos is the system of record for tenant data, finance records, approvals, "
     "and audit evidence. Use Aethos tools for real data and actions. "
     "When a user asks about an uploaded document, document extraction, an engagement "

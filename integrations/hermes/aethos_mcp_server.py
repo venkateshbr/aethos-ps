@@ -1,6 +1,6 @@
-"""Hermes MCP bridge for Aethos Atlas tools.
+"""Hermes MCP bridge for Aethos Nous tools.
 
-Hermes sees MCP tools. Each tool delegates to the private Aethos Atlas broker,
+Hermes sees MCP tools. Each tool delegates to the private Aethos Nous broker,
 which verifies a short-lived tenant/user context reference and then runs the
 allowlisted Aethos API/service path.
 """
@@ -74,7 +74,7 @@ async def aethos_engagements_list(
     limit: int = 25,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """List tenant-scoped Aethos engagements for Atlas finance analysis."""
+    """List tenant-scoped Aethos engagements for Nous finance analysis."""
     arguments: dict[str, Any] = {
         "status": status,
         "limit": limit,
@@ -249,7 +249,7 @@ async def aethos_configuration_telemetry_read_pack(
     context_ref: str,
     inbox_limit: int = 10,
 ) -> dict[str, Any]:
-    """Read approval controls, Finance Ops schedule, Atlas runtime, Langfuse, and alerts."""
+    """Read approval controls, Finance Ops schedule, Nous runtime, Langfuse, and alerts."""
     return await _execute(
         "aethos.configuration_telemetry.read_pack",
         context_ref,

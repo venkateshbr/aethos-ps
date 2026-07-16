@@ -16,7 +16,7 @@ Read the four common sections first — they are the reusable engine; the tenant
 
 1. **§1 Platform model & test surfaces** — what you are actually clicking/typing.
 2. **§2 The testing protocol** — agentic-first → manual-fallback, the evidence triad, the no-seeding rule.
-3. **§3 Reusable prompt kit** — copy-paste Atlas prompts grouped by cycle.
+3. **§3 Reusable prompt kit** — copy-paste Nous prompts grouped by cycle.
 4. **§4 Master edge/border-case catalogue** — the union of every border case, each with an ID you'll see referenced inside the scenarios (e.g. `EC-FX-01`).
 
 Then work the tenants (**§5**), the scenarios (**§6**), the coverage matrix (**§7**), and the setup + run checklists (**§8–§9**).
@@ -31,7 +31,7 @@ Aethos PS is **agent-first**: the chat surface is the product, and traditional C
 
 | Surface | Route (indicative) | What it is | Why it matters to testing |
 |---|---|---|---|
-| **Aethos Atlas** (Copilot) | `/copilot` | The chat home. Drop a document, type a business-language prompt; agents extract → propose → route. | Primary surface. This is where "agentic-first" is proven. |
+| **Aethos Nous** (Copilot) | `/copilot` | The chat home. Drop a document, type a business-language prompt; agents extract → propose → route. | Primary surface. This is where "agentic-first" is proven. |
 | **Inbox** | `/inbox` | The HITL approval queue. Every risky action (invoice send, bill, payment batch, high-value journal, year-end close, external email) lands here as a typed task card. | The control boundary. Approve / approve-with-edits / reject all leave evidence. |
 | **Module screens** | `/engagements`, `/projects`, `/clients`, `/invoices`, `/bills`, `/billing-runs`, `/expenses`, `/time-entries`, `/payments`, `/reports`, `/people`, `/accounting`, `/documents`, `/settings` | CRUD + reports. | The **manual fallback** path and the **UI evidence** that what the agent reported is real. |
 | **Agent Run Ledger / Workflow Runs** | `/settings` → Agent Runs / Workflow Runs | Per-run record: inputs, typed outputs, evidence snapshots, replay-safe validation. | Audit + "the agent actually did this" proof. |
@@ -65,21 +65,21 @@ docs).
 ### 2.1 Agentic-first, then manual fallback (required ordering)
 For every workflow step, test in this order:
 
-1. **Agentic path first.** Use a business-language Atlas prompt (never internal tool names). Confirm the agent extracted/proposed correctly, routed risky actions to Inbox, and produced an Agent Run Ledger entry.
+1. **Agentic path first.** Use a business-language Nous prompt (never internal tool names). Confirm the agent extracted/proposed correctly, routed risky actions to Inbox, and produced an Agent Run Ledger entry.
 2. **Approval boundary.** Confirm the action stopped at Inbox with the right typed card, confidence chip, source evidence, and required approver role. Exercise approve / approve-with-edits / reject.
 3. **Manual fallback.** Then prove the same outcome is reachable through the CRUD screen (e.g. `/invoices/new`, `/bills`, `/accounting/journals`, `/billing-runs` → Run Billing) — including the **AI-unavailable** degradation path (`EC-AGT-04`).
 
 ### 2.2 The evidence triad (capture for every AI-assisted step)
-- **Atlas intent** — the prompt + the AI's proposed action.
+- **Nous intent** — the prompt + the AI's proposed action.
 - **Approval boundary** — the Inbox/approval card it routed to.
 - **Evidence check** — the resulting record + report + Agent Run Ledger / Workflow Runs / decision-trail entry, all visible in the UI.
 
 ### 2.3 No backend seeding — build everything through the UI
 Every tenant is created via the **signup flow**, then populated entirely through
-Atlas (document drops + prompts), Tenant Users, People/timesheet invites, and
+Nous (document drops + prompts), Tenant Users, People/timesheet invites, and
 CRUD screens. **Whatever the agent reports must be independently visible in a
 module screen or report.** A claim with no UI artefact is a fail.
-Document-driven steps: attach the file first, then send the prompt — Atlas must
+Document-driven steps: attach the file first, then send the prompt — Nous must
 not extract until the prompt is submitted.
 
 ### 2.4 Pass criteria per cycle
@@ -91,7 +91,7 @@ not extract until the prompt is submitted.
 
 ## 3. Reusable prompt kit (copy-paste; replace the bracketed tokens)
 
-> Good Atlas prompts name the **period**, the **customer/vendor/engagement**, the **outcome**, and the **approval boundary** ("route to Inbox before sending/posting/paying"), and ask Atlas to **separate read-only findings from actions**. Avoid internal tool names.
+> Good Nous prompts name the **period**, the **customer/vendor/engagement**, the **outcome**, and the **approval boundary** ("route to Inbox before sending/posting/paying"), and ask Nous to **separate read-only findings from actions**. Avoid internal tool names.
 
 ### 3.1 Engagement-to-Cash
 - **Onboard from letter:** `Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.`
@@ -148,7 +148,7 @@ Every case below carries an ID. The tenant scenarios in §6 reference these IDs 
 | `EC-BILL-07` | Mixed model (fixed + retainer + T&M + expenses) | Single invoice with lines from all sources, correctly structured. |
 | `EC-BILL-08` | Success/contingent fee (% of deal), estimate→actual | Milestone amount updated at close; recomputed invoice; partner approves updated amount. |
 | `EC-BILL-09` | Per-event / per-unit billing (filings, placements, per-employee payroll) | Each event/unit logged; monthly run consolidates into one invoice; scales with count. |
-| `EC-BILL-10` | Scope-creep supplemental engagement | Atlas cites comparable historic matters; new supplemental engagement + milestone raised. |
+| `EC-BILL-10` | Scope-creep supplemental engagement | Nous cites comparable historic matters; new supplemental engagement + milestone raised. |
 | `EC-BILL-11` | Zero-amount / courtesy invoice | Allowed; no Payment Link; journal skipped, invoice `void`/no-op. |
 | `EC-BILL-12` | Negative invoice / credit note | Reverse journal; not payable via Stripe; manual refund links original payment. |
 | `EC-BILL-13` | Annual retainer paid upfront | `CR Deferred Revenue`, released monthly. |
@@ -449,9 +449,9 @@ Each scenario is one continuous thread for one tenant: **E2C → P2P → R2R**, 
 service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 
 **E2C**
-1. Atlas: *"Log 6 billable hours for [Analyst] on the Riverbend Foods discovery project for today — market sizing."* → time-entry card. **MF:** `/time-entries` shows the row, billable. `EC-BILL-01`
-2. Atlas drop receipt + *"Process this client travel receipt for Riverbend. Classify as billable project expense and attach evidence."* → expense card. **MF:** `/expenses` row + receipt link.
-3. Atlas: *"Prepare the June 2026 Riverbend billing run from approved time and expenses. Route the invoice to Inbox before sending."* → Inbox `InvoiceDraftCard`. Approve → **MF:** `/invoices` INV row `approved`; `/accounting` journal **DR AR / CR Revenue (+ tax)**.
+1. Nous: *"Log 6 billable hours for [Analyst] on the Riverbend Foods discovery project for today — market sizing."* → time-entry card. **MF:** `/time-entries` shows the row, billable. `EC-BILL-01`
+2. Nous drop receipt + *"Process this client travel receipt for Riverbend. Classify as billable project expense and attach evidence."* → expense card. **MF:** `/expenses` row + receipt link.
+3. Nous: *"Prepare the June 2026 Riverbend billing run from approved time and expenses. Route the invoice to Inbox before sending."* → Inbox `InvoiceDraftCard`. Approve → **MF:** `/invoices` INV row `approved`; `/accounting` journal **DR AR / CR Revenue (+ tax)**.
 4. Connect Stripe (Owner only) → **Send** → `/p/{token}` opens in private window: confirm only customer-facing fields (`EC-AR-06`). Pay with test card → webhook → invoice `paid`; **DR Bank / CR AR**. `EC-AGT-05` replay once: no second payment.
 5. Calderon: record a **partial payment** → invoice shows remaining balance (`EC-AR-01`). Summit Media: two users click **Approve** at once → one journal, loser `409` (`EC-CON-01`).
 6. Velocity: force **AI-unavailable** (or use the manual `/invoices/new`) → "switching to manual mode", form pre-filled from time entries, invoice still completes (`EC-AGT-04`).
@@ -463,8 +463,8 @@ service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 10. Drop a SaaS subscription invoice + intake prompt → bill draft to Inbox → approve (**DR Software Expense / CR AP**). Bill-pay run → Inbox → approve → export CSV → mark sent → settle (**DR AP / CR Bank**). `EC-AP-12`
 
 **R2R**
-11. Atlas month-end close prep for June → Inbox close package → resolve blockers → **Lock June** (`EC-RR-01`). Try backdated entry into June → `422 period_locked` (`EC-RR-04`).
-12. Atlas statement package June vs May → verify TB balances, **P&L / Balance Sheet / Cash Flow** render and reconcile to Reports (`EC-RR-13`,`EC-RR-14`). Management pack read is non-mutating.
+11. Nous month-end close prep for June → Inbox close package → resolve blockers → **Lock June** (`EC-RR-01`). Try backdated entry into June → `422 period_locked` (`EC-RR-04`).
+12. Nous statement package June vs May → verify TB balances, **P&L / Balance Sheet / Cash Flow** render and reconcile to Reports (`EC-RR-13`,`EC-RR-14`). Management pack read is non-mutating.
 
 **Controls/audit:** Viewer approve attempt → hidden + `403` (`EC-RBAC-01`); decision trail on the Riverbend invoice; Agent Run Ledger shows the runs.
 **Pass gate:** all §2.4 criteria met for one full customer (Riverbend) + the 8 edge IDs above observed in the UI.
@@ -483,7 +483,7 @@ service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 4. Beacon Fintech capped-T&M: log hours until **89% of cap** → Inbox cap-approach alert; push past cap → invoice capped, excess `non_billable_overflow` (`EC-BILL-06`).
 5. Kestrel mixed engagement → single invoice with fixed + retainer + T&M + expense lines (`EC-BILL-07`).
 6. Lumière (EUR) invoice with GBP base: `base_amount` + `fx_rate_id` stored (`EC-FX-01`); on receipt after rate move, realised FX to `7900` (`EC-FX-02`).
-7. Strata scope creep: `The Strata engagement now includes [extra scope]. How much additional fee should we quote?` → Atlas cites comparable matters → raise supplemental engagement/milestone (`EC-BILL-10`).
+7. Strata scope creep: `The Strata engagement now includes [extra scope]. How much additional fee should we quote?` → Nous cites comparable matters → raise supplemental engagement/milestone (`EC-BILL-10`).
 8. Verde 2-yr: collections agent suppresses reminders until learned pay day (`EC-AR-03`).
 
 **P2P**
@@ -507,7 +507,7 @@ service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 **E2C**
 1. Delmont annual accounts: onboarding from letter → **3 milestones** (draft → review → file). Bill each as completed across the year (`EC-BILL-03`).
 2. Sandpiper per-event filings: log multiple corporate/tax events → monthly run consolidates into one invoice (`EC-BILL-09`).
-3. Whitaker scope creep: extra CGT-style complexity → Atlas comparable-fee citation → supplemental fixed engagement (`EC-BILL-10`).
+3. Whitaker scope creep: extra CGT-style complexity → Nous comparable-fee citation → supplemental fixed engagement (`EC-BILL-10`).
 4. Sterling Dental annual fee billed upfront → `CR Deferred Revenue`, released monthly (`EC-BILL-13`).
 5. Foundry partial payment (`EC-AR-01`).
 
@@ -661,7 +661,7 @@ service catalogue active, no Stripe Connect yet (test the PDF-only path first).
 1. Onboard the family: `Show me the Ashford Family Office structure. List entities, active engagements, currencies, billing models, and upcoming deadlines.` → unified view across **7+ engagements** (mix of fixed, retainer, SGD).
 2. Ashford Trading Group retainer (`EC-BILL-04`); Family Investment Co + trusts annual fixed accounts (`EC-BILL-02`).
 3. Ashford Trust (1992) SGD: **foreign dividend** manual-journal packet with FX provenance, controller approval (`EC-FX-06`). Marwood Holdings SG: SGD-base entity invoice (`EC-FX-01`).
-4. Sir Henry personal tax **scope creep** (CGT on property disposals) → Atlas comparable-fee citation → supplemental engagement (`EC-BILL-10`).
+4. Sir Henry personal tax **scope creep** (CGT on property disposals) → Nous comparable-fee citation → supplemental engagement (`EC-BILL-10`).
 5. Lady Marwood personal tax: confirm **PII masking** — bank/tax IDs and full names masked before any LLM call; verify in the agent evidence (`EC-OPS-02`).
 6. Ashford COSEC retainer: **per-event** confirmation statements / filings logged across entities; deadline alerts in Inbox; retainer-hours floor warning (`EC-BILL-09`). Charitable Foundation **pro-bono zero-fee** (`EC-BILL-11`). Marwood SIPP day-7 payer (`EC-AR-03`).
 
@@ -798,7 +798,7 @@ Repeat for each tenant; no backend seeding at any step.
 3. **Settings → Services / Tax Rates / Collections Policy / Approval Controls / Agent Autonomy:** confirm the service catalogue is active, the market tax rate exists, and (for T5/T7/T10) set the bill-pay Owner cap and manual-journal threshold.
 4. **Stripe Connect:** connect for tenants demonstrating Payment Links; deliberately leave it **off** first on T1 to prove the PDF-only / manual mark-paid path.
 5. **FX rates:** confirm `fx_rates` are present for any cross-border tenant (T2/T4/T7/T8/T9/T10); plan a deliberate stale-rate window for T4.
-6. **Build data through Atlas + CRUD only:** drop the engagement letters/SOWs and prompts to create clients, engagements, projects, rate cards; log time/expenses; create invoices/bills via chat → Inbox → approve. Every created record must be independently visible in its module screen.
+6. **Build data through Nous + CRUD only:** drop the engagement letters/SOWs and prompts to create clients, engagements, projects, rate cards; log time/expenses; create invoices/bills via chat → Inbox → approve. Every created record must be independently visible in its module screen.
 7. **Demo assets:** the repo ships sample PDFs in `docs/demo-assets/` (engagement letter, subcontractor invoice, SGD dividend notice, COSEC instruction) and a generator `scripts/generate_demo_assets.py` — reuse/adapt these per tenant.
 
 ---
@@ -807,7 +807,7 @@ Repeat for each tenant; no backend seeding at any step.
 
 **Suggested demo order (low → high complexity):** T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10. Open with T1 to establish the loop and the evidence triad; close with T10 to land the enterprise/controls story.
 
-**Per-scenario opening line (operator pattern):** show the **Atlas intent**, then the **Inbox boundary**, then the **UI evidence** — three artefacts, every time.
+**Per-scenario opening line (operator pattern):** show the **Nous intent**, then the **Inbox boundary**, then the **UI evidence** — three artefacts, every time.
 
 **Controls checklist to demonstrate at least once across the run:**
 - [ ] Tenant Owner/Admin creates Finance Ops Manager, Finance Approver, Finance Controller, Auditor, and Executive Viewer users from Settings → Tenant Users; each changes the initial password, logs into the main app independently, and shows invite/role/deactivation audit evidence
@@ -831,7 +831,7 @@ Repeat for each tenant; no backend seeding at any step.
 ## 10. Assumptions, scope notes & gaps to confirm
 
 - **Illustrative data.** All firm names, client names, amounts, rates, and dates are fixtures to be created through the UI. Swap in your own launch test data freely; the scenario logic and edge IDs hold regardless of the specific numbers.
-- **UI-only, no seeding.** Every record originates from the signup flow, an Atlas prompt/document drop, or a CRUD screen. The repo's `seed_demo` scripts are intentionally **not** used here, per the requirement.
+- **UI-only, no seeding.** Every record originates from the signup flow, an Nous prompt/document drop, or a CRUD screen. The repo's `seed_demo` scripts are intentionally **not** used here, per the requirement.
 - **Agentic-first then manual.** Each scenario leads with the chat/agent path and verifies the CRUD fallback (including the AI-unavailable degradation) afterwards.
 - **"~10 customers per tenant."** Each tenant defines exactly 10 customers/entities; cash is recorded and collected for each through the E2C thread. You need not run all 10 to completion in a live demo — run the signature customer(s) end-to-end and reference the rest from the portfolio table.
 - **Multi-year vs one-off.** Every tenant's portfolio mixes 1–3 year engagements (retainers, milestone programs, RPO) with one-off engagements, per the duration column in §5.

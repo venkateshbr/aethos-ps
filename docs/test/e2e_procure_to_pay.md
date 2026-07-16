@@ -64,7 +64,7 @@ Pre-conditions:
 
 | # | Actor | Action | System effect |
 | --- | --- | --- | --- |
-| 4 | Bob | `/app/billing-runs` → Pay Bills, or asks Atlas at `/app/copilot` to prepare bills due within 7 days | `bill_pay_agent` can propose a reviewed batch; propose/create requires `bill_payments.prepare` |
+| 4 | Bob | `/app/billing-runs` → Pay Bills, or asks Nous at `/app/copilot` to prepare bills due within 7 days | `bill_pay_agent` can propose a reviewed batch; propose/create requires `bill_payments.prepare` |
 | 5 | Bob | Reviews batch in `BillPayBatchCard` | UI shows total outflow, per-bill amounts |
 | 6 | Bob | Approves batch | Batch moves from `draft` to `approved`; item rows remain pending until settlement. Direct approval requires `bill_payments.approve`. |
 

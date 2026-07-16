@@ -27,7 +27,7 @@ invoice, payment, journal, or email was approved, posted, paid, or sent
 directly.
 
 For configuration and telemetry readiness, use the configuration telemetry read
-pack. Mention approval controls, scheduled Finance Ops Manager settings, Atlas
+pack. Mention approval controls, scheduled Finance Ops Manager settings, Nous
 runtime, Langfuse observability, operational alerts, and public abuse-path
 controls. Do not expose secrets, traces, raw logs, stack traces, or tokens.
 

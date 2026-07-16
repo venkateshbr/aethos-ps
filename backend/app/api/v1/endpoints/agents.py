@@ -193,7 +193,7 @@ def get_o2c_collections_read_pack(
     svc: O2CReadService = Depends(_o2c_read_service),  # noqa: B008
     _current_user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
 ) -> O2CCollectionsReadPackResponse:
-    """Return customer and invoice collections state for Atlas drilldowns."""
+    """Return customer and invoice collections state for Nous drilldowns."""
     return O2CCollectionsReadPackResponse(
         **svc.collections_read_pack(
             invoice_id=invoice_id,

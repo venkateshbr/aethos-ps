@@ -1,6 +1,6 @@
 # Aethos — for Professional Services
 
-An agent-first ERP for professional services firms. Aethos Atlas can extract and
+An agent-first ERP for professional services firms. Aethos Nous can extract and
 propose work from engagement letters, vendor invoices, receipts, and business
 prompts; operators review controlled actions in Inbox and complete the workflow
 in the ERP modules.
@@ -26,7 +26,7 @@ This is a standalone product in the **Aethos** family, focused on professional s
 | Data | Supabase (PostgreSQL 15+, RLS, Auth, Storage, Realtime) |
 | Payments | Stripe (SaaS + Connect + Payment Links + Tax) |
 | Email | Resend |
-| LLM | Configurable Atlas runtime through Hermes or Aethos Basic/OpenRouter · Langfuse observability |
+| LLM | Configurable Nous runtime through Hermes or Aethos Basic/OpenRouter · Langfuse observability |
 | Deploy | Hostinger VPS · Docker Compose · Traefik TLS edge · nginx web/timesheet proxies · private FastAPI, worker, and optional Hermes containers · Supabase |
 
 ## Structure
