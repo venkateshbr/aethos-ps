@@ -81,13 +81,13 @@ async def test_stream_response_yields_only_assistant_text_deltas(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     body = (
-        'data: {"type":"response.created"}\n\n'
-        'data: {"type":"response.output_item.added","item":{"type":"function_call"}}\n\n'
-        'data: {"type":"response.output_text.delta","delta":"Hello "}\n\n'
-        'data: {"type":"response.output_text.delta","delta":"world"}\n\n'
-        'data: {"type":"response.completed"}\n\n'
-        "data: [DONE]\n\n"
-    ).encode()
+        b'data: {"type":"response.created"}\n\n'
+        b'data: {"type":"response.output_item.added","item":{"type":"function_call"}}\n\n'
+        b'data: {"type":"response.output_text.delta","delta":"Hello "}\n\n'
+        b'data: {"type":"response.output_text.delta","delta":"world"}\n\n'
+        b'data: {"type":"response.completed"}\n\n'
+        b"data: [DONE]\n\n"
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/responses"
