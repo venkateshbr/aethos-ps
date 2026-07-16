@@ -1,65 +1,129 @@
 name: Deploy Hostinger Production
 
-# GOTCHA (see docs/infra/HOSTINGER_DEPLOYMENT.md "How the Hostinger deploy
-# actually works"): the Hostinger Docker Manager git-clones this repo on the VPS
-# and builds from source. This repo is PRIVATE, so the Docker Manager needs git
-# credentials (configured in hPanel) or the clone fails — and this workflow still
-# reports SUCCESS while nothing deploys. After running, ALWAYS verify the live
-# container image tag via the Hostinger API; a stale tag means the clone failed.
+# Deploy path that works with a PRIVATE repo (see docs/infra/HOSTINGER_DEPLOYMENT.md):
+# GitHub Actions has the private source, so it builds the images and pushes them
+# to GHCR, publishes the registry-only compose to a short-lived PUBLIC gist, and
+# deploys via the gist URL. The Hostinger Docker Manager then DOWNLOADS the
+# compose (no repo clone) and PULLS the private GHCR images (the VPS is logged
+# into ghcr / has GHCR creds in the Docker Manager). The gist exposes only the
+# compose (service names, image refs, env var names — never values) and is
+# deleted after the deploy.
 
 on:
   workflow_dispatch:
+  # Uncomment to auto-deploy on every push to the launch branch:
+  # push:
+  #   branches: [chore/368-launch-readiness-ishantech]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   deploy:
-    name: Deploy to Hostinger VPS
+    name: Build, push to GHCR, and deploy via gist
     runs-on: ubuntu-latest
     environment: production
+    env:
+      REGISTRY: ghcr.io
+      OWNER: venkateshbr
+      TAG: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-          persist-credentials: false
 
-      - name: Verify clean exact deployment source
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-          HOSTINGER_PROJECT_NAME: ${{ vars.HOSTINGER_PROJECT_NAME }}
+      - name: Verify config
         run: |
           set -euo pipefail
-          if [ -z "$HOSTINGER_PROJECT_NAME" ]; then
-            echo "ERROR: set HOSTINGER_PROJECT_NAME to the project confirmed in Hostinger hPanel/API." >&2
-            exit 1
-          fi
-          ACTUAL_SHA="$(git rev-parse HEAD)"
-          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-            echo "ERROR: checkout SHA mismatch: expected $EXPECTED_SHA, got $ACTUAL_SHA." >&2
-            exit 1
-          fi
-          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-            echo "ERROR: workflow source is dirty; refusing to deploy." >&2
-            git status --short >&2
-            exit 1
-          fi
+          [ -n "${{ vars.HOSTINGER_PROJECT_NAME }}" ] || { echo "set var HOSTINGER_PROJECT_NAME (aethos-ps)"; exit 1; }
+          [ -n "${{ vars.HOSTINGER_VM_ID }}" ] || { echo "set var HOSTINGER_VM_ID (1695814)"; exit 1; }
+          [ -n "${{ secrets.HOSTINGER_API_KEY }}" ] || { echo "set secret HOSTINGER_API_KEY"; exit 1; }
+          [ -n "${{ secrets.AETHOS_PRODUCTION_ENV }}" ] || { echo "set secret AETHOS_PRODUCTION_ENV"; exit 1; }
+          [ -n "${{ secrets.GIST_TOKEN }}" ] || { echo "set secret GIST_TOKEN (a PAT with gist scope)"; exit 1; }
 
-      - name: Deploy Docker Compose app to Hostinger
-        uses: hostinger/deploy-on-vps@v2
-        with:
-          api-key: ${{ secrets.HOSTINGER_API_KEY }}
-          virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
-          project-name: ${{ vars.HOSTINGER_PROJECT_NAME }}
-          docker-compose-path: docker-compose.hostinger.yml
-          environment-variables: |
-            ${{ secrets.AETHOS_PRODUCTION_ENV }}
-            DEBUG=false
-            ENVIRONMENT=production
-            FRONTEND_BASE_URL=https://aethos.ishirock.tech
-            CORS_ORIGINS=https://aethos.ishirock.tech,https://timesheet.aethos.ishirock.tech
-            HOSTINGER_APP_DOMAIN=aethos.ishirock.tech
-            HOSTINGER_TIMESHEET_DOMAIN=timesheet.aethos.ishirock.tech
-            TRAEFIK_ENTRYPOINT=${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}
-            TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}
-            COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}
-            AETHOS_IMAGE_TAG=${{ github.sha }}
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push images
+        run: |
+          set -euo pipefail
+          REG="$REGISTRY/$OWNER"
+          bp() { docker build -t "$REG/$1:$TAG" -f "$2/$3" "$2"; docker push "$REG/$1:$TAG"; }
+          bp aethos-ps-api       backend             Dockerfile
+          bp aethos-ps-frontend  frontend            Dockerfile.prod
+          bp aethos-ps-hermes    integrations/hermes Dockerfile
+          bp aethos-ps-timesheet frontend            Dockerfile.timesheet.prod
+
+      - name: Render registry compose and publish to a gist
+        id: gist
+        env:
+          GH_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          set -euo pipefail
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq eval 'del(.services[].build)' docker-compose.hostinger.yml > deploy-compose.yml
+          GHTML="$(gh gist create --public --desc "aethos-ps deploy $TAG" deploy-compose.yml)"
+          GID="${GHTML##*/}"
+          RAW="$(gh api "gists/$GID" --jq '.files[].raw_url')"
+          echo "gid=$GID"  >> "$GITHUB_OUTPUT"
+          echo "raw=$RAW"  >> "$GITHUB_OUTPUT"
+          echo "Published compose gist $GID"
+
+      - name: Deploy to Hostinger via gist URL (no clone)
+        env:
+          KEY: ${{ secrets.HOSTINGER_API_KEY }}
+          VM: ${{ vars.HOSTINGER_VM_ID }}
+          PROJECT: ${{ vars.HOSTINGER_PROJECT_NAME }}
+          RAW: ${{ steps.gist.outputs.raw }}
+        run: |
+          set -euo pipefail
+          ENVFILE="$(mktemp)"
+          {
+            printf '%s\n' "${{ secrets.AETHOS_PRODUCTION_ENV }}"
+            echo "DEBUG=false"
+            echo "ENVIRONMENT=production"
+            echo "FRONTEND_BASE_URL=https://aethos.ishirock.tech"
+            echo "CORS_ORIGINS=https://aethos.ishirock.tech,https://timesheet.aethos.ishirock.tech"
+            echo "HOSTINGER_APP_DOMAIN=aethos.ishirock.tech"
+            echo "HOSTINGER_TIMESHEET_DOMAIN=timesheet.aethos.ishirock.tech"
+            echo "TRAEFIK_ENTRYPOINT=${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}"
+            echo "TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}"
+            echo "COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}"
+            echo "AETHOS_IMAGE_TAG=$TAG"
+          } > "$ENVFILE"
+          BODY="$(jq -n --arg pn "$PROJECT" --arg content "$RAW" --rawfile env "$ENVFILE" \
+            '{project_name:$pn, content:$content, environment:$env}')"
+          echo "POST deploy (project=$PROJECT, tag=$TAG, via gist)"
+          HTTP="$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d "$BODY" \
+            "https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker")"
+          cat /tmp/resp.json; echo
+          [ "$HTTP" = "200" ] || { echo "ERROR: deploy POST returned $HTTP"; exit 1; }
+
+      - name: Verify the new image tag is live
+        env:
+          KEY: ${{ secrets.HOSTINGER_API_KEY }}
+          VM: ${{ vars.HOSTINGER_VM_ID }}
+        run: |
+          set -euo pipefail
+          BASE="https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker"
+          for i in $(seq 1 40); do
+            IMG="$(curl -s -H "Authorization: Bearer $KEY" "$BASE/aethos-ps/containers" | jq -r '.[0].image // ""')"
+            echo "[$((i*15))s] api image: $IMG"
+            case "$IMG" in *":$TAG") echo "OK: new build is live"; exit 0;; esac
+            sleep 15
+          done
+          echo "WARN: new tag not live after 10m — build log (look for a GHCR pull/auth error):"
+          curl -s -H "Authorization: Bearer $KEY" "$BASE/aethos-ps/logs" \
+            | jq -r '.[] | select(.service|test("build";"i")) | .entries[].line' | tail -30
+          exit 1
+
+      - name: Delete the deploy gist
+        if: always() && steps.gist.outputs.gid != ''
+        env:
+          GH_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: gh gist delete "${{ steps.gist.outputs.gid }}" --yes || true

@@ -101,7 +101,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: "aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
+    image: "ghcr.io/venkateshbr/aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
     expose:
       - "8080"
@@ -125,7 +125,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-    image: "aethos-ps-frontend:${AETHOS_IMAGE_TAG:-latest}"
+    image: "ghcr.io/venkateshbr/aethos-ps-frontend:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
     expose:
       - "80"
@@ -143,7 +143,7 @@ services:
       - aethos-internal
 
   worker:
-    image: "aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
+    image: "ghcr.io/venkateshbr/aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
     profiles:
       - worker
@@ -180,7 +180,7 @@ services:
     build:
       context: ./integrations/hermes
       dockerfile: Dockerfile
-    image: "aethos-ps-hermes:${AETHOS_IMAGE_TAG:-latest}"
+    image: "ghcr.io/venkateshbr/aethos-ps-hermes:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
     profiles:
       - hermes
@@ -222,7 +222,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.timesheet.prod
-    image: "aethos-ps-timesheet:${AETHOS_IMAGE_TAG:-latest}"
+    image: "ghcr.io/venkateshbr/aethos-ps-timesheet:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
     expose:
       - "80"
