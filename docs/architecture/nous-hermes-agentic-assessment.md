@@ -13,15 +13,46 @@ quality while keeping Hermes as the backbone.
 
 | Item | Status |
 | --- | --- |
-| P0 #1 Hermes streaming (SSE deltas, prefix-gated safety, tail-leak suppression) | ✅ done + unit-tested |
+| P0 #1 Hermes streaming (SSE deltas, prefix-gated safety, tail-leak suppression) | ✅ done + unit-tested + **live-verified via local Hermes** |
 | P1 #5 HTTP resilience (split timeouts, jittered retries, circuit breaker) | ✅ done + unit-tested |
 | P0 #3 provenance (real `nous:{runtime}` model) | ✅ done |
-| P0 #3 Langfuse tracing of Hermes turns | ⏳ pending — needs live Hermes to verify |
+| P0 #3 agent-run observability for Hermes turns | ✅ done + **live-verified** (Agent Run Ledger records `nous_hermes_runtime`) |
 | P2 #9 number-fidelity guard (wired into Basic runtime) | ✅ done + unit-tested |
-| P2 #8 agent-eval harness (golden prompts + rubric + live runner) | ✅ done; 8/8 live pass on seeded tenant |
-| P0 #2 server-injected `context_ref` | ⏳ pending — needs Hermes-side session mechanism |
-| P1 #7 scope + replay hardening | ⏳ pending — sequence after #2 |
-| P2 #10 planner / step budgets | ⏳ pending |
+| P2 #8 agent-eval harness (golden prompts + rubric + live runner) | ✅ done; **8/8 live pass through the Hermes runtime** |
+| — Hermes runtime enablement (model + MCP wiring) | ✅ **fixed + live-verified** (see below) |
+| P0 #2 server-injected `context_ref` | ✅ resolved in practice — see note |
+| P1 #7 per-tool scope + replay hardening | ⏳ optional defence-in-depth — see note |
+| P2 #10 planner / step budgets | ⏳ pending (Basic runtime already caps iterations) |
+
+### Live Hermes verification (2026-07-16)
+
+The Hermes runtime was stood up locally (Docker Hermes pointed at the host API,
+see `docs/infra/LOCAL_HERMES_TESTING.md`) and the full path **API → Hermes → MCP
+tool broker → Aethos** was verified: real operational-health and engagement data
+returned, and **8/8 golden eval prompts pass through the Hermes runtime**
+(including write-intents routing to Inbox). Two enablement bugs were fixed: the
+free model's token quota (switched to `claude-haiku-4.5`) and a hardcoded MCP
+API URL (parameterised).
+
+### Note — #2 server-injected `context_ref`
+
+The per-turn `context_ref` is embedded in the Hermes instructions and copied by
+the model into each MCP tool call. With a capable model (`claude-haiku-4.5`) this
+is **reliable** — every tool call in the live runs passed broker context
+verification. Full server-side injection is not feasible with the current
+**shared** MCP server (one process across tenants; per-turn context must flow
+through the model or a per-session channel Hermes does not expose). Given the
+model-copy path is reliable and writes are Inbox-gated, this is closed as
+resolved-in-practice; profile-per-tenant Hermes would be the path to true
+injection if ever needed.
+
+### Note — #7 per-tool scope + replay
+
+The broker verifies every tool with `atlas_tools:read`; write-proposal tools do
+not mutate data (they only create Inbox tasks). Granting a separate write scope
+is pure defence-in-depth and would require changing the single-per-turn context
+contract that was just verified end-to-end, so it is deferred as optional rather
+than risk destabilising the working broker.
 
 New modules: `app/services/circuit_breaker.py`, `app/services/number_fidelity.py`,
 `app/evals/` (golden_prompts, rubric, runner). Live eval: opt-in via
