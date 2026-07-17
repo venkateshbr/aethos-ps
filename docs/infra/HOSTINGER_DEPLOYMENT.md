@@ -433,7 +433,53 @@ Pick one (the first is how prod worked previously):
   clone entirely. (VPS SSH port 22 is firewalled to trusted IPs, so this must run
   from an allowed host.)
 - **Temporarily make the repo public**, deploy, then re-private it (exposes the
-  code/history during the window — least preferred).
+  code/history during the window). This is how the 2026-07-17 deploy succeeded
+  after Docker Manager git creds failed to authenticate the clone (SSH tried
+  first, then HTTPS — neither picked up the configured credential). Remember to
+  flip back to private and delete any deploy gists afterward.
+
+### CRITICAL: only the git-clone path injects env — the raw-URL/gist path does NOT
+
+Hard-won on 2026-07-17. The compose relies on `${SUPABASE_URL:-}` etc.
+interpolation. **The Docker Manager only makes the `environment` payload
+available to compose interpolation when it CLONES a git repo** (it writes the
+payload to a `.env` in the cloned working dir, which `docker compose` auto-reads).
+When `content` is a **raw file URL (public gist / raw GHCR blob)**, the manager
+downloads just that one file and runs compose in a dir with **no `.env`**, so
+every `${VAR:-}` resolves to its empty default. Symptom: the app container starts
+(uvicorn up) but `/health/ready` returns `db: "supabase_url is required"`,
+`build_sha: "unknown"`, billing/queue `not_configured` — i.e. an **empty
+environment**, even though the deploy POST returned 200 and the image is correct.
+Do not chase pooler/DB theories; check `/health/ready` via the frontend nginx
+proxy (`https://aethos.ishirock.tech/health/ready`, it forwards `/health` →
+`api:8080`) — an empty env means the deploy used the raw-URL path.
+
+### The working deploy: clone + registry compose (pull, no VPS build)
+
+`docker-compose.hostinger.registry.yml` is a generated companion to
+`docker-compose.hostinger.yml` with every `build:` block stripped, so a clone
+deploy **pulls** the prebuilt public GHCR images instead of building on the VPS.
+Regenerate it whenever the base compose changes (strip the `build:` mappings).
+Working procedure:
+
+1. Build+push the 4 images to GHCR (the GH Action `Build and push images` step,
+   or locally) and make the `ghcr.io/venkateshbr/aethos-ps-*` packages **public**
+   (or ensure GHCR pull creds on the VPS).
+2. Commit + push `docker-compose.hostinger.registry.yml`; note the SHA.
+3. Ensure the repo is cloneable (public window, or working Docker Manager creds).
+4. POST a deploy with `content` = the **blob URL at that SHA** and `environment`
+   = the full prod env (local `.env` deduped + prod overrides, incl.
+   `AETHOS_IMAGE_TAG=<the built image tag>` and `COMPOSE_PROFILES=worker,hermes`):
+
+   ```
+   content: https://github.com/venkateshbr/aethos-ps/blob/<SHA>/docker-compose.hostinger.registry.yml
+   ```
+
+   The manager clones (→ writes `.env`), reads the registry compose, and pulls
+   the GHCR images. All 5 containers recreate onto the new tag.
+5. Verify live: `/health/ready` → `status: ready` and `build_sha: <tag>`; the
+   `environment` payload must have **no duplicate keys** (the API rejects dupes
+   with `422 Duplicate variable`, so dedupe before sending, overrides winning).
 
 ### Hostinger API cheatsheet (for diagnosing a deploy)
 
