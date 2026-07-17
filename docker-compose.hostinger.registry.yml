@@ -3,6 +3,7 @@
 # removed, so the Hostinger Docker Manager PULLS the prebuilt public GHCR
 # images (ghcr.io/venkateshbr/aethos-ps-*:$AETHOS_IMAGE_TAG) instead of
 # building on the VPS. The clone still supplies the .env for interpolation.
+# Regenerate with: python scripts/deploy/gen-registry-compose.py
 # See docs/infra/HOSTINGER_DEPLOYMENT.md.
 # Aethos PS production deployment for Hostinger VPS behind an existing Traefik.
 #

@@ -1,13 +1,20 @@
 name: Deploy Hostinger Production
 
-# Deploy path that works with a PRIVATE repo (see docs/infra/HOSTINGER_DEPLOYMENT.md):
-# GitHub Actions has the private source, so it builds the images and pushes them
-# to GHCR, publishes the registry-only compose to a short-lived PUBLIC gist, and
-# deploys via the gist URL. The Hostinger Docker Manager then DOWNLOADS the
-# compose (no repo clone) and PULLS the private GHCR images (the VPS is logged
-# into ghcr / has GHCR creds in the Docker Manager). The gist exposes only the
-# compose (service names, image refs, env var names — never values) and is
-# deleted after the deploy.
+# On-demand production deploy (Actions → this workflow → "Run workflow").
+#
+# Path that actually injects env (see docs/infra/HOSTINGER_DEPLOYMENT.md): the
+# Hostinger Docker Manager only feeds the `environment` payload into compose
+# ${VAR} interpolation when it CLONES a git repo (it writes a .env the compose
+# reads). The raw-URL/gist path does NOT — the api then comes up with an empty
+# env. So this workflow:
+#   1. builds + pushes the 4 images to GHCR (public packages),
+#   2. deploys by pointing the Docker Manager at docker-compose.hostinger.registry.yml
+#      (a no-build companion that PULLS those images) via a repo blob URL at the
+#      deployed SHA, so the manager clones, writes .env, and pulls — no VPS build.
+#
+# Requires the repo to be cloneable by the VPS at the deployed SHA (public repo,
+# or working Docker Manager git creds). The compose exposes only service names,
+# image refs, and env var NAMES — never values.
 
 on:
   workflow_dispatch:
@@ -21,13 +28,14 @@ permissions:
 
 jobs:
   deploy:
-    name: Build, push to GHCR, and deploy via gist
+    name: Build, push to GHCR, and deploy via clone
     runs-on: ubuntu-latest
     environment: production
     env:
       REGISTRY: ghcr.io
       OWNER: venkateshbr
       TAG: ${{ github.sha }}
+      HEALTH_URL: ${{ vars.HOSTINGER_APP_HEALTH_URL || 'https://aethos.ishirock.tech/health/ready' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -42,7 +50,16 @@ jobs:
           [ -n "${{ vars.HOSTINGER_VM_ID }}" ] || { echo "set var HOSTINGER_VM_ID (1695814)"; exit 1; }
           [ -n "${{ secrets.HOSTINGER_API_KEY }}" ] || { echo "set secret HOSTINGER_API_KEY"; exit 1; }
           [ -n "${{ secrets.AETHOS_PRODUCTION_ENV }}" ] || { echo "set secret AETHOS_PRODUCTION_ENV"; exit 1; }
-          [ -n "${{ secrets.GIST_TOKEN }}" ] || { echo "set secret GIST_TOKEN (a PAT with gist scope)"; exit 1; }
+
+      - name: Registry compose is in sync with the base compose
+        run: |
+          set -euo pipefail
+          python scripts/deploy/gen-registry-compose.py
+          if ! git diff --exit-code docker-compose.hostinger.registry.yml; then
+            echo "::error::docker-compose.hostinger.registry.yml is out of sync with docker-compose.hostinger.yml."
+            echo "Run 'python scripts/deploy/gen-registry-compose.py' and commit the result."
+            exit 1
+          fi
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
@@ -57,36 +74,17 @@ jobs:
           bp aethos-ps-hermes    integrations/hermes Dockerfile
           bp aethos-ps-timesheet frontend            Dockerfile.timesheet.prod
 
-      - name: Render registry compose and publish to a gist
-        id: gist
-        env:
-          GH_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          set -euo pipefail
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq eval 'del(.services[].build)' docker-compose.hostinger.yml > deploy-compose.yml
-          # Bake the image tag (not a secret) into the compose — the Docker Manager
-          # does not substitute ${AETHOS_IMAGE_TAG} for image resolution, so without
-          # this it would pull :latest (which does not exist) and 403.
-          sed -i "s|\${AETHOS_IMAGE_TAG:-latest}|$TAG|g" deploy-compose.yml
-          echo "Image refs in deploy-compose.yml:"; grep -E 'image:' deploy-compose.yml
-          GHTML="$(gh gist create --public --desc "aethos-ps deploy $TAG" deploy-compose.yml)"
-          GID="${GHTML##*/}"
-          RAW="$(gh api "gists/$GID" --jq '.files[].raw_url')"
-          echo "gid=$GID"  >> "$GITHUB_OUTPUT"
-          echo "raw=$RAW"  >> "$GITHUB_OUTPUT"
-          echo "Published compose gist $GID"
-
-      - name: Deploy to Hostinger via gist URL (no clone)
+      - name: Deploy to Hostinger via repo clone (registry compose, no VPS build)
         env:
           KEY: ${{ secrets.HOSTINGER_API_KEY }}
           VM: ${{ vars.HOSTINGER_VM_ID }}
           PROJECT: ${{ vars.HOSTINGER_PROJECT_NAME }}
-          RAW: ${{ steps.gist.outputs.raw }}
         run: |
           set -euo pipefail
-          ENVFILE="$(mktemp)"
+          # Assemble the container env: the prod secret + deploy overrides. The
+          # Hostinger API rejects DUPLICATE keys (422), so dedupe with the later
+          # (override) value winning while preserving first-seen order.
+          RAWENV="$(mktemp)"; ENVFILE="$(mktemp)"
           {
             printf '%s\n' "${{ secrets.AETHOS_PRODUCTION_ENV }}"
             echo "DEBUG=false"
@@ -99,36 +97,49 @@ jobs:
             echo "TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}"
             echo "COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}"
             echo "AETHOS_IMAGE_TAG=$TAG"
-          } > "$ENVFILE"
-          BODY="$(jq -n --arg pn "$PROJECT" --arg content "$RAW" --rawfile env "$ENVFILE" \
+          } > "$RAWENV"
+          # Dedupe: last (override) value wins, first-seen order preserved.
+          awk '{
+                 line=$0; eq=index(line,"=")
+                 if (line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/ || eq==0) next
+                 key=substr(line,1,eq-1); val=substr(line,eq+1)
+                 if (!(key in seen)) order[++n]=key
+                 seen[key]=val
+               }
+               END { for (i=1;i<=n;i++) print order[i]"="seen[order[i]] }' "$RAWENV" > "$ENVFILE"
+          dupes="$(cut -d= -f1 "$ENVFILE" | sort | uniq -d || true)"
+          [ -z "$dupes" ] || { echo "::error::duplicate env keys after dedupe: $dupes"; exit 1; }
+
+          CONTENT="https://github.com/${{ github.repository }}/blob/$TAG/docker-compose.hostinger.registry.yml"
+          echo "Deploying $CONTENT (tag=$TAG)"
+          BODY="$(jq -n --arg pn "$PROJECT" --arg content "$CONTENT" --rawfile env "$ENVFILE" \
             '{project_name:$pn, content:$content, environment:$env}')"
-          echo "POST deploy (project=$PROJECT, tag=$TAG, via gist)"
           HTTP="$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d "$BODY" \
             "https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker")"
           cat /tmp/resp.json; echo
-          [ "$HTTP" = "200" ] || { echo "ERROR: deploy POST returned $HTTP"; exit 1; }
+          [ "$HTTP" = "200" ] || { echo "::error::deploy POST returned $HTTP"; exit 1; }
 
-      - name: Verify the new image tag is live
+      - name: Verify the new build is live and healthy
         env:
           KEY: ${{ secrets.HOSTINGER_API_KEY }}
           VM: ${{ vars.HOSTINGER_VM_ID }}
         run: |
           set -euo pipefail
-          BASE="https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker"
+          # /health/ready confirms BOTH that the new code is live (build_sha) AND
+          # that env injected (status:ready needs a real DB/queue connection).
           for i in $(seq 1 40); do
-            IMG="$(curl -s -H "Authorization: Bearer $KEY" "$BASE/aethos-ps/containers" | jq -r '.[0].image // ""')"
-            echo "[$((i*15))s] api image: $IMG"
-            case "$IMG" in *":$TAG") echo "OK: new build is live"; exit 0;; esac
+            J="$(curl -s --max-time 20 "$HEALTH_URL" || true)"
+            STATUS="$(printf '%s' "$J" | jq -r '.status // ""' 2>/dev/null || true)"
+            SHA="$(printf '%s' "$J" | jq -r '.build_sha // ""' 2>/dev/null || true)"
+            echo "[$((i*15))s] status=$STATUS build_sha=$SHA"
+            if [ "$STATUS" = "ready" ] && [ "$SHA" = "$TAG" ]; then
+              echo "OK: new build is live and ready"; exit 0
+            fi
             sleep 15
           done
-          echo "WARN: new tag not live after 10m — build log (look for a GHCR pull/auth error):"
-          curl -s -H "Authorization: Bearer $KEY" "$BASE/aethos-ps/logs" \
-            | jq -r '.[] | select(.service|test("build";"i")) | .entries[].line' | tail -30
+          echo "::error::new build not ready after 10m — dumping build log:"
+          BASE="https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker"
+          curl -s -H "Authorization: Bearer $KEY" "$BASE/${{ vars.HOSTINGER_PROJECT_NAME }}/logs" \
+            | jq -r '.[] | select(.service|test("build";"i")) | .entries[].line' | tail -40 || true
           exit 1
-
-      - name: Delete the deploy gist
-        if: always() && steps.gist.outputs.gid != ''
-        env:
-          GH_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: gh gist delete "${{ steps.gist.outputs.gid }}" --yes || true
