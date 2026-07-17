@@ -10,6 +10,7 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -17,6 +18,8 @@ from app.core.config import settings
 _DEFAULT_SCOPE = "atlas_tools:read"
 _DEFAULT_TTL_SECONDS = 15 * 60
 _CONTEXT_REF_PREFIX = "ctx_"
+_SESSION_REF_PREFIX = "cts_"
+_SESSION_TABLE = "atlas_tool_sessions"
 
 
 class AtlasContextError(ValueError):
@@ -83,6 +86,98 @@ def create_signed_atlas_context_ref(
     payload_b64 = _b64encode(payload_bytes)
     signature_b64 = _b64encode(_sign(payload_b64.encode("ascii")))
     return f"{payload_b64}.{signature_b64}"
+
+
+def is_session_context_ref(context_ref: str) -> bool:
+    """True if ``context_ref`` is a short server-resolved session token."""
+    return context_ref.startswith(_SESSION_REF_PREFIX)
+
+
+def create_atlas_tool_session(
+    db: Any,
+    *,
+    tenant_id: str,
+    user_id: str,
+    thread_id: str,
+    scope: str = _DEFAULT_SCOPE,
+    ttl_seconds: int = _DEFAULT_TTL_SECONDS,
+    now: int | None = None,
+) -> str:
+    """Persist a per-turn tool context and return a SHORT opaque token.
+
+    The token (``cts_...``, ~26 chars) is what the model copies into each MCP
+    tool call, replacing the ~360-char signed ref that weaker models mangled.
+    The broker resolves it back to tenant/user/thread/scope via
+    :func:`resolve_atlas_tool_session`.
+    """
+    issued_at = int(time.time()) if now is None else now
+    expires_at = issued_at + ttl_seconds
+    token = f"{_SESSION_REF_PREFIX}{secrets.token_urlsafe(16)}"
+    nonce = uuid.uuid4().hex
+    db.table(_SESSION_TABLE).insert(
+        {
+            "token": token,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "thread_id": thread_id,
+            "scope": scope,
+            "nonce": nonce,
+            "expires_at": _epoch_to_iso(expires_at),
+        }
+    ).execute()
+    return token
+
+
+def resolve_atlas_tool_session(
+    db: Any,
+    context_ref: str,
+    *,
+    required_scope: str = _DEFAULT_SCOPE,
+    now: int | None = None,
+) -> AtlasToolContext:
+    """Resolve a short session token to its verified context.
+
+    Raises :class:`AtlasContextError` if the token is unknown, expired, or was
+    minted for a different scope — mirroring the signed-ref failure modes so the
+    broker maps every case to the same rejection.
+    """
+    current_time = int(time.time()) if now is None else now
+    try:
+        response = (
+            db.table(_SESSION_TABLE)
+            .select("tenant_id,user_id,thread_id,scope,nonce,expires_at")
+            .eq("token", context_ref)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise AtlasContextError("Unable to resolve context reference") from exc
+
+    rows = getattr(response, "data", None) or []
+    if not rows:
+        raise AtlasContextError("Unknown context reference")
+    row = rows[0]
+
+    expires_at = _iso_to_epoch(row.get("expires_at"))
+    if expires_at < current_time:
+        raise AtlasContextError("Context reference expired")
+
+    scope = row.get("scope")
+    if scope != required_scope:
+        raise AtlasContextError("Context reference scope is not allowed")
+
+    for key in ("tenant_id", "user_id", "thread_id", "nonce"):
+        if not isinstance(row.get(key), str) or not row.get(key):
+            raise AtlasContextError(f"Context payload missing {key}")
+
+    return AtlasToolContext(
+        tenant_id=row["tenant_id"],
+        user_id=row["user_id"],
+        thread_id=row["thread_id"],
+        scope=scope,
+        expires_at=expires_at,
+        nonce=row["nonce"],
+    )
 
 
 def verify_atlas_context_ref(
@@ -153,7 +248,7 @@ def _verify_compact_context_ref(
     required_scope: str,
     current_time: int,
 ) -> AtlasToolContext:
-    token = context_ref[len(_CONTEXT_REF_PREFIX):]
+    token = context_ref[len(_CONTEXT_REF_PREFIX) :]
     try:
         payload_b64, signature_b64 = token.split(".", 1)
     except ValueError as exc:
@@ -194,6 +289,27 @@ def _verify_compact_context_ref(
         expires_at=expires_at,
         nonce=nonce,
     )
+
+
+def _epoch_to_iso(epoch: int) -> str:
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
+
+
+def _iso_to_epoch(value: Any) -> int:
+    if not isinstance(value, str) or not value:
+        raise AtlasContextError("Context payload missing exp")
+    text = value.strip()
+    # Postgres/PostgREST returns e.g. "2026-07-17T02:10:41.123456+00:00" or
+    # trailing "Z"; normalise both for fromisoformat.
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise AtlasContextError("Context payload missing exp") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(parsed.timestamp())
 
 
 def _canonical_json(payload: dict[str, Any]) -> bytes:

@@ -13,9 +13,14 @@ import httpx
 
 from app.agents.copilot.graph import CopilotAgent, CopilotDeps
 from app.core.config import settings
+from app.core.db import get_service_role_client
 from app.models.ai_settings import AiSettingsResponse
 from app.services.ai_settings_service import AiSettingsService, default_ai_settings_response
-from app.services.atlas_context import AtlasContextError, create_atlas_context_ref
+from app.services.atlas_context import (
+    AtlasContextError,
+    create_atlas_context_ref,
+    create_atlas_tool_session,
+)
 from app.services.circuit_breaker import get_circuit_breaker
 from app.services.hermes_client import HermesClient
 from app.services.operational_telemetry import telemetry
@@ -476,20 +481,43 @@ def _build_hermes_instructions(
     user_id: str,
     thread_id: str,
 ) -> str:
-    """Build per-turn Hermes instructions with an opaque Aethos tool context."""
+    """Build per-turn Hermes instructions with an opaque Aethos tool context.
+
+    Prefer a SHORT server-resolved session token (``cts_...``): weaker models
+    reliably copy a ~26-char token but mangle the ~360-char signed ref, which the
+    broker then rejects (HTTP 400). Falls back to the self-contained signed ref if
+    the session cannot be persisted (e.g. DB unavailable), preserving graceful
+    degradation.
+    """
+    context_ref: str | None = None
     try:
-        context_ref = create_atlas_context_ref(
+        context_ref = create_atlas_tool_session(
+            get_service_role_client(),
             tenant_id=tenant_id,
             user_id=user_id,
             thread_id=thread_id,
         )
-    except AtlasContextError:
+    except Exception:
         logger.warning(
-            "atlas_context_ref_unavailable",
+            "atlas_tool_session_unavailable",
             exc_info=True,
             extra={"tenant_id": tenant_id, "thread_id": thread_id},
         )
-        return _ATLAS_HERMES_INSTRUCTIONS
+
+    if context_ref is None:
+        try:
+            context_ref = create_atlas_context_ref(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=thread_id,
+            )
+        except AtlasContextError:
+            logger.warning(
+                "atlas_context_ref_unavailable",
+                exc_info=True,
+                extra={"tenant_id": tenant_id, "thread_id": thread_id},
+            )
+            return _ATLAS_HERMES_INSTRUCTIONS
 
     return (
         f"{_ATLAS_HERMES_INSTRUCTIONS} "

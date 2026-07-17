@@ -30,7 +30,13 @@ from app.models.engagements import EngagementResponse
 from app.services.agents_service import AgentsService
 from app.services.approval_policy import ApprovalPolicyMatrix
 from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
-from app.services.atlas_context import AtlasContextError, AtlasToolContext, verify_atlas_context_ref
+from app.services.atlas_context import (
+    AtlasContextError,
+    AtlasToolContext,
+    is_session_context_ref,
+    resolve_atlas_tool_session,
+    verify_atlas_context_ref,
+)
 from app.services.atlas_read_packs import AtlasReadPackService
 from app.services.engagements_service import EngagementService
 from app.services.o2c_read_service import O2CReadService
@@ -103,10 +109,21 @@ async def execute_atlas_tool(
     and Inbox review paths.
     """
     try:
-        context = verify_atlas_context_ref(
-            payload.context_ref,
-            required_scope=_READ_SCOPE,
-        )
+        if is_session_context_ref(payload.context_ref):
+            # Short server-resolved token (preferred): the model only had to copy
+            # a ~26-char string, so it does not get mangled like the long ref did.
+            context = await asyncio.to_thread(
+                resolve_atlas_tool_session,
+                db,
+                payload.context_ref,
+                required_scope=_READ_SCOPE,
+            )
+        else:
+            # Legacy self-contained signed ref (backward compatibility).
+            context = verify_atlas_context_ref(
+                payload.context_ref,
+                required_scope=_READ_SCOPE,
+            )
     except AtlasContextError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
