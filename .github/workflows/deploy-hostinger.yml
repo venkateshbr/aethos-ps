@@ -18,6 +18,14 @@ name: Deploy Hostinger Production
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: >-
+          Comma-separated idempotent migration filenames to apply on deploy
+          (e.g. 0105_atlas_tool_sessions.sql). Leave blank to skip. Runs the
+          one-shot `migrate` service against the DB from the VPS.
+        required: false
+        default: ""
   # Uncomment to auto-deploy on every push to the launch branch:
   # push:
   #   branches: [chore/368-launch-readiness-ishantech]
@@ -79,8 +87,13 @@ jobs:
           KEY: ${{ secrets.HOSTINGER_API_KEY }}
           VM: ${{ vars.HOSTINGER_VM_ID }}
           PROJECT: ${{ vars.HOSTINGER_PROJECT_NAME }}
+          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
         run: |
           set -euo pipefail
+          # When migrations are requested, add the one-shot `migrate` profile so
+          # the applier runs against the DB from the VPS.
+          PROFILES="${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}"
+          if [ -n "${APPLY_MIGRATIONS:-}" ]; then PROFILES="$PROFILES,migrate"; fi
           # Assemble the container env: the prod secret + deploy overrides. The
           # Hostinger API rejects DUPLICATE keys (422), so dedupe with the later
           # (override) value winning while preserving first-seen order.
@@ -95,7 +108,8 @@ jobs:
             echo "HOSTINGER_TIMESHEET_DOMAIN=timesheet.aethos.ishirock.tech"
             echo "TRAEFIK_ENTRYPOINT=${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}"
             echo "TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}"
-            echo "COMPOSE_PROFILES=${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}"
+            echo "COMPOSE_PROFILES=$PROFILES"
+            echo "APPLY_MIGRATIONS=${APPLY_MIGRATIONS:-}"
             echo "AETHOS_IMAGE_TAG=$TAG"
           } > "$RAWENV"
           # Dedupe: last (override) value wins, first-seen order preserved.

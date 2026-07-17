@@ -176,6 +176,25 @@ services:
     networks:
       - aethos-internal
 
+  # One-shot, opt-in DB migration applier. Runs only under the `migrate` profile
+  # and only applies the migrations named in APPLY_MIGRATIONS (never the full
+  # history). Use it when the developer's machine cannot reach the DB but the VPS
+  # can. Exits after applying; nothing depends on it.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: "ghcr.io/venkateshbr/aethos-ps-api:${AETHOS_IMAGE_TAG:-latest}"
+    restart: "no"
+    profiles:
+      - migrate
+    command: ["python", "scripts/apply_migrations.py"]
+    environment:
+      <<: *api-environment
+      APPLY_MIGRATIONS: "${APPLY_MIGRATIONS:-}"
+    networks:
+      - aethos-internal
+
   hermes:
     build:
       context: ./integrations/hermes

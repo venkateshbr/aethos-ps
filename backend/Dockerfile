@@ -25,6 +25,11 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy application source (app/ only — no tests, no dev tooling)
 COPY app/ ./app/
 
+# Deploy-time helpers: the opt-in migration applier + migration SQL. Used by the
+# one-shot `migrate` compose service on hosts where the DB is reachable.
+COPY scripts/ ./scripts/
+COPY supabase/ ./supabase/
+
 # Activate venv via PATH; disable .pyc generation and stdout buffering
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
