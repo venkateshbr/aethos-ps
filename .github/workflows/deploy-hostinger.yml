@@ -157,3 +157,37 @@ jobs:
           curl -s -H "Authorization: Bearer $KEY" "$BASE/${{ vars.HOSTINGER_PROJECT_NAME }}/logs" \
             | jq -r '.[] | select(.service|test("build";"i")) | .entries[].line' | tail -40 || true
           exit 1
+
+      - name: Confirm migrations applied (surface migrate logs)
+        # Runs whenever migrations were requested, even if the health check above
+        # failed — a silently-failed migration is exactly what we want to catch.
+        if: ${{ always() && inputs.apply_migrations != '' }}
+        env:
+          KEY: ${{ secrets.HOSTINGER_API_KEY }}
+          VM: ${{ vars.HOSTINGER_VM_ID }}
+          PROJECT: ${{ vars.HOSTINGER_PROJECT_NAME }}
+          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
+        run: |
+          set -uo pipefail
+          # The one-shot `migrate` service runs on the VPS, so its stdout never
+          # reaches this runner. Nothing depends on it and the health check only
+          # probes `api`, so a failed applier would still leave the deploy green.
+          # Pull its logs from the Hostinger docker logs API and assert success.
+          BASE="https://developers.hostinger.com/api/vps/v1/virtual-machines/$VM/docker"
+          LINES=""
+          for i in $(seq 1 12); do
+            LINES="$(curl -s -H "Authorization: Bearer $KEY" "$BASE/$PROJECT/logs" \
+              | jq -r '.[] | select((.service // "")|test("migrate";"i")) | .entries[].line' 2>/dev/null || true)"
+            printf '%s\n' "$LINES" | grep -q 'apply_migrations: done' && break
+            sleep 10
+          done
+          echo "----- migrate service logs (APPLY_MIGRATIONS=$APPLY_MIGRATIONS) -----"
+          printf '%s\n' "$LINES"
+          echo "----------------------------------------------------------------"
+          if printf '%s\n' "$LINES" | grep -qiE 'Traceback|not found|not set|ERROR'; then
+            echo "::error::migrate service reported a failure — migration NOT applied"; exit 1
+          fi
+          if printf '%s\n' "$LINES" | grep -q 'apply_migrations: done'; then
+            echo "OK: migrate service reported 'apply_migrations: done'"; exit 0
+          fi
+          echo "::warning::could not confirm migration from migrate logs (one-shot container may have been pruned / log retention). Verify manually via Supabase REST — see docs/infra."
