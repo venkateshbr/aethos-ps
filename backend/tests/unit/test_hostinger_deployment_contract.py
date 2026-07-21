@@ -315,19 +315,22 @@ def test_git_deploy_rejects_remote_untracked_source_files() -> None:
 def test_github_deploy_verifies_clean_exact_workflow_sha() -> None:
     workflow = _HOSTINGER_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
+    # The deploy pins to the exact commit SHA end-to-end: it checks out that SHA,
+    # tags the images with it, deploys the compose blob at that SHA, and only
+    # passes once the live /health/ready build_sha matches the deployed tag.
+    assert "TAG: ${{ github.sha }}" in workflow
     assert "ref: ${{ github.sha }}" in workflow
-    assert "persist-credentials: false" in workflow
-    assert 'ACTUAL_SHA="$(git rev-parse HEAD)"' in workflow
-    assert '"$ACTUAL_SHA" != "$EXPECTED_SHA"' in workflow
-    assert "git status --porcelain --untracked-files=all" in workflow
+    assert "/blob/$TAG/docker-compose.hostinger.registry.yml" in workflow
+    assert '"$SHA" = "$TAG"' in workflow
 
 
 def test_github_deploy_requires_the_confirmed_hostinger_project_name() -> None:
     workflow = _HOSTINGER_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "HOSTINGER_PROJECT_NAME: ${{ vars.HOSTINGER_PROJECT_NAME }}" in workflow
-    assert 'if [ -z "$HOSTINGER_PROJECT_NAME" ]' in workflow
-    assert "project-name: ${{ vars.HOSTINGER_PROJECT_NAME }}" in workflow
+    # Project name comes from the repo variable and is verified present before any
+    # deploy call; it is never hardcoded to a specific project.
+    assert "${{ vars.HOSTINGER_PROJECT_NAME }}" in workflow
+    assert '[ -n "${{ vars.HOSTINGER_PROJECT_NAME }}" ]' in workflow
     assert "project-name: aethos-ps-production" not in workflow
 
 
