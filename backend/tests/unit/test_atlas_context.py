@@ -91,15 +91,15 @@ class _FakeQuery:
         self._rows = rows
         self._token: str | None = None
 
-    def select(self, *_args, **_kwargs) -> "_FakeQuery":
+    def select(self, *_args, **_kwargs) -> _FakeQuery:
         return self
 
-    def eq(self, column: str, value: str) -> "_FakeQuery":
+    def eq(self, column: str, value: str) -> _FakeQuery:
         if column == "token":
             self._token = value
         return self
 
-    def limit(self, *_args, **_kwargs) -> "_FakeQuery":
+    def limit(self, *_args, **_kwargs) -> _FakeQuery:
         return self
 
     def execute(self) -> _FakeExecute:
