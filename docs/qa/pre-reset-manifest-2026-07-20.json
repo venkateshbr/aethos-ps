@@ -1,0 +1,931 @@
+{
+  "captured_context": "pre-reset starting state",
+  "db_host": "aws-1-ap-northeast-1.pooler.supabase.com",
+  "project_ref": "glcljucaayeesvrsjths",
+  "tenant_count": 80,
+  "auth_user_count": 104,
+  "tenants": [
+    {
+      "id": "8c20744b-c7e2-479a-a6db-7e02380a2c12",
+      "name": "Cobalt Consulting Co. 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:27:07.7522+00"
+    },
+    {
+      "id": "04772a5d-edbe-4f4f-af0c-64254a56611e",
+      "name": "Pixel & Pulp Studio 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:27:42.497294+00"
+    },
+    {
+      "id": "8499458f-6223-46fd-aec9-8817bdbff924",
+      "name": "Harborstone Accountants 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:28:03.011318+00"
+    },
+    {
+      "id": "e65cdb01-87d9-4ceb-839a-c7e195af5be6",
+      "name": "Vantage Tax Partners 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:28:22.237695+00"
+    },
+    {
+      "id": "9c4815b9-19c8-4a85-b5dd-a44f9bf85858",
+      "name": "Indus Engineering Advisory 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:28:41.33988+00"
+    },
+    {
+      "id": "c3656517-24d9-4216-acb6-3a1f6210ad5f",
+      "name": "Southern Cross Legal 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:29:00.624693+00"
+    },
+    {
+      "id": "9cebf0b7-270d-4b3e-a1a5-f6989be74634",
+      "name": "Atlas Capital Advisors 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:29:20.954974+00"
+    },
+    {
+      "id": "6fc7ff8a-3e59-484d-8440-3fcc31fb9954",
+      "name": "Helix Talent Group 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:29:40.083802+00"
+    },
+    {
+      "id": "80d515f6-90bf-47d6-8eb0-fe965333ac7d",
+      "name": "Brightline Wealth Office 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:30:00.573365+00"
+    },
+    {
+      "id": "dd04b50b-31bd-4ef2-aa01-40d907182587",
+      "name": "Quantum Systems Integration 2026-06-29t10-27-04",
+      "created_at": "2026-06-29 10:30:20.956708+00"
+    },
+    {
+      "id": "87b466bc-ad54-4f6e-9dbc-4aa168a9f534",
+      "name": "Cobalt Consulting Co. 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:35:57.17177+00"
+    },
+    {
+      "id": "fd24ec5d-acce-43e5-ac08-74f49f32771a",
+      "name": "Pixel & Pulp Studio 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:36:55.573831+00"
+    },
+    {
+      "id": "1709d7ad-a2a7-4eb4-81ce-f135c7a69e79",
+      "name": "Harborstone Accountants 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:37:29.253558+00"
+    },
+    {
+      "id": "6ce0f0b0-4848-4003-b0f5-e2fccb285749",
+      "name": "Vantage Tax Partners 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:38:08.36111+00"
+    },
+    {
+      "id": "f85e69bd-8fb2-41a4-adbf-95c13b04989f",
+      "name": "Indus Engineering Advisory 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:39:28.419404+00"
+    },
+    {
+      "id": "67c4c5f0-8a71-4383-8083-ecbdb0cab9ed",
+      "name": "Southern Cross Legal 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:39:48.239225+00"
+    },
+    {
+      "id": "ee961e54-67ad-4230-9023-c2e7fdf1386f",
+      "name": "Atlas Capital Advisors 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:40:08.075519+00"
+    },
+    {
+      "id": "ce21dece-d0e2-4920-990b-fd05c3fb99cd",
+      "name": "Helix Talent Group 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:40:27.337279+00"
+    },
+    {
+      "id": "718b9ee4-e079-4060-9f8e-d3ab4ff2d08d",
+      "name": "Brightline Wealth Office 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:40:46.390173+00"
+    },
+    {
+      "id": "425c4956-fc63-4509-8f4f-9228cf787920",
+      "name": "Quantum Systems Integration 2026-06-29t10-35-54",
+      "created_at": "2026-06-29 10:41:06.591863+00"
+    },
+    {
+      "id": "d70f5fa4-d03f-44b5-a9a8-237e6d873d49",
+      "name": "Tenant User Admin 2026-06-29t11-22-42",
+      "created_at": "2026-06-29 11:22:44.078247+00"
+    },
+    {
+      "id": "cc5a95c9-a4ba-4542-8573-fceca3ace26f",
+      "name": "Cobalt Consulting Co. 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:23:06.204368+00"
+    },
+    {
+      "id": "72e4346c-adfd-46b2-a89f-1322e7f918e6",
+      "name": "Pixel & Pulp Studio 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:23:42.099115+00"
+    },
+    {
+      "id": "014909ad-505e-4ea0-af83-3e9aac4b661a",
+      "name": "Harborstone Accountants 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:24:06.305813+00"
+    },
+    {
+      "id": "ad66506d-fc37-45f5-93ab-a98b8188076a",
+      "name": "Vantage Tax Partners 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:24:29.362034+00"
+    },
+    {
+      "id": "f6802da4-db0d-4592-bd21-d795af8ee401",
+      "name": "Indus Engineering Advisory 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:24:51.700835+00"
+    },
+    {
+      "id": "9d76adfa-cfe5-4a14-8ec5-2e564ecbc17f",
+      "name": "Southern Cross Legal 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:25:14.193089+00"
+    },
+    {
+      "id": "bac8461d-04e8-4022-82ac-62fd460c2dfc",
+      "name": "Atlas Capital Advisors 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:25:36.636964+00"
+    },
+    {
+      "id": "f1f078bb-4f0f-492c-b3d7-86654aeaf701",
+      "name": "Helix Talent Group 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:25:59.492947+00"
+    },
+    {
+      "id": "72156db1-7c77-494f-b0fe-ccd368526536",
+      "name": "Brightline Wealth Office 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:26:22.336183+00"
+    },
+    {
+      "id": "5cdd8b50-e257-40df-85cd-d8d5ec3902b9",
+      "name": "Quantum Systems Integration 2026-06-29t11-23-05",
+      "created_at": "2026-06-29 11:26:45.035195+00"
+    },
+    {
+      "id": "a0267012-73a9-416c-bba2-81d86e2bbba4",
+      "name": "Meridian Demo v2 20260630063630",
+      "created_at": "2026-06-30 06:36:32.94411+00"
+    },
+    {
+      "id": "ff918863-8ab6-4be2-9ce5-19a1d92b74a6",
+      "name": "Cobalt Consulting Co. 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 06:38:42.85406+00"
+    },
+    {
+      "id": "8f8abe81-c6fe-4099-ad5b-bd26180f43d1",
+      "name": "Pixel & Pulp Studio 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 06:43:19.642853+00"
+    },
+    {
+      "id": "95e11c31-563a-4b4e-8fe4-55800b39ea4e",
+      "name": "Harborstone Accountants 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 06:48:28.546866+00"
+    },
+    {
+      "id": "a8a54ca2-3666-4c5b-a239-a8b10230184f",
+      "name": "Vantage Tax Partners 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 06:52:43.277182+00"
+    },
+    {
+      "id": "99352d27-b332-413e-b34e-5033c7ab8d63",
+      "name": "Indus Engineering Advisory 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 06:56:12.115482+00"
+    },
+    {
+      "id": "d46626f7-a4ee-49d0-958b-ae4d74960128",
+      "name": "Southern Cross Legal 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 07:01:34.81004+00"
+    },
+    {
+      "id": "fb5926c5-4de3-4f38-b377-5919fdfcffea",
+      "name": "Atlas Capital Advisors 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 07:05:01.773616+00"
+    },
+    {
+      "id": "1c5cd22f-0671-46bb-8b58-940409440853",
+      "name": "Helix Talent Group 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 07:10:25.419252+00"
+    },
+    {
+      "id": "84516292-ea3f-4315-b56f-8b43c7bf241f",
+      "name": "Brightline Wealth Office 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 07:15:48.866679+00"
+    },
+    {
+      "id": "bdfbb386-c900-4124-bd14-f9debb6c09df",
+      "name": "Quantum Systems Integration 2026-06-30t06-38-38",
+      "created_at": "2026-06-30 07:18:59.786359+00"
+    },
+    {
+      "id": "5f27ec33-a518-4d56-b562-fc45ee2378c6",
+      "name": "Acme Consulting launch368-20260711",
+      "created_at": "2026-07-11 03:38:25.154135+00"
+    },
+    {
+      "id": "67fc4883-dbb2-4d4d-805b-dd85e75e9e93",
+      "name": "Bravo Advisory launch368-20260711",
+      "created_at": "2026-07-11 03:38:27.901769+00"
+    },
+    {
+      "id": "3416ec45-515c-4f02-b366-a151a4c398db",
+      "name": "Aksha O2C 1783741694271",
+      "created_at": "2026-07-11 03:48:15.494688+00"
+    },
+    {
+      "id": "0f21478c-3e04-46a7-a852-3da5b65c8398",
+      "name": "Acme Consulting aksha-4fa5b75e",
+      "created_at": "2026-07-11 04:23:50.773672+00"
+    },
+    {
+      "id": "ef6c29b1-29c5-414c-acb8-4e03af18646d",
+      "name": "Bravo Advisory aksha-4fa5b75e",
+      "created_at": "2026-07-11 04:23:52.997617+00"
+    },
+    {
+      "id": "26a8cf8e-f183-4018-9775-ea9e357965ea",
+      "name": "Aksha O2C 1783744303347",
+      "created_at": "2026-07-11 04:31:45.679311+00"
+    },
+    {
+      "id": "06ec0f26-ba25-440b-9a0d-de87d4c09d12",
+      "name": "Acme Consulting aksha-f7b45c52",
+      "created_at": "2026-07-11 05:02:07.352937+00"
+    },
+    {
+      "id": "263f177f-6b50-4577-9b85-b994be5fc46c",
+      "name": "Aksha O2C 1783746318191",
+      "created_at": "2026-07-11 05:05:20.14557+00"
+    },
+    {
+      "id": "1bad6edd-1473-4ce9-947f-4a0cdd26fe86",
+      "name": "Aksha O2C 1783746914932",
+      "created_at": "2026-07-11 05:15:16.58652+00"
+    },
+    {
+      "id": "bf365fd8-edad-4a9e-896a-c00acfee7f33",
+      "name": "Aksha O2C 1783747008744",
+      "created_at": "2026-07-11 05:16:50.545253+00"
+    },
+    {
+      "id": "b51f2f4f-b809-46ab-8c7d-5926cc904640",
+      "name": "Aksha O2C 1783747049250",
+      "created_at": "2026-07-11 05:17:30.764011+00"
+    },
+    {
+      "id": "5e13795c-c1f1-45a8-8ff9-4e66205a663f",
+      "name": "Aksha O2C 1783747926335",
+      "created_at": "2026-07-11 05:32:08.991712+00"
+    },
+    {
+      "id": "7037042f-984a-4166-b47c-91472b596e45",
+      "name": "Aksha O2C 1783748328050",
+      "created_at": "2026-07-11 05:38:50.002713+00"
+    },
+    {
+      "id": "fd379546-e6c7-470b-9c94-e4e9e325ff5f",
+      "name": "Acme Consulting aksha-e87fa527",
+      "created_at": "2026-07-11 05:45:45.8413+00"
+    },
+    {
+      "id": "adc4d45d-72bb-4367-82cb-b649ee63edc8",
+      "name": "Bravo Advisory aksha-e87fa527",
+      "created_at": "2026-07-11 05:45:48.04069+00"
+    },
+    {
+      "id": "d3ddb55f-d7df-41fc-9625-3c9b2a692078",
+      "name": "Aksha O2C 1783748993182",
+      "created_at": "2026-07-11 05:49:54.821757+00"
+    },
+    {
+      "id": "0c48dd77-522d-4d49-8098-068b187eb530",
+      "name": "Aksha O2C 1783749025915",
+      "created_at": "2026-07-11 05:50:27.216722+00"
+    },
+    {
+      "id": "47607240-be5d-452f-b2db-c9e820ef9473",
+      "name": "Aksha B 1783750007053",
+      "created_at": "2026-07-11 06:06:48.219051+00"
+    },
+    {
+      "id": "d6a37449-4fd0-47fb-b047-4bc5adaa05f2",
+      "name": "Aksha O2C 1783750312682",
+      "created_at": "2026-07-11 06:11:53.939782+00"
+    },
+    {
+      "id": "31e9320d-88da-4881-a627-1f27712a0ecd",
+      "name": "Aksha O2C 1783750755411",
+      "created_at": "2026-07-11 06:19:18.037102+00"
+    },
+    {
+      "id": "41c42423-48ae-4445-a9e6-7922d1e47aeb",
+      "name": "Aksha O2C 1783750969549",
+      "created_at": "2026-07-11 06:22:51.836122+00"
+    },
+    {
+      "id": "0216297f-c624-4808-9cc5-c32579ef25a5",
+      "name": "Aksha O2C 1783751635469",
+      "created_at": "2026-07-11 06:33:56.736179+00"
+    },
+    {
+      "id": "427749e7-bef6-42a9-be72-6ff52d465060",
+      "name": "Aksha O2C 1783752064197",
+      "created_at": "2026-07-11 06:41:06.174307+00"
+    },
+    {
+      "id": "360264ce-4bbb-4c88-ae7c-1d1b83030d5d",
+      "name": "Aksha O2C 1783752202179",
+      "created_at": "2026-07-11 06:43:24.370948+00"
+    },
+    {
+      "id": "2a74630c-6442-4bb8-a826-c05e7440010a",
+      "name": "Aksha B 1783752908714",
+      "created_at": "2026-07-11 06:55:08.851601+00"
+    },
+    {
+      "id": "2ae55f90-e7f3-4d0d-9e6e-54549becdb4d",
+      "name": "Aksha O2C 1783753066652",
+      "created_at": "2026-07-11 06:57:48.775819+00"
+    },
+    {
+      "id": "a77457ff-2c20-446a-8bfc-f84f8e209acf",
+      "name": "Aksha O2C 1783753348344",
+      "created_at": "2026-07-11 07:02:30.359612+00"
+    },
+    {
+      "id": "2a7b5a8c-9ba4-42a1-a97d-3a6642e4e3a3",
+      "name": "Acme Consulting aksha-95a49f7f",
+      "created_at": "2026-07-12 08:35:06.778182+00"
+    },
+    {
+      "id": "2f063ca6-cbc0-409d-84a7-3efb802d78f2",
+      "name": "Bravo Advisory aksha-95a49f7f",
+      "created_at": "2026-07-12 08:35:09.625465+00"
+    },
+    {
+      "id": "66a7515e-713e-4683-9e36-b949bf31cc8f",
+      "name": "Acme Consulting aksha-8a7fabcc",
+      "created_at": "2026-07-12 08:49:15.279128+00"
+    },
+    {
+      "id": "4767fadd-ec9f-49ee-a18d-cc0960779060",
+      "name": "Bravo Advisory aksha-8a7fabcc",
+      "created_at": "2026-07-12 08:49:18.580919+00"
+    },
+    {
+      "id": "6539c309-c10d-49a9-af59-3e45b08cb42e",
+      "name": "Aksha O2C 1783846841928",
+      "created_at": "2026-07-12 09:00:44.515492+00"
+    },
+    {
+      "id": "955e906d-0380-42fb-8849-ff4b0f095022",
+      "name": "Aksha B 1783847553647",
+      "created_at": "2026-07-12 09:12:33.791766+00"
+    },
+    {
+      "id": "792f19ef-660a-4d33-91fb-92b71cafac45",
+      "name": "Aksha O2C 1783847954150",
+      "created_at": "2026-07-12 09:19:18.391172+00"
+    },
+    {
+      "id": "6891a39c-06de-4169-9859-ad3b13d56d7d",
+      "name": "Aksha O2C 1783848214528",
+      "created_at": "2026-07-12 09:23:38.141103+00"
+    },
+    {
+      "id": "fea2dcee-67ad-4693-8fd0-fd082620a6b4",
+      "name": "Meridian Advisory (E2E 1784126185)",
+      "created_at": "2026-07-15 14:36:27.957813+00"
+    },
+    {
+      "id": "62a650e7-7e17-4acd-a47e-ba24c6db7abb",
+      "name": "Acme Consulting aksha-efe8c6a8",
+      "created_at": "2026-07-15 14:58:56.830548+00"
+    },
+    {
+      "id": "a930d06d-7e24-476b-81a4-107932cb405b",
+      "name": "Bravo Advisory aksha-efe8c6a8",
+      "created_at": "2026-07-15 14:59:00.077093+00"
+    }
+  ],
+  "auth_users": [
+    {
+      "id": "6c9c75c1-66c4-41b0-bf53-53bac8213d79",
+      "email": "prod-t1-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:27:07.12712+00"
+    },
+    {
+      "id": "bfa17b38-8a8c-4f3d-a071-8dbdc0098772",
+      "email": "prod-t1-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:27:12.776531+00"
+    },
+    {
+      "id": "143ff552-88ba-4dc4-85a3-5f3655cb17b5",
+      "email": "prod-t2-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:27:42.372819+00"
+    },
+    {
+      "id": "9ae530a6-9b07-44a1-b63c-1af20c31022f",
+      "email": "prod-t2-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:27:46.103159+00"
+    },
+    {
+      "id": "b02b64aa-eea1-4703-a353-03db683bc2b8",
+      "email": "prod-t3-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:02.880357+00"
+    },
+    {
+      "id": "c050a6bd-930a-43b4-991f-903f6569cb7b",
+      "email": "prod-t3-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:06.488923+00"
+    },
+    {
+      "id": "1b69b52c-223d-4df7-a47b-3cb8eb7880ef",
+      "email": "prod-t4-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:22.108921+00"
+    },
+    {
+      "id": "c68add26-caa0-4be6-9dc2-ea506c73b094",
+      "email": "prod-t4-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:25.730803+00"
+    },
+    {
+      "id": "ec0cbad9-aa08-4b91-bd0c-311d26c243cd",
+      "email": "prod-t5-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:41.211954+00"
+    },
+    {
+      "id": "5a56f561-5bd1-42bc-ac51-4eaf95cb274d",
+      "email": "prod-t5-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:28:44.881433+00"
+    },
+    {
+      "id": "2834dd53-644a-4065-8664-f3ab2f05b7e1",
+      "email": "prod-t6-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:00.496152+00"
+    },
+    {
+      "id": "afdd3752-7ae7-458f-ae55-12eed46ba209",
+      "email": "prod-t6-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:04.081535+00"
+    },
+    {
+      "id": "eed53384-e7c9-46d0-997f-ed467318aa27",
+      "email": "prod-t7-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:20.828473+00"
+    },
+    {
+      "id": "bc22bc58-06b6-45f7-b4fd-22c6023a72df",
+      "email": "prod-t7-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:24.436236+00"
+    },
+    {
+      "id": "229e9929-7352-434b-a1eb-5f6e9122ac85",
+      "email": "prod-t8-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:39.95724+00"
+    },
+    {
+      "id": "b8cd89e1-d61f-4b47-92ec-4097b6315d95",
+      "email": "prod-t8-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:29:43.490974+00"
+    },
+    {
+      "id": "ec4d2391-a02c-4e15-b80b-3cac4e36bde4",
+      "email": "prod-t9-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:30:00.442515+00"
+    },
+    {
+      "id": "2f25a706-de60-494a-9570-de01ed6b3c61",
+      "email": "prod-t9-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:30:04.862085+00"
+    },
+    {
+      "id": "c46d33bc-41c7-4634-9234-bbc5624d275a",
+      "email": "prod-t10-2026-06-29t10-27-04-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:30:20.822927+00"
+    },
+    {
+      "id": "8e55503e-e429-4fea-9cae-0f00ef6d6e5f",
+      "email": "prod-t10-2026-06-29t10-27-04-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:30:24.481387+00"
+    },
+    {
+      "id": "94eb1471-e43f-4814-b163-5f4b18d58730",
+      "email": "prod-t1-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:35:56.538954+00"
+    },
+    {
+      "id": "336c9ed6-3ace-4a74-8ae2-a01aab59bb01",
+      "email": "prod-t1-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:36:01.767749+00"
+    },
+    {
+      "id": "8497f73a-472c-4ce3-a69a-d2ffdc473373",
+      "email": "prod-t2-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:36:55.439794+00"
+    },
+    {
+      "id": "245a9123-03ef-4a23-bc0b-62d228aacd08",
+      "email": "prod-t2-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:36:59.126684+00"
+    },
+    {
+      "id": "289afa8b-946e-4653-b032-18a89cba05f9",
+      "email": "prod-t3-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:37:29.136364+00"
+    },
+    {
+      "id": "5e4b39f9-6ee7-488c-98a0-6b7ba178ddd6",
+      "email": "prod-t3-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:37:32.738152+00"
+    },
+    {
+      "id": "21d25563-42c2-477b-872d-22112b26273e",
+      "email": "prod-t4-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:38:08.229865+00"
+    },
+    {
+      "id": "ee044bc1-1275-4a24-a35c-0ab043d7f9b5",
+      "email": "prod-t4-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:38:11.923852+00"
+    },
+    {
+      "id": "bc204daf-6032-487b-8acf-eba736b9f2f4",
+      "email": "prod-t5-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:39:28.276514+00"
+    },
+    {
+      "id": "fa34720d-31ee-4612-9fd1-5f8a6630be46",
+      "email": "prod-t5-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:39:32.061163+00"
+    },
+    {
+      "id": "c31ebee7-028d-4231-9048-ec3afeb545c7",
+      "email": "prod-t6-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:39:48.111563+00"
+    },
+    {
+      "id": "0397c2ea-a2ff-4a0f-95ba-74a5ae6be17d",
+      "email": "prod-t6-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:39:52.211462+00"
+    },
+    {
+      "id": "b2c1e55f-4835-4a13-bbed-d5ab6a1940a8",
+      "email": "prod-t7-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:07.948228+00"
+    },
+    {
+      "id": "a43ff9fe-5922-4662-992a-d5660b38ec25",
+      "email": "prod-t7-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:11.534599+00"
+    },
+    {
+      "id": "e5db36ee-0b5c-4ddc-9d3f-b93d09a1c1e6",
+      "email": "prod-t8-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:27.209665+00"
+    },
+    {
+      "id": "e4f083da-42a0-4e73-b2ab-7eb76fb6c57e",
+      "email": "prod-t8-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:30.867444+00"
+    },
+    {
+      "id": "7d463d8c-0316-41ec-b655-98965f1665e0",
+      "email": "prod-t9-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:46.262773+00"
+    },
+    {
+      "id": "0b6cb2d4-aede-4de2-b898-55cf7181bd23",
+      "email": "prod-t9-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:40:50.268579+00"
+    },
+    {
+      "id": "e602c3a8-2239-4ec4-a63f-8359767e8ee8",
+      "email": "prod-t10-2026-06-29t10-35-54-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 10:41:06.466595+00"
+    },
+    {
+      "id": "9d63cad9-614e-47cf-b4ca-30d92a4e24e9",
+      "email": "prod-t10-2026-06-29t10-35-54-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 10:41:10.114236+00"
+    },
+    {
+      "id": "df3fe64a-7fcf-4f10-b4d5-e10bc45f50b0",
+      "email": "tenant-user-admin-2026-06-29t11-22-42-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:22:43.537959+00"
+    },
+    {
+      "id": "85a92d4a-cfb3-4546-9234-efaf708d6fda",
+      "email": "tenant-user-admin-2026-06-29t11-22-42-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:22:47.526491+00"
+    },
+    {
+      "id": "6f89d5c3-c4de-4c40-9566-0eea311fb3bc",
+      "email": "prod-t1-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:06.070697+00"
+    },
+    {
+      "id": "ce025d1a-ad96-4d4a-8224-1f736e670aee",
+      "email": "prod-t1-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:08.078021+00"
+    },
+    {
+      "id": "44a15faa-7d23-4bb5-85cb-d1e7e1359e14",
+      "email": "prod-t1-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:10.729838+00"
+    },
+    {
+      "id": "c77f739a-295f-4889-919f-369182b43b01",
+      "email": "prod-t2-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:41.969033+00"
+    },
+    {
+      "id": "7175d226-a66d-4aa3-bdbf-5249bb4dd975",
+      "email": "prod-t2-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:43.847614+00"
+    },
+    {
+      "id": "094a95ef-93a6-4a79-840a-acf524f67db8",
+      "email": "prod-t2-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:23:47.434059+00"
+    },
+    {
+      "id": "a6e7633a-30a0-4924-b5a2-e5ef15044812",
+      "email": "prod-t3-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:06.173661+00"
+    },
+    {
+      "id": "88f5e1cf-029b-4744-9b81-303d79d22f54",
+      "email": "prod-t3-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:08.072205+00"
+    },
+    {
+      "id": "f6d69d4c-9dea-40a3-b9c2-c83ef36a4f49",
+      "email": "prod-t3-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:10.6906+00"
+    },
+    {
+      "id": "22065a65-2168-4ef5-91ba-e2ab5ba65332",
+      "email": "prod-t4-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:29.237751+00"
+    },
+    {
+      "id": "43e8dc8f-a111-4b99-ad06-83ad655ceda5",
+      "email": "prod-t4-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:31.079378+00"
+    },
+    {
+      "id": "27e46e9e-e48f-463e-ba58-b043b22fea9e",
+      "email": "prod-t4-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:33.698037+00"
+    },
+    {
+      "id": "78b59f9d-1e7c-4e9f-aaa6-34a5d853081c",
+      "email": "prod-t5-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:51.580981+00"
+    },
+    {
+      "id": "950432da-e8c1-4b5e-8392-b00a4dab6bd3",
+      "email": "prod-t5-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:53.428692+00"
+    },
+    {
+      "id": "d39db8b7-7c0b-4d89-9843-f28011ea7324",
+      "email": "prod-t5-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:24:56.03266+00"
+    },
+    {
+      "id": "ae2230aa-e4bf-4a7a-9da1-1f9e3d58f17a",
+      "email": "prod-t6-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:14.045374+00"
+    },
+    {
+      "id": "b3675ac3-2944-4317-8b62-265a5d8e36a7",
+      "email": "prod-t6-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:15.904463+00"
+    },
+    {
+      "id": "bb2de69c-5589-44bf-b519-5c1e6a78b3c5",
+      "email": "prod-t6-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:18.411384+00"
+    },
+    {
+      "id": "fb999896-165e-4359-935e-0c30f6bfdee0",
+      "email": "prod-t7-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:36.520013+00"
+    },
+    {
+      "id": "9a1911dc-d737-423d-8867-0f0d40e2d194",
+      "email": "prod-t7-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:38.39352+00"
+    },
+    {
+      "id": "0229df18-63a4-48f7-939c-318be11d1ed0",
+      "email": "prod-t7-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:40.96751+00"
+    },
+    {
+      "id": "e52e3a13-3cd1-42e9-9d5e-e95b7648efe7",
+      "email": "prod-t8-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:25:59.347846+00"
+    },
+    {
+      "id": "4220ed51-dcdc-464c-adbf-8ac3a848ad5b",
+      "email": "prod-t8-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:01.314831+00"
+    },
+    {
+      "id": "a5793b3a-0faf-4598-ae80-09ab85e85add",
+      "email": "prod-t8-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:03.924175+00"
+    },
+    {
+      "id": "7db1a612-3286-4fed-91c5-61f7d3368ae8",
+      "email": "prod-t9-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:22.215858+00"
+    },
+    {
+      "id": "e63ebd0d-be33-40c8-b05b-6256583ebe13",
+      "email": "prod-t9-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:24.003842+00"
+    },
+    {
+      "id": "4bc2906f-e26e-447c-bc63-b16695ef4bb1",
+      "email": "prod-t9-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:26.56635+00"
+    },
+    {
+      "id": "84cf7a80-4b0e-4252-8e31-1f9737afc5bf",
+      "email": "prod-t10-2026-06-29t11-23-05-owner@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:44.915942+00"
+    },
+    {
+      "id": "cddf0372-c29b-4bc5-8472-2b7729122ef8",
+      "email": "prod-t10-2026-06-29t11-23-05-manager@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:46.721757+00"
+    },
+    {
+      "id": "98f8b2ae-f1af-42ab-a5bd-c721fd10b75a",
+      "email": "prod-t10-2026-06-29t11-23-05-employee@aethos-qa.dev",
+      "created_at": "2026-06-29 11:26:49.266434+00"
+    },
+    {
+      "id": "07de7085-f9c3-432c-96d9-751e833a2977",
+      "email": "prod-demo-v2-20260630063630@aethos-qa.dev",
+      "created_at": "2026-06-30 06:36:32.383138+00"
+    },
+    {
+      "id": "64823858-8a99-4573-8678-5341864294ca",
+      "email": "prod-t1-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 06:38:42.328732+00"
+    },
+    {
+      "id": "dd94ceff-2fb8-419f-a8e4-ff7461fccaaf",
+      "email": "prod-t1-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 06:38:45.870825+00"
+    },
+    {
+      "id": "5a218227-3e4f-43b1-8189-4ed6816a11e0",
+      "email": "prod-t1-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 06:38:49.184863+00"
+    },
+    {
+      "id": "c8c30659-aa84-431c-a56c-88b462388202",
+      "email": "prod-t2-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 06:43:19.230837+00"
+    },
+    {
+      "id": "358c72e2-ded5-4e06-a715-bbc65e391f2e",
+      "email": "prod-t2-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 06:43:22.529939+00"
+    },
+    {
+      "id": "1fbfd064-f7df-4d7b-b6da-e538473173d5",
+      "email": "prod-t2-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 06:43:26.049278+00"
+    },
+    {
+      "id": "d1bdb956-ec0a-4194-a981-a154a21eefde",
+      "email": "prod-t3-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 06:48:28.193271+00"
+    },
+    {
+      "id": "c66b3f2d-b3d2-4424-9378-33bd11900cd1",
+      "email": "prod-t3-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 06:48:31.095483+00"
+    },
+    {
+      "id": "6e51e948-6649-47d5-98b7-e4a194d10529",
+      "email": "prod-t3-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 06:48:34.535256+00"
+    },
+    {
+      "id": "9a504fb3-4b1a-40b6-ac7d-bbd0ade9e992",
+      "email": "prod-t4-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 06:52:42.842566+00"
+    },
+    {
+      "id": "b8be2d68-5673-4c5c-ae04-cbeb7fac28a0",
+      "email": "prod-t4-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 06:52:45.904032+00"
+    },
+    {
+      "id": "4fb83ea6-805c-4196-a7be-8f628e453246",
+      "email": "prod-t4-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 06:52:49.322379+00"
+    },
+    {
+      "id": "46beea11-4fb7-476a-8113-534a1b1047ee",
+      "email": "prod-t5-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 06:56:11.929276+00"
+    },
+    {
+      "id": "23371d6e-f3bc-459b-85e9-4484ef0bedb0",
+      "email": "prod-t5-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 06:56:14.573574+00"
+    },
+    {
+      "id": "f9ea6d7b-37f1-4113-ba24-5330febebe37",
+      "email": "prod-t5-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 06:56:17.96698+00"
+    },
+    {
+      "id": "685051d3-e21f-4aeb-ba88-4fe0448a6420",
+      "email": "prod-t6-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 07:01:34.662737+00"
+    },
+    {
+      "id": "94648d94-3492-4a8a-8793-7f0aa8ba4802",
+      "email": "prod-t6-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 07:01:37.289432+00"
+    },
+    {
+      "id": "a4eb9ead-843d-466c-bdc6-9bd54da42136",
+      "email": "prod-t6-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 07:01:40.744242+00"
+    },
+    {
+      "id": "b6ecdc03-3c24-45ed-88a9-7f036706eea3",
+      "email": "prod-t7-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 07:05:01.413325+00"
+    },
+    {
+      "id": "81ed8997-c3b6-4fd5-a81f-1e5120f19502",
+      "email": "prod-t7-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 07:05:04.471528+00"
+    },
+    {
+      "id": "a9744123-9275-4fda-b0fe-cb09bb3c48c4",
+      "email": "prod-t7-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 07:05:07.94861+00"
+    },
+    {
+      "id": "2d83072f-fcba-4101-8170-b7d87e3d4ae7",
+      "email": "prod-t8-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 07:10:25.260296+00"
+    },
+    {
+      "id": "a202b400-cd72-4aad-8347-1dbfa1756b86",
+      "email": "prod-t8-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 07:10:27.870333+00"
+    },
+    {
+      "id": "bc00b438-ec5c-44b6-bcc5-36169f6bfa73",
+      "email": "prod-t8-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 07:10:31.906227+00"
+    },
+    {
+      "id": "940a15f4-4ee3-4add-94e3-dacbf60bd1ef",
+      "email": "prod-t9-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 07:15:48.692099+00"
+    },
+    {
+      "id": "cb1c3590-72d8-487e-88a4-3d44eccd9234",
+      "email": "prod-t9-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 07:15:51.560015+00"
+    },
+    {
+      "id": "fa079308-8b2d-4aef-aa37-032e8bde1789",
+      "email": "prod-t9-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 07:15:54.944885+00"
+    },
+    {
+      "id": "42e04afd-3a54-4b97-b1ca-d3eece2fdeed",
+      "email": "prod-t10-2026-06-30t06-38-38-owner@aethos-qa.dev",
+      "created_at": "2026-06-30 07:18:59.342706+00"
+    },
+    {
+      "id": "6633d559-93c2-4224-b177-0b3372c1a7fc",
+      "email": "prod-t10-2026-06-30t06-38-38-manager@aethos-qa.dev",
+      "created_at": "2026-06-30 07:19:02.315102+00"
+    },
+    {
+      "id": "33990d50-8b8f-4794-ae1c-3882b64b934e",
+      "email": "prod-t10-2026-06-30t06-38-38-employee@aethos-qa.dev",
+      "created_at": "2026-06-30 07:19:05.883691+00"
+    },
+    {
+      "id": "447300bb-c917-4bb4-9ca9-bdfa7e65bee4",
+      "email": "marcus+e2e1784126185@meridianadvisory.co.uk",
+      "created_at": "2026-07-15 14:36:27.029654+00"
+    }
+  ]
+}
