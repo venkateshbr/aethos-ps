@@ -35,6 +35,15 @@ deleted:
   base-currency calculations.
 - `public.tax_rates` rows where `tenant_id IS NULL`: system tax catalog
   visible to all tenants at setup time.
+- **System RBAC catalogue** (seeded by migration `0096`): `security_privileges`,
+  `security_duties`, `security_duty_privileges`, and **`security_role_duties`**.
+  These are now explicitly protected. `security_role_duties` in particular has no
+  `tenant_id` but is an FK-child of `security_roles` (which does), so before the
+  2026-07-20 fix the FK-closure silently deleted all 94 role→duty mappings —
+  leaving every new tenant's users (incl. the owner) with **zero effective
+  privileges** and every permission-gated UI action (e.g. Draft Invoice)
+  disabled. If this ever recurs, repair by re-applying migration `0096` (it is
+  idempotent: `ON CONFLICT DO NOTHING`).
 - `storage.buckets` row with `id = 'documents'`: private document-upload
   bucket used by invoice, expense, and engagement-letter intake.
 - Database extensions, enum types, functions, triggers, RLS policies, and
@@ -120,6 +129,8 @@ where not exists (
 );
 select count(*) from public.fx_rates;
 select count(*) from public.tax_rates where tenant_id is null;
+select count(*) from public.security_role_duties;
+select count(*) from public.security_duty_privileges;
 select count(*) from storage.buckets where id = 'documents';
 select count(*) from storage.objects where bucket_id = 'documents';
 ```
@@ -132,5 +143,7 @@ Expected result:
 - orphan `auth.users = 0`
 - `fx_rates > 0`
 - system `tax_rates > 0`
+- `security_role_duties > 0` (94 as of migration 0096) — **RBAC intact**
+- `security_duty_privileges > 0`
 - `documents` bucket row exists
 - `documents` bucket objects = 0
