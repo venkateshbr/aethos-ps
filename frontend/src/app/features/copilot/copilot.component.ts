@@ -709,10 +709,26 @@ export class CopilotComponent implements OnInit {
     ]);
     this.streaming.set(true);
 
+    // Stream watchdog: if the SSE stream connects but the runtime hangs (no
+    // delta/done/error frame), abort after an idle window so the user sees an
+    // error instead of an empty bubble streaming forever. Re-armed on every
+    // chunk that carries data, so slow-but-progressing responses are fine.
+    const streamAbort = new AbortController();
+    const STREAM_IDLE_MS = 60_000;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(
+        () => streamAbort.abort(new DOMException('Nous response timed out', 'TimeoutError')),
+        STREAM_IDLE_MS,
+      );
+    };
+    let receivedContent = false;
+
     try {
       const response = await fetch(
         `/api/v1/chat/threads/${threadId}/messages`,
-        { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content: contentForAgent }) }
+        { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content: contentForAgent }), signal: streamAbort.signal }
       );
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -721,9 +737,11 @@ export class CopilotComponent implements OnInit {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let sseLineRemainder = '';
+      armIdle();
 
       while (true) {
         const { done, value } = await reader.read();
+        if (value && value.length) armIdle();
         const text = decoder.decode(value, { stream: !done });
         const batch = collectCompleteSseLines(sseLineRemainder, text, done);
         sseLineRemainder = batch.remainder;
@@ -738,6 +756,7 @@ export class CopilotComponent implements OnInit {
           }
 
           if (typeof payload['delta'] === 'string') {
+            receivedContent = true;
             this.messages.update(msgs =>
               msgs.map(m =>
                 m.id === assistantId
@@ -769,6 +788,7 @@ export class CopilotComponent implements OnInit {
 
           // Card frame — agent extracted a structured entity
           if (typeof payload['card_type'] === 'string') {
+            receivedContent = true;
             this.messages.update(msgs =>
               msgs.map(m =>
                 m.id === assistantId ? {
@@ -783,6 +803,7 @@ export class CopilotComponent implements OnInit {
           }
 
           if (typeof payload['error'] === 'string') {
+            receivedContent = true;
             const safeMessage = 'Nous is temporarily unavailable. Please try again.';
             this.error.set(safeMessage);
             this.messages.update(msgs =>
@@ -803,10 +824,23 @@ export class CopilotComponent implements OnInit {
 
         if (done) break;
       }
+
+      // Stream closed cleanly but produced nothing (no delta/card/error frame).
+      // Never leave a silent empty bubble — surface a retry-able error.
+      if (!receivedContent) {
+        const safeMessage = 'Nous is temporarily unavailable. Please try again.';
+        this.error.set(safeMessage);
+        this.messages.update(msgs =>
+          msgs.map(m => m.id === assistantId ? { ...m, content: safeMessage, streaming: false } : m)
+        );
+      }
     } catch (err: unknown) {
+      const isTimeout = err instanceof DOMException && err.name === 'TimeoutError';
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Nous send error:', message);
-      this.error.set('Something went wrong. Please try again.');
+      this.error.set(isTimeout
+        ? 'Nous took too long to respond. Please try again.'
+        : 'Something went wrong. Please try again.');
       this.messages.update(msgs => {
         const assistantMsg = msgs.find(m => m.id === assistantId);
         if (assistantMsg && !assistantMsg.content && !assistantMsg.cardType) {
@@ -817,6 +851,7 @@ export class CopilotComponent implements OnInit {
         );
       });
     } finally {
+      if (idleTimer) clearTimeout(idleTimer);
       this.streaming.set(false);
       this.messages.update(msgs =>
         msgs.map(m => m.id === assistantId ? { ...m, streaming: false } : m)
