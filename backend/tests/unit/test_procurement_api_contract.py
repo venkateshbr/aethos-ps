@@ -148,6 +148,51 @@ class _Query:
 class _FakeDb:
     def __init__(self) -> None:
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "tenant_users": [
+                {
+                    "id": f"membership-{user_id}",
+                    "tenant_id": TENANT_ID,
+                    "user_id": user_id,
+                    "role": role,
+                    "must_change_password": False,
+                    "deleted_at": None,
+                }
+                for user_id, role in (
+                    ("user-1", "owner"),
+                    ("auditor-1", "viewer"),
+                    ("approver-1", "approver"),
+                    ("admin-1", "admin"),
+                )
+            ],
+            "tenant_user_effective_privileges": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": user_id,
+                    "role_code": f"test_{role}",
+                    "role_label": role.title(),
+                    "legacy_role": role,
+                    "privilege_code": privilege,
+                }
+                for user_id, role, privileges in (
+                    (
+                        "user-1",
+                        "owner",
+                        ("procurement.read", "procurement.manage", "procurement.approve"),
+                    ),
+                    ("auditor-1", "viewer", ("procurement.read",)),
+                    (
+                        "approver-1",
+                        "approver",
+                        ("procurement.read", "procurement.approve"),
+                    ),
+                    (
+                        "admin-1",
+                        "admin",
+                        ("procurement.read", "procurement.manage", "procurement.approve"),
+                    ),
+                )
+                for privilege in privileges
+            ],
             "clients": [
                 {
                     "id": CLIENT_ID,
@@ -270,6 +315,18 @@ class _ForbiddenDb:
         raise AssertionError(f"wrong dependency attempted to access {name}")
 
 
+class _SecurityOnlyDb:
+    """Allow privilege evaluation while rejecting procurement data access."""
+
+    def __init__(self, db: _FakeDb) -> None:
+        self._db = db
+
+    def table(self, name: str) -> _Query:
+        if name not in {"tenant_users", "tenant_user_effective_privileges"}:
+            raise AssertionError(f"service-role read attempted to access {name}")
+        return self._db.table(name)
+
+
 @pytest.fixture
 def fake_db() -> _FakeDb:
     return _FakeDb()
@@ -295,7 +352,7 @@ def test_procurement_read_routes_use_rls_client(
     fake_db: _FakeDb,
 ) -> None:
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
-    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: _SecurityOnlyDb(fake_db)
 
     list_response = client.get(
         "/api/v1/procurement/documents?document_type=purchase_order&status=approved"
@@ -388,6 +445,11 @@ def test_procurement_writes_use_service_role_client(
             ],
         },
     )
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id="approver-1",
+        email="approver@example.com",
+        role="approver",
+    )
     approve_response = client.post(
         f"/api/v1/procurement/documents/{CREATED_DOCUMENT_ID}/approve"
     )
@@ -398,7 +460,7 @@ def test_procurement_writes_use_service_role_client(
     assert create_response.json()["total"] == "550.00"
     assert approve_response.status_code == 200, approve_response.text
     assert approve_response.json()["status"] == "approved"
-    assert approve_response.json()["approved_by"] == "user-1"
+    assert approve_response.json()["approved_by"] == "approver-1"
 
 
 def test_procurement_approver_can_approve_manager_limit_only(
@@ -443,6 +505,36 @@ def test_procurement_approver_can_approve_manager_limit_only(
     assert manager_response.json()["approved_by"] == "approver-1"
     assert admin_response.status_code == 403, admin_response.text
     assert admin_response.json()["detail"]["required_role"] == "admin"
+
+
+def test_procurement_requester_cannot_approve_own_document(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    document = fake_db.tables["procurement_documents"][0]
+    document.update(
+        {
+            "status": "draft",
+            "requested_by": "user-1",
+            "approved_by": None,
+            "approved_at": None,
+        }
+    )
+    approval_route = deepcopy(document["approval_route"])
+    policy_snapshot = deepcopy(document["approval_policy_snapshot"])
+
+    response = client.post(f"/api/v1/procurement/documents/{DOCUMENT_ID}/approve")
+
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == {
+        "code": "procurement_requester_cannot_approve",
+        "message": "The requester cannot approve their own procurement document",
+    }
+    assert document["status"] == "draft"
+    assert document["approved_by"] is None
+    assert document["approved_at"] is None
+    assert document["approval_route"] == approval_route
+    assert document["approval_policy_snapshot"] == policy_snapshot
 
 
 def test_procurement_create_records_policy_route(

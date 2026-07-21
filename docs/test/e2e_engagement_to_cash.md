@@ -1,7 +1,12 @@
 # E2E Scenario — Engagement to Cash
 
-> The flagship Aethos PS workflow. Every step is a test. Every test name is the section ID.
+> The flagship Aethos PS workflow and intended coverage catalogue.
 > Source standard: [`agent-harness/core/e2e-workflow-standard.md`](../../agent-harness/core/e2e-workflow-standard.md).
+
+Evidence status: this document is a requirements catalogue. It is not a claim
+that every case is executable or passing. The evidence matrix in §9 is
+authoritative; expected behaviors without matching executable proof remain
+missing coverage.
 
 ## Workflow
 
@@ -9,22 +14,27 @@
 - **Owner role**: Aksha (SDET) for the regression suite; Karya + Rupa for the underlying code.
 - **Value delivered**: A PS firm goes from "we just signed a client" to "we received and posted their payment" without leaving the product.
 - **Entry point**:
-  - UI: `/copilot` (chat) and `/engagements/new` (CRUD fallback)
+  - UI: `/app/copilot` (chat) and `/app/engagements` (list/create fallback;
+    there is no `/engagements/new` route)
   - API: `POST /api/v1/engagements`, `POST /api/v1/invoices`, etc.
 - **Exit state**:
   - Invoice in status `paid`
   - Payment row with `stripe_payment_intent_id`
-  - Two balanced journals posted: (1) DR AR / CR Revenue on send, (2) DR Bank / CR AR on payment receipt
+  - Two balanced journals posted: (1) DR AR / CR Revenue on explicit invoice
+    approval, (2) DR Bank / CR AR on payment receipt
   - FX gain/loss journal if the invoice currency ≠ tenant base and rate moved between send and receipt
+  - No `journal_posted=false` webhook result. The current webhook catches
+    payment-journal failure after updating payment/invoice state, so the test
+    must treat paid-without-journal as a P0 rather than assuming atomicity.
 
 ## Actors & Pre-conditions
 
 | Actor | Role | Notes |
 | --- | --- | --- |
-| Alice | Owner | Sets up tenant, connects Stripe |
-| Bob | Manager | Approves invoices and bills |
-| Carol | Member | Logs time and expenses |
-| Dave | Viewer | Read-only access |
+| Alice | Tenant Owner → legacy `owner` | Sets up tenant; Connect is owner-only |
+| Bob | Finance Controller → legacy `admin` | Approves and sends invoices under current API gates |
+| Carol | Finance Operator → legacy `member` | Logs time; expense creation currently has a manager gate |
+| Dave | Executive Viewer → legacy `viewer` | Read-only access |
 | Eve | Other tenant's user | Must be denied all access |
 | Mallory | Public unauthenticated visitor on the invoice token URL | Pays the invoice |
 
@@ -33,12 +43,17 @@ Pre-conditions:
 - Tenant `test-tenant-{run_id}` created.
 - Alice authenticated; Stripe Connect onboarded (sandbox).
 - Tenant base currency set (`USD` default for run; variant: tenant in `GB` with `GBP`).
-- Three roles (manager, member, viewer) seeded, plus Eve in a second tenant.
+- Independent users exist for the required catalogue roles, with their legacy
+  projections recorded, plus Eve in a second tenant. Many business endpoints
+  still enforce the projected legacy role rather than the individual duty.
 - `tax_rates` seeded for tenant's country.
 - `fx_rates` populated daily (FX worker has run; warn-banner appears if stale > 3 days).
 - Stripe test mode credentials in `.env`; webhook endpoint reachable via test tunnel.
-- Resend in test/dev mode (mock SMTP).
-- Test fixtures: `fixtures/engagement_letters/acme_tm_eng_letter.pdf`, `fixtures/receipts/lunch_receipt.jpg`, `fixtures/vendor_invoices/aws_invoice.pdf`.
+- Email delivery is not part of the current `send_invoice` service path; do not
+  claim Resend proof from invoice status alone.
+- Repository fixtures are text files under `backend/tests/fixtures`; the PDF/JPG
+  names formerly listed here are not present. Use separately created fictional
+  browser-upload fixtures and retain them as run evidence.
 
 ---
 
@@ -48,39 +63,39 @@ Pre-conditions:
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 1 | Alice | `/copilot` — drops `acme_tm_eng_letter.pdf` into chat | POST `/documents/upload` → Supabase Storage → sync/queued `extract_document_worker` | Document row classified as `engagement_letter` and reaches `status=extracted` |
+| 1 | Alice | `/app/copilot` — drops `acme_tm_eng_letter.pdf` into chat | POST `/api/v1/documents/upload` → Supabase Storage → sync/queued `extract_document_worker` | Document row classified as `engagement_letter` and reaches `status=extracted` |
 | 2 | system | `engagement_letter_agent` runs against the uploaded SOW/letter | Writes `agent_suggestion(status=pending, confidence)` and `hitl_task(kind=create_engagement_draft)` | Inbox task contains client, engagement title, billing arrangement, currency, dates, rates/fees, and first project proposal |
-| 3 | Alice | Approves or approves-with-edits in Inbox | POST `/inbox/tasks/{id}/approve[-with-edits]` → service materialises `client`, `engagement`, and first `project` | Customer, draft engagement, and first project exist; engagement stores `source_document_id` for traceability |
+| 3 | Alice | Approves or approves-with-edits in `/app/inbox` | POST `/api/v1/inbox/tasks/{id}/approve[-with-edits]` → service materialises `client`, `engagement`, and first `project` | Customer, draft engagement, and first project exist; engagement stores `source_document_id` for traceability |
 
 ### §1.2 Log time and a billable expense
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 4 | Carol | `/copilot` — "I spent 3.5h on Acme yesterday on discovery" | `time_entry_agent` parses → typed output → autonomy L3 (unambiguous) → write `time_entries` | Row in `time_entries`; chat confirms with totals |
-| 5 | Carol | Drops `lunch_receipt.jpg` | `expense_extractor_agent` runs; confidence 0.93 → L3 auto-applies | `project_expenses` row; agent_suggestion `status=auto_applied` |
-| 6 | Carol | Goes to `/time` — sees both entries with correct project + hours | (read) | UI shows row count = 2, total hours = 3.5 |
+| 4 | Carol | `/app/copilot` — "I spent 3.5h on Acme yesterday on discovery" | `time_entry_agent` parses → typed output → write is subject to configured autonomy/review policy | Row in `time_entries`; chat confirms with totals |
+| 5 | Manager-authorized user | Drops `lunch_receipt.jpg` | `expense_extractor_agent` runs; result follows configured confidence/autonomy and current expense-write authorization | `project_expenses` row or Inbox task with evidence; do not assume auto-apply from confidence alone |
+| 6 | Carol | Goes to `/app/time` — sees the time entry with correct project + hours | (read) | UI shows the expected entry and total hours; expense is verified at `/app/expenses` |
 
 ### §1.3 Draft and approve invoice via Copilot
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 7 | Bob | `/copilot` — "create an invoice for Acme for May" | `invoice_drafter_agent` runs; assembles lines from time + expenses; produces `InvoiceDraftCard` | Inline card with line items, subtotal, tax (per `tax_rates`), total in USD |
-| 8 | Bob | Clicks Approve | POST `/invoices` → `accounting_guardian` validates → balanced journal posted: DR `1200 Accounts Receivable` / CR `4000 Revenue` (and CR `2300 Sales Tax Payable` if any) | Invoice row `status=approved`; journal posted; `agent_suggestion.status=approved` |
+| 7 | Bob | `/app/copilot` — "create an invoice for Acme for May" | `invoice_drafter_agent` runs; assembles lines from time + expenses; produces a draft/review result | Draft with line items, subtotal, tax (per `tax_rates`), total in USD |
+| 8 | Bob | Approves from invoice/Inbox flow | PATCH `/api/v1/invoices/{id}/approve` (legacy `admin` required) → guarded balanced journal: DR `1200 Accounts Receivable` / CR `4000 Revenue` (and CR `2300 Sales Tax Payable` if any) | Invoice row `status=approved`; journal posted; approval evidence exists |
 
 ### §1.4 Send invoice with Stripe Payment Link
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 9 | Bob | Clicks "Send" on the invoice | POST `/invoices/{id}/send` → Stripe `Product`+`Price`+`PaymentLink` (with `metadata={invoice_id, tenant_id}`, `on_behalf_of=connect_acct`, `transfer_data.destination=connect_acct`, `application_fee=0`); Resend sends email | Invoice `status=sent`, `stripe_payment_link_id` populated, `public_token` generated |
-| 10 | Bob | Opens `/p/{public_token}` in a new browser session (no auth) | Public hosted invoice view loads with branded styling | Page shows line items, total in USD, "Pay now" button → Stripe Checkout |
+| 9 | Bob | Clicks "Send" on `/app/invoices/{id}` | POST `/api/v1/invoices/{id}/send` (legacy `admin` required) → Stripe `Product`+`Price`+`PaymentLink`; Connect routing fields are added only for an enabled Connect account | Invoice `status=sent`; Payment Link fields exist when Stripe is configured, otherwise PDF-only send is recorded |
+| 10 | Bob | Opens `/p/{public_token}` in a new browser session (no auth) | Public hosted invoice view loads with branded styling | Page shows invoice/payment state. Also test Stripe's configured `/p/{token}/thanks` return: that path is not in the current Angular route table and is a gap if it falls through to landing. |
 
 ### §1.5 Receive payment via Stripe webhook
 
 | # | Actor | UI action | API / system effect | Expected end state |
 | --- | --- | --- | --- | --- |
-| 11 | Mallory | Pays via Stripe test card `4242 4242 4242 4242` | Stripe `checkout.session.completed` → POST `/webhooks/stripe` → signature verified → idempotent insert by `stripe_payment_intent_id` → `payments` row → DB trigger `trg_payment_received` posts journal: DR `1100 Bank` / CR `1200 Accounts Receivable` | Invoice `status=paid`, payment row exists, journal balanced |
+| 11 | Mallory | Pays via Stripe test card `4242 4242 4242 4242` | Stripe `checkout.session.completed` → POST `/api/v1/webhooks/stripe` → signature verified and idempotently dispatched. Current implementation inserts payment/marks paid before attempting the journal and can return `journal_posted=false`. | PASS only if invoice is paid, exactly one payment exists, exactly one balanced DR Bank / CR AR journal exists, and the webhook reports the journal posted; otherwise P0. |
 | 12 | Bob | Refreshes invoice detail in UI | (read) | Status badge = Paid; payment timeline shows received at timestamp; trace ID visible in detail drawer |
-| 13 | Bob | Navigates to `/reports/ar-aging` | (read) | Acme no longer in aging buckets |
+| 13 | Bob | Opens `/app/reports` → AR Aging tab | (read) | Acme no longer appears as an open receivable |
 
 ---
 
@@ -122,12 +137,17 @@ Pre-conditions:
 - Engagement created with `currency=GBP`.
 - §1.3: invoice produced in GBP; `journal_lines.amount` in GBP; `journal_lines.base_amount` in USD using `fx_rate(GBP→USD, invoice_date)`.
 - §1.5: payment arrives in GBP (Stripe handles conversion); FX gain/loss between send-date rate and receipt-date rate booked to `7900 Realized FX Gain/Loss` by `accounting_guardian`.
-- Reports default to USD with a "show in invoice currency" toggle.
+- Reports render tenant-base values. There is no general "show in invoice
+  currency" UI toggle; verify transaction-currency detail only where the
+  response explicitly supplies it.
 
-### §2.8 No Stripe Connect
+### §2.8 No Stripe Connect / no Stripe configuration
 
-- Tenant has not connected Stripe.
-- §1.4 Send button is enabled but no Payment Link is generated; invoice email contains PDF only and "Mark as paid" link to admin UI. §1.5 replaced by manual mark-as-paid which posts the same journal.
+- Lack of Connect alone does not suppress Payment Link creation when server-side
+  Stripe is configured; it omits Connect destination routing. The PDF-only path
+  occurs when Stripe itself is not configured. Exercise both states separately.
+- Manual payment is recorded from `/app/invoices/{id}` by a projected `admin`
+  and should post the same DR Bank / CR AR outcome.
 
 ---
 
@@ -161,7 +181,7 @@ Pre-conditions:
 
 | Trigger | Expected behavior |
 | --- | --- |
-| §1.3 step 7 — Anthropic API 500 | Copilot surfaces "AI is unavailable — switching to manual mode" message; user is taken to `/invoices/new` form with time entries + expenses pre-attached as lines; full invoice creation still possible without AI |
+| §1.3 step 7 — configured model provider fails | A controlled error is shown without a side effect. There is no `/invoices/new` route or standalone invoice-create form; the current fallback starts from `/app/engagements`/billing draft flow. A fully pre-populated AI-outage fallback is a gap unless separately proven. |
 
 ### §3.6 Auth — viewer attempts to approve invoice
 
@@ -173,7 +193,7 @@ Pre-conditions:
 
 | Trigger | Expected behavior |
 | --- | --- |
-| Eve in tenant B navigates to `/invoices/{id_in_tenant_A}` | UI returns 404 page; direct API GET returns 404 (not 200 empty); list endpoint with manipulated filter returns 0 rows |
+| Eve in tenant B navigates to `/app/invoices/{id_in_tenant_A}` | UI/API returns a controlled denial without exposing tenant A; list endpoint with manipulated filter returns 0 rows |
 
 ### §3.8 Concurrency — two approvers click Approve at once
 
@@ -258,12 +278,12 @@ Pre-conditions:
 
 | Action | Owner | Admin | Manager | Member | Viewer | Other-tenant |
 | --- | --- | --- | --- | --- | --- | --- |
-| View engagement | ✅ | ✅ | ✅ | ✅ (assigned only) | ✅ | ❌ 404 |
+| View engagement | ✅ | ✅ | ✅ | ✅ (tenant-wide under current read gate) | ✅ | ❌ 404 |
 | Create engagement | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ 404 |
-| Approve engagement (HITL) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ 403 |
+| Change engagement status / admin approval | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
 | Log time | ✅ | ✅ | ✅ | ✅ (self) | ❌ | ❌ 403 |
 | Draft invoice via chat | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Approve invoice | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ 403 |
+| Approve invoice | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
 | Send invoice | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
 | Mark invoice paid (manual) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ 403 |
 | Connect Stripe | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -271,19 +291,27 @@ Pre-conditions:
 | Promote agent autonomy to L3 | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Edit posted journal | ❌ (anyone) | ❌ | ❌ | ❌ | ❌ | ❌ — endpoint does not exist |
 
-Every cell with ❌ → API returns 403 (or 404 for other-tenant), UI hides or disables the affordance, audit log captures the attempt.
+This table describes current projected legacy-role gates, not independent
+enforcement of all 22 catalogue roles. A denied action should return 403 (or a
+non-disclosing 404 for another tenant) and must not mutate data. Do not claim a
+denial audit record unless that endpoint's evidence is observed.
 
 ---
 
 ## §6 Audit Trail
 
-After §1 happy path completes, the following audit / event records must exist:
+After §1, verify evidence that actually exists rather than a generic event
+schema:
 
-- `events`: `client.created`, `engagement.created`, `time_entry.created` (×N), `expense.created`, `invoice.created`, `invoice.approved`, `invoice.sent`, `payment.received`, `invoice.paid`
-- `agent_suggestions`: rows for engagement_letter_agent (approved), expense_extractor_agent (auto_applied), invoice_drafter_agent (approved)
-- `hitl_tasks`: rows for any agent output below confidence threshold; all in `status=approved` or `auto_applied` at end-state
-- `webhook_events`: row with `provider=stripe, event_type=checkout.session.completed, signature_verified=true`
-- `audit_log`: actor + action + resource_id for every state transition
+- invoice/payment source rows and posted journal entries;
+- `financial_events` including `journal_entry.posted` evidence for the relevant
+  journals and any specific manual/FX events produced by the path;
+- `agent_suggestions` and Inbox tasks only for agent/review paths actually used;
+- the `webhook_events` provider event/status/replay data exposed by the current
+  schema. It has no documented `signature_verified` column, so signature proof
+  comes from the accepted signed request and rejected invalid-signature case;
+- no generic `events` or `audit_log` rows should be claimed unless observed,
+  because those previously listed records are not the current evidence model.
 
 ---
 
@@ -302,28 +330,33 @@ Tests that exceed budget are flagged but not failed; persistent breaches become 
 
 ---
 
-## §8 Cleanup
+## §8 Cleanup / Retention
 
-- Method: admin UI "Delete tenant" (proves cleanup as a feature) OR documented teardown script `scripts/teardown_test_tenant.py {prefix}`.
-- Confirmation:
-  - All rows with `tenant_id = {test_tenant_id}` removed (Supabase cascading deletes verified).
-  - Stripe test customer + subscription deleted via Stripe API.
-  - Stripe Connect account left intact (Stripe-side cleanup is documented as out-of-band).
-  - Storage bucket folder for tenant emptied.
-  - `webhook_events` rows for this tenant retained per audit policy (NOT deleted) — flagged for archival.
+The Ishantech production run is retained and must not be cleaned up. For a
+disposable local test, note that there is no admin Delete Tenant UI and the
+previously named `scripts/teardown_test_tenant.py` does not exist. The owner-only
+DELETE endpoint cancels the subscription and soft-deletes the tenant; it does
+not prove cascading row/user/customer/storage deletion. Any broader teardown
+requires a separately reviewed script and explicit authorization.
 
 ---
 
 ## §9 Executable Test Mapping
 
-The Playwright suite at `frontend/e2e/engagement-to-cash.spec.ts` and the pytest suite at `backend/tests/e2e/test_engagement_to_cash.py` each contain a `test()` per section ID above. Drift between this document and the test names is a QA gate failure.
+| Evidence | Current state | Limitation |
+| --- | --- | --- |
+| `frontend/e2e/engagement-to-cash.spec.ts` | Exists and names happy-path, variant, unhappy-path, edge, RBAC, audit, and cleanup cases | Hybrid browser/API setup; environment-dependent skips; several cases accept multiple outcomes or assert weaker/different semantics. It is not proof that every narrative assertion above passed through the UI. |
+| `backend/tests/e2e/test_engagement_to_cash.py` | Exists with section-shaped function names | All tests are strict `xfail` stubs that raise `NotImplementedError`; this is missing executable backend E2E coverage, not a passing suite. |
+| `backend/tests/api/test_invoices.py`, `test_invoice_send.py`, `test_payment_webhook.py`, `test_public_invoice.py`, `test_fx.py` | Real API integration supplements | Cover bounded contracts, not the complete workflow or all role/edge cells. |
+| `frontend/e2e/o2c-engagement-to-invoice.spec.ts` and live Copilot specs | Additional browser slices | Review each spec for mocked/API-assisted setup and environment preconditions before citing it. |
 
-```
-§1.1 step 3      →  test_§1_1_step_3_approve_extracted_engagement
-§2.7             →  test_§2_7_multi_currency_engagement
-§3.10            →  test_§3_10_imbalanced_journal_rejected
-§3.16            →  test_§3_16_stripe_webhook_idempotent
-```
+Examples of real Python names are
+`test_1_1_step_3_approve_extracted_engagement`,
+`test_2_7_multi_currency_engagement`,
+`test_3_10_imbalanced_journal_rejected`, and
+`test_3_16_stripe_webhook_idempotent`; they currently remain strict xfails.
+Production launch proof requires the Ishantech runbook's record IDs, journals,
+webhook/payment evidence, aging tie-out, and role denials on the deployed SHA.
 
 ---
 

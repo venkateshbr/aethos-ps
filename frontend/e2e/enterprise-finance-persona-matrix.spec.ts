@@ -18,7 +18,7 @@ interface PersonaCase {
   compatiblePersonas: string[];
   settingsCanEdit: boolean;
   canCreateAp: boolean;
-  canPayBills: boolean;
+  canAccessPayBills: boolean;
   canDraftInvoice: boolean;
   canPostInvoice: boolean;
   canPostJournal: boolean;
@@ -131,7 +131,7 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Owner/Admin', 'Controller', 'Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: true,
     canCreateAp: true,
-    canPayBills: true,
+    canAccessPayBills: true,
     canDraftInvoice: true,
     canPostInvoice: true,
     canPostJournal: true,
@@ -144,7 +144,7 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Owner/Admin', 'Controller', 'Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: true,
     canCreateAp: true,
-    canPayBills: true,
+    canAccessPayBills: true,
     canDraftInvoice: true,
     canPostInvoice: true,
     canPostJournal: true,
@@ -157,9 +157,9 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: false,
     canCreateAp: true,
-    canPayBills: false,
+    canAccessPayBills: true,
     canDraftInvoice: true,
-    canPostInvoice: false,
+    canPostInvoice: true,
     canPostJournal: true,
     canRunClose: false,
     readOnly: false,
@@ -170,9 +170,9 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Finance Approver', 'Procurement Manager', 'AP Lead', 'AR Lead'],
     settingsCanEdit: false,
     canCreateAp: true,
-    canPayBills: false,
+    canAccessPayBills: true,
     canDraftInvoice: true,
-    canPostInvoice: false,
+    canPostInvoice: true,
     canPostJournal: true,
     canRunClose: false,
     readOnly: false,
@@ -183,7 +183,7 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Finance Approver'],
     settingsCanEdit: false,
     canCreateAp: false,
-    canPayBills: false,
+    canAccessPayBills: true,
     canDraftInvoice: false,
     canPostInvoice: false,
     canPostJournal: false,
@@ -196,7 +196,7 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Auditor'],
     settingsCanEdit: false,
     canCreateAp: false,
-    canPayBills: false,
+    canAccessPayBills: true,
     canDraftInvoice: false,
     canPostInvoice: false,
     canPostJournal: false,
@@ -209,7 +209,7 @@ const personaCases: PersonaCase[] = [
     compatiblePersonas: ['Executive'],
     settingsCanEdit: false,
     canCreateAp: false,
-    canPayBills: false,
+    canAccessPayBills: true,
     canDraftInvoice: false,
     canPostInvoice: false,
     canPostJournal: false,
@@ -276,6 +276,56 @@ const inboxTasks = [
     approval_policy_reason: 'money_out_above_owner_review_threshold',
   },
 ];
+
+interface MockCatalogPermissions {
+  roleCode: string;
+  roleLabel: string;
+  privilegeCodes: string[];
+}
+
+const financeOpsSurfacePrivileges = [
+  'procurement.manage',
+  'bills.manage',
+  'bill_payments.read',
+  'invoices.draft',
+  'invoices.post',
+  'invoices.send',
+  'invoices.mark_paid',
+];
+
+/** Catalog privileges consumed by the browser surfaces exercised in this matrix. */
+const catalogPermissionsByRole: Record<MockRole, MockCatalogPermissions> = {
+  owner: {
+    roleCode: 'tenant_owner',
+    roleLabel: 'Tenant Owner',
+    privilegeCodes: financeOpsSurfacePrivileges,
+  },
+  admin: {
+    roleCode: 'tenant_admin',
+    roleLabel: 'Tenant Admin',
+    privilegeCodes: financeOpsSurfacePrivileges,
+  },
+  manager: {
+    roleCode: 'finance_ops_manager',
+    roleLabel: 'Finance Ops Manager',
+    privilegeCodes: financeOpsSurfacePrivileges,
+  },
+  approver: {
+    roleCode: 'finance_approver',
+    roleLabel: 'Finance Approver',
+    privilegeCodes: ['procurement.approve', 'bill_payments.read'],
+  },
+  auditor: {
+    roleCode: 'auditor',
+    roleLabel: 'Auditor',
+    privilegeCodes: ['bill_payments.read'],
+  },
+  viewer: {
+    roleCode: 'executive_viewer',
+    roleLabel: 'Executive Viewer',
+    privilegeCodes: ['bill_payments.read'],
+  },
+};
 
 const zeroAging = {
   '0_30': '0.00',
@@ -382,7 +432,8 @@ async function authenticate(page: Page, role: MockRole): Promise<void> {
   }, { currentRole: role });
 }
 
-async function installPersonaMocks(page: Page): Promise<void> {
+async function installPersonaMocks(page: Page, role: MockRole): Promise<void> {
+  const permissions = catalogPermissionsByRole[role];
   await page.route('**/api/v1/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -390,6 +441,21 @@ async function installPersonaMocks(page: Page): Promise<void> {
 
     if (request.method() !== 'GET') {
       await route.fulfill({ status: 403, json: { detail: 'Mocked RBAC denial for persona matrix proof' } });
+      return;
+    }
+
+    if (path === '/api/v1/security/me/permissions') {
+      await route.fulfill({
+        json: {
+          tenant_id: 'tenant-persona',
+          user_id: `user-${role}`,
+          legacy_role: role,
+          role_codes: [permissions.roleCode],
+          role_labels: [permissions.roleLabel],
+          privilege_codes: permissions.privilegeCodes,
+          must_change_password: false,
+        },
+      });
       return;
     }
 
@@ -598,7 +664,7 @@ async function expectBillsControls(page: Page, personaCase: PersonaCase): Promis
   await expect(page.getByRole('heading', { name: 'Bills' })).toBeVisible();
   await expectControl(page.getByLabel('Create new purchase order or service order'), personaCase.canCreateAp);
   await expectControl(page.getByLabel('Create new bill'), personaCase.canCreateAp);
-  await expectControl(page.getByLabel('Go to Pay Bills wizard'), personaCase.canPayBills);
+  await expectControl(page.getByLabel('Go to Pay Bills wizard'), personaCase.canAccessPayBills);
 }
 
 async function expectInvoiceControls(page: Page, personaCase: PersonaCase): Promise<void> {
@@ -679,7 +745,7 @@ function roleLabel(role: MockRole): string {
 test.describe('Enterprise finance persona matrix (#321)', () => {
   for (const personaCase of personaCases) {
     test(`${personaCase.persona} persona maps to enforced ${personaCase.role} controls`, async ({ page }) => {
-      await installPersonaMocks(page);
+      await installPersonaMocks(page, personaCase.role);
       await authenticate(page, personaCase.role);
 
       await expectSettingsMatrix(page, personaCase);

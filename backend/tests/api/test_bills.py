@@ -126,21 +126,25 @@ def test_bills_aging_tenant_scoped(manager_a: httpx.Client) -> None:
     assert r.status_code == 200, r.text
 
 
-def test_manager_cannot_approve_bill_admin_can(
-    manager_a: httpx.Client, admin_a: httpx.Client, world: SeedWorld
+def test_viewer_cannot_approve_bill_finance_manager_can(
+    manager_a: httpx.Client,
+    client_a_viewer: httpx.Client,
+    world: SeedWorld,
 ) -> None:
-    """C19 RBAC — only admin/owner can approve a bill (parallel to invoice rule)."""
+    """C19 RBAC — exact catalog privilege, not the legacy role rank, gates approval."""
     payload = _bill_payload(world)
     payload["vendor_invoice_number"] = f"VEND-RBAC-{world.run_id[:6]}"
     r = manager_a.post("/api/v1/bills", json=payload)
     assert r.status_code in (200, 201), r.text
     bill_id = r.json()["id"]
 
-    rm = manager_a.patch(f"/api/v1/bills/{bill_id}/approve")
-    assert rm.status_code == 403, f"Manager allowed to approve: {rm.status_code}, body={rm.text[:200]}"
+    denied = client_a_viewer.patch(f"/api/v1/bills/{bill_id}/approve")
+    assert denied.status_code == 403, (
+        f"Viewer allowed to approve: {denied.status_code}, body={denied.text[:200]}"
+    )
 
-    ra = admin_a.patch(f"/api/v1/bills/{bill_id}/approve")
-    assert ra.status_code in (200, 409), ra.text
+    approved = manager_a.patch(f"/api/v1/bills/{bill_id}/approve")
+    assert approved.status_code in (200, 409), approved.text
 
 
 def test_bill_approval_posts_line_level_expense_accounts(

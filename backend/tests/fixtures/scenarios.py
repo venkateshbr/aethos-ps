@@ -25,6 +25,7 @@ from decimal import Decimal
 
 from jose import jwt
 
+from app.services.security_service import LEGACY_ROLE_TO_SECURITY_ROLE
 from supabase import Client, create_client
 
 # Stable test-run prefix per process. Lets a single `pytest` run reuse seeded
@@ -32,6 +33,11 @@ from supabase import Client, create_client
 _RUN_ID = os.environ.get("AKSHA_RUN_ID", f"aksha-{uuid.uuid4().hex[:8]}")
 TENANT_A_SLUG = f"acme-{_RUN_ID}"
 TENANT_B_SLUG = f"bravo-{_RUN_ID}"
+
+
+def _scenario_user_id(identity: str) -> str:
+    """Return a deterministic user UUID within the current fixture run."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"aethos-aksha:{_RUN_ID}:{identity}"))
 
 
 @dataclass
@@ -163,20 +169,76 @@ def _ensure_membership(
 ) -> None:
     existing = (
         db.table("tenant_users")
-        .select("id")
+        .select("id, role")
         .eq("tenant_id", tenant_id)
         .eq("user_id", user.user_id)
         .limit(1)
         .execute()
     )
     if existing.data:
+        membership = existing.data[0]
+        if str(membership.get("role")) != user.role:
+            raise RuntimeError(
+                f"Seed membership role mismatch for {user.user_id}: "
+                f"expected {user.role!r}, found {membership.get('role')!r}."
+            )
+    else:
+        result = db.table("tenant_users").insert(
+            {
+                "tenant_id": tenant_id,
+                "user_id": user.user_id,
+                "role": user.role,
+                "joined_at": datetime.now(UTC).isoformat(),
+            }
+        ).execute()
+        membership = result.data[0]
+
+    tenant_user_id = str(membership["id"])
+    security_role_code = LEGACY_ROLE_TO_SECURITY_ROLE.get(user.role)
+    if security_role_code is None:
+        raise RuntimeError(f"No canonical security role mapping for {user.role!r}.")
+
+    roles = (
+        db.table("security_roles")
+        .select("id")
+        .eq("code", security_role_code)
+        .is_("tenant_id", "null")
+        .is_("deleted_at", "null")
+        .limit(1)
+        .execute()
+    )
+    if not roles.data:
+        raise RuntimeError(
+            f"System security role {security_role_code!r} is missing; "
+            "apply migration 0096 before seeding real-stack scenarios."
+        )
+    security_role_id = str(roles.data[0]["id"])
+
+    assignments = (
+        db.table("tenant_user_roles")
+        .select("id, security_role_id")
+        .eq("tenant_id", tenant_id)
+        .eq("tenant_user_id", tenant_user_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    unexpected_role_ids = sorted(
+        str(row["security_role_id"])
+        for row in assignments.data
+        if str(row["security_role_id"]) != security_role_id
+    )
+    if unexpected_role_ids:
+        raise RuntimeError(
+            f"Seed membership {tenant_user_id} has an unexpected active security role; "
+            "refusing to create an over-privileged fixture."
+        )
+    if assignments.data:
         return
-    db.table("tenant_users").insert(
+    db.table("tenant_user_roles").insert(
         {
             "tenant_id": tenant_id,
-            "user_id": user.user_id,
-            "role": user.role,
-            "joined_at": datetime.now(UTC).isoformat(),
+            "tenant_user_id": tenant_user_id,
+            "security_role_id": security_role_id,
         }
     ).execute()
 
@@ -434,23 +496,23 @@ def seed_two_tenants() -> SeedWorld:
     db = make_service_client()
 
     a_owner = SeedUser(
-        user_id=str(uuid.uuid4()),
+        user_id=_scenario_user_id("tenant-a-owner"),
         email=f"alice-owner+{_RUN_ID}@aksha.test",
         role="owner",
     )
     a_manager = SeedUser(
-        user_id=str(uuid.uuid4()),
+        user_id=_scenario_user_id("tenant-a-manager"),
         email=f"mary-manager+{_RUN_ID}@aksha.test",
         role="manager",
     )
     a_viewer = SeedUser(
-        user_id=str(uuid.uuid4()),
+        user_id=_scenario_user_id("tenant-a-viewer"),
         email=f"vivian-viewer+{_RUN_ID}@aksha.test",
         role="viewer",
     )
 
     b_owner = SeedUser(
-        user_id=str(uuid.uuid4()),
+        user_id=_scenario_user_id("tenant-b-owner"),
         email=f"bob-owner+{_RUN_ID}@aksha.test",
         role="owner",
     )
@@ -478,24 +540,61 @@ def seed_two_tenants() -> SeedWorld:
 
 
 # ---------------------------------------------------------------------------
-# Cleanup (best-effort — invoked from session-end hook)
+# Cleanup (verified soft-delete — invoked from session-end hook)
 # ---------------------------------------------------------------------------
 
 
 def sweep_clean(world: SeedWorld) -> None:
-    """Delete the two seeded tenants and everything that cascaded from them.
+    """Soft-delete both seeded tenants and verify neither remains active.
 
-    Safe: only deletes tenants whose slug contains the run id.
+    A hard tenant delete is not a valid cleanup primitive: accounting and
+    commercial foreign keys deliberately use ``RESTRICT``/``NO ACTION`` and
+    can block the cascade. The production tenant-delete endpoint likewise uses
+    ``status='deleted'``. Cleanup attempts both tenants, then raises one safe
+    aggregate error instead of hiding a partial failure during pytest teardown.
     """
     db = make_service_client()
-    for slug in (world.tenant_a.slug, world.tenant_b.slug):
-        if world.run_id not in slug:
+    failures: list[tuple[str, str]] = []
+
+    for tenant in (world.tenant_a, world.tenant_b):
+        slug = tenant.slug
+        if not slug.endswith(f"-{world.run_id}"):
+            failures.append((slug, "unsafe_slug"))
             continue
         try:
-            db.table("tenants").delete().eq("slug", slug).execute()
-        except Exception:
-            # Swallow — best-effort cleanup. Sweep script handles stragglers.
-            pass
+            (
+                db.table("tenants")
+                .update(
+                    {
+                        "status": "deleted",
+                        "stripe_subscription_status": "canceled",
+                    }
+                )
+                .eq("id", tenant.tenant_id)
+                .eq("slug", slug)
+                .execute()
+            )
+            verification = (
+                db.table("tenants")
+                .select("id,status")
+                .eq("id", tenant.tenant_id)
+                .eq("slug", slug)
+                .limit(1)
+                .execute()
+            )
+            if verification.data and verification.data[0].get("status") != "deleted":
+                raise RuntimeError("cleanup_verification_failed")
+        except Exception as exc:
+            # Do not include backend error text: it can contain infrastructure
+            # details. The exception type plus safe fixture slug is actionable.
+            failures.append((slug, type(exc).__name__))
+
+    if failures:
+        summary = ", ".join(f"{slug} ({error_type})" for slug, error_type in failures)
+        raise RuntimeError(
+            f"Aksha fixture cleanup failed for {summary}. "
+            "One or more test tenants may remain active."
+        )
 
 
 # ---------------------------------------------------------------------------

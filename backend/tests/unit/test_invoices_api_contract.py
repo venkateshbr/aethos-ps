@@ -129,6 +129,50 @@ class _Query:
 class _FakeDb:
     def __init__(self) -> None:
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "tenant_users": [
+                {
+                    "id": "tenant-user-manager",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-1",
+                    "role": "manager",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                },
+                {
+                    "id": "tenant-user-admin",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "admin-1",
+                    "role": "admin",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                },
+            ],
+            "tenant_user_effective_privileges": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": user_id,
+                    "role_code": role_code,
+                    "role_label": role_label,
+                    "legacy_role": legacy_role,
+                    "privilege_code": privilege_code,
+                }
+                for user_id, role_code, role_label, legacy_role, privilege_code in (
+                    (
+                        "user-1",
+                        "billing_specialist",
+                        "Billing Specialist",
+                        "manager",
+                        "invoices.draft",
+                    ),
+                    (
+                        "admin-1",
+                        "finance_controller",
+                        "Finance Controller",
+                        "admin",
+                        "invoices.send",
+                    ),
+                )
+            ],
             "clients": [
                 {
                     "id": CLIENT_ID,
@@ -276,9 +320,7 @@ def test_invoice_read_routes_use_rls_client(
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
     app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
 
-    list_response = client.get(
-        f"/api/v1/invoices?engagement_id={ENGAGEMENT_ID}&status=draft"
-    )
+    list_response = client.get(f"/api/v1/invoices?engagement_id={ENGAGEMENT_ID}&status=draft")
     detail_response = client.get(f"/api/v1/invoices/{INVOICE_ID}")
 
     assert list_response.status_code == 200, list_response.text

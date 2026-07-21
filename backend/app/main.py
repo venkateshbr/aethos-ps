@@ -6,6 +6,7 @@ Start locally:
 
 from __future__ import annotations
 
+import asyncio
 import time as _time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -22,6 +23,10 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import RateLimitMiddleware, RateLimitRule, build_rate_limiter
 from app.core.tenant import TenantMiddleware
 from app.services.operational_telemetry import telemetry
+
+_SIGNUP_READINESS_TTL_SECONDS = 300.0
+_signup_readiness_cache: tuple[float, dict[str, object]] | None = None
+_signup_readiness_lock = asyncio.Lock()
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -68,8 +73,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await queue_app.open_async()
         except Exception as exc:
             import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "Procrastinate connector failed to open — defers will degrade: %s", exc
+            queue_logger = _logging.getLogger(__name__)
+            if _queue_required(settings):
+                queue_logger.error(
+                    "Required Procrastinate connector failed to open — "
+                    "aborting startup (error_type=%s)",
+                    type(exc).__name__,
+                )
+                raise
+            queue_logger.warning(
+                "Procrastinate connector failed to open — defers will degrade "
+                "(error_type=%s)",
+                type(exc).__name__,
             )
             queue_app = None
 
@@ -150,7 +165,11 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health", tags=["ops"])
 async def health() -> dict[str, str]:
     """Liveness probe — Cloud Run / Kubernetes."""
-    return {"status": "ok", "version": "0.1.0"}
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "build_sha": settings.build_sha,
+    }
 
 
 @app.get("/health/ready", tags=["ops"])
@@ -163,6 +182,21 @@ async def health_ready() -> dict[str, object]:
     """
     checks: dict = {}
     from app.core.config import settings as runtime_settings
+
+    stripe_key = runtime_settings.stripe_secret_key
+    if stripe_key.startswith("sk_test_"):
+        billing_mode = "test"
+    elif stripe_key.startswith("sk_live_"):
+        billing_mode = "live"
+    elif stripe_key:
+        billing_mode = "unknown"
+    else:
+        billing_mode = "not_configured"
+    checks["billing"] = {
+        "status": "ok" if billing_mode in {"test", "live"} else "degraded",
+        "configured": bool(stripe_key),
+        "mode": billing_mode,
+    }
 
     try:
         from supabase import create_client
@@ -199,13 +233,72 @@ async def health_ready() -> dict[str, object]:
             "status": "error",
             "configured": bool(runtime_settings.database_url),
             "required": queue_required,
-            "error": str(e)[:80],
+            "error": "connection_failed",
+            "error_type": type(e).__name__,
         }
 
     db_ready = checks.get("db", {}).get("status") == "ok"
     queue_ready = checks.get("queue", {}).get("status") == "ok"
     overall = "ready" if db_ready and (queue_ready or not queue_required) else "degraded"
-    return {"status": overall, "checks": checks}
+    return {
+        "status": overall,
+        "build_sha": runtime_settings.build_sha,
+        "checks": checks,
+    }
+
+
+@app.get("/health/signup-ready", tags=["ops"])
+async def signup_ready() -> dict[str, object]:
+    """Read-only Stripe capability gate for public tenant signup.
+
+    Unlike infrastructure readiness, this verifies the external billing
+    account and every configured launch Price. Results are cached briefly so
+    the public probe cannot amplify Stripe traffic.
+    """
+    global _signup_readiness_cache
+
+    now = _time.monotonic()
+    cached = _signup_readiness_cache
+    if cached is not None and now - cached[0] < _SIGNUP_READINESS_TTL_SECONDS:
+        billing = cached[1]
+    else:
+        # Single-flight the expensive provider check. Without this guard, a
+        # burst at cache expiry could fan out into 31 Stripe reads per request.
+        async with _signup_readiness_lock:
+            now = _time.monotonic()
+            cached = _signup_readiness_cache
+            if cached is not None and now - cached[0] < _SIGNUP_READINESS_TTL_SECONDS:
+                billing = cached[1]
+            else:
+                try:
+                    from app.services.billing.stripe_service import StripeService
+
+                    billing = await StripeService(settings).check_signup_readiness()
+                except Exception as exc:
+                    billing = {
+                        "status": "error",
+                        "configured": bool(settings.stripe_secret_key),
+                        "mode": "unknown",
+                        "account_reachable": False,
+                        "prices_checked": 0,
+                        "error_code": type(exc).__name__,
+                    }
+                _signup_readiness_cache = (now, billing)
+
+    return {
+        "status": "ready" if billing.get("status") == "ok" else "degraded",
+        "build_sha": settings.build_sha,
+        "checks": {"billing": billing},
+    }
+
+
+def clear_signup_readiness_cache() -> None:
+    """Reset the short-lived provider check cache (tests/operator reloads)."""
+    global _signup_readiness_cache, _signup_readiness_lock
+    _signup_readiness_cache = None
+    # Tests can call the reset helper across independent event loops. Runtime
+    # workers never call it while a request is in flight.
+    _signup_readiness_lock = asyncio.Lock()
 
 
 def _queue_required(runtime_settings: object) -> bool:

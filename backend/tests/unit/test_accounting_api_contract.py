@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -144,7 +145,9 @@ class _Query:
 class _FakeDb:
     def __init__(self) -> None:
         locked_period = date.today().strftime("%Y-%m")
+        self.table_calls: list[str] = []
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "tenants": [{"id": TENANT_ID, "base_currency": "SGD"}],
             "period_locks": [
                 {
                     "id": "lock-1",
@@ -187,6 +190,63 @@ class _FakeDb:
                     "reference_id": None,
                     "created_by": "manager-2",
                     "posted_at": "2026-06-23T00:00:00+00:00",
+                },
+            ],
+            "journal_lines": [
+                {
+                    "id": "journal-line-dr",
+                    "tenant_id": TENANT_ID,
+                    "journal_entry_id": JOURNAL_ID,
+                    "direction": "DR",
+                    "account_id": "55555555-5555-4555-8555-555555555555",
+                    "amount": "100.00",
+                    "currency": "GBP",
+                    "base_amount": "125.00",
+                    "fx_rate_id": "77777777-7777-4777-8777-777777777777",
+                    "description": "Foreign-currency bank receipt",
+                    "accounts": {"code": "1100", "name": "Bank"},
+                },
+                {
+                    "id": "journal-line-cr",
+                    "tenant_id": TENANT_ID,
+                    "journal_entry_id": JOURNAL_ID,
+                    "direction": "CR",
+                    "account_id": "66666666-6666-4666-8666-666666666666",
+                    "amount": "100.00",
+                    "currency": "GBP",
+                    "base_amount": "125.00",
+                    "fx_rate_id": "77777777-7777-4777-8777-777777777777",
+                    "description": "Foreign-currency revenue",
+                    "accounts": {"code": "4000", "name": "Revenue"},
+                },
+                {
+                    "id": "foreign-tenant-journal-line",
+                    "tenant_id": OTHER_TENANT_ID,
+                    "journal_entry_id": "44444444-4444-4444-8444-444444444444",
+                    "direction": "DR",
+                    "account_id": "88888888-8888-4888-8888-888888888888",
+                    "amount": "9999.00",
+                    "currency": "USD",
+                    "base_amount": "9999.00",
+                    "fx_rate_id": None,
+                    "description": "Must never cross tenant boundary",
+                    "accounts": {"code": "9999", "name": "Foreign Tenant"},
+                },
+            ],
+            "tenant_users": [
+                {
+                    "id": "tenant-user-manager",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "manager-1",
+                    "display_name": "Mina Controller",
+                    "email": "finance@example.test",
+                },
+                {
+                    "id": "foreign-tenant-user-manager",
+                    "tenant_id": OTHER_TENANT_ID,
+                    "user_id": "manager-1",
+                    "display_name": "Foreign Tenant Controller",
+                    "email": "foreign@example.test",
                 },
             ],
             "accounting_close_tasks": [
@@ -252,6 +312,7 @@ class _FakeDb:
 
     def table(self, name: str) -> _Query:
         assert name in self.tables
+        self.table_calls.append(name)
         return _Query(self, name)
 
 
@@ -280,11 +341,98 @@ def client(fake_db: _FakeDb) -> TestClient:
     app.dependency_overrides.clear()
 
 
+def test_journal_list_returns_batch_enriched_tenant_scoped_audit_detail(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.table_calls.clear()
+
+    response = client.get(
+        "/api/v1/accounting/journal-entries?reference_type=manual&limit=10&offset=0"
+    )
+
+    assert response.status_code == 200, response.text
+    assert fake_db.table_calls == [
+        "journal_entries",
+        "journal_lines",
+        "tenant_users",
+    ]
+    assert response.json() == [
+        {
+            "id": JOURNAL_ID,
+            "entry_number": "JE-0001",
+            "description": "Month-end accrual",
+            "reason": "Accrue approved June payroll before close.",
+            "entry_date": "2026-06-22",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference": None,
+            "created_by": "manager-1",
+            "posted_by": "Mina Controller",
+            "posted_at": "2026-06-22T00:00:00+00:00",
+            "total_dr": "100.00",
+            "lines": [
+                {
+                    "id": "journal-line-cr",
+                    "direction": "CR",
+                    "account_id": "66666666-6666-4666-8666-666666666666",
+                    "account_code": "4000",
+                    "account_name": "Revenue",
+                    "amount": "100.00",
+                    "currency": "GBP",
+                    "base_amount": "125.00",
+                    "fx_rate_id": "77777777-7777-4777-8777-777777777777",
+                    "description": "Foreign-currency revenue",
+                },
+                {
+                    "id": "journal-line-dr",
+                    "direction": "DR",
+                    "account_id": "55555555-5555-4555-8555-555555555555",
+                    "account_code": "1100",
+                    "account_name": "Bank",
+                    "amount": "100.00",
+                    "currency": "GBP",
+                    "base_amount": "125.00",
+                    "fx_rate_id": "77777777-7777-4777-8777-777777777777",
+                    "description": "Foreign-currency bank receipt",
+                },
+            ],
+        }
+    ]
+    lines = response.json()[0]["lines"]
+    total_dr = sum(
+        Decimal(line["amount"]) for line in lines if line["direction"] == "DR"
+    )
+    total_cr = sum(
+        Decimal(line["amount"]) for line in lines if line["direction"] == "CR"
+    )
+    assert total_dr == total_cr == Decimal("100.00")
+    assert all(line["account_name"] != "Foreign Tenant" for line in lines)
+    assert "email" not in response.json()[0]
+    assert "Foreign Tenant Controller" not in response.text
+
+
+def test_journal_list_falls_back_to_actor_uuid_when_display_name_is_unavailable(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    fake_db.tables["tenant_users"] = []
+
+    response = client.get("/api/v1/accounting/journal-entries?reference_type=manual")
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["posted_by"] == "manager-1"
+
+
 def test_accounting_read_routes_use_rls_client(
     client: TestClient,
     fake_db: _FakeDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    tenant_context_db = _FakeDb()
+    tenant_context_db.tables = {
+        "tenants": tenant_context_db.tables["tenants"],
+    }
     class _CloseStatusResult:
         def as_dict(self) -> dict[str, Any]:
             return {
@@ -323,6 +471,7 @@ def test_accounting_read_routes_use_rls_client(
     def _close_package(self: ClosePackageService, period: str) -> dict[str, Any]:
         assert period == "2026-06"
         assert self.db is fake_db
+        assert self._tenant_base_currency() == "SGD"
         return {
             "period": "2026-06",
             "period_start": "2026-06-01",
@@ -348,7 +497,7 @@ def test_accounting_read_routes_use_rls_client(
     monkeypatch.setattr(ClosePackageService, "build_package", _close_package)
 
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
-    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: tenant_context_db
 
     periods_response = client.get("/api/v1/accounting/periods")
     journals_response = client.get(
@@ -368,20 +517,14 @@ def test_accounting_read_routes_use_rls_client(
     assert current["locked"] is True
     assert current["locked_by"] == "admin-1"
     assert journals_response.status_code == 200, journals_response.text
-    assert journals_response.json() == [
-        {
-            "id": JOURNAL_ID,
-            "entry_number": "JE-0001",
-            "description": "Month-end accrual",
-            "reason": "Accrue approved June payroll before close.",
-            "entry_date": "2026-06-22",
-            "period": "2026-06",
-            "reference_type": "manual",
-            "reference": None,
-            "created_by": "manager-1",
-            "posted_at": "2026-06-22T00:00:00+00:00",
-        }
-    ]
+    journals = journals_response.json()
+    assert len(journals) == 1
+    assert journals[0]["id"] == JOURNAL_ID
+    assert journals[0]["entry_number"] == "JE-0001"
+    assert journals[0]["reason"] == "Accrue approved June payroll before close."
+    assert journals[0]["posted_by"] == "Mina Controller"
+    assert journals[0]["total_dr"] == "100.00"
+    assert len(journals[0]["lines"]) == 2
     assert close_status_response.status_code == 200, close_status_response.text
     assert close_status_response.json()["ready_to_lock"] is True
     assert close_readiness_response.status_code == 200, close_readiness_response.text
@@ -393,6 +536,56 @@ def test_accounting_read_routes_use_rls_client(
     assert recurring_templates_response.status_code == 200, recurring_templates_response.text
     assert recurring_templates_response.json()["templates"][0]["id"] == "template-rent"
     assert recurring_templates_response.json()["templates"][0]["lines"][0]["direction"] == "DR"
+    assert tenant_context_db.table_calls == ["tenants"]
+
+
+def test_close_package_uses_service_role_only_for_authorized_tenant_currency(
+    client: TestClient,
+    fake_db: _FakeDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service_db = _FakeDb()
+    service_db.tables["tenants"].append(
+        {"id": OTHER_TENANT_ID, "base_currency": "USD"}
+    )
+    fake_db.tables.pop("tenants")
+    fake_db.table_calls.clear()
+    service_db.table_calls.clear()
+
+    def _close_package(self: ClosePackageService, period: str) -> dict[str, Any]:
+        assert period == "2026-06"
+        assert self.db is fake_db
+        base_currency = self._tenant_base_currency()
+        return {
+            "period": period,
+            "period_start": "2026-06-01",
+            "period_end": "2026-06-30",
+            "previous_period": "2026-05",
+            "generated_at": "2026-07-12T00:00:00+00:00",
+            "close_status": {},
+            "gl_summary": {},
+            "previous_gl_summary": {},
+            "working_capital": {"base_currency": base_currency},
+            "readiness_evidence": {},
+            "close_overrides": [],
+            "trial_balance": {},
+            "ar_aging": {},
+            "ap_aging": {},
+            "wip": [],
+            "service_line_margins": [],
+            "variance_commentary": [],
+        }
+
+    monkeypatch.setattr(ClosePackageService, "build_package", _close_package)
+    app.dependency_overrides[get_user_rls_client] = lambda: fake_db
+    app.dependency_overrides[get_service_role_client] = lambda: service_db
+
+    response = client.get("/api/v1/accounting/periods/2026-06/close-package")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["working_capital"]["base_currency"] == "SGD"
+    assert "tenants" not in fake_db.table_calls
+    assert service_db.table_calls == ["tenants"]
 
 
 def test_manual_journal_create_uses_service_role_client(
@@ -411,6 +604,7 @@ def test_manual_journal_create_uses_service_role_client(
         assert self.db is fake_db
         assert self.actor_role == "admin"
         assert payload.reason == "Record approved finance adjustment for API contract test."
+        assert [line.currency for line in payload.lines] == [None, None]
         posted_payloads.append(payload)
         return ManualJournalEntryResponse(
             id=JOURNAL_ID,
@@ -439,13 +633,11 @@ def test_manual_journal_create_uses_service_role_client(
                     "direction": "DR",
                     "account_id": "55555555-5555-4555-8555-555555555555",
                     "amount": "100.00",
-                    "currency": "USD",
                 },
                 {
                     "direction": "CR",
                     "account_id": "66666666-6666-4666-8666-666666666666",
                     "amount": "100.00",
-                    "currency": "USD",
                 },
             ],
         },
@@ -560,6 +752,29 @@ def test_manual_journal_reverse_uses_service_role_client(
     assert body["reference"] == JOURNAL_ID
 
 
+def _recurring_template_payload(*, currency: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": "Monthly depreciation",
+        "schedule_day": 31,
+        "start_period": "2026-06",
+        "lines": [
+            {
+                "direction": "DR",
+                "account_id": "55555555-5555-4555-8555-555555555555",
+                "amount": "100.00",
+            },
+            {
+                "direction": "CR",
+                "account_id": "66666666-6666-4666-8666-666666666666",
+                "amount": "100.00",
+            },
+        ],
+    }
+    if currency is not None:
+        payload["currency"] = currency
+    return payload
+
+
 def test_recurring_journal_template_create_uses_service_role_client(
     client: TestClient,
     fake_db: _FakeDb,
@@ -569,32 +784,49 @@ def test_recurring_journal_template_create_uses_service_role_client(
 
     response = client.post(
         "/api/v1/accounting/recurring-journal-templates",
-        json={
-            "name": "Monthly depreciation",
-            "schedule_day": 31,
-            "start_period": "2026-06",
-            "currency": "USD",
-            "lines": [
-                {
-                    "direction": "DR",
-                    "account_id": "55555555-5555-4555-8555-555555555555",
-                    "amount": "100.00",
-                },
-                {
-                    "direction": "CR",
-                    "account_id": "66666666-6666-4666-8666-666666666666",
-                    "amount": "100.00",
-                },
-            ],
-        },
+        json=_recurring_template_payload(),
     )
 
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["name"] == "Monthly depreciation"
     assert body["schedule_day"] == 31
+    assert body["currency"] == "SGD"
     assert len(body["lines"]) == 2
     assert body["lines"][0]["amount"] == "100.00"
+    created = fake_db.tables["recurring_journal_templates"][-1]
+    assert created["currency"] == "SGD"
+
+
+def test_recurring_journal_template_preserves_explicit_foreign_currency(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    response = client.post(
+        "/api/v1/accounting/recurring-journal-templates",
+        json=_recurring_template_payload(currency="gbp"),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["currency"] == "GBP"
+    assert fake_db.tables["recurring_journal_templates"][-1]["currency"] == "GBP"
+
+
+@pytest.mark.parametrize("base_currency", [None, "ÅBC"])
+def test_recurring_journal_template_omission_rejects_invalid_tenant_base_currency(
+    client: TestClient,
+    fake_db: _FakeDb,
+    base_currency: str | None,
+) -> None:
+    fake_db.tables["tenants"][0]["base_currency"] = base_currency
+
+    response = client.post(
+        "/api/v1/accounting/recurring-journal-templates",
+        json=_recurring_template_payload(),
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == "Tenant base currency is not configured"
 
 
 def test_close_task_bootstrap_and_update_use_service_role_client(

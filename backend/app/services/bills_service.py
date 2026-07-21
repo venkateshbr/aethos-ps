@@ -16,8 +16,9 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 
+from app.domain.fx import FxRateNotFoundError
 from app.domain.journal_helper import JournalLineSpec, post_journal
-from app.domain.money import serialise_money
+from app.domain.money import quantise_money, serialise_money
 from app.models.bills import (
     AgingBucket,
     ApAgingResponse,
@@ -31,6 +32,7 @@ from app.repositories.bills_repo import BillsRepository
 from app.repositories.clients_repo import ClientRepository
 from app.repositories.procurement_repo import ProcurementRepository
 from app.services._validation import assert_belongs_to_tenant
+from app.services.payment_fx_service import missing_document_fx_columns, payment_fx_amounts
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,15 @@ def _bill_to_response(row: dict, lines: list[dict] | None = None) -> BillRespons
         subtotal=serialise_money(row.get("subtotal") or "0") or "0.00",
         tax_total=serialise_money(row.get("tax_total") or "0") or "0.00",
         total=serialise_money(row.get("total") or "0") or "0.00",
+        base_currency=row.get("base_currency"),
+        base_subtotal=serialise_money(row.get("base_subtotal")),
+        base_tax_total=serialise_money(row.get("base_tax_total")),
+        base_total=serialise_money(row.get("base_total")),
+        approval_fx_rate_id=(
+            str(row["approval_fx_rate_id"])
+            if row.get("approval_fx_rate_id")
+            else None
+        ),
         status=row["status"],
         issue_date=str(row["issue_date"]) if row.get("issue_date") else None,
         due_date=str(row["due_date"]) if row.get("due_date") else None,
@@ -355,6 +366,9 @@ def _build_ap_journal_lines(
     bill_total: Decimal,
     bill_number: str,
     currency: str,
+    base_total: Decimal | None = None,
+    fx_rate: Decimal = Decimal("1"),
+    fx_rate_id: str | None = None,
 ) -> list[JournalLineSpec]:
     """Build AP approval journal lines, preserving net expense and recoverable tax."""
     debit_amounts: dict[str, Decimal] = {}
@@ -422,6 +436,30 @@ def _build_ap_journal_lines(
             currency=currency,
         )
     )
+
+    if base_total is not None:
+        debit_lines = [line for line in journal_lines if line.direction == "DR"]
+        for line in debit_lines:
+            line.base_amount = quantise_money(line.amount * fx_rate)
+            line.fx_rate_id = fx_rate_id
+
+        # Per-line rounding can differ from converting the document total.
+        # Allocate that residual to the largest debit so the base-currency
+        # journal is exactly balanced without fabricating a gain/loss.
+        converted_debits = sum(
+            (line.base_amount or Decimal("0") for line in debit_lines),
+            start=Decimal("0"),
+        )
+        residual = base_total - converted_debits
+        if residual and debit_lines:
+            residual_line = max(debit_lines, key=lambda line: line.amount)
+            residual_line.base_amount = (
+                residual_line.base_amount or Decimal("0")
+            ) + residual
+
+        credit_line = journal_lines[-1]
+        credit_line.base_amount = base_total
+        credit_line.fx_rate_id = fx_rate_id
     return journal_lines
 
 
@@ -597,6 +635,16 @@ class BillsService:
                 detail=f"Bill is already {bill['status']!r} — only draft bills can be approved",
             )
 
+        missing_fx_columns = missing_document_fx_columns(bill)
+        if missing_fx_columns:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Database migration 0102 is required before bill approval; "
+                    "document FX persistence columns are unavailable."
+                ),
+            )
+
         # 2. Validate: total > 0, lines exist
         lines = await self._repo.get_lines(bill_id)
         if not lines:
@@ -610,6 +658,25 @@ class BillsService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Bill total must be greater than zero",
             )
+
+        currency = str(bill.get("currency") or "USD").upper()
+        entry_date = str(bill.get("issue_date") or date.today().isoformat())
+        try:
+            fx_amounts = await payment_fx_amounts(
+                db=self._db,
+                tenant_id=self._tenant_id,
+                amount=total,
+                currency=currency,
+                paid_at=entry_date,
+            )
+        except FxRateNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Missing FX rate for bill approval: "
+                    f"{exc.from_currency} to {exc.to_currency} on {exc.rate_date}."
+                ),
+            ) from exc
 
         if bill.get("purchase_order_id"):
             po_match_summary = await self._match_purchase_order(
@@ -671,7 +738,6 @@ class BillsService:
         # 4. Build journal lines — accounting_guardian validates balance, period lock,
         #    and account existence inside post_journal.  Never bypass with direct INSERT.
         bill_number = bill.get("bill_number", "")
-        currency = bill.get("currency", "USD")
         try:
             journal_lines = _build_ap_journal_lines(
                 bill_lines=lines,
@@ -682,6 +748,9 @@ class BillsService:
                 bill_total=total,
                 bill_number=bill_number,
                 currency=currency,
+                base_total=fx_amounts.base_amount,
+                fx_rate=fx_amounts.rate,
+                fx_rate_id=fx_amounts.fx_rate_id,
             )
         except ValueError as exc:
             raise HTTPException(
@@ -691,7 +760,6 @@ class BillsService:
 
         # 5. Post via canonical post_journal — runs accounting_guardian L3 always.
         #    This replaces the old _post_journal that bypassed the guardian entirely.
-        entry_date = bill.get("issue_date") or date.today().isoformat()
         try:
             je = await asyncio.to_thread(
                 post_journal,
@@ -726,7 +794,21 @@ class BillsService:
         journal_entry_id = je.get("id") if je else None
 
         # 6. Update bill status to 'approved'
-        await self._repo.update(bill_id, {"status": "approved"})
+        base_tax_total = quantise_money(input_tax_total * fx_amounts.rate)
+        if base_tax_total is None:  # pragma: no cover - Decimal input is never None
+            raise RuntimeError("Bill base tax amount could not be calculated")
+        base_subtotal = fx_amounts.base_amount - base_tax_total
+        await self._repo.update(
+            bill_id,
+            {
+                "status": "approved",
+                "base_currency": fx_amounts.base_currency,
+                "base_subtotal": serialise_money(base_subtotal),
+                "base_tax_total": serialise_money(base_tax_total),
+                "base_total": serialise_money(fx_amounts.base_amount),
+                "approval_fx_rate_id": fx_amounts.fx_rate_id,
+            },
+        )
         if bill.get("purchase_order_id"):
             await self._refresh_purchase_order_consumption(str(bill["purchase_order_id"]))
 

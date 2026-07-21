@@ -142,7 +142,7 @@ async function authenticate(page: Page, role: MockRole = 'admin'): Promise<void>
 
 async function sendCopilotBusinessPrompt(page: Page, prompt: string): Promise<void> {
   await page.goto(`${BASE}/app/copilot`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Aethos Atlas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aethos Nous' })).toBeVisible();
   await page.getByLabel('Message input').fill(prompt);
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByLabel(`You: ${prompt}`)).toBeVisible();
@@ -388,7 +388,15 @@ function closePackage(state: MockState): Record<string, unknown> {
     },
     gl_summary: { net_income: '18250.00' },
     previous_gl_summary: { net_income: '14100.00' },
-    working_capital: { ar_open_total: '4200.00', ap_open_total: '1180.00', wip_total: '9500.00' },
+    working_capital: {
+      ar_open_total: '4200.00',
+      ap_open_total: '1180.00',
+      wip_total: '9500.00',
+      base_currency: 'USD',
+      as_of_date: '2026-06-30',
+      ar_ap_basis: 'posted_gl_base_currency',
+      wip_basis: 'approved_time_period_end_current_rate_estimate',
+    },
     readiness_evidence: {
       ar: { status: 'ready', open_total: '4200.00', blocker_count: 0 },
       ap: { status: state.overrideCreated ? 'overridden' : 'blocked', open_total: '1180.00', blocker_count: 1 },
@@ -626,6 +634,14 @@ async function installAiFinanceMocks(page: Page, state: MockState): Promise<void
       await route.fulfill({
         json: { id: 'thread-ai-finance-310', title: 'AI finance workflow proof', created_at: '2026-06-24T20:00:00Z' },
       });
+      return;
+    }
+    if (path === '/api/v1/chat/threads' && method === 'GET') {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (path.endsWith('/messages') && path.includes('/api/v1/chat/threads/') && method === 'GET') {
+      await route.fulfill({ json: [] });
       return;
     }
     if (path.endsWith('/messages') && path.includes('/api/v1/chat/threads/') && method === 'POST') {
@@ -891,6 +907,15 @@ async function installAiFinanceMocks(page: Page, state: MockState): Promise<void
       });
       return;
     }
+    if (path === '/api/v1/tenants/accounting-context' && method === 'GET') {
+      await route.fulfill({
+        json: {
+          tenant_id: 'tenant-ai-finance',
+          base_currency: 'USD',
+        },
+      });
+      return;
+    }
     if (path === '/api/v1/stripe/connect/status') {
       await route.fulfill({ json: { connected: false } });
       return;
@@ -1016,9 +1041,16 @@ test.describe('Enterprise AI finance workflow proof (#310)', () => {
     await page.goto(`${BASE}/app/accounting/journals`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Journal Entries/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /^Month-end close$/i })).toBeVisible();
+    const closePeriod = page.getByLabel('Close period');
+    await closePeriod.fill(CLOSE_PERIOD);
+    await closePeriod.dispatchEvent('change');
+    await expect(closePeriod).toHaveValue(CLOSE_PERIOD);
     await page.getByRole('button', { name: /Close package/i }).click();
     await expect(page.getByText('Net income', { exact: true })).toBeVisible();
-    await expect(page.getByText('Open AR/AP')).toBeVisible();
+    await expect(page.getByText('Period-end AR/AP', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('USD base-currency GL · as of 2026-06-30', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText('AP exposure remains low after Aster Cloud bill review.')).toBeVisible();
 
     await page.getByLabel('Close blocker to override').selectOption('close_tasks');
@@ -1034,15 +1066,18 @@ test.describe('Enterprise AI finance workflow proof (#310)', () => {
     await page.getByRole('tab', { name: /Balance Sheet/i }).click();
     await expect(page.getByText('Balance sheet balances')).toBeVisible();
     await page.getByRole('tab', { name: /Income Statement/i }).click();
-    await expect(page.getByText('Net Income')).toBeVisible();
-    await expect(page.getByText('18,250.00')).toBeVisible();
+    const incomeStatementPanel = page.getByLabel('Income Statement');
+    await expect(incomeStatementPanel.getByText('Net Income')).toBeVisible();
+    await expect(incomeStatementPanel.getByText('$18,250.00', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: /Statutory Pack/i }).click();
     await expect(page.getByText('Tax Payable')).toBeVisible();
 
     await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Agent Run Ledger' })).toBeVisible();
-    await expect(page.getByText('Finance Ops Manager', { exact: true })).toBeVisible();
-    await page.getByText('Finance Ops Manager', { exact: true }).click();
+    const agentRuns = page.getByLabel('Agent runs');
+    const financeOpsManagerRun = agentRuns.getByText('Finance Ops Manager', { exact: true });
+    await expect(financeOpsManagerRun).toBeVisible();
+    await financeOpsManagerRun.click();
     await expect(page.getByText('process_vendor_invoice')).toBeVisible();
     await expect(page.getByText('propose_bill_payment_batch')).toBeVisible();
     await expect(page.getByText('prepare_month_end_close')).toBeVisible();

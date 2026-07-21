@@ -12,10 +12,12 @@ Signup creates real artifacts. We tag the tenant for cleanup.
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import httpx
 import pytest
+import stripe
 
 pytestmark = [
     pytest.mark.api,
@@ -39,55 +41,91 @@ def _signup_payload() -> dict:
     }
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Bug #97 fixed (AuthApiError now translated to 4xx), but the happy "
-        "path is still blocked by the Supabase project's email-domain "
-        "allowlist + send-rate-limit: @example.com addresses are rejected by "
-        "the auth backend itself, so the endpoint correctly returns 422. "
-        "Needs a 'test mode' bypass or a deliverable mailbox to flip green."
-    ),
-    strict=False,
-)
 def test_signup_happy_path_returns_setup_intent(client: httpx.Client) -> None:
     """A fresh signup creates a tenant + Stripe customer and returns the
     SetupIntent client_secret needed for card capture.
 
-    Blocked by the Supabase project's email-allowlist for @example.com; not
-    by bug #97 anymore."""
+    The current test-mode auth project accepts the IANA-reserved example.com
+    domain, so the test can exercise the complete public API contract without
+    sending mail to a real recipient."""
     payload = _signup_payload()
-    r = client.post("/api/v1/auth/signup", json=payload)
-    assert r.status_code == 201, r.text
-    body = r.json()
-    assert "tenant_id" in body
-    assert body["stripe_setup_intent_client_secret"].startswith("seti_"), body
-    # Cleanup tenant we just created
+    body: dict = {}
     try:
-        from tests.fixtures.scenarios import make_service_client
+        r = client.post("/api/v1/auth/signup", json=payload)
+        assert r.status_code == 201, f"unexpected signup status: {r.status_code}"
+        body = r.json()
+        assert "tenant_id" in body
+        assert str(body.get("stripe_setup_intent_client_secret") or "").startswith("seti_")
+    finally:
+        _cleanup_signup(body)
 
-        make_service_client().table("tenants").delete().eq("id", body["tenant_id"]).execute()
-    except Exception:
-        pass
 
+def test_signup_rejects_malformed_email_without_creating_tenant(client: httpx.Client) -> None:
+    """Request validation rejects malformed email before any external write.
 
-def test_signup_invalid_email_translates_to_422_not_500(client: httpx.Client) -> None:
-    """Bug #97 sentinel — Supabase AuthApiError must NOT propagate as 500.
-
-    Pre-fix: the endpoint returned 500 with a Supabase stack trace.
-    Post-fix (PR for #97): ``_auth_error_to_http`` in auth.py maps the SDK
-    error to a 4xx status with a sanitised, vendor-neutral detail string.
+    Structured Supabase ``AuthApiError`` mapping is covered by the focused
+    unit suite. This real-stack check owns the stronger public invariant: an
+    invalid request cannot create an auth user, tenant, or Stripe object.
     """
     payload = _signup_payload()
-    payload["email"] = "definitely-not-a-real@example.com"  # Supabase rejects this
+    payload["email"] = "definitely-not-an-email"
     r = client.post("/api/v1/auth/signup", json=payload)
-    assert r.status_code in (400, 409, 422, 429), (
-        f"Bug #97 regression — AuthApiError returned {r.status_code}. "
-        f"Body: {r.text[:200]}"
-    )
-    # Detail body must be a string, never empty, and never leak the vendor.
+    assert r.status_code == 422
     body = r.json()
-    assert isinstance(body.get("detail"), str) and body["detail"], body
-    assert "supabase" not in body["detail"].lower(), body
+    assert body.get("detail")
+    assert "supabase" not in str(body["detail"]).lower()
+
+    from tests.fixtures.scenarios import make_service_client
+
+    rows = (
+        make_service_client()
+        .table("tenants")
+        .select("id")
+        .eq("name", payload["tenant_name"])
+        .execute()
+        .data
+        or []
+    )
+    assert rows == []
+
+
+def _cleanup_signup(body: dict) -> None:
+    """Remove every external artifact created by the happy-path test."""
+    tenant_id = str(body.get("tenant_id") or "")
+    if not tenant_id:
+        return
+
+    from tests.fixtures.scenarios import make_service_client
+
+    db = make_service_client()
+    tenant_rows = (
+        db.table("tenants")
+        .select("id,name,stripe_customer_id")
+        .eq("id", tenant_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not tenant_rows or not str(tenant_rows[0].get("name") or "").startswith("Aksha Signup Test"):
+        return
+    memberships = (
+        db.table("tenant_users")
+        .select("user_id")
+        .eq("tenant_id", tenant_id)
+        .execute()
+        .data
+        or []
+    )
+    stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+    customer_id = tenant_rows[0].get("stripe_customer_id")
+    if customer_id:
+        stripe.Customer.delete(customer_id)
+    for membership in memberships:
+        user_id = membership.get("user_id")
+        if user_id:
+            db.auth.admin.delete_user(user_id)
+    db.table("tenants").delete().eq("id", tenant_id).execute()
 
 
 def test_signup_rejects_short_password(client: httpx.Client) -> None:

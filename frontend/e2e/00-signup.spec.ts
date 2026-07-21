@@ -212,9 +212,16 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
 
     // Persist the per-spec artifacts in a place the downstream tests can read.
     const fs = await import('node:fs');
+    fs.chmodSync('e2e/.auth/o2c-tenant.json', 0o600);
     fs.writeFileSync(
       'e2e/.auth/o2c-tenant.meta.json',
-      JSON.stringify({ ...artifacts, password }, null, 2),
+      JSON.stringify({
+        ...artifacts,
+        password,
+        playwrightRunId: process.env.AETHOS_E2E_RUN_ID,
+      }, null, 2),
+      { mode: 0o600 },
     );
+    fs.chmodSync('e2e/.auth/o2c-tenant.meta.json', 0o600);
   });
 });

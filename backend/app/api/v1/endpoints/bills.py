@@ -2,15 +2,16 @@
 
 Endpoints:
   GET    /bills              → list bills with optional status/client_id filters
-  POST   /bills              → create a draft bill (manager+)
+  POST   /bills              → create a draft bill (bills.manage)
   GET    /bills/aging        → AP aging buckets
   GET    /bills/{bill_id}    → get bill detail with lines
-  PATCH  /bills/{bill_id}/approve → approve bill + post GL journal (admin+)
+  PATCH  /bills/{bill_id}/approve → approve + post GL journal (bills.approve)
+  POST   /bills/{bill_id}/void → void/reverse a bill (bills.manage)
 
 RBAC:
-  read:    any authenticated user (viewer and above)
-  create:  manager and above
-  approve: admin and above
+  read:    any authenticated tenant user
+  manage:  bills.manage
+  approve: bills.approve
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
-from app.core.rbac import UserRole, require_role
+from app.core.permissions import require_privilege
 from app.core.tenant import get_tenant_id
 from app.models.bills import (
     ApAgingResponse,
@@ -81,7 +82,7 @@ async def list_bills(
 @router.post("", response_model=BillResponse, status_code=201)
 async def create_bill(
     payload: BillCreate,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_privilege("bills.manage"),  # noqa: B008
     svc: BillsService = Depends(_write_service),  # noqa: B008
 ) -> BillResponse:
     return await svc.create_bill(payload)
@@ -128,7 +129,7 @@ async def get_bill(
 @router.patch("/{bill_id}/approve", response_model=BillApproveResponse)
 async def approve_bill(
     bill_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("bills.approve"),  # noqa: B008
     svc: BillsService = Depends(_write_service),  # noqa: B008
 ) -> BillApproveResponse:
     return await svc.approve_bill(bill_id, current_user.user_id)
@@ -137,7 +138,7 @@ async def approve_bill(
 @router.post("/{bill_id}/void", response_model=BillResponse)
 async def void_bill(
     bill_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("bills.manage"),  # noqa: B008
     svc: BillsService = Depends(_write_service),  # noqa: B008
 ) -> BillResponse:
     """Void a bill.

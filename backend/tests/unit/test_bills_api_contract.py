@@ -122,6 +122,11 @@ class _Query:
                 "subtotal": "0.00",
                 "tax_total": "0.00",
                 "total": "0.00",
+                "base_currency": None,
+                "base_subtotal": None,
+                "base_tax_total": None,
+                "base_total": None,
+                "approval_fx_rate_id": None,
                 "created_at": "2026-06-22T00:00:00+00:00",
                 "updated_at": "2026-06-22T00:00:00+00:00",
                 "deleted_at": None,
@@ -141,6 +146,53 @@ class _FakeDb:
     def __init__(self) -> None:
         today = date.today()
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "tenant_users": [
+                {
+                    "id": "tenant-user-manager",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-1",
+                    "role": "manager",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                },
+                {
+                    "id": "tenant-user-admin",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "admin-1",
+                    "role": "admin",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                },
+                {
+                    "id": "tenant-user-auditor",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "auditor-1",
+                    "role": "viewer",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                },
+            ],
+            "tenant_user_effective_privileges": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": user_id,
+                    "role_code": role_code,
+                    "role_label": role_label,
+                    "legacy_role": legacy_role,
+                    "privilege_code": privilege_code,
+                }
+                for user_id, role_code, role_label, legacy_role in (
+                    ("user-1", "ap_manager", "AP Manager", "manager"),
+                    ("admin-1", "finance_controller", "Finance Controller", "admin"),
+                )
+                for privilege_code in ("bills.manage", "bills.approve")
+            ],
+            "tenants": [
+                {
+                    "id": TENANT_ID,
+                    "base_currency": "USD",
+                }
+            ],
             "clients": [
                 {
                     "id": CLIENT_ID,
@@ -644,10 +696,7 @@ def test_viewer_can_read_bills_but_cannot_mutate_ap(
         app.dependency_overrides.clear()
 
     assert list_response.status_code == 200, list_response.text
-    assert all(
-        row["tenant_id"] == TENANT_ID
-        for row in list_response.json()["items"]
-    )
+    assert all(row["tenant_id"] == TENANT_ID for row in list_response.json()["items"])
     assert create_response.status_code == 403, create_response.text
     assert approve_response.status_code == 403, approve_response.text
     assert not any(row.get("id") == CREATED_BILL_ID for row in fake_db.tables["bills"])

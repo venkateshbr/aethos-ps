@@ -9,6 +9,7 @@
  *  3  Engagements — create T&M + fixed-fee engagements; validation edge case
  *  4  Engagement detail — draft an invoice with a manual extra line
  *  5  Projects  — create a project linked to the engagement
+ *  5b People    — create the employee who will log time
  *  6  Time      — add a billable time entry
  *  7  Invoices  — approve → send → mark paid
  *  8  Reports   — verify AR aging, utilization, WIP sections load
@@ -19,24 +20,42 @@
 
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 const WEB = process.env.AETHOS_PS_WEB_URL ?? 'http://localhost:4201';
-
-const CREDS = {
-  email:    'ts-owner-59348813@aethos-qa.dev',
-  password: 'TimesheetE2E-2026!',
-};
+const LOGIN_META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 
 const RUN_ID      = Date.now().toString().slice(-6);
 const CLIENT_NAME = `E2E Client ${RUN_ID}`;
 const ENG_TM_NAME = `E2E T&M Eng ${RUN_ID}`;
 const ENG_FF_NAME = `E2E Fixed Fee ${RUN_ID}`;
 const PROJ_NAME   = `E2E Project ${RUN_ID}`;
+const EMPLOYEE_FIRST_NAME = 'E2E';
+const EMPLOYEE_LAST_NAME = `Consultant${RUN_ID}`;
+const EMPLOYEE_NAME = `${EMPLOYEE_FIRST_NAME} ${EMPLOYEE_LAST_NAME}`;
+const EMPLOYEE_EMAIL = `e2e-employee-${RUN_ID}@aethos-qa.dev`;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 const SHOT_DIR = 'test-results/browser-scenario';
 fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+function loadRunScopedCredentials(): { email: string; password: string } {
+  if (!fs.existsSync(LOGIN_META_PATH)) {
+    throw new Error(
+      `Run-scoped login metadata is missing at ${LOGIN_META_PATH}. `
+      + 'Run the signup scenario before the browser walkthrough.',
+    );
+  }
+  const meta = JSON.parse(fs.readFileSync(LOGIN_META_PATH, 'utf-8')) as {
+    email?: unknown;
+    password?: unknown;
+  };
+  if (typeof meta.email !== 'string' || typeof meta.password !== 'string') {
+    throw new Error('Run-scoped login metadata does not contain email and password.');
+  }
+  return { email: meta.email, password: meta.password };
+}
 
 async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: false });
@@ -80,35 +99,6 @@ async function selectOptionContaining(
   return value;
 }
 
-async function selectFirstNonPlaceholder(select: ReturnType<Page['locator']>) {
-  await expect(select).toBeVisible({ timeout: 10_000 });
-  await expect.poll(async () => (
-    await select.locator('option').evaluateAll((options) => {
-      const match = options.find((option) => {
-        const value = option instanceof HTMLOptionElement ? option.value : '';
-        const text = option.textContent?.trim() ?? '';
-        return value && text && !/select/i.test(text);
-      });
-      return match instanceof HTMLOptionElement ? match.value : '';
-    })
-  ), {
-    message: 'first non-placeholder option should load',
-    timeout: 10_000,
-  }).not.toBe('');
-
-  const value = await select.locator('option').evaluateAll((options) => {
-    const match = options.find((option) => {
-      const value = option instanceof HTMLOptionElement ? option.value : '';
-      const text = option.textContent?.trim() ?? '';
-      return value && text && !/select/i.test(text);
-    });
-    return match instanceof HTMLOptionElement ? match.value : '';
-  });
-
-  await select.selectOption({ value });
-  await expect(select).toHaveValue(value);
-}
-
 // ─── Suite ────────────────────────────────────────────────────────────────
 
 test.describe('Engagement-to-Cash — full browser walkthrough', () => {
@@ -120,11 +110,12 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
 
     // ── 1. Login ───────────────────────────────────────────────────────
     await test.step('1. Login — /login → Copilot', async () => {
+      const creds = loadRunScopedCredentials();
       await page.goto(`${WEB}/login`);
       await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible({ timeout: 15_000 });
 
-      await page.fill('#email',    CREDS.email);
-      await page.fill('#password', CREDS.password);
+      await page.fill('#email', creds.email);
+      await page.fill('#password', creds.password);
       await shot(page, '01-login-filled');
 
       await page.click('button[type="submit"]');
@@ -293,6 +284,30 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       await shot(page, '16-project-created');
     });
 
+    // ── 5b. People ─────────────────────────────────────────────────────
+    await test.step('5b. People — create employee for time entry', async () => {
+      await page.goto(`${WEB}/app/people`);
+      await expect(page.getByRole('heading', { name: /^people$/i, level: 1 })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByLabel('Loading employees')).toHaveCount(0, { timeout: 15_000 });
+
+      await page.getByRole('button', { name: 'Add new employee', exact: true }).click();
+      const employeeDialog = page.getByRole('dialog', { name: 'New employee', exact: true });
+      await expect(employeeDialog).toBeVisible({ timeout: 10_000 });
+
+      await employeeDialog.locator('input[formcontrolname="first_name"]').fill(EMPLOYEE_FIRST_NAME);
+      await employeeDialog.locator('input[formcontrolname="last_name"]').fill(EMPLOYEE_LAST_NAME);
+      await employeeDialog.locator('input[formcontrolname="email"]').fill(EMPLOYEE_EMAIL);
+      await employeeDialog.locator('input[formcontrolname="title"]').fill('Consultant');
+      await employeeDialog.locator('input[formcontrolname="default_bill_rate"]').fill('225.00');
+      await employeeDialog.locator('input[formcontrolname="default_bill_rate_currency"]').fill('USD');
+      await shot(page, '16a-employee-form');
+
+      await employeeDialog.getByRole('button', { name: 'Create employee', exact: true }).click();
+      await expect(employeeDialog).toBeHidden({ timeout: 15_000 });
+      await expect(page.getByText(EMPLOYEE_NAME, { exact: true })).toBeVisible({ timeout: 15_000 });
+      await shot(page, '16b-employee-created');
+    });
+
     // ── 6. Time entries ────────────────────────────────────────────────
     await test.step('6. Time entries — log billable hours', async () => {
       await page.goto(`${WEB}/app/time`);
@@ -302,11 +317,7 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
 
       // Quick-add form at top. Wait for this run's project, not merely any project.
       await selectOptionContaining(page, '#entry-project', PROJ_NAME);
-
-      const empSelect = page.locator('#entry-employee');
-      if (await empSelect.count() > 0) {
-        await selectFirstNonPlaceholder(empSelect);
-      }
+      await selectOptionContaining(page, '#entry-employee', EMPLOYEE_NAME);
 
       const today = new Date().toISOString().split('T')[0];
       await page.fill('#entry-date',        today);
@@ -422,10 +433,8 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
     await test.step('10. Copilot — type a query and see the chat UI respond', async () => {
       await page.goto(`${WEB}/app/copilot`);
 
-      // New chat button or composer — either means copilot mounted
-      const copilotReady = page.getByRole('button', { name: /new chat/i })
-        .or(page.getByPlaceholder(/message aethos/i));
-      await expect(copilotReady.first()).toBeVisible({ timeout: 20_000 });
+      const composer = page.getByRole('textbox', { name: 'Message input', exact: true });
+      await expect(composer).toBeVisible({ timeout: 20_000 });
       await shot(page, '27-copilot-fresh');
 
       // Start a new chat if needed
@@ -433,10 +442,9 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       if (await newChatBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await newChatBtn.click();
         // Wait for the composer to be ready — avoids a fixed sleep.
-        await expect(page.getByPlaceholder(/message aethos/i)).toBeVisible({ timeout: 10_000 });
+        await expect(composer).toBeVisible({ timeout: 10_000 });
       }
 
-      const composer = page.getByPlaceholder(/message aethos/i);
       await expect(composer).toBeVisible({ timeout: 10_000 });
       await composer.fill('How many active engagements do I have?');
       await shot(page, '27b-copilot-query');
@@ -444,7 +452,7 @@ test.describe('Engagement-to-Cash — full browser walkthrough', () => {
       await page.keyboard.press('Enter');
 
       const assistantOutput = page
-        .locator('[aria-label^="Atlas:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
+        .locator('[aria-label^="Nous:"], [aria-label^="Aethos:"], [aria-label^="Tool completed"], [aria-label^="Running tool"]')
         .last();
       if (!(await assistantOutput.isVisible({ timeout: 60_000 }).catch(() => false))) {
         test.info().annotations.push({

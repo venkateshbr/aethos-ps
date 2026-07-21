@@ -80,6 +80,7 @@ async function loginViaUi(
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
   fs.mkdirSync(path.dirname(storagePath), { recursive: true });
   await page.context().storageState({ path: storagePath });
+  fs.chmodSync(storagePath, 0o600);
 }
 
 async function ensureAppRoute(page: Page, route: string): Promise<void> {
@@ -1435,6 +1436,7 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
         headers,
         data: {
           description: 'E2E locked-period API rejection',
+          reason: 'Verify that locked accounting periods reject manual journals.',
           entry_date: entryDate,
           reference: 'E2E-PERIOD-LOCK',
           lines: [
@@ -1461,6 +1463,9 @@ test.describe('engagement-to-cash — §3 Unhappy Paths', () => {
       await expect(dialog).toBeVisible();
 
       await dialog.getByLabel('Description *').fill('E2E locked-period UI rejection');
+      await dialog.getByLabel('Business reason *').fill(
+        'Verify that locked accounting periods reject manual journals.',
+      );
       await dialog.getByLabel('Entry Date *').fill(entryDate);
       await dialog.getByLabel('Reference').fill('E2E-PERIOD-LOCK-UI');
 
@@ -2003,9 +2008,9 @@ test.describe('engagement-to-cash — §5 RBAC matrix', () => {
     expect(resp.ok()).toBeTruthy();
   });
 
-  test('manager role: approve succeeds, send blocked at RBAC level', async ({ request }) => {
-    // We verify that owner-token CAN send; the RBAC rule (owner only) is enforced.
-    // A real manager token test requires a second user account; this asserts role metadata.
+  test('owner catalog permissions allow invoice approval and send', async ({ request }) => {
+    // This scenario uses the saved owner session. It proves the positive
+    // invoices.post + invoices.send catalog path; it is not manager-token evidence.
     test.setTimeout(120_000);
     const auth = getAuthFromStorage();
     test.skip(!auth, 'no auth token');
@@ -2016,18 +2021,18 @@ test.describe('engagement-to-cash — §5 RBAC matrix', () => {
     const inv = await createInvoiceWithLines(request, auth!, engagementId, clientId, [
       { description: 'RBAC test line', quantity: '1', unit_price: '100.00' },
     ]);
-    // Owner can approve (manager+)
     const approveResp = await request.patch(`${API}/api/v1/invoices/${inv.id}/approve`, {
       headers: apiHeaders(auth!),
       timeout: API_REQUEST_TIMEOUT,
     });
     await expectOk(approveResp, 'approve invoice for RBAC send check');
-    // Owner can also send (owner only) — the RBAC enforces owner ≥ required
     const sendResp = await request.post(`${API}/api/v1/invoices/${inv.id}/send`, {
       headers: apiHeaders(auth!),
       timeout: API_REQUEST_TIMEOUT,
     });
-    expect([200, 402, 500]).toContain(sendResp.status()); // Stripe may not be configured
+    await expectOk(sendResp, 'send invoice with owner catalog permissions');
+    const sentInvoice = await sendResp.json();
+    expect(sentInvoice.status).toBe('sent');
   });
 
   test('viewer sees data but cannot mutate (UI disabled + API 403)', async ({ page, request }) => {

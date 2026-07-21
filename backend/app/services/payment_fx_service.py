@@ -11,6 +11,21 @@ from app.domain.fx import get_fx_rate_record
 from app.domain.money import quantise_money
 from supabase import Client
 
+DOCUMENT_FX_PERSISTENCE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "base_currency",
+        "base_subtotal",
+        "base_tax_total",
+        "base_total",
+        "approval_fx_rate_id",
+    }
+)
+
+
+def missing_document_fx_columns(row: dict) -> frozenset[str]:
+    """Return approval-FX columns absent from a PostgREST ``select('*')`` row."""
+    return DOCUMENT_FX_PERSISTENCE_COLUMNS.difference(row)
+
 
 @dataclass(frozen=True)
 class PaymentFxAmounts:

@@ -1,12 +1,13 @@
 """Invoices router — AR invoice lifecycle endpoints.
 
 Routes:
-  GET  /invoices                     — list (viewer+)
-  POST /invoices                     — create (manager+)
-  GET  /invoices/{id}                — get with lines (viewer+)
-  PATCH /invoices/{id}/approve       — approve + AR journal (admin+)
-  POST  /invoices/{id}/send          — send + Stripe Payment Link (admin+)
-  POST  /invoices/{id}/public-token/rotate — rotate customer-facing token (admin+)
+  GET   /invoices                     — list (authenticated)
+  POST  /invoices                     — create (invoices.draft)
+  GET   /invoices/{id}                — get with lines (authenticated)
+  PATCH /invoices/{id}/approve        — approve + AR journal (invoices.post)
+  POST  /invoices/{id}/send           — send + payment link (invoices.send)
+  POST  /invoices/{id}/public-token/rotate — rotate token (invoices.send)
+  POST  /invoices/{id}/payments       — record receipt (invoices.mark_paid)
 
 Public (no auth):
   GET /public/invoices/{token}       — fetch by public_token for /p/:token page
@@ -24,7 +25,7 @@ from app.agents.base import AgentDeps
 from app.agents.invoice_drafter_agent import draft_invoice
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client, get_user_rls_client
-from app.core.rbac import UserRole, require_role
+from app.core.permissions import require_privilege
 from app.core.tenant import get_tenant_id
 from app.models.invoices import (
     InvoiceCreate,
@@ -86,7 +87,7 @@ async def list_invoices(
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     payload: InvoiceCreate,
-    current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.draft"),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.create_invoice(payload, created_by=current_user.user_id)
@@ -95,7 +96,7 @@ async def create_invoice(
 @router.post("/draft")
 async def draft_invoice_for_engagement(
     payload: InvoiceDraftRequest,
-    current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.draft"),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> dict:
@@ -146,7 +147,7 @@ async def get_invoice(
 @router.patch("/{invoice_id}/approve", response_model=InvoiceResponse)
 async def approve_invoice(
     invoice_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.post"),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.approve_invoice(invoice_id, approved_by=current_user.user_id)
@@ -155,7 +156,7 @@ async def approve_invoice(
 @router.post("/{invoice_id}/send", response_model=InvoiceResponse)
 async def send_invoice(
     invoice_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.send"),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     return await svc.send_invoice(invoice_id, sent_by=current_user.user_id)
@@ -164,7 +165,7 @@ async def send_invoice(
 @router.post("/{invoice_id}/public-token/rotate", response_model=InvoiceResponse)
 async def rotate_invoice_public_token(
     invoice_id: str,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.send"),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     """Rotate the unauthenticated invoice URL token.
@@ -179,7 +180,7 @@ async def rotate_invoice_public_token(
 async def record_manual_payment(
     invoice_id: str,
     payload: ManualPaymentCreate,
-    current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    current_user: CurrentUser = require_privilege("invoices.mark_paid"),  # noqa: B008
     svc: InvoicesService = Depends(_write_service),  # noqa: B008
 ) -> InvoiceResponse:
     """Record a payment received outside of Stripe (wire/cheque/cash/etc.).
@@ -189,6 +190,7 @@ async def record_manual_payment(
     DR 1100 Bank / CR 1200 AR.
     """
     from decimal import Decimal, InvalidOperation
+
     try:
         amount = Decimal(payload.amount)
     except InvalidOperation as exc:

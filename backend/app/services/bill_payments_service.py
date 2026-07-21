@@ -229,6 +229,14 @@ class BillPaymentsService:
             raise HTTPException(500, "Chart of accounts not configured for bill settlement")
 
         settled_at = datetime.now(UTC).isoformat()
+        effective_pay_date = date.fromisoformat(
+            str(batch.get("pay_date") or date.today().isoformat())[:10]
+        )
+        effective_paid_at = datetime.combine(
+            effective_pay_date,
+            datetime.min.time(),
+            tzinfo=UTC,
+        ).isoformat()
         journal_entry_ids: list[str] = []
         for item in items:
             amount = Decimal(str(item["amount"]))
@@ -259,7 +267,7 @@ class BillPaymentsService:
                     tenant_id=self.tenant_id,
                     created_by=settled_by,
                     description=f"Bill payment settled for {bill_number}",
-                    entry_date=date.today().isoformat(),
+                    entry_date=effective_pay_date.isoformat(),
                     reference_type="bill_payment",
                     reference_id=bill_id,
                     lines=lines,
@@ -270,7 +278,7 @@ class BillPaymentsService:
 
             journal_entry_ids.append(str(journal["id"]))
             self.db.table("bills").update(
-                {"status": "paid", "paid_at": settled_at}
+                {"status": "paid", "paid_at": effective_paid_at}
             ).eq("id", bill_id).eq("tenant_id", self.tenant_id).execute()
             self.db.table("bill_payment_items").update({"status": "settled"}).eq(
                 "id", item["id"]

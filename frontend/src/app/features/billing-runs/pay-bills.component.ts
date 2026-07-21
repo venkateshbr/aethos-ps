@@ -7,8 +7,10 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { BillingRunsService, Bill, PaymentSettlement } from '../../core/services/billing-runs.service';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 import { EngagementService, EngagementSummary } from '../../core/services/engagement.service';
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
@@ -26,6 +28,7 @@ import { HttpClient } from '@angular/common/http';
     MatIconModule,
     MatProgressSpinnerModule,
     MatSnackBarModule,
+    MatTooltipModule,
     MoneyPipe,
     SourceDocumentLinkComponent,
     DecisionTimelineComponent,
@@ -215,7 +218,8 @@ import { HttpClient } from '@angular/common/http';
                   >Back</button>
 
                   <button
-                    [disabled]="creatingBatch()"
+                    [disabled]="creatingBatch() || !canPrepare()"
+                    [matTooltip]="canPrepare() ? 'Create a bill payment batch' : 'Requires bill payment preparation permission'"
                     (click)="createBatch(stepper)"
                     class="flex-1 sm:flex-none px-6 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                   >
@@ -247,7 +251,8 @@ import { HttpClient } from '@angular/common/http';
                     </div>
                     @if (batchStatus() === 'draft') {
                       <button
-                        [disabled]="approvingBatch()"
+                        [disabled]="approvingBatch() || !canApprove()"
+                        [matTooltip]="canApprove() ? 'Approve this bill payment batch' : 'Requires bill payment approval permission'"
                         (click)="approveBatch()"
                         class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                       >
@@ -263,6 +268,7 @@ import { HttpClient } from '@angular/common/http';
                 <div class="flex flex-col sm:flex-row gap-3 mb-8">
                   <button
                     [disabled]="downloading() || !canExport()"
+                    [matTooltip]="canExport() ? 'Download the NACHA payment file' : 'Requires an approved batch and bill payment export permission'"
                     (click)="downloadNacha()"
                     class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
@@ -272,6 +278,7 @@ import { HttpClient } from '@angular/common/http';
 
                   <button
                     [disabled]="downloading() || !canExport()"
+                    [matTooltip]="canExport() ? 'Download the CSV payment file' : 'Requires an approved batch and bill payment export permission'"
                     (click)="downloadCsv()"
                     class="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-surface hover:bg-surface-raised text-text-primary border border-border-strong hover:border-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
@@ -290,6 +297,7 @@ import { HttpClient } from '@angular/common/http';
                   <p class="text-xs text-text-muted mb-4">Once you have uploaded the file to your bank's portal, mark the batch as sent.</p>
                   <button
                     [disabled]="markingSent() || !canMarkSent()"
+                    [matTooltip]="canMarkSent() ? 'Record that this payment batch was sent to the bank' : 'Requires an exported approved batch and bill payment settlement permission'"
                     (click)="markSent(stepper)"
                     class="px-6 py-2.5 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
@@ -327,6 +335,7 @@ import { HttpClient } from '@angular/common/http';
                 @if (!settlement()) {
                   <button
                     [disabled]="settlingBatch() || !canSettle()"
+                    [matTooltip]="canSettle() ? 'Confirm bank settlement' : 'Requires a sent batch and bill payment settlement permission'"
                     (click)="settleBatch()"
                     class="mt-6 px-6 py-2.5 text-sm font-medium rounded-lg bg-accent hover:bg-accent text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                   >
@@ -390,6 +399,7 @@ export class PayBillsComponent implements OnInit {
   private http = inject(HttpClient);
   private snackBar = inject(MatSnackBar);
   private router = inject(Router);
+  private permissions = inject(CurrentPermissionsService);
 
   // ── Pay Bills loading states ───────────────────────────────────────────
   loadingBills = signal(true);
@@ -428,9 +438,21 @@ export class PayBillsComponent implements OnInit {
   // Computed
   step1Complete = computed(() => this.selectedIds().size > 0);
   step2Complete = computed(() => this.batchId() !== null);
-  canExport = computed(() => this.batchStatus() === 'approved');
-  canMarkSent = computed(() => this.batchStatus() === 'approved' && this.exported());
-  canSettle = computed(() => this.batchStatus() === 'sent_to_bank');
+  canPrepare = computed(() => this.permissions.hasPrivilege('bill_payments.prepare'));
+  canApprove = computed(() => this.permissions.hasPrivilege('bill_payments.approve'));
+  canExport = computed(() => (
+    this.batchStatus() === 'approved'
+    && this.permissions.hasPrivilege('bill_payments.export')
+  ));
+  canMarkSent = computed(() => (
+    this.batchStatus() === 'approved'
+    && this.exported()
+    && this.permissions.hasPrivilege('bill_payments.settle')
+  ));
+  canSettle = computed(() => (
+    this.batchStatus() === 'sent_to_bank'
+    && this.permissions.hasPrivilege('bill_payments.settle')
+  ));
 
   runningTotal = computed(() => {
     const ids = this.selectedIds();
@@ -441,6 +463,7 @@ export class PayBillsComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     this.loadBills();
     this.loadActiveEngagements();
   }
@@ -483,7 +506,7 @@ export class PayBillsComponent implements OnInit {
   }
 
   createBatch(stepper: { selectedIndex: number }): void {
-    if (this.creatingBatch()) return;
+    if (!this.canPrepare() || this.creatingBatch()) return;
     this.creatingBatch.set(true);
     this.batchError.set(false);
     const ids = [...this.selectedIds()];
@@ -508,7 +531,7 @@ export class PayBillsComponent implements OnInit {
 
   approveBatch(): void {
     const id = this.batchId();
-    if (!id || this.approvingBatch()) return;
+    if (!id || !this.canApprove() || this.approvingBatch()) return;
     this.approvingBatch.set(true);
     this.approveError.set(false);
     this.svc.approveBatch(id).subscribe({
@@ -525,7 +548,7 @@ export class PayBillsComponent implements OnInit {
 
   downloadNacha(): void {
     const id = this.batchId();
-    if (!id || this.downloading()) return;
+    if (!id || !this.canExport() || this.downloading()) return;
     this.downloading.set(true);
     this.svc.exportBatch(id, 'nacha').subscribe({
       next: blob => {
@@ -544,7 +567,7 @@ export class PayBillsComponent implements OnInit {
 
   downloadCsv(): void {
     const id = this.batchId();
-    if (!id || this.downloading()) return;
+    if (!id || !this.canExport() || this.downloading()) return;
     this.downloading.set(true);
     this.svc.exportBatch(id, 'csv').subscribe({
       next: blob => {
@@ -563,7 +586,7 @@ export class PayBillsComponent implements OnInit {
 
   markSent(stepper: { selectedIndex: number }): void {
     const id = this.batchId();
-    if (!id || this.markingSent()) return;
+    if (!id || !this.canMarkSent() || this.markingSent()) return;
     this.markingSent.set(true);
     this.markSentError.set(false);
     this.svc.markSent(id).subscribe({
@@ -583,7 +606,7 @@ export class PayBillsComponent implements OnInit {
 
   settleBatch(): void {
     const id = this.batchId();
-    if (!id || this.settlingBatch()) return;
+    if (!id || !this.canSettle() || this.settlingBatch()) return;
     this.settlingBatch.set(true);
     this.settleError.set(false);
     this.svc.settleBatch(id).subscribe({

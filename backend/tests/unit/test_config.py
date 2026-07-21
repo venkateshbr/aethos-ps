@@ -74,6 +74,69 @@ def test_optional_fields_default_to_empty_string() -> None:
         assert s.upstash_redis_url == "" or isinstance(s.upstash_redis_url, str)
 
 
+def test_queue_db_pool_settings_parse_valid_env_overrides() -> None:
+    env = {
+        **_REQUIRED_ENV,
+        "QUEUE_DB_POOL_MIN_SIZE": "2",
+        "QUEUE_DB_POOL_MAX_SIZE": "3",
+        "QUEUE_DB_APPLICATION_NAME": "aethos-ps-test-worker",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        import app.core.config as cfg
+
+        s = cfg.Settings(_env_file=None)
+
+    assert s.queue_db_pool_min_size == 2
+    assert s.queue_db_pool_max_size == 3
+    assert s.queue_db_application_name == "aethos-ps-test-worker"
+
+
+def test_queue_db_pool_settings_have_safe_local_defaults() -> None:
+    import app.core.config as cfg
+
+    with patch.dict(os.environ, {}, clear=True):
+        s = cfg.Settings(_env_file=None)
+
+    assert s.queue_db_pool_min_size == 1
+    assert s.queue_db_pool_max_size == 4
+    assert s.queue_db_application_name == "aethos-ps-local"
+
+
+def test_queue_db_pool_settings_reject_max_below_min() -> None:
+    import app.core.config as cfg
+
+    env = {
+        **_REQUIRED_ENV,
+        "QUEUE_DB_POOL_MIN_SIZE": "3",
+        "QUEUE_DB_POOL_MAX_SIZE": "2",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        with pytest.raises(ValidationError, match="QUEUE_DB_POOL_MAX_SIZE"):
+            cfg.Settings(_env_file=None)
+
+
+def test_queue_db_pool_settings_reject_zero_sized_pool() -> None:
+    import app.core.config as cfg
+
+    env = {
+        **_REQUIRED_ENV,
+        "QUEUE_DB_POOL_MIN_SIZE": "0",
+        "QUEUE_DB_POOL_MAX_SIZE": "0",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        with pytest.raises(ValidationError):
+            cfg.Settings(_env_file=None)
+
+
+def test_queue_db_application_name_rejects_blank_value() -> None:
+    import app.core.config as cfg
+
+    env = {**_REQUIRED_ENV, "QUEUE_DB_APPLICATION_NAME": "   "}
+    with patch.dict(os.environ, env, clear=False):
+        with pytest.raises(ValidationError, match="QUEUE_DB_APPLICATION_NAME"):
+            cfg.Settings(_env_file=None)
+
+
 def test_rate_limit_settings_parse_from_env() -> None:
     env = {
         **_REQUIRED_ENV,

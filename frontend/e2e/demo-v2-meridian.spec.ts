@@ -351,7 +351,8 @@ test('Demo Guide v2 — Meridian Advisory Group — full scenario', async ({page
   const pass = results.filter(r=>r.status==='PASS').length;
   const fail = results.filter(r=>r.status==='FAIL').length;
   const skip = results.filter(r=>r.status==='SKIP').length;
-  const verdict = fail===0?'PASS':fail<=5?'PARTIAL':'FAIL';
+  const verdict = fail===0 && skip===0?'PASS':fail===0?'INCOMPLETE':fail<=5?'PARTIAL':'FAIL';
+  const actualTenantId = await page.evaluate(() => localStorage.getItem('aethos_tenant_id') ?? 'unknown');
 
   const rows = results.map(r=>`| ${r.flow} | ${r.step.slice(0,55)} | ${r.status==='PASS'?'✅':r.status==='FAIL'?'❌':'⏭'} | ${r.note.slice(0,60)} |`).join('\n');
   const ssList = fs.readdirSync(SS).filter(f=>f.endsWith('.png')).sort().map(f=>`- \`test-results/demo-v2-meridian/screenshots/${f}\``).join('\n');
@@ -359,16 +360,17 @@ test('Demo Guide v2 — Meridian Advisory Group — full scenario', async ({page
 
   const report = `# Demo Guide v2 — End-to-End Test Report
 **Date**: ${new Date().toISOString().split('T')[0]}  
-**Tenant**: Aksha O2C (f05896c4-b5dd-46e1-9152-2a962f72c8bf)  
-**Firm persona**: Meridian Advisory Group LLP
+**Observed browser tenant**: ${actualTenantId}
+**Reference firm persona**: Meridian Advisory Group LLP
+**Recorder scope**: Observes the current browser tenant; it does not create the reference master data below.
 
 ## Overall Verdict: ${verdict}
 ✅ ${pass} PASS | ❌ ${fail} FAIL | ⏭ ${skip} SKIP
 
 ---
 
-## Master Data Created
-| Entity | Count | Created |
+## Reference Meridian Fixture Expectations
+| Entity | Expected count | Reference examples |
 |---|---|---|
 | Contacts | 12 | Nexus Capital Partners, Brightwater Manufacturing Ltd, Alderton Family Office, Thornton Tech Solutions, Forster & Reid Ltd + 7 existing |
 | Employees | 7 | Marcus Chen (Managing Partner £350/hr), Sarah Williams (Tax Director £280/hr), Priya Sharma (COSEC £220/hr), James O'Brien (Payroll £180/hr) + 3 existing |

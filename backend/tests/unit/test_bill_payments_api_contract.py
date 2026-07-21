@@ -140,6 +140,33 @@ class _Query:
 class _FakeDb:
     def __init__(self) -> None:
         self.tables: dict[str, list[dict[str, Any]]] = {
+            "tenant_users": [
+                {
+                    "id": "membership-user-1",
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-1",
+                    "role": "admin",
+                    "must_change_password": False,
+                    "deleted_at": None,
+                }
+            ],
+            "tenant_user_effective_privileges": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "user_id": "user-1",
+                    "role_code": "ap_manager",
+                    "role_label": "AP Manager",
+                    "legacy_role": "admin",
+                    "privilege_code": privilege,
+                }
+                for privilege in (
+                    "bill_payments.read",
+                    "bill_payments.prepare",
+                    "bill_payments.approve",
+                    "bill_payments.export",
+                    "bill_payments.settle",
+                )
+            ],
             "bills": [
                 {
                     "id": BILL_ID,
@@ -214,6 +241,18 @@ class _ForbiddenDb:
         raise AssertionError(f"wrong dependency attempted to access {name}")
 
 
+class _SecurityOnlyDb:
+    """Allow privilege evaluation while rejecting bill-payment data access."""
+
+    def __init__(self, db: _FakeDb) -> None:
+        self._db = db
+
+    def table(self, name: str) -> _Query:
+        if name not in {"tenant_users", "tenant_user_effective_privileges"}:
+            raise AssertionError(f"service-role read attempted to access {name}")
+        return self._db.table(name)
+
+
 @pytest.fixture
 def fake_db() -> _FakeDb:
     return _FakeDb()
@@ -239,7 +278,7 @@ def test_bill_payment_read_routes_use_rls_client(
     fake_db: _FakeDb,
 ) -> None:
     app.dependency_overrides[get_user_rls_client] = lambda: fake_db
-    app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+    app.dependency_overrides[get_service_role_client] = lambda: _SecurityOnlyDb(fake_db)
 
     list_response = client.get("/api/v1/bill-payments/batches?status=draft")
     detail_response = client.get(f"/api/v1/bill-payments/batches/{BATCH_ID}")

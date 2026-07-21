@@ -45,6 +45,7 @@ class FxRateRecord:
     rate_date: date
     rate: Decimal
     id: str | None = None
+    source: str | None = None
 
 
 async def get_fx_rate(
@@ -96,12 +97,13 @@ async def get_fx_rate_record(
             rate_date=rate_date,
             rate=Decimal("1"),
             id=None,
+            source="identity",
         )
 
     # Look up on or before rate_date (most recent available).
     result = (
         db_client.table("fx_rates")
-        .select("id, rate, rate_date")
+        .select("id, rate, rate_date, source")
         .eq("from_currency", from_currency)
         .eq("to_currency", to_currency)
         .lte("rate_date", rate_date.isoformat())
@@ -134,4 +136,5 @@ async def get_fx_rate_record(
         rate_date=actual_date,
         rate=Decimal(str(row["rate"])),
         id=str(row["id"]) if row.get("id") else None,
+        source=str(row["source"]) if row.get("source") else None,
     )

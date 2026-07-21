@@ -34,6 +34,7 @@ from app.core.config import settings
 from app.core.logging import trace_id_var
 from app.services.agent_run_ledger import AgentRunLedger
 from app.services.agent_tool_policy import AgentToolPolicy, AgentToolPolicyDecision
+from app.services.number_fidelity import fidelity_caveat, unsupported_money_figures
 
 if TYPE_CHECKING:
     pass
@@ -42,6 +43,44 @@ logger = logging.getLogger(__name__)
 
 _MAX_TOKENS = 1024
 _MAX_ITERATIONS = 5
+
+
+def _number_fidelity_note(
+    *,
+    assistant_text: str | None,
+    messages: list[dict],
+    user_text: str,
+    tenant_id: str,
+) -> str:
+    """Return a user-safe caveat if the answer states unsupported money figures.
+
+    Only tool-backed answers are checked: figures must trace to a tool result
+    (or to a number the user supplied). Returns "" when there is nothing to
+    flag, which is the common case.
+    """
+    if not assistant_text:
+        return ""
+    tool_payloads: list[object] = []
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        try:
+            tool_payloads.append(json.loads(message.get("content") or "null"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    if not tool_payloads:
+        return ""  # no data was fetched — not a data-backed claim to verify
+
+    unsupported = unsupported_money_figures(
+        assistant_text, tool_payloads, user_text=user_text
+    )
+    if not unsupported:
+        return ""
+    logger.warning(
+        "number_fidelity_unsupported_figures",
+        extra={"tenant_id": tenant_id, "unsupported_count": len(unsupported)},
+    )
+    return fidelity_caveat(unsupported)
 
 
 @dataclass
@@ -709,10 +748,21 @@ class CopilotAgent:
                         yield f"data: {json.dumps({'tool_result': tc['name']})}\n\n"
                     continue
 
-                # No tool calls — we're done.
+                # No tool calls — we're done. Verify any money figures in the
+                # answer trace to tool results (a data-backed answer must not
+                # invent totals). Only applies when tools were actually called.
+                fidelity_note = _number_fidelity_note(
+                    assistant_text=assistant_text,
+                    messages=messages,
+                    user_text=safe_message,
+                    tenant_id=self.deps.tenant_id,
+                )
+                if fidelity_note:
+                    yield f"data: {json.dumps({'delta': fidelity_note})}\n\n"
+
                 done_payload = {
                     "finish_reason": finish_reason or "stop",
-                    "assistant_text": assistant_text,
+                    "assistant_text": (assistant_text or "") + fidelity_note,
                 }
                 await ledger.complete_run(
                     run_id,

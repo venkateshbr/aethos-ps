@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,8 +10,10 @@ from fastapi.testclient import TestClient
 from app.api.v1.endpoints import bills as bills_endpoint
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
+from app.core.tenant import get_tenant_id
 from app.main import app
 from app.models.bills import BillResponse
+from app.models.security import CurrentUserPermissionsResponse
 
 pytestmark = pytest.mark.unit
 
@@ -44,10 +46,27 @@ def test_void_bill_route_calls_service(bill_response: BillResponse) -> None:
         email="owner@example.com",
         role="owner",
     )
+    app.dependency_overrides[get_tenant_id] = lambda: "tenant-1"
     app.dependency_overrides[get_service_role_client] = lambda: MagicMock()
     app.dependency_overrides[bills_endpoint._write_service] = lambda: svc
     try:
-        with TestClient(app) as client:
+        with (
+            patch(
+                "app.services.security_service.SecurityService.effective_permissions",
+                new=AsyncMock(
+                    return_value=CurrentUserPermissionsResponse(
+                        tenant_id="tenant-1",
+                        user_id="owner-1",
+                        legacy_role="owner",
+                        role_codes=["tenant_owner"],
+                        role_labels=["Tenant Owner"],
+                        privilege_codes=["bills.manage"],
+                        must_change_password=False,
+                    )
+                ),
+            ),
+            TestClient(app) as client,
+        ):
             response = client.post("/api/v1/bills/bill-1/void")
     finally:
         app.dependency_overrides.clear()

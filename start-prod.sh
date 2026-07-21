@@ -48,7 +48,7 @@ echo ""
 
 # Build + start
 echo "▶ Building Docker images (this may take a few minutes on first run)..."
-docker compose \
+AETHOS_ENV_FILE="$ENV_FILE" docker compose \
   -f "$SCRIPT_DIR/infra/docker-compose.prod.yml" \
   --project-directory "$SCRIPT_DIR" \
   --env-file "$ENV_FILE" \

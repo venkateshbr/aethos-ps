@@ -7,7 +7,13 @@ export interface AgingReport {
   '31_60': string;
   '61_90': string;
   over_90: string;
+  unallocated?: string;
   total: string;
+}
+
+export interface TenantAccountingContext {
+  tenant_id: string;
+  base_currency: string;
 }
 
 export interface PnlRow {
@@ -447,10 +453,23 @@ export interface StatutoryReportingPack {
   generated_at: string;
 }
 
+export function statementPeriodRangeError(periodStart: string, periodEnd: string): string | null {
+  if (!periodStart || !periodEnd) {
+    return 'Select both a start and end period.';
+  }
+  if (periodEnd < periodStart) {
+    return 'End period must be the same as or after the start period.';
+  }
+  return null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private http = inject(HttpClient);
   private base = '/api/v1/reports';
+
+  getAccountingContext = (): Observable<TenantAccountingContext> =>
+    this.http.get<TenantAccountingContext>('/api/v1/tenants/accounting-context');
 
   getArAging = (): Observable<AgingReport> =>
     this.http.get<AgingReport>(`${this.base}/ar-aging`);
@@ -533,18 +552,33 @@ export class ReportsService {
       `${this.base}/retained-earnings-roll-forward?period=${period}`,
     );
 
-  getIncomeStatement = (period?: string): Observable<IncomeStatementReport> => {
-    const params = period ? `?period_start=${period}&period_end=${period}` : '';
+  getIncomeStatement = (
+    periodStart?: string,
+    periodEnd?: string,
+  ): Observable<IncomeStatementReport> => {
+    const params = statementPeriodQuery(periodStart, periodEnd);
     return this.http.get<IncomeStatementReport>(`${this.base}/income-statement${params}`);
   };
 
-  getCashFlow = (period?: string): Observable<CashFlowReport> => {
-    const params = period ? `?period_start=${period}&period_end=${period}` : '';
+  getCashFlow = (
+    periodStart?: string,
+    periodEnd?: string,
+  ): Observable<CashFlowReport> => {
+    const params = statementPeriodQuery(periodStart, periodEnd);
     return this.http.get<CashFlowReport>(`${this.base}/cash-flow${params}`);
   };
 
-  getStatutoryPack = (period: string): Observable<StatutoryReportingPack> =>
+  getStatutoryPack = (
+    periodStart: string,
+    periodEnd?: string,
+  ): Observable<StatutoryReportingPack> =>
     this.http.get<StatutoryReportingPack>(
-      `${this.base}/statutory-pack?period_start=${period}&period_end=${period}`,
+      `${this.base}/statutory-pack${statementPeriodQuery(periodStart, periodEnd)}`,
     );
+}
+
+function statementPeriodQuery(periodStart?: string, periodEnd?: string): string {
+  if (!periodStart) return '';
+  const inclusiveEnd = periodEnd || periodStart;
+  return `?period_start=${periodStart}&period_end=${inclusiveEnd}`;
 }

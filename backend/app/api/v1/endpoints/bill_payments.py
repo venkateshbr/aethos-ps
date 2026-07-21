@@ -3,12 +3,12 @@
 # Prahari review required — see docs/team/SECURITY_REVIEW.md
 
 RBAC:
-  read:    authenticated user (viewer+)
-  create:  admin+
-  approve: admin+
-  export:  admin+
-  settle:  admin+
-  propose: admin+
+  read:    bill_payments.read
+  create:  bill_payments.prepare
+  approve: bill_payments.approve
+  export:  bill_payments.export
+  mark-sent / settle: bill_payments.settle
+  propose: bill_payments.prepare
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app.core.auth import CurrentUser, get_current_user
+from app.core.auth import CurrentUser
 from app.core.db import get_service_role_client, get_user_rls_client
-from app.core.rbac import UserRole, require_role
+from app.core.permissions import require_privilege
 from app.core.tenant import get_tenant_id
 from app.services.bill_payments_service import BillPaymentsService
 from supabase import Client
@@ -66,7 +66,7 @@ class CreateBatchRequest(BaseModel):
 def list_batches(
     status: str | None = Query(None),
     svc: BillPaymentsService = Depends(_read_service),  # noqa: B008
-    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    _user: CurrentUser = require_privilege("bill_payments.read"),  # noqa: B008
 ) -> list[dict]:
     return svc.list_batches(status=status)
 
@@ -75,7 +75,7 @@ def list_batches(
 def create_batch(
     body: CreateBatchRequest,
     svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_privilege("bill_payments.prepare"),  # noqa: B008
 ) -> dict:
     return svc.create_batch(body.bill_ids, body.pay_date, body.bank_account_label, user.user_id)
 
@@ -84,7 +84,7 @@ def create_batch(
 def get_batch(
     batch_id: str,
     svc: BillPaymentsService = Depends(_read_service),  # noqa: B008
-    _user: CurrentUser = Depends(get_current_user),  # noqa: B008
+    _user: CurrentUser = require_privilege("bill_payments.read"),  # noqa: B008
 ) -> dict:
     return svc.get_batch(batch_id)
 
@@ -93,7 +93,7 @@ def get_batch(
 def approve_batch(
     batch_id: str,
     svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_privilege("bill_payments.approve"),  # noqa: B008
 ) -> dict:
     return svc.approve_batch(batch_id, user.user_id)
 
@@ -103,7 +103,7 @@ def export_batch(
     batch_id: str,
     format: str = Query("csv", pattern="^(nacha|csv)$"),
     svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_privilege("bill_payments.export"),  # noqa: B008
 ) -> Response:
     if format == "nacha":
         content = svc.export_nacha(batch_id, user.user_id)
@@ -124,7 +124,10 @@ def export_batch(
 def mark_sent(
     batch_id: str,
     svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    # Mark-sent advances an exported instruction into the external
+    # money-movement lifecycle, so it deliberately requires settle rather
+    # than the narrower file-generation privilege.
+    user: CurrentUser = require_privilege("bill_payments.settle"),  # noqa: B008
 ) -> dict:
     return svc.mark_sent(batch_id, user.user_id)
 
@@ -133,7 +136,7 @@ def mark_sent(
 def settle_batch(
     batch_id: str,
     svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_privilege("bill_payments.settle"),  # noqa: B008
 ) -> dict:
     return svc.settle_batch(batch_id, user.user_id)
 
@@ -143,7 +146,7 @@ async def propose(
     due_within_days: int = Query(7, ge=1, le=90),
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
-    user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    user: CurrentUser = require_privilege("bill_payments.prepare"),  # noqa: B008
 ) -> dict:
     """Ask the bill_pay_agent to propose a payment batch.
 

@@ -10,6 +10,7 @@ Tests:
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -162,12 +163,14 @@ async def test_fx_gain_posts_journal() -> None:
             payment_currency="USD",
             payment_base_amount=Decimal("1000.00"),
             base_currency="USD",
+            payment_date=date(2026, 5, 31),
         )
 
     assert result == Decimal("10.00")
     mock_post.assert_called_once()
     call_kwargs = mock_post.call_args.kwargs
     assert call_kwargs["reference_type"] == "fx_gain_loss"
+    assert call_kwargs["entry_date"] == "2026-05-31"
     # Gain: first line is DR 1200
     lines = call_kwargs["lines"]
     assert lines[0].direction == "DR"

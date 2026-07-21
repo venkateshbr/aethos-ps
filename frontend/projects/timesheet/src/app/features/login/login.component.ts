@@ -75,7 +75,7 @@ export class LoginComponent {
     // Resolve tenant via the self-read policy (migration 0020).
     const { data: memberships, error: memErr } = await this.supa.client
       .from('tenant_users')
-      .select('tenant_id')
+      .select('tenant_id, must_change_password')
       .eq('user_id', userId)
       .is('deleted_at', null)
       .limit(1);
@@ -84,7 +84,8 @@ export class LoginComponent {
       this.loading.set(false);
       return;
     }
-    this.auth.setSession(token, memberships[0].tenant_id as string);
-    await this.router.navigateByUrl('/timesheet');
+    const mustChangePassword = Boolean(memberships[0].must_change_password);
+    this.auth.setSession(token, memberships[0].tenant_id as string, mustChangePassword);
+    await this.router.navigateByUrl(mustChangePassword ? '/change-password' : '/timesheet');
   }
 }

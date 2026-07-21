@@ -23,7 +23,7 @@ interface SubscriptionStatus {
  *
  * Layout:
  *   ┌──────────────────────────────────────────────────────────────┐
- *   │  ◆ Aethos   Atlas · Inbox · Docs · Engage · Invoice …       │  ← top nav
+ *   │  ◆ Aethos   Nous · Inbox · Docs · Engage · Invoice …       │  ← top nav
  *   ├──────────────────────────────────────────────────────────────┤
  *   │                                                              │
  *   │                  <router-outlet />                           │  ← full-width content
@@ -53,7 +53,7 @@ interface SubscriptionStatus {
           <!-- Logo mark + wordmark -->
           <a routerLink="/app/copilot"
              class="flex items-center gap-2 mr-4 flex-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
-             aria-label="Aethos - go to Atlas">
+             aria-label="Aethos - go to Nous">
             <span class="lockup-mark inline-block w-4 h-4 bg-accent rounded-[2.5px] flex-none" aria-hidden="true"></span>
             <span class="text-sm font-bold tracking-wide text-text-primary hidden sm:block">Aethos</span>
           </a>
@@ -182,7 +182,7 @@ export class ShellComponent implements OnInit {
 
   /** Primary nav — always visible in the top bar (with icon + label on ≥md) */
   readonly primaryNav: NavItem[] = [
-    { label: 'Atlas',       icon: 'auto_awesome', route: '/app/copilot' },
+    { label: 'Nous',       icon: 'auto_awesome', route: '/app/copilot' },
     { label: 'Documents',   icon: 'upload_file',  route: '/app/documents' },
     { label: 'Inbox',       icon: 'inbox',        route: '/app/inbox' },
     { label: 'Engagements', icon: 'work',         route: '/app/engagements' },

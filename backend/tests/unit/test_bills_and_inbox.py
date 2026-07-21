@@ -14,8 +14,10 @@ All tests are pure-Python — no I/O, no DB, no HTTP.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date
 from decimal import Decimal
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -260,6 +262,206 @@ def test_ap_journal_requires_prepaid_account_for_prepaid_line() -> None:
             bill_number="BILL-006",
             currency="USD",
         )
+
+
+@pytest.mark.asyncio
+async def test_approve_foreign_bill_freezes_issue_date_fx_in_balanced_journal() -> None:
+    """A foreign bill approval freezes one FX provenance row on every GL line."""
+    from app.services.bills_service import BillsService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = MagicMock()
+    svc = BillsService(db, "tenant-1")
+    bill = {
+        "id": "bill-1",
+        "tenant_id": "tenant-1",
+        "client_id": "vendor-1",
+        "bill_number": "BILL-0001",
+        "currency": "USD",
+        "subtotal": "100.00",
+        "tax_total": "7.00",
+        "total": "107.00",
+        "base_currency": None,
+        "base_subtotal": None,
+        "base_tax_total": None,
+        "base_total": None,
+        "approval_fx_rate_id": None,
+        "status": "draft",
+        "issue_date": "2026-05-31",
+    }
+    bill_lines = [
+        {
+            "amount": "33.33",
+            "tax_amount": "7.00",
+            "account_id": "acct-consulting",
+        },
+        {
+            "amount": "66.67",
+            "tax_amount": "0.00",
+            "account_id": "acct-software",
+        },
+    ]
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("107.00"),
+        currency="USD",
+        base_amount=Decimal("142.67"),
+        base_currency="SGD",
+        rate=Decimal("1.333333"),
+        rate_date=date(2026, 5, 29),
+        fx_rate_id="fx-usd-sgd-2026-05-29",
+    )
+
+    svc._repo.get = AsyncMock(return_value=bill)
+    svc._repo.get_lines = AsyncMock(return_value=bill_lines)
+    svc._repo.get_account_id_by_code = AsyncMock(
+        side_effect=lambda code: {
+            "5000": "acct-expense",
+            "2000": "acct-ap",
+            "1300": "acct-input-tax",
+        }.get(code)
+    )
+    svc._repo.update = AsyncMock(return_value={**bill, "status": "approved"})
+
+    with (
+        patch(
+            "app.services.bills_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ) as resolve_fx,
+        patch(
+            "app.services.bills_service.post_journal",
+            return_value={"id": "journal-1"},
+        ) as post_journal_mock,
+    ):
+        result = await svc.approve_bill("bill-1", approved_by="user-1")
+
+    resolve_fx.assert_awaited_once_with(
+        db=db,
+        tenant_id="tenant-1",
+        amount=Decimal("107.00"),
+        currency="USD",
+        paid_at="2026-05-31",
+    )
+    journal_lines = post_journal_mock.call_args.args[7]
+    debit_base = sum(
+        line.base_amount for line in journal_lines if line.direction == "DR"
+    )
+    credit_base = sum(
+        line.base_amount for line in journal_lines if line.direction == "CR"
+    )
+    assert [line.base_amount for line in journal_lines] == [
+        Decimal("44.44"),
+        Decimal("88.90"),
+        Decimal("9.33"),
+        Decimal("142.67"),
+    ]
+    assert debit_base == credit_base == Decimal("142.67")
+    assert [line.fx_rate_id for line in journal_lines] == [
+        "fx-usd-sgd-2026-05-29",
+        "fx-usd-sgd-2026-05-29",
+        "fx-usd-sgd-2026-05-29",
+        "fx-usd-sgd-2026-05-29",
+    ]
+    svc._repo.update.assert_awaited_once_with(
+        "bill-1",
+        {
+            "status": "approved",
+            "base_currency": "SGD",
+            "base_subtotal": "133.34",
+            "base_tax_total": "9.33",
+            "base_total": "142.67",
+            "approval_fx_rate_id": "fx-usd-sgd-2026-05-29",
+        },
+    )
+    assert result.status == "approved"
+    assert result.journal_entry_id == "journal-1"
+
+
+@pytest.mark.asyncio
+async def test_approve_foreign_bill_missing_fx_rejects_before_journal_or_status() -> None:
+    from fastapi import HTTPException
+
+    from app.domain.fx import FxRateNotFoundError
+    from app.services.bills_service import BillsService
+
+    db = MagicMock()
+    svc = BillsService(db, "tenant-1")
+    svc._repo.get = AsyncMock(
+        return_value={
+            "id": "bill-1",
+            "tenant_id": "tenant-1",
+            "client_id": "vendor-1",
+            "bill_number": "BILL-0001",
+            "currency": "USD",
+            "total": "100.00",
+            "base_currency": None,
+            "base_subtotal": None,
+            "base_tax_total": None,
+            "base_total": None,
+            "approval_fx_rate_id": None,
+            "status": "draft",
+            "issue_date": "2026-05-31",
+        }
+    )
+    svc._repo.get_lines = AsyncMock(
+        return_value=[{"amount": "100.00", "tax_amount": "0.00"}]
+    )
+    svc._repo.update = AsyncMock()
+
+    with (
+        patch(
+            "app.services.bills_service.payment_fx_amounts",
+            new=AsyncMock(
+                side_effect=FxRateNotFoundError("USD", "SGD", date(2026, 5, 31))
+            ),
+        ),
+        patch("app.services.bills_service.post_journal") as post_journal_mock,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.approve_bill("bill-1", approved_by="user-1")
+
+    assert exc_info.value.status_code == 422
+    assert "2026-05-31" in exc_info.value.detail
+    post_journal_mock.assert_not_called()
+    svc._repo.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_approve_bill_requires_fx_persistence_schema_before_journal() -> None:
+    from fastapi import HTTPException
+
+    from app.services.bills_service import BillsService
+
+    db = MagicMock()
+    svc = BillsService(db, "tenant-1")
+    svc._repo.get = AsyncMock(
+        return_value={
+            "id": "bill-1",
+            "tenant_id": "tenant-1",
+            "client_id": "vendor-1",
+            "bill_number": "BILL-0001",
+            "currency": "USD",
+            "total": "100.00",
+            "status": "draft",
+            "issue_date": "2026-05-31",
+        }
+    )
+    svc._repo.update = AsyncMock()
+
+    with (
+        patch(
+            "app.services.bills_service.payment_fx_amounts",
+            new=AsyncMock(),
+        ) as resolve_fx,
+        patch("app.services.bills_service.post_journal") as post_journal_mock,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.approve_bill("bill-1", approved_by="user-1")
+
+    assert exc_info.value.status_code == 503
+    assert "0102" in exc_info.value.detail
+    resolve_fx.assert_not_awaited()
+    post_journal_mock.assert_not_called()
+    svc._repo.update.assert_not_awaited()
 
 
 def test_validate_journal_balance_empty_balances() -> None:

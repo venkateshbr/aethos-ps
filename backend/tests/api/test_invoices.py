@@ -1,8 +1,8 @@
 """Invoice CRUD + lifecycle + public view (C15 + C17).
 
 Covers:
-- create draft invoice with lines (manager+)
-- approve → status changes (admin+) and AR journal entry posts
+- create draft invoice with lines (``invoices.draft``)
+- approve → status changes (``invoices.post``) and AR journal entry posts
 - list filters by engagement and status
 - public /p/{token} renders without auth
 - cross-tenant invoice access returns 404 (C31 sentinel)
@@ -35,17 +35,6 @@ def manager_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
     u = world.tenant_a.members["manager"]
     headers = {
         "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='manager')}",
-        "X-Tenant-ID": world.tenant_a.tenant_id,
-    }
-    with httpx.Client(base_url=api_base_url, headers=headers, timeout=15.0) as c:
-        yield c
-
-
-@pytest.fixture
-def admin_a(api_base_url: str, world: SeedWorld) -> httpx.Client:
-    u = world.tenant_a.owner
-    headers = {
-        "Authorization": f"Bearer {mint_jwt(user_id=u.user_id, email=u.email, role='admin')}",
         "X-Tenant-ID": world.tenant_a.tenant_id,
     }
     with httpx.Client(base_url=api_base_url, headers=headers, timeout=15.0) as c:
@@ -164,20 +153,21 @@ def test_get_invoice_cross_tenant_returns_404(
 # ---------------------------------------------------------------------------
 
 
-def test_manager_cannot_approve_invoice_admin_can(
-    manager_a: httpx.Client, admin_a: httpx.Client, world: SeedWorld
+def test_viewer_cannot_approve_invoice_finance_manager_can(
+    manager_a: httpx.Client,
+    client_a_viewer: httpx.Client,
+    world: SeedWorld,
 ) -> None:
-    """Approve requires admin. Manager gets 403; admin gets 200."""
+    """Invoice posting follows exact catalog privileges, not legacy role rank."""
     r = manager_a.post("/api/v1/invoices", json=_make_invoice_payload(world))
     assert r.status_code == 201, r.text
     inv_id = r.json()["id"]
 
-    rm = manager_a.patch(f"/api/v1/invoices/{inv_id}/approve")
-    assert rm.status_code == 403, f"Manager allowed to approve: {rm.status_code}"
+    denied = client_a_viewer.patch(f"/api/v1/invoices/{inv_id}/approve")
+    assert denied.status_code == 403, f"Viewer allowed to approve: {denied.status_code}"
 
-    ra = admin_a.patch(f"/api/v1/invoices/{inv_id}/approve")
-    # 200 or 409 (already approved) — but never 403 for admin
-    assert ra.status_code in (200, 409), ra.text
+    approved = manager_a.patch(f"/api/v1/invoices/{inv_id}/approve")
+    assert approved.status_code in (200, 409), approved.text
 
 
 # ---------------------------------------------------------------------------

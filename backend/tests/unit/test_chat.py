@@ -412,18 +412,11 @@ async def test_hermes_runtime_adapter_streams_visible_text(
     monkeypatch.setattr(atlas_context.settings, "atlas_context_signing_secret", "secret")
 
     class FakeHermesClient:
-        async def create_response(self, **kwargs):
+        async def stream_response(self, **kwargs):
             assert kwargs["conversation"] == "aethos:tenant-1:user-1:thread-1"
             assert "context_ref" in kwargs["instructions"]
-            return {
-                "output": [
-                    {"type": "function_call", "name": "internal_tool"},
-                    {
-                        "type": "message",
-                        "content": [{"type": "output_text", "text": "Visible reply"}],
-                    },
-                ]
-            }
+            for chunk in ("Visible ", "reply"):
+                yield chunk
 
     adapter = HermesAgentRuntimeAdapter(
         tenant_id="tenant-1",
@@ -445,24 +438,45 @@ async def test_hermes_runtime_adapter_streams_visible_text(
 
 
 @pytest.mark.asyncio
+async def test_hermes_runtime_adapter_suppresses_tail_tool_leak():
+    """A safe answer that starts streaming then leaks a tool name is truncated."""
+    from app.services.atlas_runtime import HermesAgentRuntimeAdapter
+
+    safe_prefix = "Your AR aging total is GBP 20,696.28 across current invoices. " * 3
+
+    class LeakyTailHermesClient:
+        async def stream_response(self, **kwargs):
+            # First a long, safe prefix (crosses the classify threshold and is
+            # streamed), then a chunk that leaks an internal tool path.
+            yield safe_prefix
+            yield " (source: aethos.finance.ar_aging tool output)"
+
+    adapter = HermesAgentRuntimeAdapter(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        client=LeakyTailHermesClient(),
+    )
+    frames = [
+        frame
+        async for frame in adapter.stream_message(user_message="hi", thread_id="thread-1")
+    ]
+    joined = json.dumps([json.loads(f[6:].strip()) for f in frames])
+    # The safe prefix streamed; the leaky tail was suppressed, not shown.
+    assert "AR aging total" in joined
+    assert "aethos.finance" not in joined
+    assert "tool output" not in joined
+
+
+@pytest.mark.asyncio
 async def test_hermes_runtime_adapter_hides_provider_error_text():
     from app.services.atlas_runtime import HermesAgentRuntimeAdapter
 
     class ProviderErrorHermesClient:
-        async def create_response(self, **kwargs):
-            return {
-                "output": [
-                    {
-                        "type": "message",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": "HTTP 403: Key limit exceeded. Manage it using https://openrouter.ai/workspaces/example",
-                            }
-                        ],
-                    }
-                ]
-            }
+        async def stream_response(self, **kwargs):
+            yield (
+                "HTTP 403: Key limit exceeded. Manage it using "
+                "https://openrouter.ai/workspaces/example"
+            )
 
     adapter = HermesAgentRuntimeAdapter(
         tenant_id="tenant-1",
@@ -479,7 +493,7 @@ async def test_hermes_runtime_adapter_hides_provider_error_text():
 
     assert len(frames) == 1
     payload = json.loads(frames[0][6:].strip())
-    assert payload["error"] == "Atlas is temporarily unavailable. Please try again shortly."
+    assert payload["error"] == "Nous is temporarily unavailable. Please try again shortly."
     assert "openrouter" not in json.dumps(payload).lower()
 
 
@@ -489,7 +503,7 @@ async def test_hermes_runtime_adapter_classifies_http_provider_failure():
     from app.services.operational_telemetry import telemetry
 
     class ProviderFailureHermesClient:
-        async def create_response(self, **kwargs):
+        async def stream_response(self, **kwargs):
             request = httpx.Request("POST", "https://hermes.internal/v1/responses")
             response = httpx.Response(429, request=request)
             raise httpx.HTTPStatusError(
@@ -497,6 +511,7 @@ async def test_hermes_runtime_adapter_classifies_http_provider_failure():
                 request=request,
                 response=response,
             )
+            yield ""  # pragma: no cover - makes this an async generator
 
     telemetry.reset()
     adapter = HermesAgentRuntimeAdapter(
@@ -513,7 +528,7 @@ async def test_hermes_runtime_adapter_classifies_http_provider_failure():
     ]
 
     payload = json.loads(frames[0][6:].strip())
-    assert payload["error"] == "Atlas is temporarily unavailable. Please try again shortly."
+    assert payload["error"] == "Nous is temporarily unavailable. Please try again shortly."
     assert telemetry.snapshot()["background_failures"] == [
         {"worker_name": "atlas_provider_rate_limit", "count": 1}
     ]

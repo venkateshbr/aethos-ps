@@ -1,4 +1,4 @@
-"""Deterministic Atlas responses for high-control finance operations.
+"""Deterministic Nous responses for high-control finance operations.
 
 The LLM runtimes remain the conversational layer, but core ERP read/action
 intents should not fail just because an upstream model is slow or rate-limited.
@@ -8,6 +8,7 @@ and formats responses from Aethos services without exposing tool internals.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
+from app.services.agent_run_ledger import AgentRunLedger
 from app.services.atlas_context import AtlasToolContext
 from app.services.atlas_read_packs import AtlasReadPackService
 from app.services.atlas_semantic_intent_router import AtlasIntentRoute, AtlasSemanticIntentRouter
@@ -22,6 +24,8 @@ from app.services.o2c_read_service import O2CReadService
 from app.services.p2p_read_service import P2PReadService
 from app.services.r2r_read_service import R2RReadService, normalise_period
 from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 _MONTHS = {
     "january": "01",
@@ -38,11 +42,22 @@ _MONTHS = {
     "december": "12",
 }
 
+# Most action intents are implemented by the Nous runtime tool loop. The
+# deterministic responder must not claim success unless it actually creates
+# the review artifact. Finance Ops action plans and manual journals are the
+# action routes in this module that call materializing tools directly.
+_DETERMINISTICALLY_MATERIALIZED_ACTIONS = {
+    "finance_ops_action_plan",
+    "manual_journal",
+    "time_log",
+}
+
 
 @dataclass(frozen=True)
 class SemanticAtlasResponse:
     text: str
     route: AtlasIntentRoute
+    tool_name: str | None = None
 
 
 async def render_semantic_atlas_response(
@@ -103,6 +118,7 @@ class _DeterministicAtlasResponder:
         self.tenant_id = tenant_id
         self.current_user = current_user
         self.thread_id = thread_id
+        self._materialized_tool_name: str | None = None
 
     async def answer(self, message: str) -> str | None:
         response = await self.semantic_answer(message, min_confidence=0.72)
@@ -117,10 +133,20 @@ class _DeterministicAtlasResponder:
         route = AtlasSemanticIntentRouter().classify(message)
         if route is None or route.confidence < min_confidence:
             return None
+        if (
+            route.action_required
+            and route.intent not in _DETERMINISTICALLY_MATERIALIZED_ACTIONS
+        ):
+            return None
+        self._materialized_tool_name = None
         text = await self._answer_route(route, message)
         if text is None:
             return None
-        return SemanticAtlasResponse(text=text, route=route)
+        return SemanticAtlasResponse(
+            text=text,
+            route=route,
+            tool_name=self._materialized_tool_name,
+        )
 
     async def _answer_route(self, route: AtlasIntentRoute, message: str) -> str | None:
         period = _period_from_text(message)
@@ -139,7 +165,7 @@ class _DeterministicAtlasResponder:
         if route.intent == "finance_ops_check":
             return self._format_finance_ops_check(period=period)
         if route.intent == "time_log":
-            return self._format_time_log()
+            return await self._format_time_log(message)
         if route.intent == "capped_tax_engagement":
             return self._format_capped_tax()
         if route.intent == "invoice_drilldown":
@@ -216,14 +242,140 @@ class _DeterministicAtlasResponder:
             nonce="deterministic-atlas",
         )
 
-    def _format_time_log(self) -> str:
+    async def _format_time_log(self, message: str) -> str:
+        arguments = _time_log_arguments(message)
+        if arguments is None:
+            return self._format_time_log_failure(
+                "Project, hours, date, and exact description are required."
+            )
+
+        ledger = AgentRunLedger(self.db, self.tenant_id)
+        run_id = await ledger.start_run(
+            agent_name="copilot_agent",
+            trigger_type="semantic_intent",
+            user_id=self.current_user.user_id,
+            input_payload=arguments,
+            prompt_version="atlas-semantic-time-log-v1",
+        )
+        started_at = time.perf_counter()
+        try:
+            result = await atlas_tools._log_time_entry(
+                self.db,
+                self._context(),
+                arguments,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Deterministic time-entry materialization failed",
+                extra={
+                    "tenant_id": self.tenant_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            failure = {"error_type": type(exc).__name__}
+            await self._record_time_log_result(
+                ledger,
+                run_id,
+                arguments=arguments,
+                result=failure,
+                status="failed",
+                started_at=started_at,
+                error_message="materialization_failed",
+            )
+            return self._format_time_log_failure(
+                "No Inbox review artifact was persisted."
+            )
+
+        suggestion_id = result.get("suggestion_id") if isinstance(result, dict) else None
+        materialized = (
+            isinstance(result, dict)
+            and result.get("requires_review") is True
+            and isinstance(suggestion_id, str)
+            and bool(suggestion_id.strip())
+            and result.get("action_type") == "copilot_log_time_entry"
+            and result.get("tool_name") == "log_time_entry"
+            and not result.get("error")
+            and not result.get("policy_denied")
+            and not result.get("hitl_routing_failed")
+            and not result.get("duplicate_suppressed")
+        )
+        if not materialized or not isinstance(result, dict):
+            failure = {
+                "materialized": False,
+                "action_type": "copilot_log_time_entry",
+                "tool_name": "log_time_entry",
+            }
+            await self._record_time_log_result(
+                ledger,
+                run_id,
+                arguments=arguments,
+                result=failure,
+                status="failed",
+                started_at=started_at,
+                error_message="review_artifact_missing",
+            )
+            return self._format_time_log_failure(
+                "No Inbox review artifact was persisted."
+            )
+
+        await self._record_time_log_result(
+            ledger,
+            run_id,
+            arguments=arguments,
+            result=result,
+            status="skipped",
+            started_at=started_at,
+        )
+        self._materialized_tool_name = "log_time_entry"
+        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
         return "\n".join(
             [
-                "Prepared the Nexus CFO Advisory time entry for review.",
-                "- Time: 4.5 hours today on Nexus CFO Advisory.",
-                "- Narrative: board pack review and cash flow modelling.",
-                "- Billing: billable advisory time; expected rate is the reviewed CFO Advisory rate-card rate.",
-                "- Status: logged/prepared for the authenticated employee if employee resolution is available; otherwise route the time-entry action to Inbox/manager approval for employee mapping.",
+                "Prepared the time entry and routed it to Inbox for review.",
+                (
+                    f"- Time: {arguments['hours']} hours on "
+                    f"{arguments['project_name']} for {arguments['date']}."
+                ),
+                f"- Description: {arguments['description']}",
+                f"- Inbox review reference: {suggestion_ref}.",
+                "- No time entry was posted before approval.",
+            ]
+        )
+
+    async def _record_time_log_result(
+        self,
+        ledger: AgentRunLedger,
+        run_id: str | None,
+        *,
+        arguments: dict[str, object],
+        result: dict[str, object],
+        status: str,
+        started_at: float,
+        error_message: str | None = None,
+    ) -> None:
+        await ledger.record_tool_invocation(
+            run_id,
+            tool_name="log_time_entry",
+            risk_class="write_low_risk",
+            input_payload=arguments,
+            output_payload=result,
+            status=status,  # type: ignore[arg-type]
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+            error_message=error_message,
+        )
+        await ledger.complete_run(
+            run_id,
+            status="failed" if status == "failed" else "succeeded",
+            output_payload=result,
+            error_message=error_message,
+        )
+
+    @staticmethod
+    def _format_time_log_failure(reason: str) -> str:
+        return "\n".join(
+            [
+                "Unable to prepare the time entry.",
+                f"- Status: failed; {reason}",
+                "- No time entry was posted or approved.",
             ]
         )
 
@@ -482,7 +634,7 @@ class _DeterministicAtlasResponder:
                 "Configuration and telemetry readiness is summarized with user-safe status flags.",
                 "Approval controls: role and threshold policy are active; high-risk Inbox items require role review.",
                 "Scheduled Finance Ops Manager settings: cadence, escalation windows, last run, and open scheduled plans should be reviewed before enablement.",
-                "Atlas runtime: configurable between Aethos basic AI and Hermes-powered Atlas; fallback can route degraded Hermes turns to basic Atlas.",
+                "Nous runtime: configurable between Aethos basic AI and Hermes-powered Nous; fallback can route degraded Hermes turns to basic Nous.",
                 "Langfuse observability: configured state, base URL status, and sample rate are summarized as safe status flags; low-level diagnostics stay internal.",
                 "Operational alerts: show alert route and active alert items for background failures, workflow failures, and degraded health.",
                 "Public abuse-path controls: rate limits, abuse alerts, and sanitized public endpoint reporting protect public invoice/payment paths.",
@@ -513,16 +665,137 @@ class _DeterministicAtlasResponder:
             ]
         )
 
-    async def _format_finance_ops_action_plan(self, *, period: str | None) -> str:
+    async def _format_finance_ops_action_plan(
+        self,
+        *,
+        period: str | None,
+    ) -> str:
+        arguments: dict[str, object] = {"limit": 5}
+        if period is not None:
+            arguments["period"] = period
+        ledger = AgentRunLedger(self.db, self.tenant_id)
+        run_id = await ledger.start_run(
+            agent_name="copilot_agent",
+            trigger_type="semantic_intent",
+            user_id=self.current_user.user_id,
+            input_payload=arguments,
+            prompt_version="atlas-semantic-finance-ops-v1",
+        )
+        started_at = time.perf_counter()
+        try:
+            result = await atlas_tools._create_finance_ops_action_plan(
+                self.db,
+                self._context(),
+                arguments,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Deterministic Finance Ops action-plan materialization failed",
+                extra={
+                    "tenant_id": self.tenant_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            failure = {"error_type": type(exc).__name__}
+            await ledger.record_tool_invocation(
+                run_id,
+                tool_name="create_finance_ops_action_plan",
+                risk_class="draft",
+                input_payload=arguments,
+                output_payload=failure,
+                status="failed",
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                error_message="materialization_failed",
+            )
+            await ledger.complete_run(
+                run_id,
+                status="failed",
+                output_payload=failure,
+                error_message="materialization_failed",
+            )
+            return self._format_finance_ops_action_plan_failure(period=period)
+        suggestion_id = result.get("suggestion_id") if isinstance(result, dict) else None
+        materialized = False
+        if isinstance(result, dict):
+            materialized = (
+                result.get("requires_review") is True
+                and isinstance(suggestion_id, str)
+                and bool(suggestion_id.strip())
+                and result.get("action_type")
+                == "copilot_create_finance_ops_action_plan"
+                and result.get("tool_name") == "create_finance_ops_action_plan"
+                and not result.get("error")
+                and not result.get("policy_denied")
+                and not result.get("hitl_routing_failed")
+                and not result.get("duplicate_suppressed")
+            )
+        if not materialized or not isinstance(result, dict):
+            failure = {
+                "materialized": False,
+                "action_type": "copilot_create_finance_ops_action_plan",
+                "tool_name": "create_finance_ops_action_plan",
+            }
+            await ledger.record_tool_invocation(
+                run_id,
+                tool_name="create_finance_ops_action_plan",
+                risk_class="draft",
+                input_payload=arguments,
+                output_payload=failure,
+                status="failed",
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                error_message="review_artifact_missing",
+            )
+            await ledger.complete_run(
+                run_id,
+                status="failed",
+                output_payload=failure,
+                error_message="review_artifact_missing",
+            )
+            return self._format_finance_ops_action_plan_failure(period=period)
+
+        await ledger.record_tool_invocation(
+            run_id,
+            tool_name="create_finance_ops_action_plan",
+            risk_class="draft",
+            input_payload=arguments,
+            output_payload=result,
+            status="skipped",
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+        )
+        await ledger.complete_run(
+            run_id,
+            status="succeeded",
+            output_payload=result,
+        )
+        self._materialized_tool_name = "create_finance_ops_action_plan"
+        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
+
+        status_message = result.get("message")
+        if not isinstance(status_message, str) or not status_message.strip():
+            status_message = "Created an Inbox review task before applying this change."
+        approval_boundary = result.get("approval_boundary")
+        if not isinstance(approval_boundary, str) or not approval_boundary.strip():
+            approval_boundary = (
+                "No invoice, payment, journal, or email was approved, posted, "
+                "paid, or sent directly."
+            )
         return "\n".join(
             [
-                f"Created the next recommended Finance Ops action plan for {_period_label(period)} with at most five manager-reviewed work items.",
-                "- Work item 1: billing review for invoices/draft invoices.",
-                "- Work item 2: payment review for due approved vendor bills.",
-                "- Work item 3: collections review for overdue customer invoices.",
-                "- Work item 4: journal/close review for draft journals and close blockers.",
-                "- Work item 5: evidence/approval review for high-risk Inbox items.",
-                "Route the action plan to Inbox for review. No invoices, payments, journals, or emails were approved, posted, paid, or sent directly.",
+                f"Created the next recommended Finance Ops action plan for {_period_label(period)} and routed it to Inbox for review.",
+                "- Work-item limit: at most five manager-reviewed items.",
+                f"- Inbox review reference: {suggestion_ref}.",
+                f"- Status: {status_message.strip()}",
+                f"- Approval boundary: {approval_boundary.strip()}",
+            ]
+        )
+
+    def _format_finance_ops_action_plan_failure(self, *, period: str | None) -> str:
+        return "\n".join(
+            [
+                f"Unable to prepare the Finance Ops action plan for {_period_label(period)}.",
+                "- Status: failed; no Inbox review artifact was persisted.",
+                "- No invoice, payment, journal, or email was approved, posted, paid, or sent directly.",
+                "- Next step: retry after Inbox persistence is available.",
             ]
         )
 
@@ -603,7 +876,7 @@ class _DeterministicAtlasResponder:
                 "Manual journal review should stay in Inbox until approval.",
                 f"Balance: {checks.get('balance') or 'verify debits equal credits'}; account validity: {checks.get('account_validity') or 'verify active GL accounts'}; period lock status: {checks.get('period_lock_status') or 'check close calendar'}.",
                 f"Business reason: {packet.get('business_reason') or 'required before approval'}. Supporting evidence: {packet.get('supporting_evidence') or 'attach source support before approval'}.",
-                "Approval role and segregation: controller/admin approval may be required, and the approver must be different from the submitter for threshold or Atlas-prepared journals. Do not post without Inbox approval.",
+                "Approval role and segregation: controller/admin approval may be required, and the approver must be different from the submitter for threshold or Nous-prepared journals. Do not post without Inbox approval.",
             ]
         )
 
@@ -877,6 +1150,36 @@ def _date_from_text(message: str) -> str | None:
     if not match:
         return None
     return f"{match.group(3)}-{_MONTHS[match.group(2)]}-{int(match.group(1)):02d}"
+
+
+def _time_log_arguments(message: str) -> dict[str, object] | None:
+    project_match = re.search(
+        r"\bproject\s+[\"“]([^\"”]+)[\"”]",
+        message,
+        re.IGNORECASE,
+    )
+    hours_match = re.search(
+        r"\b(?:exactly\s+)?(\d+(?:\.\d+)?)\s+(?:billable\s+)?hours?\b",
+        message,
+        re.IGNORECASE,
+    )
+    description_match = re.search(
+        r"\b(?:exact\s+)?description\s*:\s*[\"“]([^\"”]+)[\"”]",
+        message,
+        re.IGNORECASE,
+    )
+    entry_date = _date_from_text(message)
+    if not project_match or not hours_match or not description_match or not entry_date:
+        return None
+    return {
+        "project_name": project_match.group(1).strip(),
+        "hours": hours_match.group(1),
+        "date": entry_date,
+        "description": description_match.group(1).strip(),
+        "billable": not bool(
+            re.search(r"\bnon[- ]?billable\b", message, re.IGNORECASE)
+        ),
+    }
 
 
 def _client_name_from_text(text: str) -> str | None:

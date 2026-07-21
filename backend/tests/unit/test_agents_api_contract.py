@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,6 +19,11 @@ from app.services.agent_run_ledger import stable_payload_hash
 pytestmark = pytest.mark.unit
 
 TENANT_ID = "tenant-1"
+
+# Date-relative so the "current" (not-yet-due) invoice fixture stays current
+# regardless of the wall-clock day the suite runs on (previously hardcoded to
+# 2026-07-15, which flipped to "overdue" once that date passed).
+_CURRENT_INVOICE_DUE_DATE = (date.today() + timedelta(days=30)).isoformat()
 
 
 class _Query:
@@ -619,7 +625,7 @@ class _O2CReadDb(_DbBase):
                         "total": "5000",
                         "status": "approved",
                         "issue_date": "2026-06-20",
-                        "due_date": "2026-07-15",
+                        "due_date": _CURRENT_INVOICE_DUE_DATE,
                         "paid_at": None,
                         "stripe_payment_link_id": None,
                         "stripe_payment_link_url": None,
@@ -1029,6 +1035,7 @@ class _R2RReadDb(_DbBase):
         ] if include_tasks else []
         super().__init__(
             {
+                "tenants": [{"id": TENANT_ID, "base_currency": "USD"}],
                 "period_locks": period_locks,
                 "journal_entries": [
                     _journal_entry(
@@ -1230,6 +1237,7 @@ class _R2RNoDataDb(_DbBase):
     def __init__(self) -> None:
         super().__init__(
             {
+                "tenants": [{"id": TENANT_ID, "base_currency": "USD"}],
                 "period_locks": [],
                 "journal_entries": [
                     _journal_entry(

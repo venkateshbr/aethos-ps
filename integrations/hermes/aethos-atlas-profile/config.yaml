@@ -1,6 +1,9 @@
 model:
   provider: openrouter
-  default: google/gemma-4-31b-it:free
+  # Reliable paid model: the free tier's low token quota (16k) fails on this
+  # tool-heavy agent. Hermes does not env-substitute this field, so it is set
+  # explicitly; change it here per deployment.
+  default: anthropic/claude-haiku-4.5
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
@@ -31,7 +34,7 @@ mcp_servers:
     command: "python"
     args: ["/opt/aethos/aethos_mcp_server.py"]
     env:
-      AETHOS_INTERNAL_API_URL: "http://api:8080"
+      AETHOS_INTERNAL_API_URL: "${AETHOS_INTERNAL_API_URL}"
       AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN}"
       AETHOS_TOOL_TIMEOUT_SECONDS: "30"
     timeout: 45

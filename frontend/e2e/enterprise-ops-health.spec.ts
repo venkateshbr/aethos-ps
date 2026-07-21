@@ -241,7 +241,7 @@ test.describe('Enterprise operational health proof (#311)', () => {
 
     await page.goto(`${BASE}/app/settings`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
     const healthPanel = page.locator('app-tenant-health');
     await expect(healthPanel.getByRole('heading', { name: 'Operational Health' })).toBeVisible();
     await expect(healthPanel).toContainText('Degraded');

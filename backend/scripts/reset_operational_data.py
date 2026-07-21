@@ -33,6 +33,21 @@ PROTECTED_PUBLIC_TABLES = {
     "_prisma_migrations",
     "fx_rates",
     "schema_migrations",
+    # System RBAC master data (seeded by migration 0096). These mapping tables
+    # have NO tenant_id, but security_role_duties is an FK-child of
+    # security_roles (which DOES have tenant_id), so the FK-closure would
+    # otherwise discover it as "tenant-dependent" and DELETE ALL its rows —
+    # silently destroying the system role->duty->privilege chain and leaving
+    # every future tenant's users (including the owner) with zero effective
+    # privileges. Protect the whole security catalogue. NOTE: system roles in
+    # security_roles (tenant_id IS NULL) are already preserved by the tenant_id
+    # filter; only tenant-scoped CUSTOM roles are deleted. If tenant custom
+    # roles are ever seeded with duty mappings, add a role-scoped delete for
+    # their security_role_duties rows rather than removing this protection.
+    "security_privileges",
+    "security_duties",
+    "security_duty_privileges",
+    "security_role_duties",
 }
 PROTECTED_PUBLIC_PREFIXES = ("procrastinate_",)
 

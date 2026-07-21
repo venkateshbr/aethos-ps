@@ -19,7 +19,11 @@ import logging
 from decimal import ROUND_HALF_DOWN, Decimal
 
 from app.domain.journal_helper import JournalLineSpec, post_journal
-from app.services.payment_fx_service import payment_fx_amounts, tenant_base_currency
+from app.services.payment_fx_service import (
+    payment_fx_amounts,
+    payment_rate_date,
+    tenant_base_currency,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,7 @@ async def post_fx_gain_loss_if_needed(
     payment_base_amount: Decimal | None = None,
     base_currency: str | None = None,
     payment_date: datetime.date | str | None = None,
+    created_by: str | None = None,
 ) -> Decimal | None:
     """Post an FX gain/loss journal entry if the payment differs from invoice base.
 
@@ -58,6 +63,8 @@ async def post_fx_gain_loss_if_needed(
     invoice:          The invoice DB row (must include base_total and currency).
     payment_amount:   Amount received in payment_currency (smallest-unit already converted).
     payment_currency: ISO 4217 code of the payment.
+    created_by:       Authenticated receipt actor when available; automated
+                      settlement falls back to the tenant system actor.
 
     Returns
     -------
@@ -124,7 +131,7 @@ async def post_fx_gain_loss_if_needed(
         )
         return result.data[0]["user_id"] if result.data else None
 
-    actor_uuid = await asyncio.to_thread(_system_actor)
+    actor_uuid = created_by or await asyncio.to_thread(_system_actor)
     if actor_uuid is None:
         logger.error(
             "fx_gain_loss: no tenant_users actor — cannot post FX journal",
@@ -186,7 +193,7 @@ async def post_fx_gain_loss_if_needed(
             tenant_id=tenant_id,
             created_by=actor_uuid,
             description=f"Realised FX {label} on invoice {invoice_number}",
-            entry_date=datetime.date.today().isoformat(),
+            entry_date=payment_rate_date(payment_date).isoformat(),
             reference_type="fx_gain_loss",
             reference_id=invoice_id,
             lines=lines,

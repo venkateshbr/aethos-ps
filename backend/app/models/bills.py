@@ -72,6 +72,11 @@ class BillResponse(BaseModel):
     subtotal: str  # Decimal as string
     tax_total: str  # Decimal as string
     total: str  # Decimal as string
+    base_currency: str | None = None
+    base_subtotal: str | None = None
+    base_tax_total: str | None = None
+    base_total: str | None = None
+    approval_fx_rate_id: str | None = None
     status: str
     issue_date: str | None
     due_date: str | None

@@ -505,7 +505,7 @@ class AgentsService:
         """Return the safe Finance Ops Manager command-center state.
 
         This deliberately omits raw traces, replay pointers, context refs,
-        stack traces, and tool internals. It is meant for Atlas and manager
+        stack traces, and tool internals. It is meant for Nous and manager
         dashboards, not low-level debugging.
         """
         generated_at = datetime.now(UTC)

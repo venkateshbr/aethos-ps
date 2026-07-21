@@ -1,4 +1,4 @@
-"""Tenant-scoped read packs used by the Atlas tool broker."""
+"""Tenant-scoped read packs used by the Nous tool broker."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from supabase import Client
 
 
 class AtlasReadPackService:
-    """Build compact business-context payloads for Hermes-powered Atlas."""
+    """Build compact business-context payloads for Hermes-powered Nous."""
 
     def __init__(self, db: Client, tenant_id: str) -> None:
         self.db = db
@@ -288,7 +288,7 @@ class AtlasReadPackService:
                 "exposes_trace_payloads": False,
             },
             "configuration_telemetry_readiness": {
-                "atlas_runtime": "Atlas runtime is reported as configuration state, without hidden prompts or tool traces.",
+                "atlas_runtime": "Nous runtime is reported as configuration state, without hidden prompts or tool traces.",
                 "langfuse_observability": "Langfuse status reports whether tracing is configured; raw traces are never exposed to users.",
                 "operational_alerts": {
                     "route": (health.get("alerts") or {}).get("route") or {},
@@ -301,7 +301,7 @@ class AtlasReadPackService:
                     "sanitises_public_paths": True,
                 },
                 "response_contract": [
-                    "Mention Atlas runtime, Langfuse observability, operational alerts, and public abuse controls explicitly.",
+                    "Mention Nous runtime, Langfuse observability, operational alerts, and public abuse controls explicitly.",
                     "Do not expose secrets, raw logs, traces, stack traces, or tokens.",
                 ],
             },

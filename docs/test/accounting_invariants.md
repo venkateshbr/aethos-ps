@@ -1,6 +1,9 @@
 # Accounting Invariants
 
-> These invariants hold in every state of the system. They are tested as properties (Hypothesis) and asserted on every state-changing test.
+> These are required system properties. Coverage varies by invariant; the coverage
+> matrix at the end of this document is authoritative. **Automated** means an
+> executable test exists in this repository. **Manual**, **missing**, and
+> **blocked** evidence are not launch proof.
 
 ## I1 — Every journal entry balances
 
@@ -12,28 +15,10 @@ sum(journal_lines.amount where direction='DR') == sum(journal_lines.amount where
 
 For a multi-currency entry, balance check is against `base_amount` (tenant base). Foreign-currency residuals (max 0.01 in base) are absorbed into `7900 Realized FX Gain/Loss` by `accounting_guardian` — no other slack.
 
-Property test (`backend/tests/property/test_journal_balance.py`):
-
-```python
-from decimal import Decimal
-from hypothesis import given, strategies as st
-
-@st.composite
-def balanced_journal(draw):
-    n_lines = draw(st.integers(min_value=2, max_value=20))
-    debits = [draw(st.decimals(min_value=Decimal("0.01"), max_value=Decimal("100000.00"), places=2))
-              for _ in range(n_lines // 2)]
-    credits_total = sum(debits)
-    # Generate credits that exactly equal debits in count and sum
-    credits = draw(split_amount_strategy(credits_total, count=n_lines - len(debits)))
-    return list(zip(["DR"] * len(debits) + ["CR"] * len(credits), debits + credits))
-
-@given(balanced_journal())
-def test_journal_posts_when_balanced(lines):
-    je = post_journal(lines, tenant_id=TEST_TENANT)
-    assert sum(l.amount for l in je.lines if l.direction == "DR") == \
-           sum(l.amount for l in je.lines if l.direction == "CR")
-```
+The executable property test is
+`backend/tests/property/test_journal_balance.py`. It exercises the in-process
+`JournalEntry` balance model. Its two `accounting_guardian` properties remain
+strict `xfail`, and it does not post to a real database.
 
 ## I2 — Posted journals are immutable
 
@@ -44,16 +29,25 @@ For any `journal_entries` row with `status='posted'`:
 
 ## I3 — Tenant-scoped totals reconcile
 
-For every tenant T:
+For every tenant T, at the same as-of cutoff and in tenant base currency:
 
-- `sum(invoices.total where status in ('approved', 'sent', 'paid'))` ==
-  `sum(journal_lines.amount where account='1200 AR' and direction='DR')` —
-  `sum(payments.amount)`
-- `sum(bills.total where status in ('approved', 'paid'))` ==
-  `sum(journal_lines.amount where account='2000 AP' and direction='CR')` —
-  `sum(bill_payments.amount where status='settled')`
+- Net AR sub-ledger equals `sum(max(invoice.total_base -
+  invoice.amount_paid_base, 0))` for receivable-bearing statuses such as
+  `approved`, `sent`, `partially_paid`, and `overdue`. Draft and void invoices
+  are excluded; paid invoices contribute zero. This equals the AR control
+  account's net debit balance (`debits - credits`).
+- Net AP sub-ledger equals `sum(max(bill.total_base -
+  bill.amount_paid_base, 0))` for payable-bearing statuses such as `approved`,
+  `scheduled`, `paid_pending_clearance`, and `partially_paid`. Draft and void
+  bills are excluded; settled bills contribute zero. This equals the AP control
+  account's net credit balance (`credits - debits`).
 
-These are asserted at the end of every e2e run.
+If the schema stores transaction-currency totals rather than `*_base` columns,
+the reconciliation must use the frozen posting FX rate to derive base values.
+The same status semantics, cutoff timestamp, and payment-clearing state must be
+used on both sides. The deterministic Ishantech production runbook requires
+this tie-out, but no automated whole-run AR/AP reconciliation test currently
+exists.
 
 ## I4 — Period lock is total
 
@@ -78,17 +72,8 @@ Every `journal_lines` row stores both `amount` (foreign) and `base_amount` (tena
 - All money inputs validated to ≤ 2 decimal places before any computation.
 - API responses serialize money as strings (`"30.30"`, not `30.3`).
 
-Property test:
-
-```python
-@given(
-    st.decimals(min_value=0, max_value=Decimal("999999.99"), places=2),
-    st.decimals(min_value=0, max_value=Decimal("999999.99"), places=2),
-)
-def test_money_addition_preserves_precision(a, b):
-    result = a + b
-    assert result.as_tuple().exponent == -2  # exactly 2 decimal places
-```
+The executable property tests are in
+`backend/tests/property/test_money_precision.py`.
 
 ## I7 — Idempotency on external events
 
@@ -120,12 +105,16 @@ Any report rendered by `reporting_agent`:
 - The LLM may summarize, label, or explain — but every number in the output must be traceable to a specific tool result row.
 - Eval: hallucinated number = test failure with severity P0.
 
-## I11 — RLS enforcement is unconditional
+## I11 — Tenant isolation is unconditional
 
 For every tenant-scoped table:
 
-- Direct DB connection without `app.current_tenant_id` set returns 0 rows (RLS denies).
-- Service-role connection is only used inside the auth bootstrap and admin endpoints — never inside ordinary request handlers.
+- User-context reads use the caller JWT and RLS; a caller cannot select or
+  mutate another tenant's rows by changing a header or resource identifier.
+- Some ordinary authenticated handlers intentionally use a service-role client
+  for writes. Every such bypass must be preceded by authenticated tenant
+  membership and role/privilege checks, and every service query must remain
+  explicitly tenant-scoped. Service-role access is never itself authorization.
 
 ## I12 — Reversal preserves audit chain
 
@@ -146,21 +135,23 @@ When `autonomy_promoter_worker` demotes an agent from L3 to L2:
 
 ---
 
-## How these are tested
+## Coverage and evidence
 
-| Invariant | Test type | Location |
-| --- | --- | --- |
-| I1 | property | `backend/tests/property/test_journal_balance.py` |
-| I1 | integration assertion | every e2e test that posts a journal |
-| I2 | integration | `backend/tests/integration/test_posted_immutable.py` |
-| I3 | end-of-run reconciliation | every e2e run |
-| I4 | integration | `backend/tests/integration/test_period_lock.py` |
-| I5 | property + integration | `backend/tests/property/test_fx_freeze.py`, integration in §2.7 |
-| I6 | property | `backend/tests/property/test_money_precision.py` |
-| I7 | integration | `backend/tests/integration/test_webhook_idempotency.py` |
-| I8 | integration + audit | `backend/tests/integration/test_subledger_gl_coupling.py` |
-| I9 | property + integration | `backend/tests/property/test_invoice_numbering.py` |
-| I10 | eval | `agent_evals/reporting_agent.yaml` red_team subset |
-| I11 | security | `backend/tests/security/test_rls_enforcement.py` |
-| I12 | integration | `backend/tests/integration/test_reversal_chain.py` |
-| I13 | integration | `backend/tests/integration/test_autonomy_demotion.py` |
+This matrix records repository evidence as inspected on 2026-07-11. A partial
+unit/API test does not prove the invariant across a real production workflow.
+
+| Invariant | Coverage | Existing evidence | Gap / required proof |
+| --- | --- | --- | --- |
+| I1 | Automated, partial | `backend/tests/property/test_journal_balance.py`; journal API/service tests | Property test is in-process; guardian properties are strict `xfail`; no real-DB invariant test or assertion on every state-changing test. |
+| I2 | Missing dedicated integration | Manual-journal service avoids updating the posted source in `backend/tests/unit/test_manual_journal_service.py` | The formerly referenced `backend/tests/integration/test_posted_immutable.py` does not exist. Add real-DB UPDATE/DELETE denial tests for entries and lines. |
+| I3 | Manual planned; automated proof missing | `docs/qa/ishantech-production-e2e-runbook-2026-07-11.md` defines deterministic AR/AP and GL oracles | Execute the production tie-out and add an automated end-of-run reconciliation covering status, clearing, cutoff, and FX semantics. |
+| I4 | Automated, partial | `backend/tests/api/test_period_lock.py`, `backend/tests/api/test_manual_journal.py`, and accounting/close unit tests | API tests cover important posting and readiness paths, but not every INSERT/UPDATE path or all agent proposals against a real locked period. |
+| I5 | Automated, partial | `backend/tests/api/test_fx.py`, `backend/tests/unit/test_fx.py`, `backend/tests/unit/test_payment_fx_service.py`, `backend/tests/unit/test_fx_gain_loss.py`, and manual-journal FX tests | No property test proving posted FX rows and rates are immutable or that all historical journals remain unchanged after a rate correction. The formerly referenced `test_fx_freeze.py` does not exist. |
+| I6 | Automated | `backend/tests/property/test_money_precision.py` | Extend coverage whenever a new money serialization or calculation path is added. |
+| I7 | Automated, partial | `backend/tests/api/test_payment_webhook.py` covers signed replay/idempotent dispatch; Stripe signature and reconcile-worker tests provide supplements | No all-provider real-DB test proving one payment/journal plus a persisted `replay=true` audit record. The formerly referenced integration file does not exist. |
+| I8 | Automated, partial; manual tie-out required | Invoice, payment, bill, bill-payment, financial-event, and journal API/service tests | No dedicated atomic sub-ledger-to-GL coupling test or orphan scan. The formerly referenced integration file does not exist. |
+| I9 | Automated, partial | `backend/tests/api/test_invoices.py::test_invoice_number_monotonic_within_tenant` | Concurrency/rollback behavior is only a strict-`xfail` E2E skeleton in `backend/tests/e2e/test_engagement_to_cash.py`; the formerly referenced property test does not exist. |
+| I10 | Specification present; execution blocked/missing | `docs/test/agent_evals/reporting_agent.yaml` defines golden and red-team cases | The YAML is an eval specification, not evidence that the custom evaluators ran and passed. Capture an executable eval report with number-to-tool provenance. |
+| I11 | Automated, partial | `backend/tests/api/test_multi_tenant_isolation.py`, `backend/tests/api/test_tenant_membership_check.py`, `backend/tests/api/test_storage_rls.py`, plus route contract tests that assert caller-RLS reads | No all-table/all-operation RLS matrix, and service-role write paths still require a complete authorization and tenant-scope audit. The formerly referenced security file does not exist. |
+| I12 | Automated, service-level | Reversal, duplicate-reversal, non-manual, locked-period, and audit-event cases in `backend/tests/unit/test_manual_journal_service.py` | Add a real-DB integration test for foreign keys, opposite persisted lines, immutability, visibility, and audit chain. The formerly referenced integration file does not exist. |
+| I13 | Automated, partial | Demotion threshold behavior in `backend/tests/unit/test_autonomy_promoter.py` | Logging, sticky re-promotion, explicit admin approval, and 90-day cooldown are not proven end to end. The formerly referenced integration file does not exist. |

@@ -60,7 +60,7 @@ class _LinesQuery:
 
 
 class _TenantQuery:
-    def __init__(self, base_currency: str) -> None:
+    def __init__(self, base_currency: str | None) -> None:
         self.base_currency = base_currency
 
     def select(self, _columns: str) -> _TenantQuery:
@@ -87,7 +87,7 @@ class _RpcQuery:
 
 
 class _FakeDb:
-    def __init__(self, *, base_currency: str = "USD") -> None:
+    def __init__(self, *, base_currency: str | None = "USD") -> None:
         self.rpc_calls: list[tuple[str, dict]] = []
         self.base_currency = base_currency
 
@@ -139,6 +139,7 @@ class _ThresholdDb:
     def __init__(self, *, threshold: str) -> None:
         self.rpc_calls: list[tuple[str, dict]] = []
         self.tables: dict[str, list[dict]] = {
+            "tenants": [{"id": "tenant-1", "base_currency": "SGD"}],
             "tenant_approval_policies": [
                 {
                     "tenant_id": "tenant-1",
@@ -311,6 +312,31 @@ def _payload(*, amount: str = "100.00", currency: str = "USD") -> ManualJournalE
     )
 
 
+def _payload_without_currency(*, amount: str = "100.00") -> ManualJournalEntryIn:
+    return ManualJournalEntryIn.model_validate(
+        {
+            "description": "Month-end accrual",
+            "reason": "Accrue June payroll based on approved payroll register.",
+            "entry_date": "2026-06-22",
+            "reference": "ACCRUAL-001",
+            "lines": [
+                {
+                    "direction": "DR",
+                    "account_id": "11111111-1111-1111-1111-111111111111",
+                    "amount": amount,
+                    "description": "Debit",
+                },
+                {
+                    "direction": "CR",
+                    "account_id": "22222222-2222-2222-2222-222222222222",
+                    "amount": amount,
+                    "description": "Credit",
+                },
+            ],
+        }
+    )
+
+
 def _reversal_payload() -> ManualJournalReversalIn:
     return ManualJournalReversalIn.model_validate(
         {
@@ -427,6 +453,77 @@ async def test_manual_journal_same_currency_does_not_lookup_fx_rate() -> None:
         Decimal("100.00"),
     ]
     assert [line.fx_rate_id for line in lines] == [None, None]
+
+
+@pytest.mark.asyncio
+async def test_manual_journal_omitted_currency_uses_verified_tenant_base_currency() -> None:
+    db = _FakeDb(base_currency="SGD")
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock(
+        return_value={
+            "id": "journal-1",
+            "entry_number": "JE-1",
+            "description": "Month-end accrual",
+            "reason": "Accrue June payroll based on approved payroll register.",
+            "entry_date": "2026-06-22",
+            "period": "2026-06",
+            "reference_type": "manual",
+            "reference_id": None,
+            "created_by": "user-1",
+            "posted_at": "2026-06-22T00:00:00Z",
+        }
+    )
+    fx_mock = AsyncMock()
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.get_fx_rate_record", fx_mock),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+    ):
+        await svc.post_manual_journal(_payload_without_currency())
+
+    fx_mock.assert_not_awaited()
+    lines = post_mock.call_args.kwargs["lines"]
+    assert [line.currency for line in lines] == ["SGD", "SGD"]
+    assert [line.base_amount for line in lines] == [
+        Decimal("100.00"),
+        Decimal("100.00"),
+    ]
+    assert [line.fx_rate_id for line in lines] == [None, None]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("base_currency", [None, "ÅBC"])
+async def test_manual_journal_omitted_currency_rejects_invalid_tenant_base_currency(
+    base_currency: str | None,
+) -> None:
+    db = _FakeDb(base_currency=base_currency)
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+    post_mock = MagicMock()
+    fx_mock = AsyncMock()
+
+    with (
+        patch("app.services.manual_journal_service.assert_period_open", new=AsyncMock()),
+        patch("app.services.manual_journal_service.get_fx_rate_record", fx_mock),
+        patch("app.services.manual_journal_service.post_journal", post_mock),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.post_manual_journal(_payload_without_currency())
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Tenant base currency is not configured"
+    fx_mock.assert_not_awaited()
+    post_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -591,6 +688,25 @@ async def test_submit_manual_journal_above_threshold_creates_inbox_task() -> Non
     assert event["p_idempotency_key"] == (
         f"manual_journal.submitted_for_approval:{task['id']}"
     )
+
+
+@pytest.mark.asyncio
+async def test_submit_manual_journal_freezes_omitted_currency_in_approval_payload() -> None:
+    db = _ThresholdDb(threshold="10000.00")
+    svc = ManualJournalService(
+        db=db,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        user_id="user-1",
+        actor_role="manager",
+    )
+
+    result = await svc.submit_manual_journal(
+        _payload_without_currency(amount="15000.00")
+    )
+
+    assert isinstance(result, ManualJournalApprovalTaskResponse)
+    task_payload = db.tables["hitl_tasks"][0]["payload"]
+    assert [line["currency"] for line in task_payload["lines"]] == ["SGD", "SGD"]
 
 
 @pytest.mark.asyncio

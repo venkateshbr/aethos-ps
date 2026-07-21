@@ -319,8 +319,21 @@ async function approveInboxTask(
   }
   const taskCard = page.locator(`#task-${taskId}`);
   await expect(taskCard).toBeVisible({ timeout: 30_000 });
-  await taskCard.getByRole('button', { name: /^approve/i }).click();
+  await approveTaskCard(page, taskCard, taskId);
   await expect(taskCard).toBeHidden({ timeout: 120_000 });
+}
+
+async function approveTaskCard(page: Page, taskCard: Locator, taskId: string): Promise<void> {
+  const responsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response.url().includes(`/api/v1/inbox/tasks/${taskId}/approve`)
+  ), { timeout: 60_000 });
+  await taskCard.getByRole('button', { name: /^approve/i }).click();
+  const response = await responsePromise;
+  expect(
+    response.status(),
+    `Inbox approval for task ${taskId} should return HTTP 200`,
+  ).toBe(200);
 }
 
 async function createApprovedVendorBill(
@@ -794,7 +807,7 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await expect(childCard.getByRole('button', { name: /^edit/i })).toHaveCount(0);
 
     const dispatchStartedAt = new Date(Date.now() - 5_000).toISOString();
-    await childCard.getByRole('button', { name: /^approve/i }).click();
+    await approveTaskCard(page, childCard, arChildTask!.id);
     await expect(childCard).toBeHidden({ timeout: 120_000 });
 
     await expect
@@ -1097,8 +1110,13 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
 
     await page.goto(`${BASE}/app/accounting/journals`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /journal entries/i })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: /^month-end close$/i })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(CLOSE_PERIOD)).toBeVisible({ timeout: 30_000 });
+    const closePanel = page.getByRole('region', { name: /^month-end close$/i });
+    await expect(closePanel).toBeVisible({ timeout: 30_000 });
+    const closePeriodInput = closePanel.getByLabel('Close period');
+    await closePeriodInput.fill(CLOSE_PERIOD);
+    await closePeriodInput.press('Tab');
+    await expect(closePeriodInput).toHaveValue(CLOSE_PERIOD);
+    await expect(closePanel.getByText(new RegExp(`^${CLOSE_PERIOD} ·`))).toBeVisible({ timeout: 30_000 });
   });
 
   test('generates financial statement package through Copilot and Reports UI (#261)', async ({ page, request }) => {
@@ -1177,9 +1195,12 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       mimeType: 'text/plain',
       buffer: Buffer.from(invoiceText, 'utf-8'),
     });
-    await expect(page.getByText(filename)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/Attached.*send to process/i)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('link', { name: /^documents$/i })).toBeVisible({ timeout: 90_000 });
+    const attachmentStatus = page.getByRole('status').filter({ hasText: filename });
+    await expect(attachmentStatus).toBeVisible({ timeout: 30_000 });
+    await expect(attachmentStatus).toContainText(/Attached.*send to process/i);
+    await expect(
+      attachmentStatus.getByRole('link', { name: 'Documents', exact: true }),
+    ).toBeVisible({ timeout: 90_000 });
 
     let documentId = '';
     await expect
@@ -1280,9 +1301,12 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
       mimeType: 'text/plain',
       buffer: Buffer.from(letterText, 'utf-8'),
     });
-    await expect(page.getByText(filename)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/Attached.*send to process/i)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('link', { name: /^documents$/i })).toBeVisible({ timeout: 90_000 });
+    const attachmentStatus = page.getByRole('status').filter({ hasText: filename });
+    await expect(attachmentStatus).toBeVisible({ timeout: 30_000 });
+    await expect(attachmentStatus).toContainText(/Attached.*send to process/i);
+    await expect(
+      attachmentStatus.getByRole('link', { name: 'Documents', exact: true }),
+    ).toBeVisible({ timeout: 90_000 });
 
     let documentId = '';
     await expect

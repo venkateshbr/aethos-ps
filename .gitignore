@@ -33,6 +33,13 @@ out/
 *.pem
 *.key
 demo_credentials.json
+ishantech_e2e_credentials.json
+ishantech_e2e_private_evidence/
+# Generic E2E production-run artifacts — credentials + private evidence, never commit
+*_e2e_credentials.json
+*_credentials.json
+*_e2e_private_evidence/
+*_e2e_evidence/
 
 # --- IDE / OS ---
 .idea/

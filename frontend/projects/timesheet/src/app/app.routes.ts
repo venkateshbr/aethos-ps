@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/auth';
+import { authGuard, passwordReadyGuard } from './core/auth';
 
 export const routes: Routes = [
   {
@@ -7,8 +7,16 @@ export const routes: Routes = [
     loadComponent: () => import('./features/login/login.component').then((m) => m.LoginComponent),
   },
   {
-    path: 'timesheet',
+    path: 'change-password',
     canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/change-password/change-password.component').then(
+        (m) => m.ChangePasswordComponent,
+      ),
+  },
+  {
+    path: 'timesheet',
+    canActivate: [passwordReadyGuard],
     loadComponent: () =>
       import('./features/timesheet/timesheet.component').then((m) => m.TimesheetComponent),
   },

@@ -11,6 +11,7 @@
 #   HOSTINGER_DEPLOY_SOURCE=git
 #   HOSTINGER_REPO_URL=git@github.com:owner/repo.git
 #   HOSTINGER_BRANCH=main
+#   HOSTINGER_DEPLOY_SHA=<full-reviewed-commit-sha>
 #   TRAEFIK_ENTRYPOINT=websecure
 #   TRAEFIK_CERT_RESOLVER=letsencrypt
 
@@ -38,7 +39,7 @@ This script:
 
 Deploy source:
   HOSTINGER_DEPLOY_SOURCE=git    pulls HOSTINGER_BRANCH from HOSTINGER_REPO_URL
-  HOSTINGER_DEPLOY_SOURCE=local  rsyncs backend/, frontend/, and compose from here
+  HOSTINGER_DEPLOY_SOURCE=local  rsyncs a clean archive of HOSTINGER_DEPLOY_SHA
 EOF
 }
 
@@ -110,6 +111,7 @@ write_runtime_env() {
     /^HOSTINGER_DEPLOY_SOURCE=/ { next }
     /^HOSTINGER_REPO_URL=/ { next }
     /^HOSTINGER_BRANCH=/ { next }
+    /^HOSTINGER_DEPLOY_SHA=/ { next }
     /^TRAEFIK_ENTRYPOINT=/ { next }
     /^TRAEFIK_CERT_RESOLVER=/ { next }
     /^AETHOS_IMAGE_TAG=/ { next }
@@ -204,7 +206,9 @@ REPO_URL="$(env_or_file HOSTINGER_REPO_URL "$(git -C "$REPO_ROOT" config --get r
 BRANCH="$(env_or_file HOSTINGER_BRANCH "main")"
 TRAEFIK_ENTRYPOINT="$(env_or_file TRAEFIK_ENTRYPOINT "websecure")"
 TRAEFIK_CERT_RESOLVER="$(env_or_file TRAEFIK_CERT_RESOLVER "letsencrypt")"
-AETHOS_IMAGE_TAG="$(env_or_file AETHOS_IMAGE_TAG "$(git -C "$REPO_ROOT" rev-parse --short HEAD)")"
+LOCAL_HEAD_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+DEPLOY_SHA="$(env_or_file HOSTINGER_DEPLOY_SHA "$LOCAL_HEAD_SHA")"
+AETHOS_IMAGE_TAG="$(env_or_file AETHOS_IMAGE_TAG "$DEPLOY_SHA")"
 DATABASE_URL_VALUE="$(env_or_file DATABASE_URL "")"
 
 if [[ "$DATABASE_URL_VALUE" == *"@db."*"supabase.co:"* ]]; then
@@ -221,9 +225,45 @@ fi
 if [ "$DEPLOY_SOURCE" = "git" ]; then
   require_nonempty HOSTINGER_REPO_URL "$REPO_URL"
 fi
+if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "ERROR: HOSTINGER_DEPLOY_SHA must be a full 40-character commit SHA." >&2
+  exit 1
+fi
+if [ "$AETHOS_IMAGE_TAG" != "$DEPLOY_SHA" ]; then
+  echo "ERROR: AETHOS_IMAGE_TAG must exactly match HOSTINGER_DEPLOY_SHA." >&2
+  exit 1
+fi
+if [ "$DEPLOY_SOURCE" = "local" ] && [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]; then
+  echo "ERROR: local deploy source is dirty; commit or remove every tracked and untracked change before deployment." >&2
+  exit 1
+fi
+if [ "$DEPLOY_SOURCE" = "local" ] && [ "$DEPLOY_SHA" != "$LOCAL_HEAD_SHA" ]; then
+  echo "ERROR: local deploy SHA must equal the clean local HEAD ($LOCAL_HEAD_SHA)." >&2
+  exit 1
+fi
 
 RUNTIME_ENV="$(mktemp)"
-trap 'rm -f "$RUNTIME_ENV"' EXIT
+LOCAL_RELEASE_ROOT=""
+cleanup() {
+  rm -f "$RUNTIME_ENV"
+  if [ -n "$LOCAL_RELEASE_ROOT" ] && [ -d "$LOCAL_RELEASE_ROOT" ]; then
+    rm -rf "$LOCAL_RELEASE_ROOT"
+  fi
+}
+trap cleanup EXIT
+
+SOURCE_ROOT="$REPO_ROOT"
+if [ "$DEPLOY_SOURCE" = "local" ]; then
+  if ! command -v tar >/dev/null 2>&1; then
+    echo "ERROR: tar is required to stage the reviewed local commit." >&2
+    exit 1
+  fi
+  LOCAL_RELEASE_ROOT="$(mktemp -d)"
+  git -C "$REPO_ROOT" archive --format=tar "$DEPLOY_SHA" -- \
+    backend frontend integrations "$COMPOSE_FILE" \
+    | tar -xf - -C "$LOCAL_RELEASE_ROOT"
+  SOURCE_ROOT="$LOCAL_RELEASE_ROOT"
+fi
 
 write_runtime_env \
   "$RUNTIME_ENV" \
@@ -243,6 +283,7 @@ echo "Source        : $DEPLOY_SOURCE"
 if [ "$DEPLOY_SOURCE" = "git" ]; then
   echo "Branch        : $BRANCH"
 fi
+echo "Commit        : $DEPLOY_SHA"
 echo "Web domain    : https://$APP_DOMAIN"
 echo "Timesheet     : https://$TIMESHEET_DOMAIN"
 
@@ -270,22 +311,53 @@ mkdir -p "$APP_DIR"
 REMOTE
 
 if [ "$DEPLOY_SOURCE" = "git" ]; then
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- "$APP_DIR" "$REPO_URL" "$BRANCH" <<'REMOTE'
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- \
+    "$APP_DIR" "$REPO_URL" "$BRANCH" "$DEPLOY_SHA" <<'REMOTE'
 set -euo pipefail
 
 APP_DIR="$1"
 REPO_URL="$2"
 BRANCH="$3"
+DEPLOY_SHA="$4"
 
 if [ ! -d "$APP_DIR/.git" ]; then
   rm -rf "$APP_DIR"
-  git clone "$REPO_URL" "$APP_DIR"
+  git clone --no-checkout "$REPO_URL" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
-git fetch --all --prune
-git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+if [ "$(git remote get-url origin)" != "$REPO_URL" ]; then
+  echo "ERROR: existing deployment checkout does not match HOSTINGER_REPO_URL." >&2
+  exit 1
+fi
+if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
+  echo "ERROR: HOSTINGER_BRANCH is not a valid branch name." >&2
+  exit 1
+fi
+REMOTE_SOURCE_STATUS="$(git status --porcelain --untracked-files=all)"
+if [ -n "$REMOTE_SOURCE_STATUS" ]; then
+  echo "ERROR: remote deployment checkout is dirty; refusing to deploy tracked or untracked source changes." >&2
+  printf '%s\n' "$REMOTE_SOURCE_STATUS" >&2
+  exit 1
+fi
+
+git fetch --prune origin \
+  "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+if ! git cat-file -e "${DEPLOY_SHA}^{commit}"; then
+  echo "ERROR: requested deploy SHA is not available from the repository." >&2
+  exit 1
+fi
+if ! git merge-base --is-ancestor "$DEPLOY_SHA" "refs/remotes/origin/$BRANCH"; then
+  echo "ERROR: requested deploy SHA is not reachable from HOSTINGER_BRANCH." >&2
+  exit 1
+fi
+
+git checkout --detach "$DEPLOY_SHA"
+ACTUAL_SHA="$(git rev-parse HEAD)"
+if [ "$ACTUAL_SHA" != "$DEPLOY_SHA" ]; then
+  echo "ERROR: remote checkout SHA mismatch: expected $DEPLOY_SHA, got $ACTUAL_SHA." >&2
+  exit 1
+fi
 REMOTE
 else
   if ! command -v rsync >/dev/null 2>&1; then
@@ -299,7 +371,7 @@ else
   ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "mkdir -p '$APP_DIR/backend' '$APP_DIR/frontend' '$APP_DIR/integrations'"
   rsync -az --delete -e "ssh -p $SSH_PORT" \
     --exclude .env \
-    "$REPO_ROOT/backend/" "$SSH_TARGET:$APP_DIR/backend/"
+    "$SOURCE_ROOT/backend/" "$SSH_TARGET:$APP_DIR/backend/"
   rsync -az --delete -e "ssh -p $SSH_PORT" \
     --exclude node_modules \
     --exclude .angular \
@@ -307,11 +379,11 @@ else
     --exclude test-results \
     --exclude playwright-report \
     --exclude .env \
-    "$REPO_ROOT/frontend/" "$SSH_TARGET:$APP_DIR/frontend/"
+    "$SOURCE_ROOT/frontend/" "$SSH_TARGET:$APP_DIR/frontend/"
   rsync -az --delete -e "ssh -p $SSH_PORT" \
     --exclude .env \
-    "$REPO_ROOT/integrations/" "$SSH_TARGET:$APP_DIR/integrations/"
-  scp -P "$SSH_PORT" "$REPO_ROOT/$COMPOSE_FILE" "$SSH_TARGET:$APP_DIR/$COMPOSE_FILE"
+    "$SOURCE_ROOT/integrations/" "$SSH_TARGET:$APP_DIR/integrations/"
+  scp -P "$SSH_PORT" "$SOURCE_ROOT/$COMPOSE_FILE" "$SSH_TARGET:$APP_DIR/$COMPOSE_FILE"
 fi
 
 scp -P "$SSH_PORT" "$RUNTIME_ENV" "$SSH_TARGET:$APP_DIR/.env.hostinger"

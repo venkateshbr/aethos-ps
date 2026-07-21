@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
@@ -9,6 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
 import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 
 interface InvoiceLine {
   id: string;
@@ -86,9 +87,9 @@ interface InvoiceDetail {
             @if (invoice()!.status === 'draft') {
               <button
                 (click)="approveInvoice()"
-                [disabled]="actionLoading()"
+                [disabled]="actionLoading() || !canPostInvoice()"
                 class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-50"
-                matTooltip="Approve this invoice"
+                [matTooltip]="canPostInvoice() ? 'Approve this invoice' : 'Requires invoice posting permission'"
               >
                 <mat-icon class="text-base">check_circle</mat-icon>
                 @if (actionLoading()) { Approving… } @else { Approve }
@@ -97,9 +98,9 @@ interface InvoiceDetail {
             @if (invoice()!.status === 'approved') {
               <button
                 (click)="sendInvoice()"
-                [disabled]="actionLoading()"
+                [disabled]="actionLoading() || !canSendInvoice()"
                 class="inline-flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-50"
-                matTooltip="Send this invoice to the client"
+                [matTooltip]="canSendInvoice() ? 'Send this invoice to the client' : 'Requires invoice send permission'"
               >
                 <mat-icon class="text-base">send</mat-icon>
                 @if (actionLoading()) { Sending… } @else { Send }
@@ -131,6 +132,13 @@ interface InvoiceDetail {
                role="status" aria-live="polite">
             <mat-icon class="text-base">check_circle</mat-icon>
             {{ actionMessage() }}
+          </div>
+        }
+        @if (actionError()) {
+          <div class="mb-4 rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low flex items-center gap-2"
+               role="alert">
+            <mat-icon class="text-base">error_outline</mat-icon>
+            {{ actionError() }}
           </div>
         }
 
@@ -249,16 +257,21 @@ export class InvoiceDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private http = inject(HttpClient);
+  private permissions = inject(CurrentPermissionsService);
 
   loading = signal(true);
   error = signal<string | null>(null);
   invoice = signal<InvoiceDetail | null>(null);
   actionLoading = signal(false);
   actionMessage = signal<string | null>(null);
+  actionError = signal<string | null>(null);
+  canPostInvoice = computed(() => this.permissions.hasPrivilege('invoices.post'));
+  canSendInvoice = computed(() => this.permissions.hasPrivilege('invoices.send'));
 
   readonly lineColumns = ['description', 'quantity', 'unit_price', 'amount'];
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/app/invoices']);
@@ -282,9 +295,10 @@ export class InvoiceDetailComponent implements OnInit {
 
   approveInvoice(): void {
     const inv = this.invoice();
-    if (!inv) return;
+    if (!inv || !this.canPostInvoice()) return;
     this.actionLoading.set(true);
     this.actionMessage.set(null);
+    this.actionError.set(null);
     this.http.patch<InvoiceDetail>(`/api/v1/invoices/${inv.id}/approve`, {}).subscribe({
       next: (updated) => {
         this.invoice.set(updated);
@@ -292,18 +306,20 @@ export class InvoiceDetailComponent implements OnInit {
         this.actionMessage.set('Invoice approved.');
         setTimeout(() => this.actionMessage.set(null), 5000);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.actionLoading.set(false);
         this.actionMessage.set(null);
+        this.actionError.set(userMessageForError(err, 'Approve invoice'));
       },
     });
   }
 
   sendInvoice(): void {
     const inv = this.invoice();
-    if (!inv) return;
+    if (!inv || !this.canSendInvoice()) return;
     this.actionLoading.set(true);
     this.actionMessage.set(null);
+    this.actionError.set(null);
     this.http.post<InvoiceDetail>(`/api/v1/invoices/${inv.id}/send`, {}).subscribe({
       next: (updated) => {
         this.invoice.set(updated);
@@ -311,9 +327,10 @@ export class InvoiceDetailComponent implements OnInit {
         this.actionMessage.set('Invoice sent successfully.');
         setTimeout(() => this.actionMessage.set(null), 5000);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.actionLoading.set(false);
         this.actionMessage.set(null);
+        this.actionError.set(userMessageForError(err, 'Send invoice'));
       },
     });
   }

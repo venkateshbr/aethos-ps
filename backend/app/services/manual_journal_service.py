@@ -20,11 +20,13 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.domain.currency import normalise_currency_code
 from app.domain.fx import FxRateNotFoundError, get_fx_rate_record
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import quantise_money, serialise_money
 from app.models.accounting import (
     JournalEntryListItem,
+    JournalEntryListLine,
     ManualJournalApprovalTaskResponse,
     ManualJournalEntryIn,
     ManualJournalEntryResponse,
@@ -59,6 +61,7 @@ class ManualJournalService:
         self, payload: ManualJournalEntryIn
     ) -> ManualJournalEntryResponse | ManualJournalApprovalTaskResponse:
         """Post immediately or route a high-value manual journal to Inbox."""
+        payload = await self._resolve_omitted_line_currencies(payload)
         total_debits = self._payload_total_debits(payload)
         policy = await ApprovalPolicySettingsService(
             self.db,
@@ -260,6 +263,57 @@ class ManualJournalService:
 
         rows = await asyncio.to_thread(_fetch)
 
+        if not rows:
+            return []
+
+        journal_ids = [str(row["id"]) for row in rows]
+
+        def _fetch_lines() -> list[dict]:
+            return (
+                self.db.table("journal_lines")
+                .select(
+                    "id,journal_entry_id,direction,account_id,amount,currency,"
+                    "base_amount,fx_rate_id,description,accounts(code,name)"
+                )
+                .eq("tenant_id", self.tenant_id)
+                .in_("journal_entry_id", journal_ids)
+                .order("id")
+                .execute()
+                .data
+                or []
+            )
+
+        line_rows = await asyncio.to_thread(_fetch_lines)
+        lines_by_journal: dict[str, list[JournalEntryListLine]] = {
+            journal_id: [] for journal_id in journal_ids
+        }
+        for line_row in line_rows:
+            journal_id = str(line_row.get("journal_entry_id") or "")
+            if journal_id in lines_by_journal:
+                lines_by_journal[journal_id].append(
+                    JournalEntryListLine.from_db(line_row)
+                )
+
+        actor_ids = sorted({str(row["created_by"]) for row in rows})
+
+        def _fetch_actor_names() -> list[dict]:
+            return (
+                self.db.table("tenant_users")
+                .select("user_id,display_name")
+                .eq("tenant_id", self.tenant_id)
+                .in_("user_id", actor_ids)
+                .execute()
+                .data
+                or []
+            )
+
+        actor_rows = await asyncio.to_thread(_fetch_actor_names)
+        actor_names = {
+            str(actor["user_id"]): str(actor["display_name"]).strip()
+            for actor in actor_rows
+            if actor.get("user_id") and str(actor.get("display_name") or "").strip()
+        }
+
         return [
             JournalEntryListItem(
                 id=str(r["id"]),
@@ -269,9 +323,22 @@ class ManualJournalService:
                 entry_date=str(r["entry_date"]),
                 period=str(r["period"]),
                 reference_type=str(r["reference_type"]),
-                reference=r.get("reference_id"),
+                reference=(str(r["reference_id"]) if r.get("reference_id") else None),
                 created_by=str(r["created_by"]),
+                posted_by=actor_names.get(str(r["created_by"]), str(r["created_by"])),
                 posted_at=str(r["posted_at"]),
+                total_dr=serialise_money(
+                    sum(
+                        (
+                            Decimal(line.amount)
+                            for line in lines_by_journal[str(r["id"])]
+                            if line.direction == "DR"
+                        ),
+                        start=Decimal("0"),
+                    )
+                )
+                or "0.00",
+                lines=lines_by_journal[str(r["id"])],
             )
             for r in rows
         ]
@@ -322,6 +389,25 @@ class ManualJournalService:
 
         return await asyncio.to_thread(_fetch)
 
+    async def _resolve_omitted_line_currencies(
+        self,
+        payload: ManualJournalEntryIn,
+    ) -> ManualJournalEntryIn:
+        """Freeze tenant-base defaults before posting or approval routing."""
+        if all(line.currency is not None for line in payload.lines):
+            return payload
+        base_currency = await self._tenant_base_currency()
+        return payload.model_copy(
+            update={
+                "lines": [
+                    line.model_copy(
+                        update={"currency": line.currency or base_currency}
+                    )
+                    for line in payload.lines
+                ]
+            }
+        )
+
     async def _tenant_base_currency(self) -> str:
         def _fetch() -> str:
             result = (
@@ -332,7 +418,13 @@ class ManualJournalService:
                 .execute()
             )
             row = result.data[0] if result.data else {}
-            return str(row.get("base_currency") or "USD").upper()
+            try:
+                return normalise_currency_code(row.get("base_currency"))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Tenant base currency is not configured",
+                ) from exc
 
         return await asyncio.to_thread(_fetch)
 
@@ -342,7 +434,7 @@ class ManualJournalService:
         base_currency = await self._tenant_base_currency()
         lines: list[JournalLineSpec] = []
         for line in payload.lines:
-            currency = line.currency.upper()
+            currency = (line.currency or base_currency).upper()
             fx_rate_id: str | None = None
             if currency == base_currency:
                 base_amount = line.amount

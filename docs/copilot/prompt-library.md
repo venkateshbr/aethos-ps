@@ -1,23 +1,23 @@
-# Aethos Atlas Prompt Library
+# Aethos Nous Prompt Library
 
 Use these prompts as starting points for finance-operations workflows. They are
 written in user language and intentionally avoid internal tool names.
 
-Aethos Atlas should work from business intent. Users do not have to name an internal
+Aethos Nous should work from business intent. Users do not have to name an internal
 tool or workflow function. Include the period, customer/vendor/project, desired
-outcome, and approval boundary; Aethos Atlas should infer whether the request is
+outcome, and approval boundary; Aethos Nous should infer whether the request is
 read-only, needs an Inbox task, or should be routed to an existing ERP module.
 Engineers and QA authors may use tool names only for deterministic ledger
 assertions.
 
-Atlas uses a tenant-configurable semantic intent router before model inference
+Nous uses a tenant-configurable semantic intent router before model inference
 when Settings -> Agent Autonomy -> AI Inference Settings is set to
 `Semantic router, then configured runtime`. Prompt wording can vary, but the
 business intent should remain clear: name the entity, period, desired outcome,
 and whether the request is read-only or should prepare reviewed work.
 
 For document intake, attach the document first and then send the matching
-business prompt. Aethos Atlas should not extract the file or create Inbox work
+business prompt. Aethos Nous should not extract the file or create Inbox work
 until the prompt is submitted.
 
 ## Finance Ops Manager
@@ -152,7 +152,7 @@ launch passes. The exact business names can be replaced with launch test data.
 
 ## Prompting Pattern
 
-Good Aethos Atlas prompts usually include:
+Good Aethos Nous prompts usually include:
 
 - the business period or customer/vendor/engagement name;
 - the desired outcome;
@@ -160,7 +160,7 @@ Good Aethos Atlas prompts usually include:
 - the approval boundary, such as `route to Inbox before sending/posting/paying`;
 - a request to separate read-only findings from actions.
 
-Avoid asking for internal tool names. Aethos Atlas should infer the right tool from
+Avoid asking for internal tool names. Aethos Nous should infer the right tool from
 the business request. Test specs may name tools to reduce automation
 nondeterminism, but users should not need to.
 
@@ -175,7 +175,7 @@ tenant roles.
 
 ## Demo Guide v2 Live Validation Prompt Set
 
-These are the exact Aethos Atlas prompts used by
+These are the exact Aethos Nous prompts used by
 `frontend/e2e/demo-v2-production-validation.spec.ts`. Use them for manual
 browser validation after seeding Demo Guide v2 data. For rows with attachments,
 attach the named demo asset first and then submit the prompt.
@@ -225,9 +225,9 @@ attach the named demo asset first and then submit the prompt.
 | 7-2-decision-trail | 7.2 Decision trail | `Show the decision trail for the latest bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
 | 7-3-operational-health | 7.3 Operational Health | `Show operational health for the platform today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes. Do not expose secrets, traces, raw logs, or stack traces.` |
 | 7-4-documents-audit | 7.4 Documents and source evidence | `Show documents that support recent engagements, bills, invoices, journals, and Inbox decisions. For each, show the linked business record, source filename, extraction state, and what I should review next.` |
-| 7-5-config-telemetry | 7.5 Configuration and telemetry | `Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Atlas runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.` |
+| 7-5-config-telemetry | 7.5 Configuration and telemetry | `Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Nous runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.` |
 
-Expected Atlas coverage for this prompt set:
+Expected Nous coverage for this prompt set:
 
 - `3-3-sgd-journal`: amount/currency, GBP base impact, FX provenance, journal
   lines, balance, period lock, approval role, segregation of duties, and Inbox
@@ -243,5 +243,5 @@ Expected Atlas coverage for this prompt set:
 - `7-4-documents-audit`: engagement, bill, invoice, journal, and Inbox
   decision evidence, including missing categories.
 - `7-5-config-telemetry`: approval controls, scheduled Finance Ops settings,
-  Atlas runtime, Langfuse observability, operational alerts, and public
+  Nous runtime, Langfuse observability, operational alerts, and public
   abuse-path controls without raw logs, traces, or secrets.

@@ -106,6 +106,12 @@ def propose_payment_batch(
             or []
         )
 
+    # Bill-payment batches must be single-currency — the Pay Bills service
+    # rejects mixed-currency batches, so a proposal that spans currencies
+    # produces an un-approvable Inbox task. Scope the proposal to one currency,
+    # preferring the most-urgent (earliest-due) group.
+    bills = _scope_to_single_currency(bills)
+
     total = sum(Decimal(str(b["total"])) for b in bills)
     currency = bills[0]["currency"] if bills else "USD"
 
@@ -149,6 +155,37 @@ def propose_payment_batch(
         flagged_for_review=flagged,
         optimization_summary=optimization.summary,
     )
+
+
+def _scope_to_single_currency(bills: list[dict]) -> list[dict]:
+    """Return only the bills sharing one target currency.
+
+    The Pay Bills service requires a single-currency batch; a proposal that
+    mixes currencies creates an Inbox task that can never be approved. When
+    approved bills span currencies, choose the currency whose bills are most
+    urgent (earliest due date), breaking ties by bill count, then total value,
+    then currency code so the choice is deterministic.
+    """
+    if not bills:
+        return bills
+
+    groups: dict[str, list[dict]] = {}
+    for bill in bills:
+        groups.setdefault(str(bill.get("currency") or "USD"), []).append(bill)
+    if len(groups) <= 1:
+        return bills
+
+    def _earliest_due(group: list[dict]) -> str:
+        dues = [str(b["due_date"])[:10] for b in group if b.get("due_date")]
+        return min(dues) if dues else "9999-12-31"
+
+    def _sort_key(item: tuple[str, list[dict]]) -> tuple[str, int, Decimal, str]:
+        currency, group = item
+        total = sum((Decimal(str(b["total"])) for b in group), Decimal("0"))
+        return (_earliest_due(group), -len(group), -total, currency)
+
+    best_currency = sorted(groups.items(), key=_sort_key)[0][0]
+    return groups[best_currency]
 
 
 def _normalise_bill_ids(values: list[object]) -> tuple[str, ...]:

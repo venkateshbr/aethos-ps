@@ -8,6 +8,8 @@
  *
  * It intentionally avoids direct database writes. The only non-browser setup
  * calls are the same public/authenticated HTTP routes used by the frontend.
+ * This API-seeded legacy runner is supplemental and opt-in; it is not the
+ * browser-only production E2E required by the launch runbook.
  */
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -16,6 +18,8 @@ import * as path from 'node:path';
 
 const WEB = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos.ishirock.tech';
 const TIMESHEET = process.env.AETHOS_TS_WEB_URL ?? 'https://timesheet.aethos.ishirock.tech';
+const API_SEEDED_PRODUCTION_VALIDATION_ENABLED =
+  process.env.AETHOS_RUN_API_SEEDED_PRODUCTION_VALIDATION === 'true';
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const QA_DIR = path.join(REPO_ROOT, 'docs', 'qa', `scenario-library-production-${RUN_ID}`);
@@ -541,15 +545,15 @@ async function askAtlas(page: Page, result: TenantResult): Promise<void> {
     await page.goto(`${WEB}/app/copilot`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     const newChat = page.getByRole('button', { name: /new chat|start new chat/i }).first();
     if (await newChat.isVisible({ timeout: 8_000 }).catch(() => false)) await newChat.click();
-    const before = await page.locator('[aria-label^="Atlas:"]').count();
+    const before = await page.locator('[aria-label^="Nous:"]').count();
     const input = page.getByLabel('Message input');
     await expect(input).toBeEnabled({ timeout: 45_000 });
     await input.fill(result.spec.prompt);
     await page.getByRole('button', { name: /send message/i }).click();
-    await page.locator('[aria-label^="Atlas:"]').nth(before).waitFor({ state: 'visible', timeout: 180_000 }).catch(() => undefined);
+    await page.locator('[aria-label^="Nous:"]').nth(before).waitFor({ state: 'visible', timeout: 180_000 }).catch(() => undefined);
     await expect(input).toBeEnabled({ timeout: 180_000 }).catch(() => undefined);
     await page.waitForTimeout(1000);
-    const response = await page.locator('[aria-label^="Atlas:"]').last().innerText().catch(() => '');
+    const response = await page.locator('[aria-label^="Nous:"]').last().innerText().catch(() => '');
     const screenshot = await shot(page, `${result.spec.id}-atlas-response`);
     const required = [new RegExp(result.spec.client.split(' ')[0], 'i'), /engagement|project|billing|finance|WIP|readiness/i];
     const missing = required.filter((pattern) => !pattern.test(response)).map((pattern) => pattern.source);
@@ -732,11 +736,17 @@ test.describe('Production scenario-library ten-tenant validation', () => {
   test.describe.configure({ mode: 'serial' });
 
   test.afterAll(async () => {
+    if (!API_SEEDED_PRODUCTION_VALIDATION_ENABLED) return;
     writeCredentials(allResults);
     writeReport(allResults);
   });
 
   test('creates all tenants and validates Atlas, ERP users, and timesheet on production', async ({ request, page }) => {
+    test.skip(
+      !API_SEEDED_PRODUCTION_VALIDATION_ENABLED,
+      'Set AETHOS_RUN_API_SEEDED_PRODUCTION_VALIDATION=true for this legacy API-seeded run.',
+    );
+    expect(new URL(WEB).origin).toBe('https://aethos.ishirock.tech');
     test.setTimeout(45 * 60_000);
 
     for (const spec of tenantSpecs) {

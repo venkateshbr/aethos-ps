@@ -109,7 +109,12 @@ async def test_get_fx_rate_record_returns_rate_id_from_db() -> None:
     db_mock = MagicMock()
     mock_result = MagicMock()
     mock_result.data = [
-        {"id": "fx-rate-1", "rate": "1.250000", "rate_date": "2026-05-19"}
+        {
+            "id": "fx-rate-1",
+            "rate": "1.250000",
+            "rate_date": "2026-05-19",
+            "source": "openexchangerates",
+        }
     ]
     (
         db_mock.table.return_value
@@ -127,6 +132,7 @@ async def test_get_fx_rate_record_returns_rate_id_from_db() -> None:
     assert record.id == "fx-rate-1"
     assert record.rate == Decimal("1.250000")
     assert record.rate_date == date(2026, 5, 19)
+    assert record.source == "openexchangerates"
 
 
 @pytest.mark.asyncio

@@ -46,8 +46,11 @@ class _Db:
         self.rows = rows
 
     def table(self, name: str) -> _Query:
-        assert name == "journal_lines"
-        return _Query(self.rows)
+        if name == "journal_lines":
+            return _Query(self.rows)
+        if name == "tenants":
+            return _Query([{"id": TENANT_ID, "base_currency": "SGD"}])
+        raise AssertionError(name)
 
 
 class _TrialBalance:
@@ -68,13 +71,16 @@ class _Reports:
         assert as_of_period == "2026-06"
         return _TrialBalance()
 
-    def ar_aging(self) -> dict[str, str]:
+    def ar_aging(self, *, as_of_date: str | None = None) -> dict[str, str]:
+        assert as_of_date == "2026-06-30"
         return {"0_30": "250.00", "31_60": "0.00", "61_90": "0.00", "over_90": "0.00", "total": "250.00"}
 
-    def ap_aging(self) -> dict[str, str]:
+    def ap_aging(self, *, as_of_date: str | None = None) -> dict[str, str]:
+        assert as_of_date == "2026-06-30"
         return {"0_30": "100.00", "31_60": "0.00", "61_90": "0.00", "over_90": "0.00", "total": "100.00"}
 
-    def wip(self) -> list[dict]:
+    def wip(self, *, as_of_date: str | None = None) -> list[dict]:
+        assert as_of_date == "2026-06-30"
         return [
             {"project_id": "project-1", "project_name": "Advisory", "wip_value": "350.00"}
         ]
@@ -175,11 +181,21 @@ def test_close_package_composes_reports_and_variance_commentary() -> None:
         "ar_open_total": "250.00",
         "ap_open_total": "100.00",
         "wip_total": "350.00",
+        "base_currency": "SGD",
+        "as_of_date": "2026-06-30",
+        "ar_ap_basis": "posted_gl_base_currency",
+        "wip_basis": "approved_time_period_end_current_rate_estimate",
     }
     evidence = package["readiness_evidence"]
     assert evidence["ar"]["open_total"] == "250.00"
+    assert evidence["ar"]["as_of_date"] == "2026-06-30"
+    assert evidence["ar"]["basis"] == "posted_gl_base_currency"
     assert evidence["ap"]["open_total"] == "100.00"
+    assert evidence["ap"]["as_of_date"] == "2026-06-30"
+    assert evidence["ap"]["basis"] == "posted_gl_base_currency"
     assert evidence["wip"]["project_count"] == 1
+    assert evidence["wip"]["as_of_date"] == "2026-06-30"
+    assert evidence["wip"]["basis"] == "approved_time_period_end_current_rate_estimate"
     assert evidence["gl"]["trial_balance_balanced"] is True
     assert evidence["approvals"]["pending_review_count"] == 0
     assert package["close_overrides"] == []

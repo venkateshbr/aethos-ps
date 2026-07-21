@@ -15,7 +15,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.domain.money import quantise_money
+from app.domain.currency import normalise_currency_code
+from app.domain.money import quantise_money, serialise_money
 
 _PERIOD_PATTERN = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 
@@ -30,7 +31,9 @@ class ManualJournalLineIn(BaseModel):
     direction: Literal["DR", "CR"]
     account_id: UUID
     amount: Decimal
-    currency: str = "USD"  # ISO 4217
+    # Omission is meaningful: the service resolves it against the verified
+    # tenant base currency.  Never default financial writes to USD in a model.
+    currency: str | None = None  # ISO 4217 when explicitly supplied
     description: str | None = None
 
     @field_validator("amount")
@@ -42,6 +45,13 @@ class ManualJournalLineIn(BaseModel):
         if result is None:
             raise ValueError("Amount could not be quantised")
         return result
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalise_currency_code(value)
 
 
 class ManualJournalEntryIn(BaseModel):
@@ -164,8 +174,44 @@ class ManualJournalApprovalTaskResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class JournalEntryListLine(BaseModel):
+    """Audit-safe journal line embedded in the journal-entry list response."""
+
+    id: str
+    direction: Literal["DR", "CR"]
+    account_id: str
+    account_code: str | None = None
+    account_name: str | None = None
+    amount: str
+    currency: str
+    base_amount: str
+    fx_rate_id: str | None = None
+    description: str | None = None
+
+    @classmethod
+    def from_db(cls, row: dict) -> JournalEntryListLine:
+        account_join = row.get("accounts")
+        if isinstance(account_join, list):
+            account_join = account_join[0] if account_join else None
+        account = account_join if isinstance(account_join, dict) else {}
+        return cls(
+            id=str(row["id"]),
+            direction=row["direction"],
+            account_id=str(row["account_id"]),
+            account_code=(str(account["code"]) if account.get("code") else None),
+            account_name=(str(account["name"]) if account.get("name") else None),
+            amount=serialise_money(row.get("amount") or "0") or "0.00",
+            currency=str(row.get("currency") or "USD"),
+            base_amount=serialise_money(row.get("base_amount") or "0") or "0.00",
+            fx_rate_id=(str(row["fx_rate_id"]) if row.get("fx_rate_id") else None),
+            description=(
+                str(row["description"]) if row.get("description") is not None else None
+            ),
+        )
+
+
 class JournalEntryListItem(BaseModel):
-    """Summary row returned by GET /api/v1/accounting/journal-entries."""
+    """Audit-ready row returned by GET /api/v1/accounting/journal-entries."""
 
     id: str
     entry_number: str
@@ -176,7 +222,10 @@ class JournalEntryListItem(BaseModel):
     reference_type: str
     reference: str | None = None
     created_by: str
+    posted_by: str
     posted_at: str
+    total_dr: str
+    lines: list[JournalEntryListLine] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +260,7 @@ class RecurringJournalTemplateCreate(BaseModel):
     schedule_day: int = 31
     start_period: str
     end_period: str | None = None
-    currency: str = "USD"
+    currency: str | None = None
     is_active: bool = True
     lines: list[RecurringJournalTemplateLineIn]
 
@@ -233,11 +282,10 @@ class RecurringJournalTemplateCreate(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def validate_currency(cls, v: str) -> str:
-        currency = v.upper().strip()
-        if len(currency) != 3 or not currency.isalpha():
-            raise ValueError("Currency must be a 3-letter ISO code")
-        return currency
+    def validate_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return normalise_currency_code(v)
 
     @model_validator(mode="after")
     def validate_template(self) -> RecurringJournalTemplateCreate:

@@ -305,6 +305,16 @@ class ProcurementService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Procurement document is already {row.get('status')!r}",
             )
+        if str(row.get("requested_by") or "") == approved_by:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "procurement_requester_cannot_approve",
+                    "message": (
+                        "The requester cannot approve their own procurement document"
+                    ),
+                },
+            )
         lines = await self._repo.get_lines(document_id)
         if not lines:
             raise HTTPException(

@@ -86,5 +86,6 @@ test.describe('R-Real-5 · Login (tunnel)', () => {
 
     // Save the freshened storage so downstream specs can reuse the session.
     await context.storageState({ path: 'e2e/.auth/o2c-tenant.json' });
+    fs.chmodSync('e2e/.auth/o2c-tenant.json', 0o600);
   });
 });

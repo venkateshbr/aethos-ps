@@ -51,6 +51,11 @@ def _draft_invoice(invoice_id: str, tenant_id: str, status: str = "draft") -> di
         "subtotal": "1000.00",
         "tax_total": "0.00",
         "total": "1000.00",
+        "base_currency": None,
+        "base_subtotal": None,
+        "base_tax_total": None,
+        "base_total": None,
+        "approval_fx_rate_id": None,
         "status": status,
         "issue_date": "2026-05-01",
         "due_date": "2026-06-01",
@@ -75,34 +80,58 @@ class _Query:
         self.db = db
         self.table = table
         self.payload: dict | None = None
+        self.operation = "select"
+        self.filters: list[tuple[str, str]] = []
 
     def insert(self, payload: dict) -> _Query:
         self.payload = payload
+        self.operation = "insert"
         self.db.inserts.setdefault(self.table, []).append(payload)
         return self
 
     def update(self, payload: dict) -> _Query:
         self.payload = payload
+        self.operation = "update"
         self.db.updates.setdefault(self.table, []).append(payload)
+        return self
+
+    def delete(self) -> _Query:
+        self.operation = "delete"
         return self
 
     def select(self, _columns: str) -> _Query:
         return self
 
     def eq(self, _key: str, _value: str) -> _Query:
+        self.filters.append((_key, _value))
         return self
 
     def in_(self, _key: str, _values: list[str]) -> _Query:
         return self
 
     def execute(self) -> _Result:
+        if self.operation == "select" and self.table == "payments":
+            rows = [*self.db.payment_rows, *self.db.inserts.get("payments", [])]
+            for key, value in self.filters:
+                rows = [row for row in rows if str(row.get(key)) == str(value)]
+            return _Result(rows)
+        if self.operation == "insert":
+            return _Result([self.payload or {}])
+        if self.operation == "delete":
+            rows = self.db.inserts.get(self.table, [])
+            self.db.inserts[self.table] = [
+                row
+                for row in rows
+                if not all(str(row.get(key)) == str(value) for key, value in self.filters)
+            ]
         return _Result([])
 
 
 class _PaymentDb:
-    def __init__(self) -> None:
+    def __init__(self, *, payment_rows: list[dict] | None = None) -> None:
         self.inserts: dict[str, list[dict]] = {}
         self.updates: dict[str, list[dict]] = {}
+        self.payment_rows = payment_rows or []
 
     def table(self, name: str) -> _Query:
         return _Query(self, name)
@@ -239,7 +268,9 @@ async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
         **_draft_invoice(invoice_id, tenant_id, status="sent"),
         "currency": "GBP",
         "total": "100.00",
+        "base_currency": "USD",
         "base_total": "120.00",
+        "approval_fx_rate_id": "fx-approval-rate-1",
     }
     updated = {**invoice, "status": "paid", "paid_at": "2026-06-25T09:00:00+00:00"}
     svc._repo.get_by_id = AsyncMock(side_effect=[invoice, updated])
@@ -253,7 +284,8 @@ async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
         base_amount=Decimal("125.00"),
         base_currency="USD",
         rate=Decimal("1.25"),
-        rate_date=date(2026, 6, 25),
+        # The latest available FX rate may precede the actual receipt date.
+        rate_date=date(2026, 6, 24),
         fx_rate_id="fx-rate-1",
     )
 
@@ -290,8 +322,11 @@ async def test_record_manual_payment_uses_base_amount_for_payment_and_journal(
         Decimal("125.00"),
     ]
     assert [line.fx_rate_id for line in lines] == ["fx-rate-1", "fx-rate-1"]
+    assert post_journal.call_args.kwargs["entry_date"] == "2026-06-25"
     fx_gain_loss.assert_awaited_once()
+    assert fx_gain_loss.await_args.kwargs["invoice"]["base_total"] == "120.00"
     assert fx_gain_loss.await_args.kwargs["payment_base_amount"] == Decimal("125.00")
+    assert fx_gain_loss.await_args.kwargs["created_by"] == "user-1"
 
 
 @pytest.mark.asyncio
@@ -310,7 +345,9 @@ async def test_record_manual_payment_missing_fx_rate_rejects_before_insert(
         **_draft_invoice(invoice_id, tenant_id, status="sent"),
         "currency": "GBP",
         "total": "100.00",
+        "base_currency": "USD",
         "base_total": "120.00",
+        "approval_fx_rate_id": "fx-approval-rate-1",
     }
     svc._repo.get_by_id = AsyncMock(return_value=invoice)
 
@@ -334,6 +371,469 @@ async def test_record_manual_payment_missing_fx_rate_rejects_before_insert(
 
     assert exc_info.value.status_code == 422
     assert db.inserts == {}
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rejects_foreign_invoice_without_frozen_base_total(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="sent"),
+        "currency": "GBP",
+        "total": "100.00",
+        "base_currency": None,
+        "base_total": None,
+    }
+    svc._repo.get_by_id = AsyncMock(return_value=invoice)
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("100.00"),
+        currency="GBP",
+        base_amount=Decimal("125.00"),
+        base_currency="USD",
+        rate=Decimal("1.25"),
+        rate_date=date(2026, 6, 24),
+        fx_rate_id="fx-rate-1",
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ),
+        patch("app.services.invoices_service.post_journal") as post_journal,
+        patch(
+            "app.services.invoices_service.post_fx_gain_loss_if_needed",
+            new=AsyncMock(),
+        ) as fx_gain_loss,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("100.00"),
+            currency="GBP",
+            paid_at_iso="2026-06-25T09:00:00+00:00",
+            notes="Unsafe legacy settlement",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "frozen approval base total" in exc_info.value.detail.lower()
+    assert db.inserts == {}
+    assert db.updates == {}
+    post_journal.assert_not_called()
+    fx_gain_loss.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rejects_changed_tenant_base_currency(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="sent"),
+        "currency": "GBP",
+        "total": "100.00",
+        "base_currency": "EUR",
+        "base_total": "120.00",
+        "approval_fx_rate_id": "fx-gbp-eur",
+    }
+    svc._repo.get_by_id = AsyncMock(return_value=invoice)
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("100.00"),
+        currency="GBP",
+        base_amount=Decimal("125.00"),
+        base_currency="USD",
+        rate=Decimal("1.25"),
+        rate_date=date(2026, 6, 24),
+        fx_rate_id="fx-gbp-usd",
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ),
+        patch("app.services.invoices_service.post_journal") as post_journal,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("100.00"),
+            currency="GBP",
+            paid_at_iso="2026-06-25T09:00:00+00:00",
+            notes="Unsafe changed-base settlement",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "base currency" in exc_info.value.detail.lower()
+    assert db.inserts == {}
+    assert db.updates == {}
+    post_journal.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_keeps_partially_paid_invoice_open(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb(
+        payment_rows=[
+            {
+                "id": "payment-1",
+                "tenant_id": tenant_id,
+                "invoice_id": invoice_id,
+                "amount": "300.00",
+                "currency": "USD",
+                "paid_at": "2026-06-10T09:00:00+00:00",
+                "notes": "First instalment",
+            }
+        ]
+    )
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = _draft_invoice(invoice_id, tenant_id, status="sent")
+    svc._repo.get_by_id = AsyncMock(return_value=invoice)
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1100": "acct-bank", "1200": "acct-ar"}
+    )
+    svc._repo.list_lines = AsyncMock(return_value=[])
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("200.00"),
+        currency="USD",
+        base_amount=Decimal("200.00"),
+        base_currency="USD",
+        rate=Decimal("1"),
+        rate_date=date(2026, 6, 20),
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ),
+        patch("app.services.invoices_service.post_journal"),
+        patch(
+            "app.services.invoices_service.post_fx_gain_loss_if_needed",
+            new=AsyncMock(),
+        ) as fx_gain_loss,
+    ):
+        result = await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("200.00"),
+            currency="USD",
+            paid_at_iso="2026-06-20T09:00:00+00:00",
+            notes="Second instalment",
+            recorded_by="user-1",
+        )
+
+    cumulative_paid = sum(
+        Decimal(str(row["amount"]))
+        for row in [*db.payment_rows, *db.inserts["payments"]]
+    )
+    assert cumulative_paid == Decimal("500.00")
+    assert Decimal(invoice["total"]) - cumulative_paid == Decimal("500.00")
+    assert result.status == "sent"
+    assert db.updates.get("invoices", []) == []
+    fx_gain_loss.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_marks_paid_on_cumulative_full_settlement(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    prior_payment = {
+        "id": "payment-1",
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "amount": "300.00",
+        "base_amount": "300.00",
+        "currency": "USD",
+        "paid_at": "2026-06-10T09:00:00+00:00",
+        "notes": "First instalment",
+    }
+    db = _PaymentDb(payment_rows=[prior_payment])
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = _draft_invoice(invoice_id, tenant_id, status="sent")
+    paid_invoice = {
+        **invoice,
+        "status": "paid",
+        "paid_at": "2026-06-20T09:00:00+00:00",
+    }
+    svc._repo.get_by_id = AsyncMock(side_effect=[invoice, paid_invoice])
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1100": "acct-bank", "1200": "acct-ar"}
+    )
+    svc._repo.list_lines = AsyncMock(return_value=[])
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("700.00"),
+        currency="USD",
+        base_amount=Decimal("700.00"),
+        base_currency="USD",
+        rate=Decimal("1"),
+        rate_date=date(2026, 6, 20),
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ),
+        patch("app.services.invoices_service.post_journal"),
+        patch(
+            "app.services.invoices_service.post_fx_gain_loss_if_needed",
+            new=AsyncMock(),
+        ) as fx_gain_loss,
+    ):
+        result = await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("700.00"),
+            currency="USD",
+            paid_at_iso="2026-06-20T09:00:00+00:00",
+            notes="Final instalment",
+            recorded_by="user-1",
+        )
+
+    assert result.status == "paid"
+    assert db.updates["invoices"] == [
+        {"status": "paid", "paid_at": "2026-06-20T09:00:00+00:00"}
+    ]
+    fx_gain_loss.assert_awaited_once()
+    assert fx_gain_loss.await_args.kwargs["payment_amount"] == Decimal("1000.00")
+    assert fx_gain_loss.await_args.kwargs["payment_base_amount"] == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rejects_cumulative_overpayment_before_writes(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+
+    db = _PaymentDb(
+        payment_rows=[
+            {
+                "id": "payment-1",
+                "tenant_id": tenant_id,
+                "invoice_id": invoice_id,
+                "amount": "800.00",
+                "currency": "USD",
+                "paid_at": "2026-06-10T09:00:00+00:00",
+                "notes": "First instalment",
+            }
+        ]
+    )
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    svc._repo.get_by_id = AsyncMock(
+        return_value=_draft_invoice(invoice_id, tenant_id, status="sent")
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(),
+        ) as payment_fx,
+        patch("app.services.invoices_service.post_journal") as post_journal,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("300.00"),
+            currency="USD",
+            paid_at_iso="2026-06-20T09:00:00+00:00",
+            notes="Too much",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "remaining balance" in exc_info.value.detail
+    payment_fx.assert_not_awaited()
+    post_journal.assert_not_called()
+    assert db.inserts == {}
+    assert db.updates == {}
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rejects_exact_duplicate_receipt(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+
+    stored_paid_at = "2026-06-20T09:00:00+00:00"
+    retry_paid_at = "2026-06-20T09:00:00Z"
+    db = _PaymentDb(
+        payment_rows=[
+            {
+                "id": "payment-1",
+                "tenant_id": tenant_id,
+                "invoice_id": invoice_id,
+                "amount": "200.00",
+                "currency": "USD",
+                "paid_at": stored_paid_at,
+                "notes": "Wire ref ISH-001",
+            }
+        ]
+    )
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    svc._repo.get_by_id = AsyncMock(
+        return_value=_draft_invoice(invoice_id, tenant_id, status="sent")
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(),
+        ) as payment_fx,
+        patch("app.services.invoices_service.post_journal") as post_journal,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("200.00"),
+            currency="USD",
+            paid_at_iso=retry_paid_at,
+            notes="Wire ref ISH-001",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "duplicate" in exc_info.value.detail.lower()
+    payment_fx.assert_not_awaited()
+    post_journal.assert_not_called()
+    assert db.inserts == {}
+    assert db.updates == {}
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rolls_back_receipt_when_journal_is_rejected(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    invoice = _draft_invoice(invoice_id, tenant_id, status="sent")
+    svc._repo.get_by_id = AsyncMock(return_value=invoice)
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1100": "acct-bank", "1200": "acct-ar"}
+    )
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("1000.00"),
+        currency="USD",
+        base_amount=Decimal("1000.00"),
+        base_currency="USD",
+        rate=Decimal("1"),
+        rate_date=date(2026, 6, 20),
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ),
+        patch(
+            "app.services.invoices_service.post_journal",
+            side_effect=ValueError("locked period"),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("1000.00"),
+            currency="USD",
+            paid_at_iso="2026-06-20T09:00:00+00:00",
+            notes="Wire ref ISH-002",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert db.inserts.get("payments", []) == []
+    assert db.updates.get("invoices", []) == []
+
+
+@pytest.mark.asyncio
+async def test_record_manual_payment_rejects_non_invoice_currency_for_safe_balance(
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    db = _PaymentDb()
+    svc = InvoicesService(db, tenant_id)  # type: ignore[arg-type]
+    svc._repo.get_by_id = AsyncMock(
+        return_value=_draft_invoice(invoice_id, tenant_id, status="sent")
+    )
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1100": "acct-bank", "1200": "acct-ar"}
+    )
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("100.00"),
+        currency="EUR",
+        base_amount=Decimal("110.00"),
+        base_currency="USD",
+        rate=Decimal("1.10"),
+        rate_date=date(2026, 6, 20),
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ) as payment_fx,
+        patch("app.services.invoices_service.post_journal"),
+        patch(
+            "app.services.invoices_service.post_fx_gain_loss_if_needed",
+            new=AsyncMock(),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.record_manual_payment(
+            invoice_id=invoice_id,
+            amount=Decimal("100.00"),
+            currency="EUR",
+            paid_at_iso="2026-06-20T09:00:00+00:00",
+            notes="Unsafe cross-currency receipt",
+            recorded_by="user-1",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "invoice currency" in exc_info.value.detail.lower()
+    payment_fx.assert_not_awaited()
+    assert db.inserts == {}
+    assert db.updates == {}
 
 
 # ---------------------------------------------------------------------------
@@ -742,6 +1242,7 @@ def test_approve_invoice_splits_tax_to_sales_tax_payable(
 ) -> None:
     """Approval journal credits revenue for subtotal and 2300 for tax."""
     from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
 
     svc = InvoicesService(mock_db, tenant_id)
     taxable_invoice = {
@@ -759,7 +1260,23 @@ def test_approve_invoice_splits_tax_to_sales_tax_payable(
     svc._repo.update = AsyncMock(return_value=approved_invoice)
     svc._repo.list_lines = AsyncMock(return_value=[])
 
-    with patch("app.services.invoices_service.post_journal") as post_journal_mock:
+    same_currency_fx = PaymentFxAmounts(
+        amount=Decimal("1100.00"),
+        currency="USD",
+        base_amount=Decimal("1100.00"),
+        base_currency="USD",
+        rate=Decimal("1"),
+        rate_date=date(2026, 5, 1),
+        fx_rate_id=None,
+    )
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=same_currency_fx),
+        ),
+        patch("app.services.invoices_service.post_journal") as post_journal_mock,
+    ):
         result = asyncio.run(svc.approve_invoice(invoice_id, approved_by="user-uuid-001"))
 
     assert result.status == "approved"
@@ -770,6 +1287,180 @@ def test_approve_invoice_splits_tax_to_sales_tax_payable(
         ("CR", "4000", Decimal("1000.00")),
         ("CR", "2300", Decimal("100.00")),
     ]
+    assert [line.base_amount for line in journal_lines] == [
+        Decimal("1100.00"),
+        Decimal("1000.00"),
+        Decimal("100.00"),
+    ]
+    assert [line.fx_rate_id for line in journal_lines] == [None, None, None]
+
+
+@pytest.mark.asyncio
+async def test_approve_foreign_invoice_freezes_issue_date_fx_in_balanced_journal(
+    mock_db: MagicMock,
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    """A foreign invoice is approved in both transaction and tenant base currency."""
+    from app.services.invoices_service import InvoicesService
+    from app.services.payment_fx_service import PaymentFxAmounts
+
+    svc = InvoicesService(mock_db, tenant_id)
+    foreign_invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="draft"),
+        "currency": "USD",
+        "subtotal": "1000.00",
+        "tax_total": "90.00",
+        "total": "1090.00",
+        "issue_date": "2026-05-31",
+    }
+    approved_invoice = {
+        **foreign_invoice,
+        "status": "approved",
+        "base_currency": "SGD",
+        "base_subtotal": "1350.00",
+        "base_tax_total": "121.50",
+        "base_total": "1471.50",
+        "approval_fx_rate_id": "fx-usd-sgd-2026-05-29",
+    }
+    fx_amounts = PaymentFxAmounts(
+        amount=Decimal("1090.00"),
+        currency="USD",
+        base_amount=Decimal("1471.50"),
+        base_currency="SGD",
+        rate=Decimal("1.350000"),
+        rate_date=date(2026, 5, 29),
+        fx_rate_id="fx-usd-sgd-2026-05-29",
+    )
+
+    svc._repo.get_by_id = AsyncMock(return_value=foreign_invoice)
+    svc._repo.get_account_ids_by_codes = AsyncMock(
+        return_value={"1200": "acct-ar", "4000": "acct-revenue", "2300": "acct-tax"}
+    )
+    svc._repo.update = AsyncMock(return_value=approved_invoice)
+    svc._repo.list_lines = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(return_value=fx_amounts),
+        ) as resolve_fx,
+        patch("app.services.invoices_service.post_journal") as post_journal_mock,
+    ):
+        result = await svc.approve_invoice(invoice_id, approved_by="user-uuid-001")
+
+    resolve_fx.assert_awaited_once_with(
+        db=mock_db,
+        tenant_id=tenant_id,
+        amount=Decimal("1090.00"),
+        currency="USD",
+        paid_at="2026-05-31",
+    )
+    journal_lines = post_journal_mock.call_args.kwargs["lines"]
+    assert [line.base_amount for line in journal_lines] == [
+        Decimal("1471.50"),
+        Decimal("1350.00"),
+        Decimal("121.50"),
+    ]
+    assert [line.fx_rate_id for line in journal_lines] == [
+        "fx-usd-sgd-2026-05-29",
+        "fx-usd-sgd-2026-05-29",
+        "fx-usd-sgd-2026-05-29",
+    ]
+    assert sum(
+        line.base_amount for line in journal_lines if line.direction == "DR"
+    ) == sum(line.base_amount for line in journal_lines if line.direction == "CR")
+    svc._repo.update.assert_awaited_once_with(
+        invoice_id,
+        {
+            "status": "approved",
+            "base_currency": "SGD",
+            "base_subtotal": "1350.00",
+            "base_tax_total": "121.50",
+            "base_total": "1471.50",
+            "approval_fx_rate_id": "fx-usd-sgd-2026-05-29",
+        },
+    )
+    assert result.base_total == "1471.50"
+    assert result.approval_fx_rate_id == "fx-usd-sgd-2026-05-29"
+
+
+@pytest.mark.asyncio
+async def test_approve_foreign_invoice_missing_fx_rejects_before_journal_or_status(
+    mock_db: MagicMock,
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.domain.fx import FxRateNotFoundError
+    from app.services.invoices_service import InvoicesService
+
+    svc = InvoicesService(mock_db, tenant_id)
+    foreign_invoice = {
+        **_draft_invoice(invoice_id, tenant_id, status="draft"),
+        "currency": "USD",
+        "issue_date": "2026-05-31",
+    }
+    svc._repo.get_by_id = AsyncMock(return_value=foreign_invoice)
+    svc._repo.update = AsyncMock()
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(
+                side_effect=FxRateNotFoundError("USD", "SGD", date(2026, 5, 31))
+            ),
+        ),
+        patch("app.services.invoices_service.post_journal") as post_journal_mock,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.approve_invoice(invoice_id, approved_by="user-uuid-001")
+
+    assert exc_info.value.status_code == 422
+    assert "2026-05-31" in exc_info.value.detail
+    post_journal_mock.assert_not_called()
+    svc._repo.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_approve_invoice_requires_fx_persistence_schema_before_journal(
+    mock_db: MagicMock,
+    tenant_id: str,
+    invoice_id: str,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.invoices_service import InvoicesService
+
+    svc = InvoicesService(mock_db, tenant_id)
+    pre_migration_invoice = _draft_invoice(invoice_id, tenant_id, status="draft")
+    for column in (
+        "base_currency",
+        "base_subtotal",
+        "base_tax_total",
+        "base_total",
+        "approval_fx_rate_id",
+    ):
+        pre_migration_invoice.pop(column)
+    svc._repo.get_by_id = AsyncMock(return_value=pre_migration_invoice)
+    svc._repo.update = AsyncMock()
+
+    with (
+        patch(
+            "app.services.invoices_service.payment_fx_amounts",
+            new=AsyncMock(),
+        ) as resolve_fx,
+        patch("app.services.invoices_service.post_journal") as post_journal_mock,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await svc.approve_invoice(invoice_id, approved_by="user-uuid-001")
+
+    assert exc_info.value.status_code == 503
+    assert "0102" in exc_info.value.detail
+    resolve_fx.assert_not_awaited()
+    post_journal_mock.assert_not_called()
+    svc._repo.update.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

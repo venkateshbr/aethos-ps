@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from fastapi import HTTPException, status
+
+from app.domain.currency import normalise_currency_code
 from app.models.accounting import (
     RecurringJournalTemplateCreate,
     RecurringJournalTemplateLineResponse,
@@ -35,6 +38,7 @@ class RecurringJournalTemplateService:
         *,
         created_by: str,
     ) -> RecurringJournalTemplateResponse:
+        currency = payload.currency or await self._tenant_base_currency()
         template_row = await asyncio.to_thread(
             lambda: (
                 self.db.table("recurring_journal_templates")
@@ -46,7 +50,7 @@ class RecurringJournalTemplateService:
                         "schedule_day": payload.schedule_day,
                         "start_period": payload.start_period,
                         "end_period": payload.end_period,
-                        "currency": payload.currency,
+                        "currency": currency,
                         "is_active": payload.is_active,
                         "created_by": created_by,
                     }
@@ -78,6 +82,26 @@ class RecurringJournalTemplateService:
             )
         )
         return _template_response(template_row, line_rows)
+
+    async def _tenant_base_currency(self) -> str:
+        def _fetch() -> str:
+            result = (
+                self.db.table("tenants")
+                .select("base_currency")
+                .eq("id", self.tenant_id)
+                .limit(1)
+                .execute()
+            )
+            row = result.data[0] if result.data else {}
+            try:
+                return normalise_currency_code(row.get("base_currency"))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Tenant base currency is not configured",
+                ) from exc
+
+        return await asyncio.to_thread(_fetch)
 
     def _fetch_template_rows(self) -> list[dict[str, Any]]:
         result = (

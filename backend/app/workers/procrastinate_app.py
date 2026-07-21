@@ -22,27 +22,35 @@ from __future__ import annotations
 
 from procrastinate import App, PsycopgConnector
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 
-# The connector is created with a *placeholder* DSN at import time so the
-# module loads cleanly even when DATABASE_URL is unset (tests, build-time
-# linting, CLI tools that don't actually defer). Real DSN is injected at
-# startup via app.replace_connector() when DATABASE_URL is present.
-_connector = PsycopgConnector(conninfo=settings.database_url or "postgresql://placeholder/placeholder")
 
-app = App(
-    connector=_connector,
-    import_paths=[
-        "app.workers.document_extraction",
-        "app.workers.fx_refresh",
-        "app.workers.collections",
-        "app.workers.autonomy_promoter",
-        "app.workers.stripe_reconcile_worker",
-        "app.workers.billing_run_worker",
-        "app.workers.close_scheduler_worker",
-        "app.workers.finance_ops_manager_worker",
-        "app.workers.project_health_worker",
-        "app.workers.intelligence_worker",
-        "app.workers.time_entry_reminder_worker",
-    ],
-)
+def create_queue_app(config: Settings) -> App:
+    """Build the queue app with an explicitly bounded database pool."""
+    connector = PsycopgConnector(
+        conninfo=config.database_url or "postgresql://placeholder/placeholder",
+        min_size=config.queue_db_pool_min_size,
+        max_size=config.queue_db_pool_max_size,
+        kwargs={"application_name": config.queue_db_application_name},
+    )
+    return App(
+        connector=connector,
+        import_paths=[
+            "app.workers.document_extraction",
+            "app.workers.fx_refresh",
+            "app.workers.collections",
+            "app.workers.autonomy_promoter",
+            "app.workers.stripe_reconcile_worker",
+            "app.workers.billing_run_worker",
+            "app.workers.close_scheduler_worker",
+            "app.workers.finance_ops_manager_worker",
+            "app.workers.project_health_worker",
+            "app.workers.intelligence_worker",
+            "app.workers.time_entry_reminder_worker",
+        ],
+    )
+
+
+# The placeholder DSN keeps imports safe when DATABASE_URL is unset (tests,
+# build-time linting, and CLI commands that do not open the connector).
+app = create_queue_app(settings)

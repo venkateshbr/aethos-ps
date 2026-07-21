@@ -136,10 +136,17 @@ test.describe('R-Real-5 · Multi-tenant isolation (tunnel)', () => {
 
     // Persist tenant B's storage in case downstream specs want to use it.
     await ctxB.storageState({ path: 'e2e/.auth/isolation-tenant-b.json' });
+    fs.chmodSync('e2e/.auth/isolation-tenant-b.json', 0o600);
     fs.writeFileSync(
       'e2e/.auth/isolation-tenant-b.meta.json',
-      JSON.stringify({ ...tenantB, password: 'Aksha-real5-2026!' }, null, 2),
+      JSON.stringify({
+        ...tenantB,
+        password: 'Aksha-real5-2026!',
+        playwrightRunId: process.env.AETHOS_E2E_RUN_ID,
+      }, null, 2),
+      { mode: 0o600 },
     );
+    fs.chmodSync('e2e/.auth/isolation-tenant-b.meta.json', 0o600);
 
     test.info().annotations.push({
       type: 'tenant-pair',

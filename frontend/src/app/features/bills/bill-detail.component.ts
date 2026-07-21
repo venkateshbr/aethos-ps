@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
@@ -11,6 +11,7 @@ import { ConfidenceChipComponent } from '../../shared/components/confidence-chip
 import { SourceDocumentLinkComponent } from '../../shared/components/source-document-link.component';
 import { DecisionTimelineComponent } from '../../shared/components/decision-timeline.component';
 import { userMessageForError } from '../../core/utils/error-message';
+import { CurrentPermissionsService } from '../../core/services/current-permissions.service';
 
 interface BillLine {
   id: string;
@@ -155,9 +156,9 @@ interface PoLineMatch {
               <button
                 type="button"
                 (click)="approveBill()"
-                [disabled]="actionLoading()"
+                [disabled]="actionLoading() || !canApproveBill()"
                 class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-                matTooltip="Approve bill — posts DR Expense / CR AP journal"
+                [matTooltip]="canApproveBill() ? 'Approve bill — posts DR Expense / CR AP journal' : 'Requires bill approval permission'"
               >
                 <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">check_circle</mat-icon>
                 @if (actionLoading()) { Approving… } @else { Approve }
@@ -176,9 +177,9 @@ interface PoLineMatch {
               <button
                 type="button"
                 (click)="voidBill()"
-                [disabled]="actionLoading()"
+                [disabled]="actionLoading() || !canManageBills()"
                 class="inline-flex items-center gap-2 border border-border-strong hover:border-slate-500 text-text-muted hover:text-confidence-low font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-                matTooltip="Void this bill"
+                [matTooltip]="canManageBills() ? 'Void this bill' : 'Requires bill management permission'"
               >
                 <mat-icon class="text-base" style="font-size:1rem;width:1rem;height:1rem;">block</mat-icon>
                 @if (actionLoading()) { Voiding… } @else { Void }
@@ -482,6 +483,7 @@ export class BillDetailComponent implements OnInit {
   private route  = inject(ActivatedRoute);
   private router = inject(Router);
   private http   = inject(HttpClient);
+  private permissions = inject(CurrentPermissionsService);
 
   loading       = signal(true);
   error         = signal<string | null>(null);
@@ -489,10 +491,13 @@ export class BillDetailComponent implements OnInit {
   actionLoading = signal(false);
   actionMessage = signal<string | null>(null);
   actionError   = signal<string | null>(null);
+  canApproveBill = computed(() => this.permissions.hasPrivilege('bills.approve'));
+  canManageBills = computed(() => this.permissions.hasPrivilege('bills.manage'));
 
   readonly lineColumns = ['description', 'quantity', 'unit_price', 'tax_rate', 'amount'];
 
   ngOnInit(): void {
+    this.permissions.ensureLoaded();
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/app/bills']);
@@ -516,14 +521,14 @@ export class BillDetailComponent implements OnInit {
 
   approveBill(): void {
     const b = this.bill();
-    if (!b) return;
+    if (!b || !this.canApproveBill()) return;
     this.actionLoading.set(true);
     this.actionMessage.set(null);
     this.actionError.set(null);
 
-    this.http.post<BillDetail>(`/api/v1/bills/${b.id}/approve`, {}).subscribe({
+    this.http.patch<{ status: string }>(`/api/v1/bills/${b.id}/approve`, {}).subscribe({
       next: (updated) => {
-        this.bill.set(updated);
+        this.bill.set({ ...b, status: updated.status });
         this.actionLoading.set(false);
         this.actionMessage.set(
           `${b.bill_number} approved — DR Expense / CR AP journal posted.`,
@@ -540,7 +545,7 @@ export class BillDetailComponent implements OnInit {
 
   voidBill(): void {
     const b = this.bill();
-    if (!b) return;
+    if (!b || !this.canManageBills()) return;
     this.actionLoading.set(true);
     this.actionMessage.set(null);
     this.actionError.set(null);

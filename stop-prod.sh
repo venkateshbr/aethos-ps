@@ -13,7 +13,7 @@ ENV_FILE="$SCRIPT_DIR/backend/.env"
 
 echo "Stopping Aethos PS production containers..."
 
-docker compose \
+AETHOS_ENV_FILE="$ENV_FILE" docker compose \
   -f "$SCRIPT_DIR/infra/docker-compose.prod.yml" \
   --project-directory "$SCRIPT_DIR" \
   --env-file "$ENV_FILE" \

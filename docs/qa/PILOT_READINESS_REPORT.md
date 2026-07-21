@@ -1,4 +1,11 @@
-# Aethos PS — Pilot Readiness Report
+# Aethos PS — Pilot Readiness Report (historical R3)
+
+> **Superseded for launch decisions on 2026-07-12.** The YELLOW/GREEN language
+> below records the May R3 assessment only. It is not the current production
+> verdict and its suite counts must not be reused. The current gate is
+> [`ishantech-production-e2e-runbook-2026-07-11.md`](./ishantech-production-e2e-runbook-2026-07-11.md):
+> exact-SHA deployment and the retained one-session production browser run are
+> still pending, so launch remains unapproved until that evidence is complete.
 
 > **Owner**: Aksha (SDET)
 > **Date**: 2026-05-24 (R3 — final pilot-readiness pass)
