@@ -14,7 +14,7 @@ import { userMessageForError } from '../../core/utils/error-message';
 export interface InvoiceSummary {
   id: string;
   invoice_number: string;
-  client_name: string;
+  client_name: string | null;
   status: string;
   currency: string;
   total_amount: string;
@@ -137,8 +137,12 @@ type InvoiceListResponse = InvoiceSummary[];
                 Client
               </th>
               <td mat-cell *matCellDef="let row"
-                  class="text-text-primary text-sm px-4 py-3 border-b border-border-subtle">
-                {{ row.client_name }}
+                  class="text-text-primary text-sm px-4 py-3 border-b border-border-subtle max-w-[16rem]">
+                @if (row.client_name) {
+                  <span class="block truncate" [title]="row.client_name">{{ row.client_name }}</span>
+                } @else {
+                  <span class="text-text-disabled italic" aria-label="No client on this invoice">No client</span>
+                }
               </td>
             </ng-container>
 
