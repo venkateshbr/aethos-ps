@@ -69,6 +69,28 @@ class BillPaymentsService:
                 f"Bills must be approved before batching: {not_approved}",
             )
 
+        # Guard double-settlement: a bill already in an active (non-cancelled)
+        # payment item cannot be batched again. The DB partial unique index
+        # ux_bill_payment_items_active_bill is the backstop for a concurrent race;
+        # this pre-filter turns it into a clear 409 for the common case. (#391/LR-10)
+        existing_items = (
+            self.db.table("bill_payment_items")
+            .select("bill_id, status")
+            .eq("tenant_id", self.tenant_id)
+            .in_("bill_id", bill_ids)
+            .execute()
+            .data
+            or []
+        )
+        already_batched = sorted(
+            {r["bill_id"] for r in existing_items if (r.get("status") or "") != "cancelled"}
+        )
+        if already_batched:
+            raise HTTPException(
+                409,
+                f"Bills are already in a payment batch: {already_batched}",
+            )
+
         total = sum(Decimal(str(b["total"])) for b in bills)
         currencies = {str(b["currency"]) for b in bills}
         if len(currencies) > 1:
