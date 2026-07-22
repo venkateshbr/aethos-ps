@@ -109,11 +109,29 @@ class TaxRatesService:
         System-seeded rates have ``tenant_id IS NULL`` and are intentionally not
         matched by this update path.
         """
+        fields = payload.model_fields_set
+        changes: dict = {}
+        if "name" in fields and payload.name is not None:
+            changes["name"] = payload.name
+            changes["code"] = _custom_code(payload.name)
+        if "rate" in fields and payload.rate is not None:
+            changes["rate"] = _fraction_from_percent(payload.rate)
+        if "market" in fields:
+            # null market is meaningful ("all markets") — always apply when sent.
+            changes["country"] = market_to_country(payload.market)
+        if "is_active" in fields and payload.is_active is not None:
+            changes["is_active"] = payload.is_active
+
+        if not changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No updatable fields supplied",
+            )
 
         def _update() -> dict | None:
             result = (
                 self.db.table("tax_rates")
-                .update({"is_active": payload.is_active})
+                .update(changes)
                 .eq("id", tax_rate_id)
                 .eq("tenant_id", self.tenant_id)
                 .is_("deleted_at", "null")

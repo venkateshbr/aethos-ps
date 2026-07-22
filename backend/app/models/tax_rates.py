@@ -47,6 +47,34 @@ class TaxRateCreate(BaseModel):
 
 
 class TaxRateUpdate(BaseModel):
-    """Patch mutable fields for a tenant-owned custom tax rate."""
+    """Patch mutable fields for a tenant-owned custom tax rate.
 
-    is_active: bool
+    All fields are optional; only fields explicitly present in the request are
+    updated. ``model_fields_set`` distinguishes an omitted field from an explicit
+    ``null`` — this matters for ``market``, where ``null`` legitimately means
+    "applies to all markets" rather than "no change".
+    """
+
+    name: str | None = None
+    rate: Decimal | None = None
+    market: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Name is required")
+        return cleaned
+
+    @field_validator("rate")
+    @classmethod
+    def validate_rate(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return None
+        if value < 0 or value > 100:
+            raise ValueError("Rate must be between 0 and 100")
+        return value
