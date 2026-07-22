@@ -31,9 +31,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jwt import PyJWK, PyJWTError
 
 from app.core.config import settings
 
@@ -48,6 +49,10 @@ _ASYMMETRIC_ALGS: tuple[str, ...] = ("ES256", "RS256")
 
 class _InvalidKidError(Exception):
     """Token's `kid` header doesn't match any cached JWKS key. Triggers a refetch."""
+
+
+class _UnsupportedAlgorithmError(Exception):
+    """Token header advertises an algorithm we do not accept (e.g. `none`)."""
 
 
 @lru_cache(maxsize=1)
@@ -80,7 +85,12 @@ def _signing_key_for(token: str) -> dict:
 
 
 def _decode_token(token: str) -> dict:
-    """Decode + verify a Supabase JWT. Supports HS256 and ES256/RS256."""
+    """Decode + verify a Supabase JWT. Supports HS256 and ES256/RS256.
+
+    Algorithms are pinned per path: the shared-secret path accepts only HS256,
+    the JWKS path only ES256/RS256. Any other ``alg`` (including ``none``) is
+    rejected before any verification is attempted.
+    """
     header = jwt.get_unverified_header(token)
     alg = header.get("alg", "")
 
@@ -95,18 +105,18 @@ def _decode_token(token: str) -> dict:
     if alg in _ASYMMETRIC_ALGS:
         # Try with the cached JWKS first; on `kid` miss, clear and retry once.
         try:
-            key = _signing_key_for(token)
+            jwk = _signing_key_for(token)
         except _InvalidKidError:
             _jwks.cache_clear()
-            key = _signing_key_for(token)  # second miss → caller catches
+            jwk = _signing_key_for(token)  # second miss → caller catches
         return jwt.decode(
             token,
-            key,
+            PyJWK.from_dict(jwk).key,
             algorithms=[alg],
             options={"verify_aud": False},
         )
 
-    raise JWTError(f"Unsupported JWT algorithm: {alg!r}")
+    raise _UnsupportedAlgorithmError(f"Unsupported JWT algorithm: {alg!r}")
 
 
 @dataclass(frozen=True)
@@ -137,7 +147,13 @@ async def get_current_user(
     token = credentials.credentials
     try:
         payload: dict = _decode_token(token)
-    except (JWTError, _InvalidKidError, httpx.HTTPError, ValueError) as exc:
+    except (
+        PyJWTError,
+        _InvalidKidError,
+        _UnsupportedAlgorithmError,
+        httpx.HTTPError,
+        ValueError,
+    ) as exc:
         logger.debug("JWT decode failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
