@@ -162,7 +162,12 @@ def _request_with_tenant(path: str = "/") -> Request:
     )
 
 
-def test_unknown_explicit_app_role_is_viewer_without_db_fallback() -> None:
+def test_unknown_explicit_app_role_defers_to_membership() -> None:
+    # #378 AC 2: membership is authoritative. An unrecognised JWT role claim no
+    # longer short-circuits to viewer — with a tenant context we resolve from
+    # tenant_users. Here the DB membership says the caller is an owner of this
+    # tenant, so they ARE an owner regardless of the garbage JWT claim. The old
+    # code returned viewer, wrongly denying a real owner.
     db = _Db()
     role = _resolve_role(
         CurrentUser(
@@ -174,8 +179,8 @@ def test_unknown_explicit_app_role_is_viewer_without_db_fallback() -> None:
         db,  # type: ignore[arg-type]
     )
 
-    assert role == UserRole.viewer
-    assert db.table_calls == 0
+    assert role == UserRole.owner
+    assert db.table_calls == 1
 
 
 def test_authenticated_supabase_role_uses_membership_fallback() -> None:

@@ -386,3 +386,47 @@ def test_public_ping_does_not_require_tenant_membership() -> None:
 
     assert response.status_code == 200, response.text
     assert response.json() == {"pong": True}
+
+def _admin_probe() -> FastAPI:
+    probe = FastAPI()
+
+    @probe.get("/api/v1/admin-only")
+    async def admin_only(
+        _user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+        _tenant_id: str = Depends(get_tenant_id),
+    ) -> dict[str, bool]:
+        return {"ok": True}
+
+    return probe
+
+
+def test_jwt_owner_claim_is_rejected_when_membership_is_viewer() -> None:
+    """#378 AC 2 — a stale/cross-tenant JWT claiming a higher role must not
+    outrank the caller's actual tenant membership."""
+    probe = _admin_probe()
+    membership_db = _MembershipDb("viewer")
+    probe.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id=USER_ID, email="u@example.com", role="owner",  # JWT over-claims
+    )
+    probe.dependency_overrides[get_service_role_client] = lambda: membership_db
+
+    with TestClient(probe) as client:
+        response = client.get("/api/v1/admin-only", headers={"X-Tenant-ID": TENANT_ID})
+
+    assert response.status_code == 403, response.text
+
+
+def test_membership_admin_grants_access_even_if_jwt_claims_viewer() -> None:
+    """#378 AC 2 — membership is authoritative in both directions: a current
+    admin membership grants access even when the JWT still claims a low role."""
+    probe = _admin_probe()
+    membership_db = _MembershipDb("admin")
+    probe.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        user_id=USER_ID, email="u@example.com", role="viewer",  # stale low claim
+    )
+    probe.dependency_overrides[get_service_role_client] = lambda: membership_db
+
+    with TestClient(probe) as client:
+        response = client.get("/api/v1/admin-only", headers={"X-Tenant-ID": TENANT_ID})
+
+    assert response.status_code == 200, response.text
