@@ -118,6 +118,7 @@ Net impact:
 | D20 | Stripe Tax | **Enabled** for SaaS subscriptions — auto-calculates GST/VAT per buyer location for our $29/$79/$199 plans |
 | D21 | Free tier | **No free tier in v1** — 14-day trial with card capture (validates intent + smooths conversion) |
 | D22 | Outreach voice | **Founder-personal** — DMs and posts go out from Founder account; product brand develops over time |
+| D23 | GL posting integrity | **Atomic, idempotent journal posting** — header + lines commit in one transaction via the `post_journal_entry` RPC; `debits == credits` enforced by a DB deferred constraint trigger; retries/multi-node double-submits deduped on an idempotency key. Replaces the non-atomic two-insert path. See **ADR 0001** (`docs/adr/0001-atomic-journal-posting.md`), issue #390 / audit LR-08. |
 
 ---
 
