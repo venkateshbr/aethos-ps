@@ -366,3 +366,60 @@ def test_approval_rate_calculation() -> None:
     ]
     rate = Decimal(str(len(approved) / len(rows)))
     assert rate == Decimal("0.8")
+
+
+def test_check_promotions_status_filter_is_postgrest_valid() -> None:
+    """#395 regression: the decided-suggestions filter must be .neq('status','pending'),
+    not .not_.is_('status','pending') which PostgREST rejects (PGRST100). A
+    PostgREST-accurate stub raises on an invalid `is` filter value."""
+    from types import SimpleNamespace
+
+    _VALID_IS = (None, "null", "not_null", True, False, "true", "false", "unknown")
+
+    class _Q:
+        def __init__(self, data: list) -> None:
+            self._data = data
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, *a, **k):
+            return self
+
+        def gte(self, *a, **k):
+            return self
+
+        def neq(self, *a, **k):
+            return self
+
+        def insert(self, *a, **k):
+            return self
+
+        @property
+        def not_(self):
+            return self
+
+        def is_(self, _col, val):
+            if val not in _VALID_IS:
+                raise ValueError(f"PGRST100: 'is' filter rejects {val!r}")
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=self._data)
+
+    class _Db:
+        def __init__(self, sugg: list) -> None:
+            self._sugg = sugg
+
+        def table(self, name: str):
+            return _Q(self._sugg if name == "agent_suggestions" else [])
+
+    # 40 approved suggestions (> min_n=30) for one pair, so the status query runs.
+    sugg = [
+        {"agent_name": "collections_agent", "action_type": "draft_reminder",
+         "status": "approved", "confidence": "0.9"}
+        for _ in range(40)
+    ]
+    # Must not raise (would raise if the code regressed to .not_.is_('status','pending')).
+    result = _check_promotions(_Db(sugg), "tenant-x")
+    assert result == 0  # no agent_autonomy_settings row → skipped after the query ran
