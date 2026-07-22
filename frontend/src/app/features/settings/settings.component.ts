@@ -3,6 +3,7 @@ import { StripeConnectComponent } from './stripe-connect.component';
 import { ChangePasswordComponent } from './change-password.component';
 import { TaxRatesComponent } from './tax-rates.component';
 import { RateCardsComponent } from './rate-cards.component';
+import { SubscriptionComponent } from './subscription.component';
 import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
 import { AgentRunsComponent } from './agent-runs.component';
@@ -26,6 +27,7 @@ import { FxRatesInspectorComponent } from './fx-rates-inspector.component';
     ChangePasswordComponent,
     TaxRatesComponent,
     RateCardsComponent,
+    SubscriptionComponent,
     AutonomyComponent,
     ServicesComponent,
     AgentRunsComponent,
@@ -84,6 +86,14 @@ import { FxRatesInspectorComponent } from './fx-rates-inspector.component';
             <app-stripe-connect />
             <app-integrations />
           </div>
+        </section>
+
+        <!-- Billing section (#398) -->
+        <section aria-labelledby="billing-heading">
+          <h2 id="billing-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+            Billing
+          </h2>
+          <app-subscription />
         </section>
 
         <!-- Tax Rates section -->
