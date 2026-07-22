@@ -41,6 +41,17 @@ async def test_same_currency_any_code_is_one() -> None:
         assert rate == Decimal("1"), f"Expected 1 for {code}→{code}, got {rate}"
 
 
+@pytest.mark.asyncio
+async def test_get_fx_rate_record_rejects_malformed_currency_codes() -> None:
+    """#376 AC 3 — an invalid currency pair is rejected explicitly (ValueError),
+    not silently treated as a missing rate, and the DB is never queried."""
+    db_mock = MagicMock()
+    for bad_from, bad_to in (("US", "GBP"), ("GBP", "US$"), ("", "GBP"), ("GBP", "1234")):
+        with pytest.raises(ValueError, match="three-letter ISO"):
+            await get_fx_rate_record(bad_from, bad_to, date.today(), db_mock)
+    db_mock.table.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Cross-rate derivation note
 # Cross-rates (GBP→SGD) are NOT stored in the DB; only USD-pivot pairs are.
