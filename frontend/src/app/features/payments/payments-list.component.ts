@@ -1,8 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+
+import { AuthService } from '../../core/services/auth.service';
 
 interface Payment {
   id: string;
@@ -22,12 +25,50 @@ interface Payment {
   template: `
     <section class="h-full flex flex-col bg-surface-base text-text-primary">
 
-      <header class="px-6 py-5 border-b border-border-default flex items-center justify-between flex-none">
+      <header class="px-6 py-5 border-b border-border-default flex items-center justify-between gap-3 flex-none">
         <div>
           <h1 class="text-xl font-semibold text-text-primary">Payments</h1>
           <p class="text-xs text-text-muted mt-0.5">AR receipts — payments received from clients</p>
         </div>
+        <div class="flex items-center gap-2 flex-none">
+          <button
+            type="button"
+            (click)="goRecordPayment()"
+            class="inline-flex items-center gap-1.5 bg-accent hover:bg-accent-hover text-accent-on font-medium px-3 py-1.5 rounded text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            aria-label="Record a payment against an invoice"
+          >
+            <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">add</mat-icon>
+            Record payment
+          </button>
+          @if (isAdmin()) {
+            <button
+              type="button"
+              (click)="reconcileStripe()"
+              [disabled]="reconciling()"
+              class="inline-flex items-center gap-1.5 border border-border-default text-text-secondary hover:text-text-primary hover:bg-surface-raised font-medium px-3 py-1.5 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              aria-label="Reconcile Stripe payments"
+            >
+              <mat-icon class="text-base leading-none" style="font-size:1rem;width:1rem;height:1rem;">sync</mat-icon>
+              @if (reconciling()) { Reconciling… } @else { Reconcile Stripe }
+            </button>
+          }
+        </div>
       </header>
+
+      @if (actionMessage()) {
+        <div class="mx-6 mt-4 rounded-lg border border-emerald-800 bg-accent/10 px-4 py-3 text-sm text-accent-light flex items-center gap-2"
+             role="status" aria-live="polite">
+          <mat-icon class="text-base">check_circle</mat-icon>
+          {{ actionMessage() }}
+        </div>
+      }
+      @if (actionError()) {
+        <div class="mx-6 mt-4 rounded-lg border border-confidence-low/30 bg-confidence-low/10 px-4 py-3 text-sm text-confidence-low flex items-center gap-2"
+             role="alert">
+          <mat-icon class="text-base">error_outline</mat-icon>
+          {{ actionError() }}
+        </div>
+      }
 
       <!-- Loading -->
       @if (loading()) {
@@ -106,12 +147,60 @@ interface Payment {
 })
 export class PaymentsListComponent implements OnInit {
   private http = inject(HttpClient);
+  private router = inject(Router);
+  private auth = inject(AuthService);
 
   protected loading = signal(true);
   protected payments = signal<Payment[]>([]);
   protected error = signal<string | null>(null);
 
+  protected reconciling = signal(false);
+  protected actionMessage = signal<string | null>(null);
+  protected actionError = signal<string | null>(null);
+
+  /** Stripe reconciliation is admin-gated server-side (require_role admin). */
+  protected isAdmin = computed(() => {
+    const role = this.auth.role();
+    return role === 'admin' || role === 'owner';
+  });
+
   ngOnInit() { this.load(); }
+
+  /**
+   * AR receipts are recorded against a specific invoice (period lock + AR
+   * journal live there), so "record a payment" routes to the Invoices list
+   * where the mark-paid / record-payment flow applies to the chosen invoice.
+   */
+  protected goRecordPayment(): void {
+    this.router.navigate(['/app/invoices']);
+  }
+
+  protected async reconcileStripe(): Promise<void> {
+    if (!this.isAdmin() || this.reconciling()) return;
+    this.reconciling.set(true);
+    this.actionMessage.set(null);
+    this.actionError.set(null);
+    try {
+      const res = await firstValueFrom(
+        this.http.post<{ reconciled: number; skipped: number; errors: number }>(
+          '/api/v1/payments/reconcile-stripe',
+          {},
+        ),
+      );
+      this.actionMessage.set(
+        `Stripe reconciliation complete — ${res.reconciled} reconciled, ${res.skipped} skipped` +
+          (res.errors ? `, ${res.errors} error${res.errors === 1 ? '' : 's'}` : ''),
+      );
+      await this.load();
+    } catch (err) {
+      const detail = (err as { error?: { detail?: unknown } } | null)?.error?.detail;
+      this.actionError.set(
+        typeof detail === 'string' ? detail : 'Could not reconcile Stripe payments. Please try again.',
+      );
+    } finally {
+      this.reconciling.set(false);
+    }
+  }
 
   private async load() {
     try {
