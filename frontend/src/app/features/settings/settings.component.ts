@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { StripeConnectComponent } from './stripe-connect.component';
 import { ChangePasswordComponent } from './change-password.component';
 import { TaxRatesComponent } from './tax-rates.component';
+import { RateCardsComponent } from './rate-cards.component';
 import { AutonomyComponent } from './autonomy.component';
 import { ServicesComponent } from './services.component';
 import { AgentRunsComponent } from './agent-runs.component';
@@ -24,6 +25,7 @@ import { FxRatesInspectorComponent } from './fx-rates-inspector.component';
     StripeConnectComponent,
     ChangePasswordComponent,
     TaxRatesComponent,
+    RateCardsComponent,
     AutonomyComponent,
     ServicesComponent,
     AgentRunsComponent,
@@ -55,7 +57,10 @@ import { FxRatesInspectorComponent } from './fx-rates-inspector.component';
           <h2 id="services-heading" class="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
             Services &amp; Products
           </h2>
-          <app-services />
+          <div class="space-y-4">
+            <app-services />
+            <app-rate-cards />
+          </div>
         </section>
 
         <!-- Account / Security section (#118) -->
