@@ -138,6 +138,35 @@ describe('InvoicesListComponent receipts', () => {
     http.expectNone('/api/v1/invoices/draft-id/approve');
   });
 
+  it('renders the client name in the invoice row', () => {
+    const clientCell = fixture.nativeElement.querySelector(
+      'tbody tr td.mat-column-client_name',
+    ) as HTMLElement | null;
+    expect(clientCell).not.toBeNull();
+    expect(clientCell!.textContent).toContain('Ishantech Merlion Health');
+  });
+
+  it('shows a "No client" fallback when the invoice has no client name', () => {
+    fixture.componentInstance.invoices.set([{ ...invoice, client_name: null }]);
+    fixture.detectChanges();
+    const clientCell = fixture.nativeElement.querySelector(
+      'tbody tr td.mat-column-client_name',
+    ) as HTMLElement;
+    expect(clientCell.textContent).toContain('No client');
+    expect(clientCell.querySelector('[aria-label="No client on this invoice"]')).not.toBeNull();
+  });
+
+  it('truncates a long client name but keeps the full value in a title tooltip', () => {
+    const longName = 'Ishantech Global Advisory Consolidated Holdings and Partners International LLP';
+    fixture.componentInstance.invoices.set([{ ...invoice, client_name: longName }]);
+    fixture.detectChanges();
+    const span = fixture.nativeElement.querySelector(
+      'tbody tr td.mat-column-client_name span',
+    ) as HTMLElement;
+    expect(span.classList).toContain('truncate');
+    expect(span.getAttribute('title')).toBe(longName);
+  });
+
   it('keeps a partially settled invoice open when the receipt response remains sent', () => {
     const component = fixture.componentInstance;
     component.openMarkPaid(invoice);
