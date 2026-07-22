@@ -11,17 +11,19 @@ dependencies = [
   "pydantic[email]>=2.7",
   "pydantic-settings>=2.14.2",
   "supabase>=2.5",
-  "python-jose[cryptography]>=3.3",
   "python-json-logger>=2.0",
   "httpx>=0.27",
   "python-multipart>=0.0.32",
-  # Security floors for transitive auth/ASGI dependencies used by Supabase,
-  # python-jose, and FastAPI. Keep these explicit so future lock refreshes do
-  # not reintroduce the vulnerable versions found during launch audit #368.
+  # Security floors for transitive auth/ASGI dependencies used by Supabase and
+  # FastAPI. Keep these explicit so future lock refreshes do not reintroduce the
+  # vulnerable versions found during launch audit #368.
   "cryptography>=49.0.0",
+  # JWT verification uses PyJWT (HS256 + ES256/RS256 via JWKS). We removed
+  # python-jose (#384) because it pulled the no-fix python-ecdsa advisory
+  # (PYSEC-2026-1325); PyJWT verifies the same Supabase tokens without it.
   "pyjwt[crypto]>=2.13.0",
   "starlette>=1.3.1",
-  # pyasn1 is pulled transitively (rsa / python-jose). 0.6.3 carries PYSEC-2026-3455/6/7,
+  # pyasn1 is pulled transitively (rsa). 0.6.3 carries PYSEC-2026-3455/6/7,
   # fixed in 0.6.4 — floor it so lock refreshes cannot reintroduce the vulnerable build. (#385)
   "pyasn1>=0.6.4",
   "anthropic>=0.30",

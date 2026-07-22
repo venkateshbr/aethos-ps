@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from jose import jwt
+import jwt
 
 from app.services.security_service import LEGACY_ROLE_TO_SECURITY_ROLE
 from supabase import Client, create_client

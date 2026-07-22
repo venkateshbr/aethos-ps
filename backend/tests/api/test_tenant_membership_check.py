@@ -172,9 +172,9 @@ def test_jwt_signed_with_wrong_secret_is_401(
 
     Defense against someone fabricating a JWT for an arbitrary user_id.
     """
-    from jose import jwt as jose_jwt
+    import jwt as pyjwt
 
-    bad_token = jose_jwt.encode(
+    bad_token = pyjwt.encode(
         {
             "sub": str(uuid.uuid4()),
             "email": "attacker@example.com",
