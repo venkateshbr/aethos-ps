@@ -24,6 +24,7 @@ Usage
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 
 from fastapi import Depends, HTTPException, Request, status
@@ -36,6 +37,8 @@ from app.core.tenant import (
     _lookup_active_membership,
 )
 from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 
 class UserRole(StrEnum):
@@ -90,50 +93,71 @@ def role_allows_approval(user_role: UserRole, required_role: UserRole) -> bool:
     return False
 
 
+def _coerce_role(role_value: object, current_user: CurrentUser, *, from_membership: bool) -> UserRole:
+    """Convert a role string to ``UserRole``; unknowns collapse to ``viewer``.
+
+    When the authoritative membership role disagrees with the JWT's
+    ``app_metadata.role`` claim, log it (the claim is *rejected* in favour of
+    membership) so stale/cross-tenant tokens are observable. (#378 AC 2)
+    """
+    try:
+        resolved = UserRole(str(role_value).strip())
+    except ValueError:
+        return UserRole.viewer
+    if from_membership:
+        jwt_role = (current_user.role or "").strip()
+        if jwt_role and jwt_role not in {"anon", "authenticated"} and jwt_role != resolved.value:
+            logger.warning(
+                "jwt_role_membership_mismatch",
+                extra={
+                    "user_id": current_user.user_id,
+                    "jwt_role": jwt_role,
+                    "membership_role": resolved.value,
+                },
+            )
+    return resolved
+
+
 def _resolve_role(current_user: CurrentUser, request: Request, db: Client) -> UserRole:
     """Return the effective UserRole for this request.
 
-    Primary source: ``app_metadata.role`` in the JWT (set by Supabase JWT hook).
-    Fallback: DB lookup from ``tenant_users`` using X-Tenant-ID header.
-
-    The fallback handles accounts created via admin APIs (e.g. e2e test setup)
-    that bypass the JWT hook, as well as environments where the hook is not yet
-    configured.
+    The **active-tenant membership is authoritative** (#378 AC 2): for any
+    tenant-scoped request the role comes from the caller's ``tenant_users`` row
+    for the *targeted* tenant, never the (possibly stale or cross-tenant)
+    ``app_metadata.role`` claim in the JWT. The JWT role is only a best-effort
+    fallback when there is no tenant context to verify against (non-tenant-scoped
+    endpoints, or JWT-hook-only setups where the DB row was not yet seeded).
     """
+    raw_tenant_id = request.headers.get("X-Tenant-ID", "").strip()
+
+    # 1. Membership role verified for this tenant (cached by get_tenant_id's
+    #    cross-check) — the authoritative source.
+    cached_tenant_id = getattr(request.state, _VERIFIED_TENANT_STATE_KEY, None)
+    cached_role = getattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, None)
+    if raw_tenant_id and cached_tenant_id == raw_tenant_id and cached_role:
+        return _coerce_role(cached_role, current_user, from_membership=True)
+
+    # 2. A tenant is targeted but not yet verified here — resolve from the DB and
+    #    trust the membership over the JWT claim.
+    if raw_tenant_id:
+        membership = _lookup_active_membership(
+            db,
+            user_id=current_user.user_id,
+            tenant_id=raw_tenant_id,
+        )
+        if membership is not None:
+            setattr(request.state, _VERIFIED_TENANT_STATE_KEY, raw_tenant_id)
+            setattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, membership["role"])
+            return _coerce_role(membership["role"], current_user, from_membership=True)
+        # Targeted a tenant the caller is not an active member of → no authority.
+        return UserRole.viewer
+
+    # 3. No tenant context at all — best-effort JWT role (nothing to verify).
     raw_role = (current_user.role or "").strip()
     try:
         return UserRole(raw_role)
     except ValueError:
-        if raw_role not in {"", "anon", "authenticated"}:
-            return UserRole.viewer
-
-    # JWT role is absent or unrecognised — fall back to tenant_users table.
-    raw_tenant_id = request.headers.get("X-Tenant-ID", "").strip()
-    if not raw_tenant_id:
         return UserRole.viewer
-
-    cached_tenant_id = getattr(request.state, _VERIFIED_TENANT_STATE_KEY, None)
-    cached_role = getattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, None)
-    if cached_tenant_id == raw_tenant_id and cached_role:
-        try:
-            return UserRole(cached_role)
-        except ValueError:
-            return UserRole.viewer
-
-    membership = _lookup_active_membership(
-        db,
-        user_id=current_user.user_id,
-        tenant_id=raw_tenant_id,
-    )
-    if membership is not None:
-        setattr(request.state, _VERIFIED_TENANT_STATE_KEY, raw_tenant_id)
-        setattr(request.state, _VERIFIED_TENANT_ROLE_STATE_KEY, membership["role"])
-        try:
-            return UserRole(membership["role"])
-        except ValueError:
-            return UserRole.viewer
-
-    return UserRole.viewer
 
 
 def require_role(minimum: UserRole) -> CurrentUser:
