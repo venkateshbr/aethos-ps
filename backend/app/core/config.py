@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     atlas_hermes_api_server_key: str = ""
     atlas_hermes_timeout_seconds: float = 90.0
     atlas_hide_tool_events: bool = True
-    atlas_hermes_fallback_to_basic: bool = False
+    atlas_hermes_fallback_to_basic: bool = True  # graceful degradation: Hermes outage -> Basic runtime (#409)
     aethos_hermes_tool_token: str = ""
     atlas_context_signing_secret: str = ""
 
