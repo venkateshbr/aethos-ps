@@ -317,6 +317,10 @@ def test_bill_payment_create_uses_service_role_client(
 ) -> None:
     app.dependency_overrides[get_user_rls_client] = lambda: _ForbiddenDb()
     app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    # Fresh-create scenario: the bill is not yet in any payment batch. (The shared
+    # fixture seeds an existing item for get/settle tests; the #391 double-settle
+    # guard now correctly rejects re-batching a bill that already has an active item.)
+    fake_db.tables["bill_payment_items"] = []
 
     response = client.post(
         "/api/v1/bill-payments/batches",
