@@ -79,9 +79,14 @@ constraints become the authoritative last line.
 - One migration (`0107`) adds the column/index, the deferred balance trigger, and
   the RPC. One helper (`post_journal`) is rewritten to call the RPC — all 11
   callers benefit with no per-caller change.
-- **Backfill:** existing orphan/zero-line headers from the old path must be found
-  and corrected (via reversing entries) before the deferred trigger is relied on;
-  the trigger only guards *new* line writes.
+- **Backfill / pre-deploy audit (#372 AC 7):** existing orphan/zero-line headers
+  and any unbalanced posted entries from the old path must be found and corrected
+  (via reversing entries) before the deferred trigger is relied on — the trigger
+  only guards *new* line writes, and it never fires for a zero-line header at all.
+  Run `backend/scripts/audit_journal_integrity.py` (read-only) against each target
+  environment first; it exits non-zero and lists offenders if any exist, and
+  clean (exit 0) means the constraints are safe to enable. **Production audited
+  2026-07-23: 15 posted entries, 0 orphans, 0 unbalanced — clean.**
 - **Follow-ups (tracked on #390):** move the period-lock check into the same
   transaction (a `BEFORE INSERT` trigger on `journal_entries`) to close the
   guardian/write TOCTOU window; optionally let callers pass an explicit semantic
