@@ -15,9 +15,11 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from supabase_auth.errors import AuthApiError, AuthWeakPasswordError
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import settings
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
 from app.core.tenant import get_tenant_id
@@ -27,29 +29,86 @@ from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService, country_to_currency
 from app.services.localization_service import get_market_profile
 from app.services.security_service import SecurityService
-from supabase import Client
+from supabase import Client, create_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+class CompletePasswordChangeRequest(BaseModel):
+    """Both passwords so the SERVER performs and verifies the rotation."""
+
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
 @router.post(
     "/complete-password-change",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Clear the first-login password-change requirement",
+    summary="Rotate the first-login password and clear the change requirement",
 )
 async def complete_password_change(
+    payload: CompletePasswordChangeRequest,
     current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> None:
-    """Mark the current tenant membership as having completed password reset.
+    """Rotate the password server-side, then clear ``must_change_password``.
 
-    The frontend calls this only after Supabase confirms ``updateUser`` changed
-    the password. Backend tenant access allows this endpoint even while
-    ``must_change_password`` is true.
+    Security (LR-25 / #393): the flag is cleared ONLY after the server itself
+    verifies the current password and sets the new one. Previously this endpoint
+    trusted the client's claim that a rotation happened, so a user holding the
+    admin-set temporary password could clear the flag without ever changing it.
+    The server now:
+      1. verifies ``current_password`` via a throwaway anon sign-in (never mutating
+         the service-role client's session);
+      2. rejects reuse (``new_password == current_password``);
+      3. sets ``new_password`` via the admin API (Supabase enforces the policy);
+      4. only then clears the flag.
     """
+    if payload.new_password == payload.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be different from the current password.",
+        )
+
+    # 1. Verify the current password with a disposable anon client so the
+    #    service-role client session is never replaced (see the signup note on
+    #    sign_in mutating the client session).
+    verifier = create_client(settings.supabase_url, settings.supabase_anon_key)
+    try:
+        await asyncio.to_thread(
+            verifier.auth.sign_in_with_password,
+            {"email": current_user.email, "password": payload.current_password},
+        )
+    except AuthApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect.",
+        ) from exc
+    finally:
+        try:
+            verifier.auth.sign_out()
+        except Exception:
+            pass
+
+    # 2. Set the new password server-side via the admin API.
+    try:
+        await asyncio.to_thread(
+            db.auth.admin.update_user_by_id,
+            current_user.user_id,
+            {"password": payload.new_password},
+        )
+    except AuthWeakPasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password is too weak. Use at least 8 characters with a mix of letters, numbers, and symbols.",
+        ) from exc
+    except AuthApiError as exc:
+        raise _auth_error_to_http(exc) from exc
+
+    # 3. Rotation proven — clear the requirement.
     await SecurityService(db, tenant_id).clear_must_change_password(current_user.user_id)
 
 
