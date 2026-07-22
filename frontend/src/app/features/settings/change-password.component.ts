@@ -174,43 +174,32 @@ export class ChangePasswordComponent {
     try {
       const { current_password, new_password } = this.form.getRawValue();
 
-      // 1. Pull the active user's email from the Supabase session
-      const session = await this.supabaseSvc.client.auth.getSession();
-      const email = session.data.session?.user?.email;
-      if (!email) {
-        this.error.set('Your session is missing an email. Please sign in again.');
-        this.auth.clearToken();
-        this.router.navigate(['/login']);
+      // The SERVER verifies the current password, performs the rotation via the
+      // admin API, and only then clears the must-change-password flag (LR-25):
+      // the flag can never be cleared without a proven rotation. We therefore no
+      // longer change the password client-side — doing so would invalidate the
+      // server's current-password check.
+      try {
+        await firstValueFrom(
+          this.http.post('/api/v1/auth/complete-password-change', {
+            current_password,
+            new_password,
+          }),
+        );
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 401) {
+          this.error.set('Current password is incorrect.');
+        } else if (status === 422) {
+          const detail = (err as { error?: { detail?: string } }).error?.detail;
+          this.error.set(detail || 'Password does not meet the requirements.');
+        } else {
+          this.error.set('Could not update your password. Please try again.');
+        }
         return;
       }
 
-      // 2. Verify current password by re-authenticating
-      const verify = await this.supabaseSvc.client.auth.signInWithPassword({
-        email,
-        password: current_password,
-      });
-      if (verify.error) {
-        this.error.set('Current password is incorrect.');
-        return;
-      }
-
-      // 3. Update password on the active session
-      const update = await this.supabaseSvc.client.auth.updateUser({ password: new_password });
-      if (update.error) {
-        this.error.set(this.translateUpdateError(update.error.message, (update.error as { code?: string }).code));
-        return;
-      }
-
-      // 4. Refresh the in-memory token from the verify response (signInWithPassword
-      //    returns a new session — keep AuthService in sync so the next request
-      //    uses the latest access token).
-      const newToken = verify.data.session?.access_token;
-      if (newToken) {
-        this.auth.setToken(newToken);
-      }
-      await firstValueFrom(this.http.post('/api/v1/auth/complete-password-change', {}));
       this.auth.setMustChangePassword(false);
-
       this.success.set(true);
       this.form.reset({ current_password: '', new_password: '', confirm_password: '' });
     } catch {

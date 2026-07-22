@@ -264,20 +264,88 @@ def test_timesheet_employee_can_read_only_their_own_timesheet_portal_data() -> N
     assert response.json() == {"items": [], "total": 0}
 
 
-def test_timesheet_employee_can_complete_the_forced_password_flow() -> None:
+def test_timesheet_employee_can_complete_the_forced_password_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    import app.api.v1.endpoints.auth as auth_mod
+
     membership_db = _install_overrides(must_change_password=True)
+    membership_db.auth = MagicMock()  # server-side admin password set
+    verifier = MagicMock()  # current-password verification succeeds
+    monkeypatch.setattr(auth_mod, "create_client", lambda *a, **k: verifier)
     try:
         with TestClient(app) as client:
             response = client.post(
                 "/api/v1/auth/complete-password-change",
                 headers={"X-Tenant-ID": TENANT_ID},
+                json={"current_password": "TempPass123!", "new_password": "NewStrongPass456!"},
             )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 204, response.text
+    # Server verified the current password AND set the new one BEFORE clearing the flag.
+    verifier.auth.sign_in_with_password.assert_called_once()
+    membership_db.auth.admin.update_user_by_id.assert_called_once()
     assert membership_db.must_change_password is False
-    assert membership_db.updates[-1]["must_change_password"] is False
+
+
+def test_forced_password_flow_rejects_wrong_current_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LR-25: the flag is NOT cleared if the current password is wrong."""
+    from unittest.mock import MagicMock
+
+    from supabase_auth.errors import AuthApiError
+
+    import app.api.v1.endpoints.auth as auth_mod
+
+    membership_db = _install_overrides(must_change_password=True)
+    membership_db.auth = MagicMock()
+    verifier = MagicMock()
+    verifier.auth.sign_in_with_password.side_effect = AuthApiError("invalid", 400, "invalid_credentials")
+    monkeypatch.setattr(auth_mod, "create_client", lambda *a, **k: verifier)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/auth/complete-password-change",
+                headers={"X-Tenant-ID": TENANT_ID},
+                json={"current_password": "WrongPass!", "new_password": "NewStrongPass456!"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401, response.text
+    membership_db.auth.admin.update_user_by_id.assert_not_called()
+    assert membership_db.must_change_password is True  # unchanged
+
+
+def test_forced_password_flow_rejects_reused_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LR-25: reusing the same password is rejected and the flag is not cleared."""
+    from unittest.mock import MagicMock
+
+    import app.api.v1.endpoints.auth as auth_mod
+
+    membership_db = _install_overrides(must_change_password=True)
+    membership_db.auth = MagicMock()
+    monkeypatch.setattr(auth_mod, "create_client", lambda *a, **k: MagicMock())
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/auth/complete-password-change",
+                headers={"X-Tenant-ID": TENANT_ID},
+                json={"current_password": "SamePass123!", "new_password": "SamePass123!"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422, response.text
+    membership_db.auth.admin.update_user_by_id.assert_not_called()
+    assert membership_db.must_change_password is True
 
 
 def test_timesheet_employee_can_read_their_effective_portal_permissions() -> None:
