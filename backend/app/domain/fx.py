@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from app.domain.currency import normalise_currency_code
+
 logger = logging.getLogger(__name__)
 
 # Maximum age (in days) before we warn that the rate may be stale.
@@ -85,9 +87,14 @@ async def get_fx_rate_record(
     rate_date: date,
     db_client,
 ) -> FxRateRecord:
-    """Look up an FX rate row with its immutable provenance id."""
-    from_currency = from_currency.upper()
-    to_currency = to_currency.upper()
+    """Look up an FX rate row with its immutable provenance id.
+
+    Rejects malformed currency codes with ``ValueError`` (#376 AC 3 — an invalid
+    pair is rejected explicitly, not silently reported as a missing rate). A
+    well-formed pair with no rate row still raises ``FxRateNotFoundError``.
+    """
+    from_currency = normalise_currency_code(from_currency)
+    to_currency = normalise_currency_code(to_currency)
 
     # Fast path: same currency is always 1 and has no fx_rates row.
     if from_currency == to_currency:
