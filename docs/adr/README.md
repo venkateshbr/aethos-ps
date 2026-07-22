@@ -37,3 +37,4 @@ Routine feature work does **not** need an ADR; a well-described issue is enough.
 | ADR | Title | Status | Date |
 |---|---|---|---|
 | [0001](0001-atomic-journal-posting.md) | Atomic, idempotent journal posting | Accepted | 2026-07-22 |
+| [0002](0002-jwt-verification-library.md) | JWT verification on PyJWT (drop python-jose) | Accepted | 2026-07-23 |

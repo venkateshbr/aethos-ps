@@ -119,6 +119,20 @@ Net impact:
 | D21 | Free tier | **No free tier in v1** — 14-day trial with card capture (validates intent + smooths conversion) |
 | D22 | Outreach voice | **Founder-personal** — DMs and posts go out from Founder account; product brand develops over time |
 | D23 | GL posting integrity | **Atomic, idempotent journal posting** — header + lines commit in one transaction via the `post_journal_entry` RPC; `debits == credits` enforced by a DB deferred constraint trigger; retries/multi-node double-submits deduped on an idempotency key. Replaces the non-atomic two-insert path. See **ADR 0001** (`docs/adr/0001-atomic-journal-posting.md`), issue #390 / audit LR-08. |
+| D24 | JWT auth verification | **PyJWT, not python-jose** — Supabase HS256 + ES256/RS256 (JWKS-by-`kid`, rotation self-heal) are verified with PyJWT; python-jose was removed to drop the no-fix `python-ecdsa` advisory (PYSEC-2026-1325) from the auth boundary. Asymmetric-path test contract landed first to pin token compatibility. See **ADR 0002** (`docs/adr/0002-jwt-verification-library.md`), issue #384 / audit LR-14. |
+
+---
+
+### Launch-readiness batch (2026-07-20 → 2026-07-23)
+
+Post-audit (#368) hardening and surface-completion, each shipped with tests:
+autonomy_promoter cron fix (#395); ADR practice + index (#396); backend
+dependency advisories incl. `pyasn1` floor (#385) and the python-jose→PyJWT
+migration (#384/D24); tax-rate editing (#399); invoice-list client identity
+(#387); Rate Cards management screen (#397); Payments write actions — admin
+Stripe reconcile + record affordance (#400); in-app plan & billing via the
+Stripe Customer Portal (#398). User-facing items are documented in
+`docs/user-guide/platform-user-guide.md` §10 and the module map.
 
 ---
 

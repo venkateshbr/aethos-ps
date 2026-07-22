@@ -64,6 +64,7 @@ result and the approval boundary.
 | People | `/app/people` | Admins, managers | Maintain staff, rates, targets, and delivery context for billing/reporting | Launch scenarios 1-4, 10 |
 | Engagements and projects | `/app/engagements`, `/app/projects` | Engagement managers, project managers | Set billing terms, organize delivery, connect WIP to invoices and project health | Launch scenarios 1-4 |
 | Invoices and public invoice | `/app/invoices`, `/p/:token` | AR lead, Controller, client recipient | Draft/review invoices, send/collect, inspect public invoice status | Engagement to Cash guide |
+| Payments | `/app/payments` | AR lead, Controller, Owner/Admin | Review AR receipts; admins/owners can run Stripe reconciliation; "Record payment" routes to the invoice-scoped receipt flow | Engagement to Cash guide |
 | Bills and pay bills | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare, approve, export, send, and settle guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-005 |
 | Accounting and close | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
 | Reports | `/app/reports` | Executives, managers, auditors | Explain AR/AP/WIP/revenue/project/accounting results and tie AI recommendations to source reports | Launch scenario 10 |
@@ -883,7 +884,15 @@ Settings are used for:
 
 - Firm and tenant configuration.
 - Tenant user invite, role update, deactivation, and access audit review.
-- Tax rates and market setup.
+- Tax rates and market setup, including editing a tenant custom rate's name,
+  percentage, and market (or clearing the market so it applies to all markets).
+  System-seeded rates stay read-only.
+- Rate card management — create rate cards with a currency, effective date, and
+  per-role billing rates (each optionally tagged to a service line). Rate cards
+  are selectable when pricing engagements; expand a card to review its roles.
+- Plan and billing management — view the current subscription plan tier and
+  status (with a trial countdown while trialing) and open the Stripe Customer
+  Portal to change plan, update the payment method, or download invoices.
 - Read-only historical FX provenance lookup by currency pair and requested
   date; it shows the matched rate date, row ID, source, and staleness without
   creating or replacing a global rate.
@@ -940,7 +949,9 @@ Settings demo checklist:
 | Settings surface | What to verify |
 | --- | --- |
 | Services | Active service catalogue maps to engagements, invoice lines, and reporting |
-| Tax Rates | Market tax setup exists before invoice/bill posting |
+| Rate Cards | Create a rate card with per-role rates; confirm it is selectable when pricing an engagement |
+| Tax Rates | Market tax setup exists before invoice/bill posting; a custom rate can be created, edited (name/rate/market), and activated/deactivated |
+| Plan & Billing | Current plan tier/status shows; "Manage plan & billing" opens the Stripe Customer Portal (returns to Settings) |
 | Historical FX provenance | Requested pair/date resolves to the expected matched date, source, immutable row ID, and staleness; the panel is inspection-only |
 | Collections Policy | Reminder cadence and tone are configured before email tasks are approved |
 | Stripe Connect | Payment-link readiness or manual-payment fallback is clear |
