@@ -242,7 +242,7 @@ def test_atlas_ai_runtime_defaults_to_aethos_basic() -> None:
         assert s.atlas_hermes_api_base_url == "http://hermes:8642"
         assert s.atlas_hermes_timeout_seconds == 90.0
         assert s.atlas_hide_tool_events is True
-        assert s.atlas_hermes_fallback_to_basic is False
+        assert s.atlas_hermes_fallback_to_basic is True
         assert s.aethos_hermes_tool_token == ""
         assert s.atlas_context_signing_secret == ""
         assert s.atlas_basic_openrouter_api_key == ""
