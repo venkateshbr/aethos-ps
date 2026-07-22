@@ -131,7 +131,12 @@ dependency advisories incl. `pyasn1` floor (#385) and the python-jose→PyJWT
 migration (#384/D24); tax-rate editing (#399); invoice-list client identity
 (#387); Rate Cards management screen (#397); Payments write actions — admin
 Stripe reconcile + record affordance (#400); in-app plan & billing via the
-Stripe Customer Portal (#398). User-facing items are documented in
+Stripe Customer Portal (#398); and the **Angular 19.2.22 → 20.3.26** security
+upgrade off the vulnerable 19.2.x line (#383/#394) — verified by both production
+builds, the unit suite, `npm audit --omit=dev` (0 vulnerabilities), and a
+non-destructive browser walkthrough (auth, router guards, all major screens,
+the new Settings panels, and Stripe Elements mount) on the running Angular 20
+build. User-facing items are documented in
 `docs/user-guide/platform-user-guide.md` §10 and the module map.
 
 ---
