@@ -16,6 +16,7 @@ Rules enforced here (not in DB triggers, to enable Python-layer validation befor
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -26,6 +27,45 @@ from typing import Any
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+
+def _journal_idempotency_key(
+    tenant_id: str,
+    reference_type: str,
+    reference_id: str,
+    entry_date: str,
+    description: str,
+    lines: list[dict[str, Any]],
+) -> str:
+    """Deterministic key so a retried/duplicated post maps to the same entry.
+
+    Derived from the post's content (tenant, source reference, date, description,
+    and the sorted lines), so a true retry — or a second API node handling the
+    same submit — produces the identical key and the RPC dedupes it, while
+    distinct events (e.g. a bill's approval vs its settlement — different lines)
+    get distinct keys and both post. See ADR 0001 for the follow-up to let callers
+    pass an explicit semantic key.
+    """
+    parts = [
+        str(tenant_id),
+        str(reference_type or ""),
+        str(reference_id or ""),
+        str(entry_date or ""),
+        str(description or ""),
+    ]
+    for line in sorted(
+        lines,
+        key=lambda ln: (
+            str(ln.get("account_id") or ""),
+            str(ln.get("direction") or ""),
+            str(ln.get("base_amount") or ""),
+        ),
+    ):
+        parts.append(
+            f"{line.get('account_id')}:{line.get('direction')}:"
+            f"{line.get('base_amount')}:{line.get('currency')}"
+        )
+    return "je:" + hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
 @dataclass
@@ -144,19 +184,11 @@ def post_journal(
     if extra_entry_fields:
         entry_payload.update(extra_entry_fields)
 
-    je = (
-        db.table("journal_entries")
-        .insert(entry_payload)
-        .execute()
-        .data[0]
-    )
-
     je_lines = []
     for spec in lines:
         je_lines.append(
             {
                 "tenant_id": tenant_id,
-                "journal_entry_id": je["id"],
                 "direction": spec.direction,
                 "account_id": spec.account_id,
                 "amount": str(spec.amount),
@@ -194,7 +226,6 @@ def post_journal(
         je_lines.append(
             {
                 "tenant_id": tenant_id,
-                "journal_entry_id": je["id"],
                 "direction": direction,
                 "account_id": fx_acct_id,
                 "amount": str(residual),
@@ -205,14 +236,34 @@ def post_journal(
             }
         )
 
-    db.table("journal_lines").insert(je_lines).execute()
+    # Atomic, idempotent post: header + lines in ONE DB transaction, deduped on a
+    # deterministic content key so a retry — or a second API node — posts exactly
+    # once. Balance (debits == credits) is enforced by the DB constraint trigger
+    # trg_journal_entry_balanced at commit. (ADR 0001 / #390)
+    idempotency_key = _journal_idempotency_key(
+        tenant_id, reference_type, reference_id, entry_date, description, je_lines
+    )
+    rpc_result = db.rpc(
+        "post_journal_entry",
+        {
+            "p_entry": entry_payload,
+            "p_lines": je_lines,
+            "p_idempotency_key": idempotency_key,
+        },
+    ).execute()
+
+    payload = rpc_result.data
+    if isinstance(payload, list):
+        payload = payload[0] if payload else {}
+    je = (payload or {}).get("entry") or {}
 
     logger.info(
         "Journal posted",
         extra={
-            "journal_entry_id": je["id"],
+            "journal_entry_id": je.get("id"),
             "tenant_id": tenant_id,
             "lines": len(je_lines),
+            "idempotent_hit": bool((payload or {}).get("idempotent_hit")),
         },
     )
     return je
