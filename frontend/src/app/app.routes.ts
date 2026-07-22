@@ -167,5 +167,16 @@ export const routes: Routes = [
     ],
   },
 
+  {
+    // #403 — Stripe Connect OAuth return (redirect_uri registered in Stripe).
+    // Top-level (matches the backend redirect_uri) transient handler that
+    // completes the exchange then routes the owner back to /app/settings.
+    path: 'settings/billing/connect/return',
+    loadComponent: () =>
+      import('./features/settings/stripe-connect-return.component').then(
+        m => m.StripeConnectReturnComponent,
+      ),
+  },
+
   { path: '**', redirectTo: '' },
 ];
