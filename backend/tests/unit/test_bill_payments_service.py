@@ -145,6 +145,51 @@ def test_create_batch_records_payment_optimization(mock_db: MagicMock) -> None:
     assert result["risk_review_required"] is True
 
 
+def test_create_batch_rejects_bill_already_in_active_item(mock_db: MagicMock) -> None:
+    """A bill already in a non-cancelled payment item cannot be re-batched (#391/LR-10)."""
+    from fastapi import HTTPException
+
+    bills = [{"id": "bill-1", "bill_number": "B1", "total": "1000.00", "currency": "USD",
+              "status": "approved", "client_id": "c1", "due_date": "2026-06-30",
+              "vendor_invoice_number": "V1"}]
+
+    def side(name: str) -> MagicMock:
+        if name == "bills":
+            return _chain(bills)
+        if name == "bill_payment_items":
+            return _chain([{"bill_id": "bill-1", "status": "pending"}])
+        raise AssertionError(name)
+
+    mock_db.table.side_effect = side
+    svc = _make_svc(mock_db)
+    with pytest.raises(HTTPException) as exc:
+        svc.create_batch(["bill-1"], None, "Operating Account", USER_ID)
+    assert exc.value.status_code == 409
+    assert "already in a payment batch" in exc.value.detail.lower()
+
+
+def test_create_batch_allows_bill_whose_only_item_is_cancelled(mock_db: MagicMock) -> None:
+    """A cancelled prior item does not block re-batching (#391)."""
+    bills = [{"id": "bill-1", "bill_number": "B1", "total": "1000.00", "currency": "USD",
+              "status": "approved", "client_id": "c1", "due_date": "2026-06-30",
+              "vendor_invoice_number": "V1"}]
+    batch_chain = _chain([{"id": "batch-9", "status": "draft"}])
+
+    def side(name: str) -> MagicMock:
+        if name == "bills":
+            return _chain(bills)
+        if name == "bill_payment_batches":
+            return batch_chain
+        if name == "bill_payment_items":
+            return _chain([{"bill_id": "bill-1", "status": "cancelled"}])
+        raise AssertionError(name)
+
+    mock_db.table.side_effect = side
+    svc = _make_svc(mock_db)
+    result = svc.create_batch(["bill-1"], None, "Operating Account", USER_ID)
+    assert result["id"] == "batch-9"
+
+
 # ---------------------------------------------------------------------------
 # 2. export_csv produces a header row + data rows
 # ---------------------------------------------------------------------------
