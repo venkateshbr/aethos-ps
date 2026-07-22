@@ -197,3 +197,47 @@ def test_patch_tax_rate_toggles_only_current_tenant_custom_rate(client: TestClie
 
     system_response = client.patch("/api/v1/tax-rates/sys-gb-vat", json={"is_active": False})
     assert system_response.status_code == 404
+
+
+def test_patch_tax_rate_edits_name_rate_and_market(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    response = client.patch(
+        "/api/v1/tax-rates/tenant-a-custom",
+        json={"name": "State services tax", "rate": "9.00", "market": "AU"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == "State services tax"
+    assert body["rate"] == "9.00"
+    assert body["market"] == "AU"
+
+    row = next(r for r in fake_db.tax_rates if r["id"] == "tenant-a-custom")
+    assert row["rate"] == "0.0900"  # percent stored as fraction
+    assert row["country"] == "AU"
+    assert row["code"] == "CUSTOM-STATE-SERVICES-TAX"  # code regenerated from name
+    assert row["is_active"] is True  # untouched fields preserved
+
+
+def test_patch_tax_rate_can_clear_market_to_all(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    response = client.patch("/api/v1/tax-rates/tenant-a-custom", json={"market": None})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["market"] is None
+    row = next(r for r in fake_db.tax_rates if r["id"] == "tenant-a-custom")
+    assert row["country"] is None
+
+
+def test_patch_tax_rate_rejects_empty_body(client: TestClient) -> None:
+    response = client.patch("/api/v1/tax-rates/tenant-a-custom", json={})
+    assert response.status_code == 400, response.text
+
+
+def test_patch_tax_rate_rejects_out_of_range_rate(client: TestClient) -> None:
+    response = client.patch("/api/v1/tax-rates/tenant-a-custom", json={"rate": "150"})
+    assert response.status_code == 422, response.text

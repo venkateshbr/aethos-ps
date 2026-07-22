@@ -77,6 +77,7 @@ export interface TaxRate {
                 <th scope="col" class="text-left px-6 py-3">Market</th>
                 <th scope="col" class="text-left px-6 py-3">System</th>
                 <th scope="col" class="text-left px-6 py-3">Active</th>
+                <th scope="col" class="text-right px-6 py-3"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border-default">
@@ -120,7 +121,6 @@ export interface TaxRate {
                       </span>
                     } @else {
                       <!-- Custom rates: toggle active state -->
-                      <!-- TODO: PATCH /api/v1/tax-rates/{id} endpoint to be implemented by Karya -->
                       <button
                         type="button"
                         [disabled]="toggling() === rate.id"
@@ -141,6 +141,21 @@ export interface TaxRate {
                           <span>{{ rate.is_active ? 'Active' : 'Inactive' }}</span>
                         }
                       </button>
+                    }
+                  </td>
+                  <td class="px-6 py-3 text-right">
+                    @if (!rate.is_system) {
+                      <button
+                        type="button"
+                        (click)="openEditPanel(rate)"
+                        class="inline-flex items-center gap-1 text-xs font-medium text-accent-light hover:text-text-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded px-1"
+                        [attr.aria-label]="'Edit ' + rate.name"
+                      >
+                        <mat-icon class="leading-none" style="font-size:0.95rem;width:0.95rem;height:0.95rem;">edit</mat-icon>
+                        Edit
+                      </button>
+                    } @else {
+                      <span class="text-text-disabled text-xs">—</span>
                     }
                   </td>
                 </tr>
@@ -280,6 +295,130 @@ export interface TaxRate {
         </div>
       </aside>
     }
+
+    <!-- Edit Tax Rate slide-in panel -->
+    @if (editRate(); as target) {
+      <div
+        class="fixed inset-0 bg-black/50 z-40"
+        (click)="closeEditPanel()"
+        aria-hidden="true"
+      ></div>
+      <aside
+        class="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border-default z-50 flex flex-col shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-tax-rate-title"
+      >
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border-default flex-none">
+          <h2 id="edit-tax-rate-title" class="text-base font-semibold text-text-primary">Edit Tax Rate</h2>
+          <button
+            type="button"
+            (click)="closeEditPanel()"
+            class="text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+            aria-label="Close panel"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form
+          [formGroup]="editForm"
+          (ngSubmit)="submitEdit()"
+          class="flex-1 overflow-y-auto px-6 py-5 space-y-5"
+          novalidate
+        >
+          <div>
+            <label for="etr-name" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Name *</label>
+            <input
+              id="etr-name"
+              type="text"
+              formControlName="name"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+              placeholder="e.g. GST 10%"
+            />
+            @if (editForm.controls.name.touched && editForm.controls.name.errors) {
+              <p class="text-xs text-confidence-low mt-1">Name is required.</p>
+            }
+          </div>
+
+          <div>
+            <label for="etr-rate" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Rate (%) *</label>
+            <input
+              id="etr-rate"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              formControlName="rate"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+              placeholder="e.g. 10.00"
+            />
+            @if (editForm.controls.rate.touched && editForm.controls.rate.errors) {
+              <p class="text-xs text-confidence-low mt-1">Enter a rate between 0 and 100.</p>
+            }
+          </div>
+
+          <div>
+            <label for="etr-market" class="block text-xs uppercase tracking-wide text-text-muted mb-2">Market</label>
+            <select
+              id="etr-market"
+              formControlName="market"
+              class="w-full px-3 py-2 bg-surface-base border border-border-default rounded text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            >
+              <option value="">All markets</option>
+              <option value="US">US — United States</option>
+              <option value="UK">UK — United Kingdom</option>
+              <option value="SG">SG — Singapore</option>
+              <option value="IN">IN — India</option>
+              <option value="AU">AU — Australia</option>
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <label for="etr-active" class="text-sm text-text-primary">Active</label>
+            <button
+              id="etr-active"
+              type="button"
+              role="switch"
+              [attr.aria-checked]="editForm.controls.is_active.value"
+              (click)="editForm.controls.is_active.setValue(!editForm.controls.is_active.value)"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              [class]="editForm.controls.is_active.value ? 'bg-accent' : 'bg-slate-700'"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                [class]="editForm.controls.is_active.value ? 'translate-x-6' : 'translate-x-1'"
+                aria-hidden="true"
+              ></span>
+            </button>
+          </div>
+
+          @if (editError()) {
+            <div role="alert" class="text-sm text-confidence-low bg-confidence-low/10 border border-confidence-low/30 rounded px-3 py-2">
+              {{ editError() }}
+            </div>
+          }
+        </form>
+
+        <div class="flex-none px-6 py-4 border-t border-border-default flex items-center justify-end gap-3">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded"
+            (click)="closeEditPanel()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-4 py-2 rounded text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            [disabled]="editForm.invalid || savingEdit()"
+            (click)="submitEdit()"
+          >
+            @if (savingEdit()) { Saving… } @else { Save Changes }
+          </button>
+        </div>
+      </aside>
+    }
   `,
   styles: [':host { display: block; }'],
 })
@@ -300,6 +439,18 @@ export class TaxRatesComponent implements OnInit {
   addError = signal<string | null>(null);
 
   addForm = this.fb.nonNullable.group({
+    name:      ['', [Validators.required]],
+    rate:      [null as number | null, [Validators.required, Validators.min(0), Validators.max(100)]],
+    market:    [''],
+    is_active: [true],
+  });
+
+  // Edit panel
+  editRate = signal<TaxRate | null>(null);
+  savingEdit = signal(false);
+  editError = signal<string | null>(null);
+
+  editForm = this.fb.nonNullable.group({
     name:      ['', [Validators.required]],
     rate:      [null as number | null, [Validators.required, Validators.min(0), Validators.max(100)]],
     market:    [''],
@@ -333,15 +484,59 @@ export class TaxRatesComponent implements OnInit {
   toggleActive(rate: TaxRate): void {
     if (rate.is_system) return;
     this.toggling.set(rate.id);
-    // TODO: PATCH /api/v1/tax-rates/{id} endpoint — to be implemented by Karya
     this.http.patch<TaxRate>(`/api/v1/tax-rates/${rate.id}`, { is_active: !rate.is_active }).subscribe({
       next: (updated) => {
         this.rates.update(list => list.map(r => r.id === updated.id ? updated : r));
         this.toggling.set(null);
       },
       error: () => {
-        // Silently revert on failure — endpoint may not exist yet
+        // Leave the row unchanged on failure; the toggle simply does not flip.
         this.toggling.set(null);
+      },
+    });
+  }
+
+  openEditPanel(rate: TaxRate): void {
+    if (rate.is_system) return;
+    this.editError.set(null);
+    this.editForm.reset({
+      name:      rate.name,
+      rate:      Number(rate.rate),
+      market:    rate.market ?? '',
+      is_active: rate.is_active,
+    });
+    this.editRate.set(rate);
+  }
+
+  closeEditPanel(): void {
+    this.editRate.set(null);
+  }
+
+  submitEdit(): void {
+    const target = this.editRate();
+    if (!target) return;
+    if (this.editForm.invalid) {
+      this.editForm.markAllAsTouched();
+      return;
+    }
+    this.savingEdit.set(true);
+    this.editError.set(null);
+    const v = this.editForm.getRawValue();
+    this.http.patch<TaxRate>(`/api/v1/tax-rates/${target.id}`, {
+      name:      v.name,
+      rate:      String(v.rate),
+      market:    v.market || null,
+      is_active: v.is_active,
+    }).subscribe({
+      next: (updated) => {
+        this.rates.update(list => list.map(r => r.id === updated.id ? updated : r));
+        this.savingEdit.set(false);
+        this.closeEditPanel();
+      },
+      error: (err: { error?: { detail?: string } }) => {
+        this.savingEdit.set(false);
+        const detail = err?.error?.detail;
+        this.editError.set(typeof detail === 'string' ? detail : 'Could not save changes. Please try again.');
       },
     });
   }
