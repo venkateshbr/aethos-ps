@@ -91,7 +91,10 @@ def _check_promotions(db, tenant_id: str) -> int:
         .select("agent_name,action_type,status,confidence")
         .eq("tenant_id", tenant_id)
         .gte("created_at", since)
-        .not_.is_("status", "pending")
+        # PostgREST `is` only accepts null/true/false — `.not_.is_(status,'pending')`
+        # raises PGRST100, which failed this worker every night once cron was fixed.
+        # We want "status != 'pending'" (only decided suggestions). (#395)
+        .neq("status", "pending")
         .execute()
         .data
         or []
