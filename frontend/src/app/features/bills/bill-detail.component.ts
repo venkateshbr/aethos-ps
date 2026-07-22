@@ -23,6 +23,21 @@ interface BillLine {
   tax_amount?: string | null;
 }
 
+interface BillJournalLine {
+  direction: 'DR' | 'CR';
+  account_code?: string;
+  account_name?: string;
+  amount: string;
+  currency?: string;
+}
+
+interface BillJournalEntry {
+  id: string;
+  entry_number: string;
+  entry_date: string;
+  lines: BillJournalLine[];
+}
+
 interface BillDetail {
   id: string;
   bill_number: string;
@@ -461,10 +476,38 @@ interface PoLineMatch {
           </div>
         }
 
-        <!-- ── Journal entries section ────────────────────────────────── -->
-        <!-- TODO (#202): Wire up once GET /api/v1/accounting/journals?reference_id={id}
-             &reference_type=bill is confirmed live by Karya. Skipped to avoid
-             blocking the rest of the AP detail page. -->
+        <!-- ── Journal entries section (#402) ─────────────────────────── -->
+        <div class="mb-6">
+          <h3 class="text-sm font-semibold text-text-primary mb-2">Posted journal entries</h3>
+          @if (journalsLoading()) {
+            <p class="text-text-disabled text-sm">Loading journals…</p>
+          } @else if (journals().length === 0) {
+            <p class="text-text-disabled text-sm rounded-lg border border-border-default bg-surface-raised px-4 py-6 text-center">
+              No journal entries posted for this bill yet.
+            </p>
+          } @else {
+            @for (je of journals(); track je.id) {
+              <div class="rounded-lg border border-border-default bg-surface-raised px-4 py-3 mb-2">
+                <div class="flex justify-between text-xs text-text-muted mb-1">
+                  <span class="font-mono">{{ je.entry_number }}</span>
+                  <span>{{ je.entry_date }}</span>
+                </div>
+                @for (ln of je.lines; track $index) {
+                  <div class="flex justify-between text-sm py-0.5">
+                    <span>
+                      <span
+                        class="font-mono text-xs mr-2"
+                        [class]="ln.direction === 'DR' ? 'text-emerald-400' : 'text-sky-400'"
+                        >{{ ln.direction }}</span>
+                      {{ ln.account_code }} {{ ln.account_name }}
+                    </span>
+                    <span class="tabular-nums">{{ ln.amount }} {{ ln.currency }}</span>
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
 
       } <!-- end @if bill() -->
 
@@ -494,6 +537,9 @@ export class BillDetailComponent implements OnInit {
   canApproveBill = computed(() => this.permissions.hasPrivilege('bills.approve'));
   canManageBills = computed(() => this.permissions.hasPrivilege('bills.manage'));
 
+  journals        = signal<BillJournalEntry[]>([]);
+  journalsLoading = signal(true);
+
   readonly lineColumns = ['description', 'quantity', 'unit_price', 'tax_rate', 'amount'];
 
   ngOnInit(): void {
@@ -513,6 +559,19 @@ export class BillDetailComponent implements OnInit {
         this.loading.set(false);
       },
     });
+    // #402 — this bill's posted GL journals (DR Expense / CR AP on approval,
+    // DR AP / CR Bank on settlement).
+    this.http
+      .get<BillJournalEntry[]>('/api/v1/accounting/journal-entries', {
+        params: { reference_type: 'bill', reference_id: id },
+      })
+      .subscribe({
+        next: (data) => {
+          this.journals.set(data ?? []);
+          this.journalsLoading.set(false);
+        },
+        error: () => this.journalsLoading.set(false),
+      });
   }
 
   goBack(): void {

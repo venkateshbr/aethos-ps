@@ -836,3 +836,42 @@ def test_manual_journal_requires_business_reason() -> None:
         )
 
     assert "Reason is required" in str(exc_info.value)
+
+
+def test_list_journal_entries_filters_by_reference_id() -> None:
+    """#402: list_journal_entries applies both reference_type and reference_id."""
+    import asyncio
+
+    from app.services.manual_journal_service import ManualJournalService
+
+    calls: list[tuple[str, str]] = []
+
+    class _Q:
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, col, val):
+            calls.append((col, val))
+            return self
+
+        def order(self, *a, **k):
+            return self
+
+        def limit(self, *a, **k):
+            return self
+
+        def offset(self, *a, **k):
+            return self
+
+        def execute(self):
+            return type("R", (), {"data": []})()
+
+    class _Db:
+        def table(self, _name):
+            return _Q()
+
+    svc = ManualJournalService(db=_Db(), tenant_id="t1", user_id="u1")  # type: ignore[arg-type]
+    asyncio.run(svc.list_journal_entries(reference_type="bill", reference_id="bill-9"))
+
+    assert ("reference_type", "bill") in calls
+    assert ("reference_id", "bill-9") in calls

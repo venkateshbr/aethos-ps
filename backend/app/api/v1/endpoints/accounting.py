@@ -1170,6 +1170,9 @@ async def list_journal_entries(
     reference_type: str | None = Query(
         None, description="Filter by reference_type (e.g. 'manual', 'invoice')"
     ),
+    reference_id: str | None = Query(
+        None, description="Filter by a specific source record id (e.g. a bill/invoice id)"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Maximum rows to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     _current_user: CurrentUser = Depends(get_current_user),  # noqa: B008
@@ -1179,13 +1182,16 @@ async def list_journal_entries(
     """List journal entries for the tenant, newest first.
 
     Optionally filter by ``reference_type`` (e.g. ``manual``, ``invoice``,
-    ``bill``, ``payment``). Paginate with ``limit`` and ``offset``.
+    ``bill``, ``payment``) and/or ``reference_id`` (a specific source record, so a
+    bill/invoice detail page can show its own posted journals — #402). Paginate
+    with ``limit`` and ``offset``.
 
     RBAC: viewer+ (all authenticated tenant members).
     """
     svc = ManualJournalService(db=db, tenant_id=tenant_id, user_id=_current_user.user_id)
     return await svc.list_journal_entries(
         reference_type=reference_type,
+        reference_id=reference_id,
         limit=limit,
         offset=offset,
     )

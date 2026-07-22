@@ -82,6 +82,10 @@ describe('BillDetailComponent privileges', () => {
       due_date: '2026-06-30',
       lines: [],
     });
+    // #402 — ngOnInit also fetches this bill's posted journal entries.
+    http
+      .expectOne(req => req.url === '/api/v1/accounting/journal-entries')
+      .flush([]);
     fixture.detectChanges();
   });
 

@@ -231,13 +231,16 @@ class ManualJournalService:
         self,
         *,
         reference_type: str | None = None,
+        reference_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[JournalEntryListItem]:
-        """List journal entries for this tenant, optionally filtered by reference_type.
+        """List journal entries for this tenant, optionally filtered by reference.
 
         Args:
             reference_type: Filter to a specific type (e.g. "manual", "invoice", "bill").
+            reference_id: Filter to a specific source record (e.g. a bill/invoice id) —
+                lets a sub-ledger detail page show its own posted journals (#402).
             limit: Maximum rows to return (capped at 100).
             offset: Pagination offset.
 
@@ -259,6 +262,8 @@ class ManualJournalService:
             )
             if reference_type is not None:
                 query = query.eq("reference_type", reference_type)
+            if reference_id is not None:
+                query = query.eq("reference_id", reference_id)
             return query.execute().data or []
 
         rows = await asyncio.to_thread(_fetch)
