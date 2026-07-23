@@ -56,6 +56,7 @@ from app.models.accounting import (
 )
 from app.services.close_override_service import (
     ALLOWED_CLOSE_OVERRIDE_CODES,
+    NON_OVERRIDABLE_CLOSE_BLOCKERS,
     CloseOverride,
     CloseOverrideService,
 )
@@ -933,7 +934,25 @@ async def lock_period(
         ) from exc
 
     reconciliation_blockers = _reconciliation_blocker_codes(reconciliation)
-    if reconciliation_blockers - override_codes:
+    # Hard accounting invariants (unbalanced trial balance) can NEVER be bypassed
+    # by an override — checked independently of override_codes so even a stale
+    # pre-existing override cannot lock a period with debits != credits. (#379 AC 3)
+    hard_blockers = reconciliation_blockers & NON_OVERRIDABLE_CLOSE_BLOCKERS
+    if hard_blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "non_overridable_close_invariant",
+                "period": period,
+                "message": (
+                    "Trial balance debits and credits do not match for this period. "
+                    "This accounting invariant cannot be overridden — correct the "
+                    "imbalance (reversing entries) before locking."
+                ),
+                "blockers": sorted(hard_blockers),
+            },
+        )
+    if (reconciliation_blockers - NON_OVERRIDABLE_CLOSE_BLOCKERS) - override_codes:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=reconciliation.as_error_detail(),
