@@ -584,3 +584,17 @@ def test_statutory_reporting_pack_composes_statements_and_tax_controls() -> None
     assert bucket.output_tax_collected == "200.00"
     assert bucket.input_tax_recoverable == "60.00"
     assert bucket.net_tax_payable == "140.00"
+
+
+def test_statements_disclose_reporting_currency_and_comparison_basis() -> None:
+    # #379 AC 6 — every statement exposes reporting currency + comparison basis.
+    svc = _service([])
+    statements = [
+        svc.income_statement(period_start="2026-06", period_end="2026-06"),
+        svc.balance_sheet(as_of_period="2026-06"),
+        svc.trial_balance(as_of_period="2026-06"),
+        svc.cash_flow(period_start="2026-06", period_end="2026-06"),
+    ]
+    for stmt in statements:
+        assert stmt.reporting_currency == "USD"
+        assert stmt.comparison_basis == "single_period"

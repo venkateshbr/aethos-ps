@@ -90,6 +90,23 @@ class ReportsService:
     def __init__(self, db: Client, tenant_id: str) -> None:
         self.db = db
         self.tenant_id = tenant_id
+        self._base_currency_cache: str | None = None
+
+    def _reporting_currency(self) -> str:
+        """Tenant functional/base currency, disclosed on statements (#379 AC 6)."""
+        if self._base_currency_cache is None:
+            rows = (
+                self.db.table("tenants")
+                .select("base_currency")
+                .eq("id", self.tenant_id)
+                .execute()
+                .data
+                or []
+            )
+            self._base_currency_cache = str(
+                (rows[0].get("base_currency") if rows else None) or "USD"
+            ).upper()
+        return self._base_currency_cache
 
     # ------------------------------------------------------------------
     # 1. AR Aging
@@ -647,6 +664,7 @@ class ReportsService:
             grand_total_cr=serialise_money(grand_cr),  # type: ignore[arg-type]
             is_balanced=is_balanced,
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     # ------------------------------------------------------------------
@@ -714,6 +732,7 @@ class ReportsService:
             liabilities_and_equity=serialise_money(liabilities_and_equity),
             is_balanced=abs(total_assets - liabilities_and_equity) <= Decimal("0.01"),
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     # ------------------------------------------------------------------
@@ -744,6 +763,7 @@ class ReportsService:
             retained_earnings_activity=serialise_money(activity),
             ending_retained_earnings=serialise_money(ending),
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     def income_statement(
@@ -792,6 +812,7 @@ class ReportsService:
             total_expenses=serialise_money(total_expenses),
             net_income=serialise_money(total_revenue - total_expenses),
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     # ------------------------------------------------------------------
@@ -863,6 +884,7 @@ class ReportsService:
             beginning_cash=serialise_money(beginning_cash),
             ending_cash=serialise_money(ending_cash),
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     def statutory_reporting_pack(
@@ -906,6 +928,7 @@ class ReportsService:
                 context=context,
             ),
             generated_at=datetime.now(tz=UTC),
+            reporting_currency=self._reporting_currency(),
         )
 
     def _ledger_account_totals(
