@@ -109,3 +109,55 @@ def _detect_pii_types(text: str) -> set[str]:
         if re.search(pattern, text, flags=re.IGNORECASE):
             findings.add(pii_type)
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Deep (NER) masking for the pre-model path (#392)
+# ---------------------------------------------------------------------------
+# mask_pii() above is regex-only: fast and safe for every log line and the base
+# pass. Unstructured PII (person names, places) needs a model. mask_pii_deep()
+# adds an OPTIONAL spaCy NER layer for text that is about to leave for an external
+# LLM (documents, agent context). It degrades gracefully: with no spaCy model
+# installed it is exactly mask_pii(). Enabling NER in an environment is an opt-in:
+#   pip install spacy && python -m spacy download en_core_web_sm
+# (add the same to the API/Hermes image to turn it on in production). Never wire
+# this into the log formatter — NER is far too slow for per-record logging.
+
+_NER_ENTITY_LABELS = frozenset({"PERSON", "GPE", "LOC", "FAC", "NORP"})
+_ner_state: dict[str, object] = {"loaded": False, "nlp": None}
+
+
+def _load_ner() -> object | None:
+    """Lazily load + cache the spaCy pipeline; return None if unavailable."""
+    if not _ner_state["loaded"]:
+        _ner_state["loaded"] = True
+        try:  # pragma: no cover - exercised only where spaCy is installed
+            import spacy  # type: ignore
+
+            _ner_state["nlp"] = spacy.load("en_core_web_sm")
+        except Exception:
+            _ner_state["nlp"] = None
+    return _ner_state["nlp"]
+
+
+def mask_names(text: str, *, nlp: object | None = None) -> str:
+    """Redact person/place named entities. No-op if no NER model is available.
+
+    ``nlp`` may be injected (tests); otherwise the cached spaCy pipeline is used.
+    """
+    pipeline = nlp if nlp is not None else _load_ner()
+    if pipeline is None or not text:
+        return text
+    doc = pipeline(text)
+    spans = sorted(
+        ((ent.start_char, ent.end_char) for ent in doc.ents if ent.label_ in _NER_ENTITY_LABELS),
+        reverse=True,
+    )
+    for start, end in spans:
+        text = text[:start] + "[REDACTED-NAME]" + text[end:]
+    return text
+
+
+def mask_pii_deep(text: str, *, nlp: object | None = None) -> str:
+    """Structured (regex) + unstructured (NER) redaction for LLM-bound text."""
+    return mask_names(mask_pii(text), nlp=nlp)
