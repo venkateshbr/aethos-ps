@@ -120,6 +120,7 @@ Net impact:
 | D22 | Outreach voice | **Founder-personal** — DMs and posts go out from Founder account; product brand develops over time |
 | D23 | GL posting integrity | **Atomic, idempotent journal posting** — header + lines commit in one transaction via the `post_journal_entry` RPC; `debits == credits` enforced by a DB deferred constraint trigger; retries/multi-node double-submits deduped on an idempotency key. Replaces the non-atomic two-insert path. See **ADR 0001** (`docs/adr/0001-atomic-journal-posting.md`), issue #390 / audit LR-08. |
 | D24 | JWT auth verification | **PyJWT, not python-jose** — Supabase HS256 + ES256/RS256 (JWKS-by-`kid`, rotation self-heal) are verified with PyJWT; python-jose was removed to drop the no-fix `python-ecdsa` advisory (PYSEC-2026-1325) from the auth boundary. Asymmetric-path test contract landed first to pin token compatibility. See **ADR 0002** (`docs/adr/0002-jwt-verification-library.md`), issue #384 / audit LR-14. |
+| D25 | Period-end FX remeasurement | **`fx_remeasurement_agent`** revalues open foreign-currency **AR/AP** to the period-end rate at month-end close and drafts the **unrealized** FX gain/loss journal (new account **`7910`**, separate from realized `7900`). Draft→HITL→post like the other close agents. v1: fully-open AR/AP only (skip partially-paid + foreign cash), materiality `|delta| < 1.00` base, reverses first day of next period. See **ADR 0003** (`docs/adr/0003-fx-remeasurement.md`), migration `0110`, issue #376 AC 2. |
 
 ---
 
