@@ -193,4 +193,7 @@ def require_role(minimum: UserRole) -> CurrentUser:
             role=user_role.value,
         )
 
+    # Expose the gate so the executable authz-matrix contract test can assert the
+    # required role of each sensitive handler without the live stack. (#378 AC 7)
+    _check.aethos_min_role = minimum  # type: ignore[attr-defined]
     return Depends(_check)
