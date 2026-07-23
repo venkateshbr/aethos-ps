@@ -209,6 +209,18 @@ async def _dispatch(
         )
 
 
+def _is_stale_subscription_event(tenant: dict, event: stripe.Event) -> bool:
+    """True if this subscription event predates the last one we applied.
+
+    Stripe does not guarantee webhook delivery order, so an older event must not
+    clobber newer billing state — compare against ``stripe_subscription_event_at``.
+    (#371 AC 4 — out-of-order events.)
+    """
+    last = tenant.get("stripe_subscription_event_at")
+    created = int(getattr(event, "created", 0) or 0)
+    return last is not None and created > 0 and created < int(last)
+
+
 async def _handle_subscription_upserted(
     event: stripe.Event,
     tenant_repo: TenantRepository,
@@ -225,9 +237,17 @@ async def _handle_subscription_upserted(
         )
         return
 
+    if _is_stale_subscription_event(tenant, event):
+        logger.info(
+            "Out-of-order subscription event — skipping stale update",
+            extra={"event_id": event.id, "tenant_id": tenant["id"]},
+        )
+        return
+
     update: dict = {
         "stripe_subscription_id": sub.id,
         "stripe_subscription_status": sub.status,
+        "stripe_subscription_event_at": int(getattr(event, "created", 0) or 0),
     }
     if sub.trial_end:
         update["trial_ends_at"] = datetime.datetime.fromtimestamp(
@@ -261,11 +281,19 @@ async def _handle_subscription_deleted(
         )
         return
 
+    if _is_stale_subscription_event(tenant, event):
+        logger.info(
+            "Out-of-order subscription deletion event — skipping stale update",
+            extra={"event_id": event.id, "tenant_id": tenant["id"]},
+        )
+        return
+
     await tenant_repo.update_tenant(
         tenant["id"],
         {
             "stripe_subscription_status": "canceled",
             "status": "canceled",
+            "stripe_subscription_event_at": int(getattr(event, "created", 0) or 0),
         },
     )
     logger.info(

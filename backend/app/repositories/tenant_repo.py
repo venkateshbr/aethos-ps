@@ -53,7 +53,10 @@ class TenantRepository:
         def _get() -> dict | None:
             result = (
                 self.client.table("tenants")
-                .select("id, name, stripe_customer_id, stripe_subscription_status")
+                .select(
+                    "id, name, stripe_customer_id, stripe_subscription_status, "
+                    "stripe_subscription_event_at"
+                )
                 .eq("stripe_customer_id", customer_id)
                 .execute()
             )
