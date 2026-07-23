@@ -506,7 +506,39 @@ class BillsService:
         *,
         source_document_id: str | None = None,
         vendor_invoice_review: dict[str, object] | None = None,
+        allow_duplicate: bool = False,
     ) -> BillResponse:
+        # 0. Duplicate-bill guard (#377 AC 1): the same vendor invoice number from
+        # the same vendor is a likely re-submission — refuse unless the operator
+        # explicitly overrides (audited via the warning log).
+        if data.vendor_invoice_number:
+            existing = await self._repo.find_active_duplicate(
+                data.client_id, data.vendor_invoice_number
+            )
+            if existing is not None:
+                if not allow_duplicate:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "code": "duplicate_vendor_invoice",
+                            "message": (
+                                "A bill with this vendor invoice number already exists "
+                                "for this vendor. Pass allow_duplicate=true to override."
+                            ),
+                            "existing_bill_id": str(existing["id"]),
+                            "existing_bill_number": existing.get("bill_number"),
+                            "vendor_invoice_number": data.vendor_invoice_number,
+                        },
+                    )
+                logger.warning(
+                    "Duplicate vendor invoice override — creating a second bill",
+                    extra={
+                        "client_id": data.client_id,
+                        "vendor_invoice_number": data.vendor_invoice_number,
+                        "existing_bill_id": str(existing["id"]),
+                    },
+                )
+
         # 1. Verify client exists and kind is vendor-capable
         client = await self._clients_repo.get(data.client_id)
         if client is None:
