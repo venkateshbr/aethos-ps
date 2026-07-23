@@ -110,6 +110,26 @@ async def record_checkout_session_payment(
         )
         return {"status": "invoice_not_found", "invoice_id": invoice_id, "tenant_id": tenant_id}
 
+    # A draft/void/cancelled invoice must never be settled — e.g. a paid stale
+    # payment link for an invoice voided after it was sent. (#371 AC 6)
+    invoice_status = str(invoice.get("status") or "").lower()
+    if invoice_status in {"draft", "void", "voided", "cancelled", "canceled"}:
+        logger.warning(
+            "checkout.session.completed for a non-settleable invoice — refusing to settle",
+            extra={
+                "invoice_id": invoice_id,
+                "tenant_id": tenant_id,
+                "event_id": event_id,
+                "invoice_status": invoice_status,
+            },
+        )
+        return {
+            "status": "invoice_not_settleable",
+            "invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+            "invoice_status": invoice_status,
+        }
+
     amount_total_cents = int(stripe_value(session, "amount_total", 0) or 0)
     amount_received = Decimal(str(amount_total_cents)) / Decimal("100")
     if amount_received <= 0:
