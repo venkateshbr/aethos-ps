@@ -39,19 +39,29 @@ class _PermissionQuery:
         return self
 
     def eq(self, key: str, value: Any) -> _PermissionQuery:
-        self._filters.append((key, value))
+        self._filters.append(("eq", key, value))
+        return self
+
+    def neq(self, key: str, value: Any) -> _PermissionQuery:
+        self._filters.append(("neq", key, value))
         return self
 
     def is_(self, _key: str, _value: str) -> _PermissionQuery:
+        return self
+
+    def order(self, _key: str, desc: bool = False) -> _PermissionQuery:
         return self
 
     def limit(self, _value: int) -> _PermissionQuery:
         return self
 
     def execute(self) -> _Result:
-        rows = self._db.rows[self._table]
-        for key, value in self._filters:
-            rows = [row for row in rows if row.get(key) == value]
+        rows = self._db.rows.get(self._table, [])
+        for op, key, value in self._filters:
+            if op == "eq":
+                rows = [row for row in rows if row.get(key) == value]
+            else:
+                rows = [row for row in rows if row.get(key) != value]
         return _Result(rows)
 
 
@@ -143,7 +153,7 @@ class _InvoicesStub:
 
 
 class _BillsStub:
-    async def create_bill(self, _payload: Any) -> dict[str, Any]:
+    async def create_bill(self, _payload: Any, *, allow_duplicate: bool = False) -> dict[str, Any]:
         return {
             "id": BILL_ID,
             "tenant_id": TENANT_ID,

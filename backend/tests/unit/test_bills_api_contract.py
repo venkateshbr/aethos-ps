@@ -36,6 +36,7 @@ class _Query:
         self.db = db
         self.table = table
         self._eq_filters: list[tuple[str, Any]] = []
+        self._neq_filters: list[tuple[str, Any]] = []
         self._in_filters: list[tuple[str, list[Any]]] = []
         self._null_filters: list[str] = []
         self._order_key: str | None = None
@@ -49,6 +50,10 @@ class _Query:
 
     def eq(self, key: str, value: Any) -> _Query:
         self._eq_filters.append((key, value))
+        return self
+
+    def neq(self, key: str, value: Any) -> _Query:
+        self._neq_filters.append((key, value))
         return self
 
     def in_(self, key: str, values: list[Any]) -> _Query:
@@ -104,6 +109,9 @@ class _Query:
     def _matches(self, row: dict[str, Any]) -> bool:
         for key, value in self._eq_filters:
             if row.get(key) != value:
+                return False
+        for key, value in self._neq_filters:
+            if row.get(key) == value:
                 return False
         for key, values in self._in_filters:
             if row.get(key) not in values:
@@ -408,6 +416,36 @@ def test_bill_create_uses_service_role_client(
     assert response.json()["lines"][0]["is_prepaid"] is True
     assert response.json()["lines"][0]["service_start_date"] == "2026-07-01"
     assert response.json()["lines"][0]["service_end_date"] == "2027-06-30"
+
+
+def test_bill_create_rejects_duplicate_vendor_invoice(
+    client: TestClient,
+    fake_db: _FakeDb,
+) -> None:
+    # #377 AC 1 — the seeded bill already has vendor_invoice_number "AWS-100" for
+    # this vendor; a second one is refused unless explicitly overridden.
+    app.dependency_overrides[get_service_role_client] = lambda: fake_db
+    payload = {
+        "client_id": CLIENT_ID,
+        "currency": "USD",
+        "vendor_invoice_number": "AWS-100",
+        "lines": [
+            {
+                "description": "duplicate submission",
+                "quantity": "1",
+                "unit_price": "10.00",
+                "amount": "10.00",
+                "tax_amount": "0.00",
+            }
+        ],
+    }
+
+    dup = client.post("/api/v1/bills", json=payload)
+    assert dup.status_code == 409, dup.text
+    assert dup.json()["detail"]["code"] == "duplicate_vendor_invoice"
+
+    override = client.post("/api/v1/bills?allow_duplicate=true", json=payload)
+    assert override.status_code == 201, override.text
 
 
 def test_bill_create_records_purchase_order_match(

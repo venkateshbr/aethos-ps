@@ -82,10 +82,14 @@ async def list_bills(
 @router.post("", response_model=BillResponse, status_code=201)
 async def create_bill(
     payload: BillCreate,
+    allow_duplicate: bool = Query(
+        default=False,
+        description="Override the duplicate-vendor-invoice guard (audited). (#377)",
+    ),
     current_user: CurrentUser = require_privilege("bills.manage"),  # noqa: B008
     svc: BillsService = Depends(_write_service),  # noqa: B008
 ) -> BillResponse:
-    return await svc.create_bill(payload)
+    return await svc.create_bill(payload, allow_duplicate=allow_duplicate)
 
 
 # ---------------------------------------------------------------------------

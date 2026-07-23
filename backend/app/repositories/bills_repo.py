@@ -68,6 +68,22 @@ class BillsRepository:
         )
         return result.data[0] if result.data else None
 
+    async def find_active_duplicate(
+        self, client_id: str, vendor_invoice_number: str
+    ) -> dict | None:
+        """An existing non-cancelled bill from the same vendor with the same
+        vendor invoice number — a likely duplicate submission. (#377 AC 1)"""
+        result = await asyncio.to_thread(
+            lambda: self._base_query()
+            .eq("client_id", client_id)
+            .eq("vendor_invoice_number", vendor_invoice_number)
+            .neq("status", "cancelled")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
     async def get_lines(self, bill_id: str) -> list[dict]:
         result = await asyncio.to_thread(
             lambda: self.db.table(_LINES_TABLE)

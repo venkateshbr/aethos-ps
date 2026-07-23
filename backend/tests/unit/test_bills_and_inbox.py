@@ -789,6 +789,7 @@ class _P2PQuery:
         self.db = db
         self.table = table
         self.eq_filters: list[tuple[str, Any]] = []
+        self.neq_filters: list[tuple[str, Any]] = []
         self.null_filters: list[str] = []
         self.limit_count: int | None = None
         self.insert_payload: dict[str, Any] | None = None
@@ -800,6 +801,13 @@ class _P2PQuery:
 
     def eq(self, key: str, value: Any) -> _P2PQuery:
         self.eq_filters.append((key, value))
+        return self
+
+    def neq(self, key: str, value: Any) -> _P2PQuery:
+        self.neq_filters.append((key, value))
+        return self
+
+    def order(self, _key: str, desc: bool = False) -> _P2PQuery:
         return self
 
     def is_(self, key: str, value: Any) -> _P2PQuery:
@@ -842,6 +850,8 @@ class _P2PQuery:
         rows = list(self.db.tables[self.table])
         for key, value in self.eq_filters:
             rows = [row for row in rows if row.get(key) == value]
+        for key, value in self.neq_filters:
+            rows = [row for row in rows if row.get(key) != value]
         for key in self.null_filters:
             rows = [row for row in rows if row.get(key) is None]
         if self.ilike_filter is not None:
