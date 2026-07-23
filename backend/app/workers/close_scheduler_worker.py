@@ -17,6 +17,7 @@ from app.agents.accrual_agent import (
     write_wip_accrual_suggestions,
 )
 from app.agents.base import AgentDeps
+from app.agents.fx_remeasurement_agent import write_fx_remeasurement_suggestions
 from app.agents.prepaid_amortization_agent import write_prepaid_amortization_suggestions
 from app.agents.recurring_journal_agent import write_recurring_journal_suggestions
 from app.agents.revenue_recognition_agent import (
@@ -46,6 +47,7 @@ _PROPOSAL_STEPS: tuple[tuple[str, ProposalWriter, dict[str, str]], ...] = (
     ),
     ("prepaid_amortization", write_prepaid_amortization_suggestions, {}),
     ("recurring_journals", write_recurring_journal_suggestions, {}),
+    ("fx_remeasurement", write_fx_remeasurement_suggestions, {}),
 )
 
 

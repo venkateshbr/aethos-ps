@@ -38,3 +38,4 @@ Routine feature work does **not** need an ADR; a well-described issue is enough.
 |---|---|---|---|
 | [0001](0001-atomic-journal-posting.md) | Atomic, idempotent journal posting | Accepted | 2026-07-22 |
 | [0002](0002-jwt-verification-library.md) | JWT verification on PyJWT (drop python-jose) | Accepted | 2026-07-23 |
+| [0003](0003-fx-remeasurement.md) | Period-end FX remeasurement of open foreign balances | Accepted | 2026-07-23 |

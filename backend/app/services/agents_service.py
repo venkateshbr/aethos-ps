@@ -105,6 +105,11 @@ AGENT_CATALOG: list[tuple[str, str, str]] = [
         "Drafts recurring journal entries from active close templates",
     ),
     (
+        "fx_remeasurement_agent",
+        "FX Remeasurement Agent",
+        "Drafts period-end unrealized FX revaluation of open foreign AR/AP balances",
+    ),
+    (
         "project_health_agent",
         "Project Health Monitor",
         "Detects budget burn and scope risk in projects",
@@ -125,6 +130,7 @@ MONEY_AGENTS: frozenset[str] = frozenset(
         "collections_agent",
         "copilot_agent",
         "finance_ops_manager",
+        "fx_remeasurement_agent",
         "invoice_drafter_agent",
         "prepaid_amortization_agent",
         "recurring_journal_agent",
