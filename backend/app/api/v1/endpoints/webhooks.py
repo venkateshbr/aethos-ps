@@ -32,6 +32,7 @@ import logging
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.core.config import settings
 from app.core.db import get_service_role_client
 from app.core.stripe_deps import get_stripe_service
 from app.repositories.tenant_repo import TenantRepository
@@ -47,6 +48,21 @@ from supabase import Client
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def event_mode_matches(secret_key: str, event_livemode: object) -> bool:
+    """True if a webhook event's ``livemode`` is consistent with the environment.
+
+    The Stripe mode is derived from the secret key prefix. A ``sk_live_`` env
+    accepts only livemode events; a ``sk_test_`` env accepts only test events. An
+    unknown/unconfigured key cannot be checked here — the signature verification
+    (mode-specific webhook secret) remains the gate — so it passes. (#371 AC 1)
+    """
+    if secret_key.startswith("sk_live_"):
+        return event_livemode is True
+    if secret_key.startswith("sk_test_"):
+        return event_livemode is not True
+    return True
 
 
 @router.post(
@@ -90,6 +106,24 @@ async def stripe_webhook(
         "Stripe webhook received",
         extra={"event_id": event_id, "event_type": event_type},
     )
+
+    # ------------------------------------------------------------------
+    # 2.5 Event-mode guard (#371 AC 1)
+    # ------------------------------------------------------------------
+    # The event's livemode must match this environment's Stripe mode so a
+    # test-mode event can never settle in a live deployment (or vice versa) —
+    # defence in depth even if a mismatched webhook secret were configured.
+    if not event_mode_matches(settings.stripe_secret_key or "", getattr(event, "livemode", None)):
+        logger.warning(
+            "Stripe webhook livemode mismatch — acknowledging without processing",
+            extra={
+                "event_id": event_id,
+                "event_type": event_type,
+                "event_livemode": getattr(event, "livemode", None),
+            },
+        )
+        # Ack with 200 so Stripe stops retrying; we intentionally do nothing.
+        return {"received": True, "ignored": "livemode_mismatch"}
 
     # ------------------------------------------------------------------
     # 3. Idempotency check — skip if already processed
