@@ -443,3 +443,190 @@ async def _get_account_ids_by_codes(
         return {r["code"]: r["id"] for r in (result.data or [])}
 
     return await asyncio.to_thread(_get_accounts)
+
+
+# ---------------------------------------------------------------------------
+# Refunds (#371 AC 4) — reverse a settled Stripe payment
+# ---------------------------------------------------------------------------
+
+
+async def _get_payments_by_intent(db: Client, payment_intent_id: str) -> list[dict]:
+    def _get() -> list[dict]:
+        return (
+            db.table("payments")
+            .select("id, tenant_id, invoice_id, amount, currency, base_amount, fx_rate_id")
+            .eq("stripe_payment_intent_id", payment_intent_id)
+            .execute()
+            .data
+            or []
+        )
+
+    return await asyncio.to_thread(_get)
+
+
+async def _insert_refund_payment(
+    *,
+    db: Client,
+    tenant_id: str,
+    invoice_id: str,
+    amount: Decimal,
+    currency: str,
+    base_amount: Decimal,
+    payment_intent_id: str,
+) -> None:
+    # A negative payment row so the amount-aware AR balance reopens the invoice.
+    payment_data = {
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "amount": str(-amount),
+        "currency": currency,
+        "base_amount": str(-base_amount),
+        "paid_at": datetime.datetime.now(tz=datetime.UTC).isoformat(),
+        "notes": "Refund from Stripe",
+        "stripe_payment_intent_id": payment_intent_id,
+    }
+    await asyncio.to_thread(lambda: db.table("payments").insert(payment_data).execute())
+
+
+async def _rollback_invoice_to_open(db: Client, tenant_id: str, invoice_id: str) -> None:
+    await asyncio.to_thread(
+        lambda: db.table("invoices")
+        .update({"status": "sent", "paid_at": None})
+        .eq("id", invoice_id)
+        .eq("tenant_id", tenant_id)
+        .execute()
+    )
+
+
+async def _post_refund_journal(
+    *,
+    db: Client,
+    tenant_id: str,
+    invoice: dict,
+    invoice_id: str,
+    amount: Decimal,
+    currency: str,
+    base_amount: Decimal,
+    fx_rate_id: str | None,
+    actor_uuid: str,
+    payment_intent_id: str,
+) -> bool:
+    """Reverse the settlement: DR 1200 (AR reinstated) / CR 1100 (cash returned)."""
+    acct_map = await _get_account_ids_by_codes(db, tenant_id, ["1100", "1200"])
+    invoice_number = invoice.get("invoice_number", invoice_id[:8])
+    description = f"Refund of payment for invoice {invoice_number}"
+    journal_lines = [
+        JournalLineSpec(
+            direction="DR",
+            account_code="1200",
+            amount=amount,
+            description=description,
+            account_id=acct_map.get("1200"),
+            currency=currency,
+            base_amount=base_amount,
+            fx_rate_id=fx_rate_id,
+        ),
+        JournalLineSpec(
+            direction="CR",
+            account_code="1100",
+            amount=amount,
+            description=description,
+            account_id=acct_map.get("1100"),
+            currency=currency,
+            base_amount=base_amount,
+            fx_rate_id=fx_rate_id,
+        ),
+    ]
+    try:
+        post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by=actor_uuid,
+            description=description,
+            entry_date=datetime.date.today().isoformat(),
+            reference_type="refund",
+            reference_id=invoice_id,
+            lines=journal_lines,
+        )
+    except Exception:
+        logger.error(
+            "Failed to post refund journal",
+            exc_info=True,
+            extra={"invoice_id": invoice_id, "tenant_id": tenant_id,
+                   "payment_intent_id": payment_intent_id},
+        )
+        return False
+    return True
+
+
+async def record_charge_refund(*, db: Client, charge: object, event_id: str) -> dict:
+    """Reverse a settled payment when Stripe fully refunds its charge (#371 AC 4).
+
+    v1 handles FULL refunds (charge fully refunded). A partial refund is logged
+    for manual review rather than auto-reversed, so a face-value reversal cannot
+    over-credit a partially-refunded payment.
+    """
+    payment_intent_id = _as_str(stripe_value(charge, "payment_intent"))
+    amount_cents = int(stripe_value(charge, "amount", 0) or 0)
+    refunded_cents = int(stripe_value(charge, "amount_refunded", 0) or 0)
+
+    if not payment_intent_id or refunded_cents <= 0:
+        return {"status": "no_refund"}
+    if refunded_cents < amount_cents:
+        logger.warning(
+            "Partial Stripe refund — not auto-reversed, manual review required",
+            extra={"event_id": event_id, "payment_intent_id": payment_intent_id,
+                   "amount_cents": amount_cents, "refunded_cents": refunded_cents},
+        )
+        return {"status": "partial_refund_manual_review", "payment_intent_id": payment_intent_id}
+
+    payments = await _get_payments_by_intent(db, payment_intent_id)
+    original = next(
+        (p for p in payments if Decimal(str(p.get("amount") or "0")) > 0), None
+    )
+    if original is None:
+        logger.warning(
+            "Refund for an unknown/unsettled payment intent — skipping",
+            extra={"event_id": event_id, "payment_intent_id": payment_intent_id},
+        )
+        return {"status": "payment_not_found", "payment_intent_id": payment_intent_id}
+    if any(Decimal(str(p.get("amount") or "0")) < 0 for p in payments):
+        return {"status": "duplicate_refund", "payment_intent_id": payment_intent_id}
+
+    tenant_id = str(original["tenant_id"])
+    invoice_id = str(original["invoice_id"])
+    amount = Decimal(str(original["amount"]))
+    currency = str(original.get("currency") or "USD")
+    base_amount = Decimal(str(original.get("base_amount") or amount))
+    fx_rate_id = original.get("fx_rate_id")
+
+    actor_uuid = await _system_actor(db, tenant_id)
+    if not actor_uuid:
+        logger.error(
+            "No tenant actor to post refund journal — skipping",
+            extra={"event_id": event_id, "tenant_id": tenant_id, "invoice_id": invoice_id},
+        )
+        return {"status": "no_actor", "invoice_id": invoice_id, "tenant_id": tenant_id}
+
+    invoice = await _get_invoice(db, invoice_id, tenant_id) or {}
+    await _post_refund_journal(
+        db=db, tenant_id=tenant_id, invoice=invoice, invoice_id=invoice_id,
+        amount=amount, currency=currency, base_amount=base_amount, fx_rate_id=fx_rate_id,
+        actor_uuid=actor_uuid, payment_intent_id=payment_intent_id,
+    )
+    await _insert_refund_payment(
+        db=db, tenant_id=tenant_id, invoice_id=invoice_id, amount=amount,
+        currency=currency, base_amount=base_amount, payment_intent_id=payment_intent_id,
+    )
+    await _rollback_invoice_to_open(db, tenant_id, invoice_id)
+    logger.info(
+        "Stripe refund reversed settlement",
+        extra={"event_id": event_id, "tenant_id": tenant_id, "invoice_id": invoice_id,
+               "amount": str(amount)},
+    )
+    return {
+        "status": "refunded",
+        "invoice_id": invoice_id,
+        "tenant_id": tenant_id,
+        "amount": str(amount),
+    }

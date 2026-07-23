@@ -16,6 +16,7 @@ Events handled:
 - customer.subscription.updated     → update tenant billing status + trial_ends_at
 - customer.subscription.deleted     → mark tenant canceled
 - checkout.session.completed        → record payment, post AR journal, mark invoice paid
+- charge.refunded (full)            → reverse settlement (DR AR / CR bank), reopen invoice
 - account.updated (Connect)         → sync charges_enabled / payouts_enabled for tenant
 
 Never log the full event payload — it may contain card data or PII.
@@ -38,6 +39,7 @@ from app.core.stripe_deps import get_stripe_service
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.stripe_service import StripeService
 from app.services.stripe_checkout_payments import (
+    record_charge_refund,
     record_checkout_session_payment,
 )
 from app.services.stripe_checkout_payments import (
@@ -199,6 +201,8 @@ async def _dispatch(
         await _handle_subscription_deleted(event, tenant_repo)
     elif event_type == "checkout.session.completed":
         await _handle_checkout_session_completed(event, db)
+    elif event_type == "charge.refunded":
+        await _handle_charge_refunded(event, db)
     elif event_type == "account.updated":
         await _handle_account_updated(event, tenant_repo, db)
     else:
@@ -334,6 +338,14 @@ async def _handle_checkout_session_completed(
         event_id=event.id,
         source="stripe_webhook",
     )
+
+
+async def _handle_charge_refunded(
+    event: stripe.Event,
+    db: Client,
+) -> None:
+    """Handle charge.refunded — reverse the settled payment for a full refund."""
+    await record_charge_refund(db=db, charge=event.data.object, event_id=event.id)
 
 
 async def _handle_account_updated(
