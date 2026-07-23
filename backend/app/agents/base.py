@@ -19,7 +19,11 @@ from openai import OpenAI as StandardOpenAI
 
 from app.core.config import settings
 from app.core.logging import tenant_id_var, trace_id_var
-from app.domain.pii import _detect_pii_types, mask_pii
+from app.domain.pii import (  # noqa: F401  (mask_pii re-exported for agent modules)
+    _detect_pii_types,
+    mask_pii,
+    mask_pii_deep,
+)
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -359,7 +363,7 @@ def build_document_content(
     safety = scan_document_safety(document_bytes)
 
     if binary_policy == "withhold_on_sensitive_text" and safety.should_withhold_binary:
-        text = mask_pii(safety.extracted_text)
+        text = mask_pii_deep(safety.extracted_text)
         return [
             {
                 "type": "text",
@@ -398,7 +402,7 @@ def build_document_content(
         text = document_bytes.decode("utf-8", errors="replace")
     except Exception:
         text = document_bytes.decode("latin-1", errors="replace")
-    text = mask_pii(text)
+    text = mask_pii_deep(text)
     return [{"type": "text", "text": prompt + f"\n\nDocument text:\n{text[:8000]}"}]
 
 
