@@ -260,6 +260,17 @@ def _validate_period(period: str) -> None:
         )
 
 
+def _period_has_ended(period: str, *, today: date | None = None) -> bool:
+    """True once the whole calendar period has elapsed (today ≥ first of next month).
+
+    A period whose end is still in the future cannot be locked — its books are not
+    yet final. (#379 AC 1 — calendar rules.)
+    """
+    year, month = int(period[:4]), int(period[5:7])
+    first_of_next = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return (today or date.today()) >= first_of_next
+
+
 def _current_user_role(current_user: CurrentUser) -> str:
     return str(current_user.role or "unknown")
 
@@ -886,6 +897,14 @@ async def lock_period(
     Requires admin role or higher.
     """
     _validate_period(period)
+    if not _period_has_ended(period):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Cannot lock period {period} — it has not ended yet. A period can "
+                "only be locked once the full calendar month has elapsed."
+            ),
+        )
 
     # Check if already locked
     try:

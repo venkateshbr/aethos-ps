@@ -23,14 +23,15 @@ pytestmark = [
 ]
 
 
-def _unique_future_period() -> str:
+def _unique_ended_period() -> str:
     """A period that's unlikely to collide with another test run.
 
-    We use a year in the 2080s to avoid colliding with real test data and to
-    make sweep-clean easy.
+    We use a far-past year (1980s) so the period has definitely ENDED (a period
+    lock is only allowed once the calendar month is over, #379 AC 1) while still
+    avoiding collision with real 2020s test data. Sweep-clean stays easy.
     """
     n = uuid.uuid4().int % 12 + 1
-    return f"2087-{n:02d}"
+    return f"1985-{n:02d}"
 
 
 @pytest.fixture
@@ -84,7 +85,7 @@ def _cleanup_agent_suggestion(world: SeedWorld, suggestion_id: str) -> None:
 
 def test_period_lock_happy_path(admin_client_a: httpx.Client, world: SeedWorld) -> None:
     """Admin locks a fresh period; subsequent list shows it locked."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     try:
         r1 = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
         assert r1.status_code == 200, r1.text
@@ -109,7 +110,7 @@ def test_period_lock_double_returns_409(
     admin_client_a: httpx.Client, world: SeedWorld
 ) -> None:
     """Locking the same period twice returns 409."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     try:
         r1 = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
         assert r1.status_code == 200, r1.text
@@ -140,7 +141,7 @@ def test_period_lock_invalid_format_returns_422(
 
 def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None:
     """Admins can preview period close readiness before locking."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-readiness")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -152,7 +153,7 @@ def test_period_close_readiness_happy_path(admin_client_a: httpx.Client) -> None
 
 def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
     """Admins can see a derived close checklist before locking."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-status")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -173,7 +174,7 @@ def test_period_close_status_happy_path(admin_client_a: httpx.Client) -> None:
 
 def test_period_close_package_happy_path(admin_client_a: httpx.Client) -> None:
     """Admins can fetch a composed close package before locking."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     r = admin_client_a.get(f"/api/v1/accounting/periods/{period}/close-package")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -204,7 +205,7 @@ def test_propose_wip_accrual_empty_period_returns_no_suggestions(
     admin_client_a: httpx.Client,
 ) -> None:
     """The accrual agent proposal endpoint handles periods with no WIP."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     r = admin_client_a.post(
         f"/api/v1/accounting/periods/{period}/propose-wip-accrual"
     )
@@ -220,7 +221,7 @@ def test_propose_deferred_revenue_release_empty_period_returns_no_suggestions(
     admin_client_a: httpx.Client,
 ) -> None:
     """The revenue agent proposal endpoint handles periods with no deferred credits."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     r = admin_client_a.post(
         f"/api/v1/accounting/periods/{period}/propose-deferred-revenue-release"
     )
@@ -236,7 +237,7 @@ def test_period_lock_rejects_pending_close_review(
     admin_client_a: httpx.Client, world: SeedWorld
 ) -> None:
     """A pending close-related HITL suggestion must be resolved before lock."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     suggestion_id = str(uuid.uuid4())
     try:
         db = make_service_client()
@@ -282,7 +283,7 @@ def test_period_lock_cross_tenant_isolation(
 
     We lock a period in tenant A, then confirm tenant B can still operate
     against the same period string."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     try:
         r1 = admin_client_a.post(f"/api/v1/accounting/periods/{period}/lock")
         assert r1.status_code == 200, r1.text
@@ -325,7 +326,7 @@ def test_period_lock_rejects_when_subledger_unbalanced(
     admin_client_a: httpx.Client, world: SeedWorld
 ) -> None:
     """A period with a finalized invoice missing its GL journal refuses to lock."""
-    period = _unique_future_period()
+    period = _unique_ended_period()
     invoice_id = str(uuid.uuid4())
     try:
         db = make_service_client()
