@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from pythonjsonlogger.json import JsonFormatter
 
 from app.core.config import settings
+from app.domain.pii import mask_pii
 
 # ---------------------------------------------------------------------------
 # Context variables — set per-request by TenantMiddleware
@@ -56,6 +57,12 @@ class _AethosFormatter(JsonFormatter):
         message_dict: dict,
     ) -> None:
         super().add_fields(log_record, record, message_dict)
+        # Pre-log PII boundary (#374): mask structured identifiers (bank
+        # accounts, tax IDs, cards, NRIC, email) in the free-text message before
+        # it reaches a log sink — defence in depth if a caller forgets to mask.
+        message = log_record.get("message")
+        if isinstance(message, str) and message:
+            log_record["message"] = mask_pii(message)
         log_record["service"] = "aethos-ps"
         log_record["environment"] = settings.environment
         log_record["trace_id"] = trace_id_var.get("")
