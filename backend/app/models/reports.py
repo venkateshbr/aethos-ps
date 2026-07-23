@@ -31,6 +31,8 @@ class TrialBalanceReport(BaseModel):
     grand_total_cr: str
     is_balanced: bool  # abs(grand_total_dr - grand_total_cr) <= 0.01
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
 
 
 class FinancialStatementLine(BaseModel):
@@ -55,6 +57,8 @@ class BalanceSheetReport(BaseModel):
     liabilities_and_equity: str
     is_balanced: bool
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
 
 
 class RetainedEarningsRollForwardReport(BaseModel):
@@ -67,6 +71,8 @@ class RetainedEarningsRollForwardReport(BaseModel):
     retained_earnings_activity: str
     ending_retained_earnings: str
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
 
 
 class IncomeStatementReport(BaseModel):
@@ -80,6 +86,8 @@ class IncomeStatementReport(BaseModel):
     total_expenses: str
     net_income: str
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
 
 
 class CashFlowLine(BaseModel):
@@ -108,6 +116,8 @@ class CashFlowReport(BaseModel):
     beginning_cash: str
     ending_cash: str
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
 
 
 class StatutoryTaxCurrencyBucket(BaseModel):
@@ -153,3 +163,5 @@ class StatutoryReportingPack(BaseModel):
     retained_earnings_roll_forward: RetainedEarningsRollForwardReport
     tax_summary: StatutoryTaxSummary
     generated_at: datetime
+    reporting_currency: str | None = None  # tenant functional/base currency (#379 AC 6)
+    comparison_basis: str = "single_period"  # single_period | vs_prior_period
