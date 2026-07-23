@@ -231,3 +231,43 @@ async def test_void_invoice_is_not_settled() -> None:
     insert.assert_not_awaited()
     journal.assert_not_awaited()
     mark_paid.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_currency_mismatch_is_not_settled() -> None:
+    """#371 AC 1 — a charge whose currency differs from the invoice is refused."""
+    db = MagicMock()
+    gbp_invoice = {"id": "inv-001", "tenant_id": "tenant-001", "currency": "GBP", "status": "sent"}
+    session = _session(
+        {
+            "id": "cs_ccy",
+            "metadata": {"invoice_id": "inv-001", "tenant_id": "tenant-001"},
+            "amount_total": 12500,
+            "currency": "usd",  # invoice is GBP
+            "payment_intent": "pi_ccy",
+        }
+    )
+    with (
+        patch(
+            "app.services.stripe_checkout_payments._get_invoice",
+            new=AsyncMock(return_value=gbp_invoice),
+        ),
+        patch(
+            "app.services.stripe_checkout_payments._payment_intent_exists",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("app.services.stripe_checkout_payments._insert_payment", new=AsyncMock()) as insert,
+        patch(
+            "app.services.stripe_checkout_payments._post_payment_journal",
+            new=AsyncMock(return_value=True),
+        ) as journal,
+    ):
+        result = await record_checkout_session_payment(
+            db=db, session=session, event_id="evt_ccy", source="unit_test",
+        )
+
+    assert result["status"] == "currency_mismatch"
+    assert result["charge_currency"] == "USD"
+    assert result["invoice_currency"] == "GBP"
+    insert.assert_not_awaited()
+    journal.assert_not_awaited()
