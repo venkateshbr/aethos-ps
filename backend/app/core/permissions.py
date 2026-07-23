@@ -35,4 +35,7 @@ def require_privilege(privilege_code: str) -> CurrentUser:
             role=permissions.legacy_role,
         )
 
+    # Expose the required privilege for the executable authz-matrix contract test
+    # (#378 AC 7) — no live stack needed.
+    _check.aethos_privilege = privilege_code  # type: ignore[attr-defined]
     return Depends(_check)
