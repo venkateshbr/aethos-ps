@@ -140,6 +140,27 @@ async def record_checkout_session_payment(
         return {"status": "invalid_amount", "invoice_id": invoice_id, "tenant_id": tenant_id}
 
     currency = str(stripe_value(session, "currency", invoice.get("currency", "usd")) or "usd").upper()
+    # The charge currency must match the invoice's — settling a GBP invoice with a
+    # USD charge would mis-state the AR clearing. (#371 AC 1 — currency match.)
+    invoice_currency = str(invoice.get("currency") or currency).upper()
+    if currency != invoice_currency:
+        logger.error(
+            "checkout.session.completed currency does not match invoice — refusing to settle",
+            extra={
+                "invoice_id": invoice_id,
+                "tenant_id": tenant_id,
+                "event_id": event_id,
+                "charge_currency": currency,
+                "invoice_currency": invoice_currency,
+            },
+        )
+        return {
+            "status": "currency_mismatch",
+            "invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+            "charge_currency": currency,
+            "invoice_currency": invoice_currency,
+        }
     paid_at_iso = _paid_at_iso(session)
     fx_amounts = await payment_fx_amounts(
         db=db,
