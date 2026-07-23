@@ -14,10 +14,13 @@ from supabase import Client
 _TABLE = "accounting_close_overrides"
 _MIN_REASON_LENGTH = 10
 
+# Hard accounting invariants that a period lock can NEVER bypass, even with an
+# admin override — a period whose debits != credits is corrupt. (#379 AC 3)
+NON_OVERRIDABLE_CLOSE_BLOCKERS = frozenset({"trial_balance"})
+
 ALLOWED_CLOSE_OVERRIDE_CODES = frozenset(
     {
         "subledger_reconciliation",
-        "trial_balance",
         "close_reviews",
         "close_tasks",
         "unposted_journals",
