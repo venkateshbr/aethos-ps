@@ -185,3 +185,49 @@ async def test_missing_payment_fx_rate_rejects_before_insert() -> None:
         )
 
     insert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_void_invoice_is_not_settled() -> None:
+    """#371 AC 6 — a void invoice (e.g. paid via a stale link after voiding) must
+    not be settled: no payment, no AR journal, no mark-paid."""
+    db = MagicMock()
+    void_invoice = {
+        "id": "inv-001", "tenant_id": "tenant-001", "currency": "USD", "status": "void",
+    }
+    session = _session(
+        {
+            "id": "cs_void",
+            "metadata": {"invoice_id": "inv-001", "tenant_id": "tenant-001"},
+            "amount_total": 12500,
+            "currency": "usd",
+            "payment_intent": "pi_void",
+        }
+    )
+    with (
+        patch(
+            "app.services.stripe_checkout_payments._get_invoice",
+            new=AsyncMock(return_value=void_invoice),
+        ),
+        patch(
+            "app.services.stripe_checkout_payments._payment_intent_exists",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("app.services.stripe_checkout_payments._insert_payment", new=AsyncMock()) as insert,
+        patch(
+            "app.services.stripe_checkout_payments._post_payment_journal",
+            new=AsyncMock(return_value=True),
+        ) as journal,
+        patch(
+            "app.services.stripe_checkout_payments._mark_invoice_paid", new=AsyncMock()
+        ) as mark_paid,
+    ):
+        result = await record_checkout_session_payment(
+            db=db, session=session, event_id="evt_void", source="unit_test",
+        )
+
+    assert result["status"] == "invoice_not_settleable"
+    assert result["invoice_status"] == "void"
+    insert.assert_not_awaited()
+    journal.assert_not_awaited()
+    mark_paid.assert_not_awaited()
