@@ -47,6 +47,16 @@ def test_semantic_router_keeps_requested_action_plan_when_only_downstream_action
     assert route.confidence >= 0.80
 
 
+def test_semantic_router_routes_away_when_the_plan_action_itself_is_negated() -> None:
+    # #381 mirror: when the *requested* action (create the plan) is the negated
+    # one, the scoped-negation check must route away from the action-plan intent.
+    route = AtlasSemanticIntentRouter().classify(
+        "Do not create any finance ops work items for 2026-06 — just show me the "
+        "current status."
+    )
+    assert route is None or route.intent != "finance_ops_action_plan"
+
+
 def test_semantic_router_recognizes_controlled_manual_journal() -> None:
     route = AtlasSemanticIntentRouter().classify(
         "Prepare an SGD 18,000 dividend income journal for Alderton Trust for "
