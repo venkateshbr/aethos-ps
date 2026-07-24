@@ -245,6 +245,12 @@ class ApprovalPolicyMatrix:
     def _amount(payload: dict[str, Any]) -> Decimal | None:
         for source in ApprovalPolicyMatrix._payload_sources(payload):
             for key in (
+                # Base-currency first: approval thresholds are denominated in the
+                # tenant base currency, so a foreign transaction must be compared
+                # on its base value, not its raw amount. (#377 AC 4)
+                "base_total",
+                "base_amount",
+                "base_subtotal",
                 "total_amount",
                 "total",
                 "amount",
@@ -266,7 +272,10 @@ class ApprovalPolicyMatrix:
                     if not isinstance(line, dict) or line.get("direction") != "DR":
                         continue
                     try:
-                        total_debits += Decimal(str(line.get("amount") or "0"))
+                        # Prefer the base-currency line value for the threshold. (#377 AC 4)
+                        total_debits += Decimal(
+                            str(line.get("base_amount") or line.get("amount") or "0")
+                        )
                     except (InvalidOperation, ValueError):
                         continue
                 if total_debits > 0:

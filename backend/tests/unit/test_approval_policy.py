@@ -124,3 +124,39 @@ def test_tenant_policy_cannot_lower_money_out_below_admin() -> None:
 def test_tenant_policy_rejects_negative_manual_journal_threshold() -> None:
     with pytest.raises(ValueError, match="manual_journal_approval_threshold"):
         ApprovalPolicySettings(manual_journal_approval_threshold=-1)
+
+
+def test_money_out_threshold_uses_base_currency_over_raw_amount() -> None:
+    # A GBP 40,000 batch is below the raw 50,000 threshold but its base value is
+    # USD 52,000 — approval thresholds are base-currency, so owner review applies.
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "create_bill_payment_batch",
+        {"risk_class": "write_money_out", "total": "40000.00", "base_total": "52000.00"},
+    )
+    assert decision.required_role == UserRole.owner
+    assert decision.reason == "money_out_above_owner_review_threshold"
+
+
+def test_money_out_below_base_threshold_does_not_require_owner() -> None:
+    # Raw 60,000 foreign but only 45,000 in base → below the owner threshold.
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "create_bill_payment_batch",
+        {"risk_class": "write_money_out", "total": "60000.00", "base_total": "45000.00"},
+    )
+    assert decision.required_role != UserRole.owner
+    assert decision.reason == "money_out_requires_admin_review"
+
+
+def test_manual_journal_threshold_uses_base_line_amounts() -> None:
+    # Foreign DR lines total 12,000 but base 8,000 → below the 10,000 base threshold.
+    decision = ApprovalPolicyMatrix.decision_for_task(
+        "manual_journal",
+        {
+            "risk_class": "accounting",
+            "lines": [
+                {"direction": "DR", "amount": "12000.00", "base_amount": "8000.00"},
+                {"direction": "CR", "amount": "12000.00", "base_amount": "8000.00"},
+            ],
+        },
+    )
+    assert decision.reason != "manual_journal_above_approval_threshold"
