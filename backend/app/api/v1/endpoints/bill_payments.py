@@ -120,6 +120,20 @@ def export_batch(
     )
 
 
+@router.post("/batches/{batch_id}/confirm-bank-details")
+def confirm_bank_details(
+    batch_id: str,
+    svc: BillPaymentsService = Depends(_write_service),  # noqa: B008
+    # Attesting real bank details were completed gates money movement, so it
+    # requires the settle privilege (not the narrower export one).
+    user: CurrentUser = require_privilege("bill_payments.settle"),  # noqa: B008
+) -> dict:
+    """Attest that a template export's real routing/account were completed
+    out-of-band, unlocking mark-sent. Bank details are NOT sent to or stored by
+    the server (#404)."""
+    return svc.confirm_bank_details(batch_id, user.user_id)
+
+
 @router.patch("/batches/{batch_id}/mark-sent")
 def mark_sent(
     batch_id: str,

@@ -369,6 +369,8 @@ def test_mark_sent_records_sender(mock_db: MagicMock) -> None:
             "id": "batch-1",
             "status": "approved",
             "export_file_sha256": "a" * 64,
+            "export_is_template": True,
+            "bank_details_confirmed_at": "2026-07-25T00:00:00Z",
         }
     )
     chain = _chain([{"id": "batch-1", "status": "sent_to_bank"}])
@@ -381,6 +383,78 @@ def test_mark_sent_records_sender(mock_db: MagicMock) -> None:
     assert patch["status"] == "sent_to_bank"
     assert patch["sent_by"] == USER_ID
     assert "sent_at" in patch
+
+
+def test_mark_sent_blocks_unconfirmed_template_export(mock_db: MagicMock) -> None:
+    """#404: a placeholder (template) export cannot be marked sent until the
+    operator confirms the real routing/account were completed out-of-band."""
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(
+        return_value={
+            "id": "batch-1",
+            "status": "approved",
+            "export_file_sha256": "a" * 64,
+            "export_is_template": True,
+            "bank_details_confirmed_at": None,
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        svc.mark_sent("batch-1", USER_ID)
+
+    assert exc_info.value.status_code == 409
+    assert "placeholder" in str(exc_info.value.detail)
+
+
+def test_confirm_bank_details_requires_export(mock_db: MagicMock) -> None:
+    from fastapi import HTTPException
+
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(return_value={"id": "batch-1", "status": "approved"})
+
+    with pytest.raises(HTTPException) as exc_info:
+        svc.confirm_bank_details("batch-1", USER_ID)
+    assert exc_info.value.status_code == 409
+
+
+def test_confirm_bank_details_records_attestation(mock_db: MagicMock) -> None:
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(
+        return_value={"id": "batch-1", "status": "approved", "export_file_sha256": "a" * 64}
+    )
+    chain = _chain([{"id": "batch-1"}])
+    mock_db.table.return_value = chain
+
+    svc.confirm_bank_details("batch-1", USER_ID)
+
+    patch = chain.update.call_args.args[0]
+    assert patch["bank_details_confirmed_by"] == USER_ID
+    assert "bank_details_confirmed_at" in patch
+
+
+def test_export_persists_template_flag_and_clears_confirmation(mock_db: MagicMock) -> None:
+    """A fresh export marks the batch a template and invalidates any prior
+    confirmation, so the operator must re-attest for the new file."""
+    svc = _make_svc(mock_db)
+    svc.get_batch = MagicMock(
+        return_value={
+            "id": "batch-1",
+            "status": "approved",
+            "items": [{"amount": "100.00", "currency": "USD", "bills": {}}],
+            "pay_date": "2026-07-01",
+        }
+    )
+    chain = _chain([{"id": "batch-1"}])
+    mock_db.table.return_value = chain
+
+    svc.export_nacha("batch-1", USER_ID)
+
+    patch = chain.update.call_args.args[0]
+    assert patch["export_is_template"] is True
+    assert patch["bank_details_confirmed_at"] is None
+    assert patch["bank_details_confirmed_by"] is None
 
 
 # ---------------------------------------------------------------------------

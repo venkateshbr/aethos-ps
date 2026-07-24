@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from app.domain.bank_routing import PLACEHOLDER_ROUTING
 from app.domain.journal_helper import JournalLineSpec, post_journal
 from app.domain.money import serialise_money
 from app.domain.payment_optimization import build_payment_optimization
@@ -212,6 +213,16 @@ class BillPaymentsService:
             raise HTTPException(409, "Batch must be approved before it can be sent to bank")
         if not batch.get("export_file_sha256"):
             raise HTTPException(409, "Batch must be exported before it can be sent to bank")
+        # #404 production-safety: a template export carries PLACEHOLDER routing/account
+        # numbers. It must not be represented as a real payment instruction until the
+        # operator confirms the real bank details were completed out-of-band.
+        if batch.get("export_is_template", True) and not batch.get("bank_details_confirmed_at"):
+            raise HTTPException(
+                409,
+                "This export uses placeholder routing/account numbers. Complete the real "
+                "bank details and confirm (POST /batches/{id}/confirm-bank-details) before "
+                "marking the batch sent to bank.",
+            )
         sent_at = datetime.now(UTC).isoformat()
         result = (
             self.db.table("bill_payment_batches")
@@ -379,9 +390,11 @@ class BillPaymentsService:
         for item in items:
             amount_cents = int(Decimal(str(item["amount"])) * 100)
             total_amount += Decimal(str(item["amount"]))
-            # Detail record — record type 6; placeholder routing 021000021 (Chase)
+            # Detail record — record type 6. PLACEHOLDER_ROUTING is a real, ABA
+            # checksum-valid routing so the template file is structurally parseable;
+            # the operator replaces it with the funding routing before submission.
             lines.append(
-                f"622{'021000021':>9}{'000000000000':>17}{amount_cents:>10}"
+                f"622{PLACEHOLDER_ROUTING:>9}{'000000000000':>17}{amount_cents:>10}"
                 f"{'VENDOR':>22}{'':2}{'0':1}{'0000001':>7}{seq:>7}"
             )
             seq += 1
@@ -407,7 +420,7 @@ class BillPaymentsService:
             lines.append("9" * 94)
 
         content = "\r\n".join(lines).encode("ascii")
-        self._persist_export_metadata(batch_id, "nacha", content, exported_by)
+        self._persist_export_metadata(batch_id, "nacha", content, exported_by, is_template=True)
         return content
 
     # ------------------------------------------------------------------
@@ -452,7 +465,7 @@ class BillPaymentsService:
             )
 
         content = output.getvalue().encode("utf-8")
-        self._persist_export_metadata(batch_id, "csv", content, exported_by)
+        self._persist_export_metadata(batch_id, "csv", content, exported_by, is_template=True)
         return content
 
     def _assert_exportable(self, batch: dict) -> None:
@@ -465,15 +478,46 @@ class BillPaymentsService:
         file_format: str,
         content: bytes,
         exported_by: str | None,
+        *,
+        is_template: bool = True,
     ) -> None:
-        patch = {
+        patch: dict = {
             "file_format": file_format,
             "exported_at": datetime.now(UTC).isoformat(),
             "export_file_sha256": hashlib.sha256(content).hexdigest(),
             "export_file_bytes": len(content),
+            # A fresh export invalidates any prior bank-details confirmation:
+            # the operator must re-attest for the new file.
+            "export_is_template": is_template,
+            "bank_details_confirmed_at": None,
+            "bank_details_confirmed_by": None,
         }
         if exported_by:
             patch["exported_by"] = exported_by
         self.db.table("bill_payment_batches").update(patch).eq("id", batch_id).eq(
             "tenant_id", self.tenant_id
         ).execute()
+
+    def confirm_bank_details(self, batch_id: str, confirmed_by: str) -> dict:
+        """Operator attestation that a template export's real routing/account were
+        completed (in their bank portal) — unlocks mark_sent for a template file.
+
+        We deliberately do NOT accept or store the routing/account here (Prahari
+        gate); this records only that the human completed them out-of-band.
+        """
+        batch = self.get_batch(batch_id)
+        if not batch.get("export_file_sha256"):
+            raise HTTPException(409, "Batch must be exported before confirming bank details")
+        result = (
+            self.db.table("bill_payment_batches")
+            .update(
+                {
+                    "bank_details_confirmed_at": datetime.now(UTC).isoformat(),
+                    "bank_details_confirmed_by": confirmed_by,
+                }
+            )
+            .eq("id", batch_id)
+            .eq("tenant_id", self.tenant_id)
+            .execute()
+        )
+        return result.data[0]
