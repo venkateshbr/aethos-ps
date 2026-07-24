@@ -5,6 +5,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
 import { MoneyPipe } from '../../shared/pipes/money.pipe';
+import { BarChartComponent, BarChartDatum } from '../../shared/components/bar-chart.component';
 import {
   ReportsService,
   AgingReport,
@@ -39,7 +40,7 @@ import {
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe],
+  imports: [CommonModule, FormsModule, MatTabsModule, MatTableModule, MatIconModule, MoneyPipe, BarChartComponent],
   template: `
     <div class="min-h-full bg-surface-base p-6">
       <div class="mb-6 flex flex-wrap items-center justify-between gap-2">
@@ -1337,6 +1338,15 @@ import {
           <p class="text-sm text-text-muted uppercase tracking-wide font-medium">Total open {{ report }} · {{ reportCurrency() }} base currency</p>
           <p class="text-3xl font-bold text-text-primary font-mono" [attr.data-testid]="report.toLowerCase() + '-aging-total'">{{ data.total | money: reportCurrency() }}</p>
         </div>
+        <div class="bg-surface-raised border border-border-default rounded-lg p-4 mt-4"
+             [attr.data-testid]="report.toLowerCase() + '-aging-chart'">
+          <app-bar-chart
+            [data]="agingBuckets(data)"
+            title="Aging distribution"
+            format="currency"
+            [currency]="reportCurrency()"
+          />
+        </div>
       </section>
     </ng-template>
 
@@ -1606,6 +1616,17 @@ export class ReportsComponent implements OnInit {
   /** A neutral marker avoids silently mislabelling base-currency values as USD. */
   reportCurrency(): string {
     return this.baseCurrency() ?? 'XXX';
+  }
+
+  /** Map an AR/AP aging payload to bar-chart data (buckets by age). (#405) */
+  agingBuckets(data: Record<string, string>): BarChartDatum[] {
+    const num = (v: string | undefined) => Number(v ?? '0') || 0;
+    return [
+      { label: 'Current (0–30)', value: num(data['0_30']), colorClass: 'bg-accent' },
+      { label: '31–60 days', value: num(data['31_60']), colorClass: 'bg-confidence-med' },
+      { label: '61–90 days', value: num(data['61_90']), colorClass: 'bg-orange-400' },
+      { label: 'Over 90 days', value: num(data['over_90']), colorClass: 'bg-confidence-low' },
+    ];
   }
 
   /** Preserve a valid transaction currency; otherwise use the verified tenant base. */
