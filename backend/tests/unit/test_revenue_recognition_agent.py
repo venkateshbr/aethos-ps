@@ -581,3 +581,64 @@ async def test_write_milestone_revenue_recognition_suggestions_skips_duplicate()
 
     assert result["created_count"] == 0
     assert result["skipped_duplicates"] == 1
+
+
+# --- Durable scheduled revenue release (#408) ---
+
+
+def _schedule_tables(recognized: str = "0", base_total: str = "1200.00") -> dict:
+    return {
+        "accounts": [
+            {"tenant_id": TENANT_ID, "id": "acct-2200", "code": "2200", "deleted_at": None},
+            {"tenant_id": TENANT_ID, "id": "acct-4000", "code": "4000", "deleted_at": None},
+        ],
+        "revenue_recognition_schedules": [
+            {
+                "id": "sched-1", "tenant_id": TENANT_ID, "status": "active",
+                "base_currency": "USD", "base_total_amount": base_total, "periods": 12,
+                "start_period": "2026-01", "recognized_to_date": recognized,
+                "source_type": "invoice", "source_id": None,
+                "deferred_account_code": "2200", "revenue_account_code": "4000",
+            }
+        ],
+        "agent_suggestions": [],
+    }
+
+
+def test_scheduled_release_first_period_dr_deferred_cr_revenue() -> None:
+    from app.agents.revenue_recognition_agent import build_scheduled_revenue_release_proposals
+
+    props = build_scheduled_revenue_release_proposals(_deps(_schedule_tables()), "2026-01")
+    assert len(props) == 1
+    p = props[0]
+    assert p.release_amount == "100.00"  # 1200 / 12
+    assert p.recognized_after == "100.00"
+    lines = {ln["direction"]: ln["account_id"] for ln in p.journal_entry["lines"]}
+    assert lines == {"DR": "acct-2200", "CR": "acct-4000"}
+
+
+def test_scheduled_release_catches_up_missed_periods() -> None:
+    from app.agents.revenue_recognition_agent import build_scheduled_revenue_release_proposals
+
+    props = build_scheduled_revenue_release_proposals(_deps(_schedule_tables()), "2026-03")
+    assert props[0].release_amount == "300.00"  # 3 months of catch-up
+
+
+def test_scheduled_release_none_when_already_recognized() -> None:
+    from app.agents.revenue_recognition_agent import build_scheduled_revenue_release_proposals
+
+    props = build_scheduled_revenue_release_proposals(
+        _deps(_schedule_tables(recognized="300.00")), "2026-03"
+    )
+    assert props == []
+
+
+def test_scheduled_release_journal_is_balanced() -> None:
+    from decimal import Decimal as _D
+
+    from app.agents.revenue_recognition_agent import build_scheduled_revenue_release_proposals
+
+    lines = build_scheduled_revenue_release_proposals(_deps(_schedule_tables()), "2026-01")[0].journal_entry["lines"]
+    dr = sum(_D(ln["amount"]) for ln in lines if ln["direction"] == "DR")
+    cr = sum(_D(ln["amount"]) for ln in lines if ln["direction"] == "CR")
+    assert dr == cr

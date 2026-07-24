@@ -18,6 +18,10 @@ from pydantic import BaseModel
 from app.agents.base import AgentDeps
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.domain.money import TWO_PLACES, serialise_money
+from app.services.revenue_recognition_schedule_service import (
+    RevenueRecognitionScheduleService,
+    period_release_amount,
+)
 
 _PERIOD_PATTERN = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 _ACTIVE_RECOGNITION_STATUSES = [
@@ -41,6 +45,25 @@ class DeferredRevenueReleaseProposal(BaseModel):
     period: str
     currency: str
     deferred_release_amount: str
+    deferred_account_code: str
+    revenue_account_code: str
+    confidence: float
+    journal_entry: dict
+
+
+class ScheduledRevenueReleaseProposal(BaseModel):
+    """HITL-ready release of a durable straight-line rev-rec schedule (#408)."""
+
+    proposal_type: str = "scheduled_revenue_release"
+    period: str
+    base_currency: str
+    schedule_id: str
+    source_type: str
+    source_id: str | None = None
+    scheduled_total: str
+    recognized_before: str
+    release_amount: str
+    recognized_after: str
     deferred_account_code: str
     revenue_account_code: str
     confidence: float
@@ -455,6 +478,145 @@ async def write_deferred_revenue_release_suggestions(
         "suggestion_ids": [str(row["id"]) for row in created],
         "proposals": [proposal.model_dump(mode="json") for proposal in proposals],
     }
+
+
+def build_scheduled_revenue_release_proposals(
+    deps: AgentDeps,
+    period: str,
+) -> list[ScheduledRevenueReleaseProposal]:
+    """Build draft releases for active durable rev-rec schedules due this period.
+
+    Releases are computed and posted in the tenant BASE currency (the schedule
+    carries ``base_total_amount`` / ``recognized_to_date`` in base). A lagging
+    schedule catches up missed periods; a fully-recognized one yields nothing.
+    """
+    _start, end = _period_bounds(period)
+    schedules = RevenueRecognitionScheduleService(deps.db, deps.tenant_id).list_active()
+    if not schedules:
+        return []
+
+    codes: set[str] = set()
+    for s in schedules:
+        codes.add(str(s.get("deferred_account_code") or "2200"))
+        codes.add(str(s.get("revenue_account_code") or "4000"))
+    account_ids = _get_account_ids_by_codes(deps, sorted(codes))
+
+    proposals: list[ScheduledRevenueReleaseProposal] = []
+    entry_date = end.isoformat()
+    for s in schedules:
+        base_total = Decimal(str(s.get("base_total_amount") or "0"))
+        recognized = Decimal(str(s.get("recognized_to_date") or "0"))
+        try:
+            periods = int(s["periods"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        release = period_release_amount(
+            total=base_total,
+            periods=periods,
+            start_period=str(s["start_period"]),
+            period=period,
+            recognized_to_date=recognized,
+        )
+        if release <= Decimal("0.00"):
+            continue
+
+        deferred_code = str(s.get("deferred_account_code") or "2200")
+        revenue_code = str(s.get("revenue_account_code") or "4000")
+        deferred_id = account_ids.get(deferred_code)
+        revenue_id = account_ids.get(revenue_code)
+        if not deferred_id or not revenue_id:
+            continue
+
+        base_currency = str(s.get("base_currency") or "USD")
+        amount_str = serialise_money(release) or "0.00"
+        description = (
+            f"Scheduled deferred revenue release for {period} "
+            f"(schedule {s['id']}, {base_currency})"
+        )
+        proposals.append(
+            ScheduledRevenueReleaseProposal(
+                period=period,
+                base_currency=base_currency,
+                schedule_id=str(s["id"]),
+                source_type=str(s.get("source_type") or "manual"),
+                source_id=(str(s["source_id"]) if s.get("source_id") else None),
+                scheduled_total=serialise_money(base_total) or "0.00",
+                recognized_before=serialise_money(recognized) or "0.00",
+                release_amount=amount_str,
+                recognized_after=serialise_money(recognized + release) or "0.00",
+                deferred_account_code=deferred_code,
+                revenue_account_code=revenue_code,
+                confidence=0.88,
+                journal_entry={
+                    "description": description,
+                    "entry_date": entry_date,
+                    "reference": f"scheduled-revenue-release:{period}:{s['id']}",
+                    "schedule_id": str(s["id"]),
+                    "lines": [
+                        {
+                            "direction": "DR",
+                            "account_id": deferred_id,
+                            "amount": amount_str,
+                            "currency": base_currency,
+                            "base_amount": amount_str,
+                            "description": description,
+                        },
+                        {
+                            "direction": "CR",
+                            "account_id": revenue_id,
+                            "amount": amount_str,
+                            "currency": base_currency,
+                            "base_amount": amount_str,
+                            "description": description,
+                        },
+                    ],
+                },
+            )
+        )
+    return proposals
+
+
+async def write_scheduled_revenue_release_suggestions(deps: AgentDeps, period: str) -> dict:
+    """Persist scheduled deferred-revenue releases as L2 HITL journal suggestions."""
+    proposals = build_scheduled_revenue_release_proposals(deps, period)
+    created: list[dict] = []
+    skipped_duplicates = 0
+    for proposal in proposals:
+        if _has_existing_scheduled_release_suggestion(deps, proposal):
+            skipped_duplicates += 1
+            continue
+        suggestion = await write_agent_suggestion(
+            deps,
+            agent_name="revenue_recognition_agent",
+            action_type="draft_journal",
+            document_id=None,
+            output=proposal.model_dump(mode="json"),
+            confidence=proposal.confidence,
+            autonomy_level=2,
+        )
+        created.append(suggestion)
+    return {
+        "period": period,
+        "proposal_count": len(proposals),
+        "created_count": len(created),
+        "skipped_duplicates": skipped_duplicates,
+        "suggestion_ids": [str(row["id"]) for row in created],
+        "proposals": [p.model_dump(mode="json") for p in proposals],
+    }
+
+
+def _has_existing_scheduled_release_suggestion(
+    deps: AgentDeps,
+    proposal: ScheduledRevenueReleaseProposal,
+) -> bool:
+    for output in _active_revenue_recognition_suggestion_outputs(deps):
+        if (
+            output.get("proposal_type") == "scheduled_revenue_release"
+            and output.get("period") == proposal.period
+            and output.get("schedule_id") == proposal.schedule_id
+        ):
+            return True
+    return False
 
 
 async def write_milestone_revenue_recognition_suggestions(

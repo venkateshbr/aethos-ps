@@ -24,6 +24,7 @@ from app.agents.revenue_recognition_agent import (
     write_deferred_revenue_release_suggestions,
     write_milestone_revenue_recognition_suggestions,
     write_percentage_completion_revenue_recognition_suggestions,
+    write_scheduled_revenue_release_suggestions,
 )
 from app.core.db import get_service_role_client
 from app.services.close_package_service import ClosePackageService
@@ -39,6 +40,7 @@ _PROPOSAL_STEPS: tuple[tuple[str, ProposalWriter, dict[str, str]], ...] = (
     ("wip_accrual", write_wip_accrual_suggestions, {}),
     ("employee_reimbursement_accrual", write_employee_reimbursement_accrual_suggestions, {}),
     ("deferred_revenue_release", write_deferred_revenue_release_suggestions, {}),
+    ("scheduled_revenue_release", write_scheduled_revenue_release_suggestions, {}),
     ("milestone_revenue_recognition", write_milestone_revenue_recognition_suggestions, {}),
     (
         "percentage_completion_revenue_recognition",
