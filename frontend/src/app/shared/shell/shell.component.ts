@@ -182,6 +182,7 @@ export class ShellComponent implements OnInit {
 
   /** Primary nav — always visible in the top bar (with icon + label on ≥md) */
   readonly primaryNav: NavItem[] = [
+    { label: 'Dashboard',  icon: 'dashboard',    route: '/app/dashboard' },
     { label: 'Nous',       icon: 'auto_awesome', route: '/app/copilot' },
     { label: 'Documents',   icon: 'upload_file',  route: '/app/documents' },
     { label: 'Inbox',       icon: 'inbox',        route: '/app/inbox' },
