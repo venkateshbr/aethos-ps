@@ -46,6 +46,11 @@ jobs:
         run: |
           uv run pytest tests/unit/ tests/property/ -v --tb=short
 
+      - name: Agent-eval offline gate (#407)
+        working-directory: backend
+        run: |
+          uv run python -m scripts.agent_eval_gate --out "$GITHUB_STEP_SUMMARY"
+
   # ── 3. Frontend checks ─────────────────────────────────────────────────────
   # Angular lint is tracked separately because this workspace has no lint
   # target. Typecheck, unit, and Playwright discovery are mandatory meanwhile.
