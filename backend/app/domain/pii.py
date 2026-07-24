@@ -24,13 +24,14 @@ def mask_pii(text: str) -> str:
       - Tax IDs: US EIN, UK VAT, IN GSTIN, AU ABN
       - Bank accounts: IBAN, and account/routing numbers when context-labelled
       - National IDs: Singapore NRIC/FIN
+      - Phone numbers (distinctive shapes only — see below)
       - Email (username redacted, domain kept for context)
 
     Returns the text with sensitive spans replaced by ``[REDACTED-*]``.
 
-    Follow-up (#392): NER-based masking of unstructured PII (person names,
-    postal addresses) is not yet covered — those are lower-severity than the
-    financial/national identifiers above and need a model dependency.
+    Unstructured PII (person names, postal addresses) is handled by the optional
+    NER layer in ``mask_pii_deep`` for the pre-model path. See the masking policy:
+    docs/security/pii-masking-policy.md.
     """
     # SSN-like: XXX-XX-XXXX
     text = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED-SSN]", text)
@@ -76,6 +77,25 @@ def mask_pii(text: str) -> str:
         "[REDACTED-NRIC]",
         text,
     )
+    # Phone numbers — only distinctive shapes, so amounts (1,234.56), dates
+    # (2026-07-25), and invoice numbers (INV-2026-0012) are left intact:
+    #   (a) international, a leading + country code then 6-14 more digits;
+    text = re.sub(r"\+\d[\d ().-]{6,16}\d", "[REDACTED-PHONE]", text)
+    #   (b) NANP grouping, but only parenthesised area code or dash/dot separators
+    #       (bare-space 3-3-4 is excluded to avoid eating space-grouped numbers);
+    text = re.sub(
+        r"\(\d{3}\)[ .-]?\d{3}[ .-]?\d{4}\b|\b\d{3}[.-]\d{3}[.-]\d{4}\b",
+        "[REDACTED-PHONE]",
+        text,
+    )
+    #   (c) context-labelled phone/tel/mobile/fax with any following number run.
+    text = re.sub(
+        r"\b(phone|tel|telephone|mobile|cell|fax)\b\s*(?:number|no\.?|#)?\s*[:.]?\s*"
+        r"[+(]?\d[\d ().-]{5,16}\d",
+        "[REDACTED-PHONE]",
+        text,
+        flags=re.IGNORECASE,
+    )
     # Email: keep domain for context, redact username
     text = re.sub(
         r"\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Z|a-z]{2,})\b",
@@ -104,6 +124,13 @@ def _detect_pii_types(text: str) -> set[str]:
             r"\s*(?:number|no\.?|#)?\s*[:#-]?\s*[A-Z0-9][A-Z0-9 -]{5,33}"
         ),
         "nric": r"\b[STFGM]\d{7}[A-Z]\b",
+        "phone": (
+            r"\+\d[\d ().-]{6,16}\d"
+            r"|\(\d{3}\)[ .-]?\d{3}[ .-]?\d{4}\b"
+            r"|\b\d{3}[.-]\d{3}[.-]\d{4}\b"
+            r"|\b(?:phone|tel|telephone|mobile|cell|fax)\b\s*(?:number|no\.?|#)?\s*[:.]?\s*"
+            r"[+(]?\d[\d ().-]{5,16}\d"
+        ),
     }
     for pii_type, pattern in patterns.items():
         if re.search(pattern, text, flags=re.IGNORECASE):
