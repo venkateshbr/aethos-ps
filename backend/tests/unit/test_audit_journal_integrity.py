@@ -78,3 +78,39 @@ def test_audit_ignores_unposted_headers(monkeypatch, capsys) -> None:
     _install(monkeypatch, entries, [])
     assert audit_mod.audit() == 0
     assert "audited: 0" in capsys.readouterr().out
+
+
+def test_audit_flags_cross_tenant_line(monkeypatch, capsys) -> None:
+    # Balanced numerically, but a line belongs to another tenant (0113 invariant).
+    entries = [{"id": "e5", "tenant_id": "t1", "posted_at": "2026-07-01T00:00:00Z"}]
+    lines = [
+        {"journal_entry_id": "e5", "tenant_id": "t1", "direction": "DR", "base_amount": "100.00"},
+        {"journal_entry_id": "e5", "tenant_id": "t2", "direction": "CR", "base_amount": "100.00"},
+    ]
+    _install(monkeypatch, entries, lines)
+    assert audit_mod.audit() == 1
+    out = capsys.readouterr().out
+    assert "Cross-tenant-line entries:      1" in out
+    assert "CROSS-TENANT" in out
+
+
+def test_evaluate_penny_diff_within_tolerance_is_clean() -> None:
+    # 0.01 diff is exactly at tolerance (> 0.01 triggers), so it stays clean.
+    headers = [{"id": "e6", "tenant_id": "t1", "posted_at": "2026-07-01T00:00:00Z"}]
+    lines = [
+        {"journal_entry_id": "e6", "tenant_id": "t1", "direction": "DR", "base_amount": "100.00"},
+        {"journal_entry_id": "e6", "tenant_id": "t1", "direction": "CR", "base_amount": "99.99"},
+    ]
+    _, orphans, unbalanced, cross = audit_mod.evaluate(headers, lines)
+    assert orphans == [] and unbalanced == [] and cross == []
+
+
+def test_evaluate_ignores_lines_for_unknown_headers() -> None:
+    headers = [{"id": "e7", "tenant_id": "t1", "posted_at": "2026-07-01T00:00:00Z"}]
+    lines = [
+        {"journal_entry_id": "e7", "tenant_id": "t1", "direction": "DR", "base_amount": "50.00"},
+        {"journal_entry_id": "e7", "tenant_id": "t1", "direction": "CR", "base_amount": "50.00"},
+        {"journal_entry_id": "ghost", "tenant_id": "t1", "direction": "DR", "base_amount": "999.00"},
+    ]
+    _, orphans, unbalanced, cross = audit_mod.evaluate(headers, lines)
+    assert orphans == [] and unbalanced == [] and cross == []

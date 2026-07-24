@@ -12,6 +12,8 @@ This script is **read-only**. It reports, per tenant:
   1. Orphan headers   — posted journal_entries with zero journal_lines.
   2. Unbalanced entries — posted entries where sum (DR base_amount - CR base_amount)
      exceeds 0.01 (the same tolerance the trigger enforces).
+  3. Cross-tenant lines — posted entries with a line owned by another tenant
+     (the invariant migration 0113 enforces at COMMIT going forward).
 
 Exit code 0 = clean (safe to enable constraints); 1 = issues found (remediate via
 reversal entries first). Credentials come from the environment or backend/.env /
@@ -69,26 +71,33 @@ def _paged(db: Client, table: str, columns: str):
         start += _PAGE
 
 
-def audit() -> int:
-    db = _client()
+def evaluate(header_rows, line_rows):
+    """Pure integrity check over raw header/line rows (no DB) — testable.
 
+    Returns ``(headers, orphans, unbalanced, cross_tenant)`` where ``headers`` maps
+    posted entry id -> tenant id, and each list holds the offending entries.
+    """
     # Posted headers: id -> tenant_id. Posted state is `posted_at IS NOT NULL`
     # (journal_entries carry no status column); the immutable GL lives here.
     headers: dict[str, str] = {}
-    for row in _paged(db, "journal_entries", "id,tenant_id,posted_at"):
+    for row in header_rows:
         if row.get("posted_at"):
             headers[str(row["id"])] = str(row.get("tenant_id") or "")
 
     # Aggregate posted lines by entry.
     line_count: dict[str, int] = defaultdict(int)
     balance: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for row in _paged(db, "journal_lines", "journal_entry_id,direction,base_amount"):
+    foreign_tenant: dict[str, int] = defaultdict(int)
+    for row in line_rows:
         entry_id = str(row.get("journal_entry_id") or "")
         if entry_id not in headers:
             continue  # only posted headers are in scope
         line_count[entry_id] += 1
         base = Decimal(str(row.get("base_amount") or "0"))
         balance[entry_id] += base if row.get("direction") == "DR" else -base
+        line_tenant = str(row.get("tenant_id") or "")
+        if line_tenant and line_tenant != headers[entry_id]:
+            foreign_tenant[entry_id] += 1
 
     orphans = [(eid, headers[eid]) for eid in headers if line_count[eid] == 0]
     unbalanced = [
@@ -96,19 +105,35 @@ def audit() -> int:
         for eid in headers
         if line_count[eid] > 0 and abs(balance[eid]) > _TOLERANCE
     ]
+    cross_tenant = [
+        (eid, headers[eid], foreign_tenant[eid]) for eid in headers if foreign_tenant[eid] > 0
+    ]
+    return headers, orphans, unbalanced, cross_tenant
+
+
+def audit() -> int:
+    db = _client()
+    header_rows = list(_paged(db, "journal_entries", "id,tenant_id,posted_at"))
+    line_rows = list(
+        _paged(db, "journal_lines", "journal_entry_id,tenant_id,direction,base_amount")
+    )
+    headers, orphans, unbalanced, cross_tenant = evaluate(header_rows, line_rows)
 
     print(f"Posted journal entries audited: {len(headers)}")
     print(f"Orphan headers (0 lines):       {len(orphans)}")
     print(f"Unbalanced entries (>0.01):     {len(unbalanced)}")
+    print(f"Cross-tenant-line entries:      {len(cross_tenant)}")
 
     for eid, tenant in orphans[:50]:
-        print(f"  ORPHAN     tenant={tenant} entry={eid}")
+        print(f"  ORPHAN       tenant={tenant} entry={eid}")
     for eid, tenant, diff in unbalanced[:50]:
-        print(f"  UNBALANCED tenant={tenant} entry={eid} DR-CR base diff={diff}")
+        print(f"  UNBALANCED   tenant={tenant} entry={eid} DR-CR base diff={diff}")
+    for eid, tenant, n in cross_tenant[:50]:
+        print(f"  CROSS-TENANT tenant={tenant} entry={eid} foreign_lines={n}")
 
-    if orphans or unbalanced:
+    if orphans or unbalanced or cross_tenant:
         print("\nRESULT: INVALID journals found — remediate via reversal before "
-              "enabling the 0107 constraints in this environment.")
+              "enabling the 0107/0113 constraints in this environment.")
         return 1
     print("\nRESULT: clean — safe to enable the atomic-posting constraints.")
     return 0
