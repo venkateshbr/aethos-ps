@@ -130,7 +130,27 @@ export function collectCompleteSseLines(
       </aside>
 
       <!-- Main chat surface -->
-      <div class="flex-1 flex flex-col min-w-0">
+      <div
+        class="flex-1 flex flex-col min-w-0 relative"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave($event)"
+        (drop)="onDrop($event)"
+      >
+        <!-- Drag & drop upload overlay (#406) -->
+        @if (dragActive()) {
+          <div
+            class="absolute inset-0 z-30 flex items-center justify-center bg-surface-base/80 border-2 border-dashed border-accent rounded-lg pointer-events-none"
+            data-testid="copilot-drop-overlay"
+            role="status"
+            aria-label="Drop a document to attach"
+          >
+            <div class="text-center">
+              <mat-icon class="text-accent-light text-4xl" style="font-size:2.5rem;width:2.5rem;height:2.5rem;">upload_file</mat-icon>
+              <p class="text-sm text-text-primary font-medium mt-2">Drop a document to attach</p>
+              <p class="text-xs text-text-muted mt-0.5">.pdf .png .jpg .webp .txt</p>
+            </div>
+          </div>
+        }
 
         <!-- Header -->
         <div class="flex-none px-4 py-3 border-b border-border-default flex items-center gap-3">
@@ -870,10 +890,36 @@ export class CopilotComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-
     // Reset input so the same file can be re-selected if needed
     input.value = '';
+    this.uploadFile(file);
+  }
 
+  // --- Drag & drop upload (#406) ---
+  dragActive = signal(false);
+
+  onDragOver(event: DragEvent): void {
+    if (this.uploading()) return;
+    // Only react to file drags, not text/selection drags.
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    this.dragActive.set(true);
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.dragActive.set(false);
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragActive.set(false);
+    if (this.uploading()) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (file) this.uploadFile(file);
+  }
+
+  private uploadFile(file: File): void {
     this.uploading.set(true);
     this.uploadStatus.set('uploading');
     this.uploadDocumentId.set(null);
