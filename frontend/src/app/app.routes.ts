@@ -43,6 +43,11 @@ export const routes: Routes = [
     canActivateChild: [authChildGuard],
     children: [
       {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+      },
+      {
         path: 'copilot',
         loadComponent: () =>
           import('./features/copilot/copilot.component').then(m => m.CopilotComponent),
@@ -163,7 +168,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/accounting/journal-entries-list.component').then(m => m.JournalEntriesListComponent),
       },
-      { path: '', redirectTo: 'copilot', pathMatch: 'full' },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },
 
