@@ -191,6 +191,48 @@ def test_mask_pii_redacts_labelled_account_and_routing_numbers() -> None:
     assert masked.count("[REDACTED-BANK-ACCOUNT]") == 2
 
 
+# --- phone numbers (#374/#392 AC: names, email, phone, ...) ------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "+1 415 555 2671",       # US international
+        "+44 20 7946 0958",      # UK international
+        "+65 6123 4567",         # Singapore international
+        "+91 98765 43210",       # India international
+        "(415) 555-2671",        # NANP parenthesised
+        "415-555-2671",          # NANP dashed
+        "415.555.2671",          # NANP dotted
+    ],
+)
+def test_mask_pii_redacts_phone_numbers(raw: str) -> None:
+    masked = mask_pii(f"Call the partner on {raw} tomorrow")
+    assert "[REDACTED-PHONE]" in masked
+    assert raw not in masked
+
+
+def test_mask_pii_redacts_context_labelled_phone() -> None:
+    masked = mask_pii("Mobile: 07911 123456 and Tel 6123 4567")
+    assert "07911 123456" not in masked
+    assert "6123 4567" not in masked
+    assert masked.count("[REDACTED-PHONE]") == 2
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Invoice #12345, amount $1,234.56",       # invoice no + money
+        "Total 1,234,567.89 due on 2026-07-25",   # grouped money + ISO date
+        "Reference INV-2026-0012 for the retainer",  # invoice reference
+        "We logged 100 200 3000 hours",           # bare space-grouped digits (deliberately kept)
+        "PO 4500-0012 approved",                  # purchase order number
+    ],
+)
+def test_mask_pii_phone_no_false_positives(text: str) -> None:
+    assert "[REDACTED-PHONE]" not in mask_pii(text)
+
+
 def test_mask_pii_redacts_singapore_nric() -> None:
     masked = mask_pii("Director NRIC S1234567D signed the letter")
     assert "S1234567D" not in masked
