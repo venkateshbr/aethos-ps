@@ -40,4 +40,4 @@ Routine feature work does **not** need an ADR; a well-described issue is enough.
 | [0002](0002-jwt-verification-library.md) | JWT verification on PyJWT (drop python-jose) | Accepted | 2026-07-23 |
 | [0003](0003-fx-remeasurement.md) | Period-end FX remeasurement of open foreign balances | Accepted | 2026-07-23 |
 | [0004](0004-revenue-recognition-schedules.md) | Durable straight-line revenue-recognition schedules | Accepted | 2026-07-24 |
-| [0005](0005-authorization-model.md) | Canonical authorization model (roles, privileges, employee firewall) | Proposed | 2026-07-25 |
+| [0005](0005-authorization-model.md) | Canonical authorization model (roles, privileges, employee firewall) | Accepted | 2026-07-25 |
