@@ -1,6 +1,6 @@
 # ADR 0005 — Canonical authorization model (roles, privileges, employee firewall)
 
-- **Status:** Proposed — **pending Founder + Prahari + Vastu sign-off**
+- **Status:** Accepted — Founder-approved 2026-07-25 (proceed per the phased plan; each prod authz change still lands in reviewed batches)
 - **Date:** 2026-07-25
 - **Deciders:** Founder (approval gate) · Prahari (security) · Vastu (architecture)
 - **Issue:** #378 (P0 Security) — parent #368
@@ -122,9 +122,17 @@ re-checks on every mutation. Hidden navigation is a UX affordance, never a contr
 ## Implementation plan (each phase gated on this ADR being Accepted)
 
 1. **Ratify (docs only, this ADR)** — no code.
-2. **AC-3 route migration** — move sensitive money/close/security routes from
-   `require_role` to `require_privilege`; extend `test_authz_matrix.py` to assert
-   the required privilege per route. *(unit-testable, no live stack)*
+2. **AC-3 authz coverage gate (done 2026-07-25)** — `test_authz_mutation_coverage.py`
+   enumerates every mutating v1 route, classifies its gate from the full dependency
+   tree, and fails CI if any mutation ships with only-authentication/public unless
+   it is on a small reviewed allowlist (17 self-service/public routes, each
+   justified). Directly enforces the "many routes require only authentication"
+   finding. *(unit-testable, no live stack)*
+2b. **AC-3 route migration (deferred — needs live DB)** — moving sensitive
+   `require_role` routes to `require_privilege` changes *who* has access (the
+   privilege→role grants live in `tenant_user_effective_privileges`), so it is
+   verified against a live test DB per batch to avoid lockouts. Sequenced with
+   Phases 3–4.
 3. **AC-4 RLS firewall** — add `is_tenant_erp_member`; migrate ERP table policies
    in reviewed batches behind a pre-change access audit. *(needs a live test DB)*
 4. **AC-5 negative-path matrix** — cross-tenant, stale-token, tenant-switch, invite,
