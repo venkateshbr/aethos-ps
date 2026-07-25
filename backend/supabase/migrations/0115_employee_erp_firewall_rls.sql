@@ -36,7 +36,8 @@ AS $$
          WHERE tu.user_id    = p_user_id
            AND tu.tenant_id  = p_tenant_id
            AND tu.deleted_at IS NULL
-           AND lower(coalesce(tu.role, '')) <> 'employee'
+           -- tu.role is the user_role enum; cast to text before comparing.
+           AND lower(coalesce(tu.role::text, '')) <> 'employee'
     );
 $$;
 
