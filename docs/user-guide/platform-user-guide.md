@@ -783,13 +783,15 @@ Users can:
 Recommended practice:
 
 - Treat extracted values as proposals, not facts, until reviewed.
-- Treat document and model input as potentially containing personal and
-  financial data. The current build does not establish universal pre-model
-  masking for names, bank numbers, tax identifiers, extracted text, or scanned
-  images. Operational-health/log redaction does not imply document redaction.
+- Structured financial and government identifiers (bank accounts/IBAN, tax IDs,
+  card numbers, NRIC/FIN, phone, email) are redacted before text is sent to an
+  external model and before it is logged/traced (regex at both boundaries,
+  exception paths included). Person/place **names** are masked on the pre-model
+  document path only where the optional NER model is enabled; scanned-image pixels
+  are not redacted. See `docs/security/pii-masking-policy.md`.
 - Upload only fictional, approved, or contractually permitted material; use an
-  approved model provider and retention configuration. Do not promise that a
-  field is masked without evidence for that exact document/model path.
+  approved model provider and retention configuration. Do not promise name/address
+  masking unless the NER layer is enabled in that environment.
 - Use approve-with-edits when document data is structurally correct but needs correction.
 - Keep source documents attached for audit evidence.
 - Ask Aethos Nous to summarize document evidence, but approve the reviewed business

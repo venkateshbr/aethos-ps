@@ -63,11 +63,11 @@ Current limitations that must not be demonstrated as shipped behavior:
   production statement is claimed by this guide.
 - There is no separate platform-administrator role in the 22-role tenant
   security catalogue. Do not present Tenant Owner as a platform administrator.
-- Do not claim that uploaded text, scanned images, names, tax IDs, or bank
-  numbers are automatically masked before model processing. Operational-health
-  and telemetry redaction is narrower than document/LLM input handling. Use
-  fictional or approved data and the configured provider's data-processing
-  controls.
+- Structured identifiers (bank/tax/card/NRIC/phone/email) ARE masked before model
+  processing and before logs. Do NOT claim the same for **names/addresses** unless
+  the environment has the optional NER model installed — that layer is opt-in. Do
+  not claim scanned-image pixels are redacted. See the masking policy
+  (`docs/security/pii-masking-policy.md`); use fictional or approved data.
 
 ---
 
@@ -2038,13 +2038,17 @@ telemetry, and abuse-path behavior, not only happy-path finance workflows.
 > The demo shows role-aware approvals, read-only auditor access, decision trails, replay-safe run evidence, operational health, rate-limit status, and safe alert routing. The current model is AI-led operations with explicit controls around money, journals, statements, and external communications.
 
 **"What about GDPR / data privacy for our clients?"**
-> Aethos tenant access, source-document permissions, and operational telemetry
-> redaction are separate controls. The current build does not prove universal
-> pre-model masking of names, bank numbers, tax IDs, extracted document text, or
-> scanned images. Use only fictional or contractually approved data in this
-> demo, configure an approved model provider and retention policy, and review
-> the extracted proposal before posting it. Do not promise field-level masking
-> unless production evidence for that exact input path exists.
+> Structured financial and government identifiers — bank accounts/IBAN, tax IDs,
+> card numbers, Singapore NRIC/FIN, phone, and email — are redacted before any
+> text is sent to an external AI model *and* before it is written to logs or
+> traces (deterministic regex at both boundaries, exception paths included).
+> Person and place **names** are additionally masked on the pre-model document
+> path **where the optional NER model is enabled** in that environment; without
+> it, name masking is not guaranteed, so present name/address redaction as
+> environment-dependent, not universal. Tenant access and source-document
+> permissions are separate controls. See `docs/security/pii-masking-policy.md`.
+> Still use fictional or contractually approved data in the demo and review the
+> extracted proposal before posting.
 
 **"We do payroll — can this handle PAYE, RTI?"**
 > Payroll in v1 handles the billing and time-tracking side — what you charge clients for payroll services, not the payroll bureau processing itself. The payroll processing integrations (Sage, Brightpay, Xero Payroll) are on the roadmap.
