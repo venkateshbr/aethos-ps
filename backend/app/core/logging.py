@@ -58,11 +58,14 @@ class _AethosFormatter(JsonFormatter):
     ) -> None:
         super().add_fields(log_record, record, message_dict)
         # Pre-log PII boundary (#374): mask structured identifiers (bank
-        # accounts, tax IDs, cards, NRIC, email) in the free-text message before
-        # it reaches a log sink — defence in depth if a caller forgets to mask.
-        message = log_record.get("message")
-        if isinstance(message, str) and message:
-            log_record["message"] = mask_pii(message)
+        # accounts, tax IDs, cards, NRIC, phone, email) before they reach a log
+        # sink — defence in depth if a caller forgets to mask. Cover the free-text
+        # message AND the exception/stack fields (a traceback can carry PII in an
+        # error message or a repr'd value), so exception paths are deny-by-default.
+        for field in ("message", "exc_info", "exc_text", "stack_info"):
+            value = log_record.get(field)
+            if isinstance(value, str) and value:
+                log_record[field] = mask_pii(value)
         log_record["service"] = "aethos-ps"
         log_record["environment"] = settings.environment
         log_record["trace_id"] = trace_id_var.get("")

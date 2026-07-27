@@ -38,3 +38,23 @@ def test_log_masks_card_and_tax_id_and_nric() -> None:
 def test_log_preserves_ordinary_text() -> None:
     out = _format("Invoice INV-2026-0007 posted for $12,345.67")
     assert out["message"] == "Invoice INV-2026-0007 posted for $12,345.67"
+
+
+def test_log_masks_pii_in_exception_traceback() -> None:
+    # A traceback can carry PII in the error message or a repr'd value; the
+    # exception path must be deny-by-default too (#374).
+    formatter = _AethosFormatter(fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
+    try:
+        raise ValueError("failed to charge card 4111111111111111 for alice@acme.io")
+    except ValueError:
+        import sys
+
+        record = logging.LogRecord(
+            name="test", level=logging.ERROR, pathname=__file__, lineno=1,
+            msg="payment error", args=(), exc_info=sys.exc_info(),
+        )
+    out = json.loads(formatter.format(record))
+    blob = json.dumps(out)
+    assert "4111111111111111" not in blob
+    assert "alice@acme.io" not in blob
+    assert "[REDACTED-CARD]" in blob
