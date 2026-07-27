@@ -66,3 +66,58 @@ def test_self_service_tables_not_firewalled(sql: str) -> None:
     # ERP-only firewall list.
     for table in _EXCLUDED:
         assert f"'{table}'" not in sql, f"{table} must not be ERP-firewalled"
+
+
+# --- batch 2 (migration 0116) ------------------------------------------------
+
+_MIGRATION2 = (
+    Path(__file__).resolve().parents[2]
+    / "supabase"
+    / "migrations"
+    / "0116_employee_erp_firewall_rls_batch2.sql"
+)
+
+_ERP_TABLES_BATCH2 = [
+    "invoice_lines",
+    "bill_lines",
+    "tax_rates",
+    "rate_cards",
+    "service_catalogue",
+    "project_expenses",
+    "documents",
+    "agent_suggestions",
+    "hitl_tasks",
+    "agent_runs",
+    "agent_workflow_runs",
+    "financial_events",
+    "period_locks",
+    "revenue_recognition_schedules",
+    "client_groups",
+]
+
+
+@pytest.fixture(scope="module")
+def sql2() -> str:
+    return _MIGRATION2.read_text()
+
+
+def test_batch2_lists_all_remaining_erp_tables(sql2: str) -> None:
+    for table in _ERP_TABLES_BATCH2:
+        assert f"'{table}'" in sql2, f"{table} missing from firewall batch 2"
+
+
+def test_batch2_guards_missing_tables_and_is_additive(sql2: str) -> None:
+    # to_regclass guard means an absent table is skipped, not a hard failure.
+    assert "to_regclass" in sql2
+    assert "AS RESTRICTIVE" in sql2
+    assert "is_tenant_erp_member(auth.uid(), tenant_id)" in sql2
+
+
+def test_batch2_employees_is_self_scoped_not_blanket(sql2: str) -> None:
+    # employees must NOT be in the blanket erp_member_only list; it gets a
+    # self-scoped policy so an employee can still read their own row.
+    assert "erp_member_or_self" in sql2
+    assert "user_id = auth.uid()" in sql2
+    # the blanket loop must not include employees/time_entries
+    assert "'employees'" not in sql2
+    assert "'time_entries'" not in sql2
