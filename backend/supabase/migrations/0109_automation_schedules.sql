@@ -12,9 +12,13 @@
 -- not per-tenant, so they are intentionally not in this tenant-scoped table.
 -- =============================================================================
 
+-- Idempotent (IF NOT EXISTS / DROP-then-CREATE) so it is safe to (re)apply via the
+-- VPS migrate service after the migration-drift audit (2026-07) found it was the
+-- only migration never applied to prod.
+
 BEGIN;
 
-CREATE TABLE automation_schedules (
+CREATE TABLE IF NOT EXISTS automation_schedules (
     tenant_id       UUID    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     job_key         TEXT    NOT NULL,
     is_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
@@ -37,18 +41,21 @@ CREATE TABLE automation_schedules (
 
 ALTER TABLE automation_schedules ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "tenant_isolation" ON automation_schedules;
 CREATE POLICY "tenant_isolation" ON automation_schedules
     USING (tenant_id = current_setting('app.current_tenant_id', TRUE)::UUID);
 
+DROP POLICY IF EXISTS "authenticated_member_read" ON automation_schedules;
 CREATE POLICY "authenticated_member_read" ON automation_schedules
     FOR SELECT
     TO authenticated
     USING (public.is_tenant_member(auth.uid(), tenant_id));
 
+DROP TRIGGER IF EXISTS set_updated_at ON automation_schedules;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON automation_schedules
     FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 
-CREATE INDEX idx_automation_schedules_enabled
+CREATE INDEX IF NOT EXISTS idx_automation_schedules_enabled
     ON automation_schedules (job_key, is_enabled, cadence, run_hour_utc);
 
 COMMENT ON TABLE automation_schedules IS
