@@ -62,12 +62,18 @@ See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 
 ## User And QA Guides
 
+- `/guides` in the web app — public, searchable HTML library generated from the maintained Markdown sources below.
 - [`docs/user-guide/platform-user-guide.md`](docs/user-guide/platform-user-guide.md) — user-facing guide to the full platform and operating model.
 - [`docs/copilot/prompt-library.md`](docs/copilot/prompt-library.md) — user-facing Copilot prompt examples.
 - [`docs/qa/enterprise-e2e-scenario-library.md`](docs/qa/enterprise-e2e-scenario-library.md) — enterprise-readiness E2E scenarios to automate as slices land.
 - [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](docs/qa/launch-e2e-scenario-runbook-2026-06-24.md) — launch workflow evidence and scenario runbook.
 - [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](docs/qa/ishantech-production-e2e-runbook-2026-07-11.md) — current deterministic production E2E script and accounting oracles.
 - [`docs/qa/launch-readiness-audit-2026-07-11.md`](docs/qa/launch-readiness-audit-2026-07-11.md) — current launch evidence, blockers, and sign-off status.
+
+The public library currently publishes the platform user guide, Nous prompt
+library, and both demo guides. Run `cd frontend && npm run guides:generate`
+after changing those Markdown sources; frontend start and production-build
+commands also regenerate the HTML automatically.
 
 ## Local Runtime
 

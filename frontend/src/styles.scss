@@ -275,6 +275,124 @@ body {
 .confidence-chip--med  { color: rgb(var(--t-confidence-med));  background-color: rgb(var(--t-confidence-med-bg)); }
 .confidence-chip--low  { color: rgb(var(--t-confidence-low));  background-color: rgb(var(--t-confidence-low-bg)); }
 
+// Long-form guide typography. Guide HTML is generated from source-controlled
+// Markdown and Angular sanitizes it again when binding through innerHTML.
+.guide-prose {
+  color: rgb(var(--t-text-secondary));
+  font-size: 0.975rem;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.guide-prose h1,
+.guide-prose h2,
+.guide-prose h3,
+.guide-prose h4 {
+  color: rgb(var(--t-text-primary));
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  scroll-margin-top: 2rem;
+}
+
+.guide-prose h1 {
+  margin: 0 0 1.5rem;
+  font-size: clamp(2.25rem, 7vw, 4rem);
+  line-height: 1.05;
+}
+
+.guide-prose h2 {
+  margin: 4rem 0 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgb(var(--t-border-subtle));
+  font-size: clamp(1.65rem, 4vw, 2.25rem);
+  line-height: 1.2;
+}
+
+.guide-prose h3 {
+  margin: 2.5rem 0 0.85rem;
+  font-size: 1.3rem;
+  line-height: 1.3;
+}
+
+.guide-prose h4 { margin: 2rem 0 0.75rem; font-size: 1.05rem; }
+.guide-prose p { margin: 1rem 0; }
+.guide-prose ul,
+.guide-prose ol { margin: 1rem 0; padding-left: 1.5rem; }
+.guide-prose ul { list-style: disc; }
+.guide-prose ol { list-style: decimal; }
+.guide-prose li { margin: 0.4rem 0; padding-left: 0.2rem; }
+.guide-prose li::marker { color: rgb(var(--t-accent-light)); }
+.guide-prose strong { color: rgb(var(--t-text-primary)); font-weight: 650; }
+.guide-prose em { color: rgb(var(--t-text-primary)); }
+
+.guide-prose a {
+  color: rgb(var(--t-accent-light));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--t-accent) / 0.45);
+  text-underline-offset: 0.2em;
+}
+.guide-prose a:hover { text-decoration-color: currentColor; }
+.guide-prose a:focus-visible { outline: 2px solid rgb(var(--t-accent)); outline-offset: 3px; border-radius: 2px; }
+
+.guide-prose blockquote {
+  margin: 1.5rem 0;
+  border-left: 3px solid rgb(var(--t-accent));
+  background: rgb(var(--t-accent-subtle-bg) / 0.22);
+  padding: 0.8rem 1rem;
+  color: rgb(var(--t-text-secondary));
+}
+.guide-prose blockquote > :first-child { margin-top: 0; }
+.guide-prose blockquote > :last-child { margin-bottom: 0; }
+
+.guide-prose pre {
+  margin: 1.5rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgb(var(--t-border-default));
+  border-radius: 0.5rem;
+  background: rgb(var(--t-bg-surface-sunken));
+  padding: 1rem;
+  color: rgb(var(--t-text-primary));
+  font: 0.82rem/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.guide-prose :not(pre) > code {
+  border: 1px solid rgb(var(--t-border-subtle));
+  border-radius: 0.25rem;
+  background: rgb(var(--t-bg-surface-raised));
+  padding: 0.1rem 0.3rem;
+  color: rgb(var(--t-text-primary));
+  font: 0.86em ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.guide-prose table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  border-spacing: 0;
+  border: 1px solid rgb(var(--t-border-default));
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.guide-prose th,
+.guide-prose td { min-width: 8rem; padding: 0.7rem 0.85rem; border-right: 1px solid rgb(var(--t-border-subtle)); border-bottom: 1px solid rgb(var(--t-border-subtle)); text-align: left; vertical-align: top; }
+.guide-prose th { background: rgb(var(--t-bg-surface)); color: rgb(var(--t-text-primary)); font-weight: 650; }
+.guide-prose tr:nth-child(even) td { background: rgb(var(--t-bg-surface-sunken) / 0.6); }
+.guide-prose tr:last-child td { border-bottom: 0; }
+.guide-prose th:last-child,
+.guide-prose td:last-child { border-right: 0; }
+.guide-prose hr { margin: 3rem 0; border: 0; border-top: 1px solid rgb(var(--t-border-subtle)); }
+
+@media (max-width: 640px) {
+  .guide-prose { font-size: 0.925rem; line-height: 1.75; }
+  .guide-prose h2 { margin-top: 3rem; }
+  .guide-prose th,
+  .guide-prose td { min-width: 9rem; padding: 0.6rem 0.7rem; }
+}
+
 /* Tailwind base */
 @tailwind base;
 @tailwind components;

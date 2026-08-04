@@ -1,0 +1,2469 @@
+<h1 id="aethos-scenario-based-demo-guide-v2">Aethos — Scenario-Based Demo Guide v2</h1>
+<blockquote>
+<p><strong>Firm</strong>: Meridian Advisory Group LLP
+<strong>Base Currency</strong>: GBP (£)
+<strong>Service Lines</strong>: Accounting &amp; Advisory · Tax Services · Company Secretarial · Payroll
+<strong>Markets</strong>: UK (primary), Singapore, US (cross-border clients)
+<strong>Guide version</strong>: 2.5 · 2026-07-15 · adds Getting Started (login + navigation
+map) and a full Platform Concepts glossary so a first-time presenter can follow
+every scenario step by step and explain each concept to clients.</p>
+</blockquote>
+<h2 id="current-product-boundaries">Current Product Boundaries</h2>
+<p>This is a scenario script, not evidence that each scenario passed on the
+current production build. Run it at <code>${PRODUCTION_URL}</code> only after the canonical
+hostname is confirmed, and record actual IDs, journals, reports, and screenshots
+in the current launch-readiness runbook.</p>
+<p>For production validation, use one continuous video-recorded browser context
+per tenant from signup through final evidence capture. When validating another
+role, explicitly sign out and sign in as that user inside the same context.
+Parallel profiles, incognito windows, or tabs are not part of the recorded
+single-session proof; start a separate recording only for a different tenant.</p>
+<p>Authenticated browser routes use the <code>/app/*</code> namespace. The current routes
+used in this guide are <code>/app/copilot</code>, <code>/app/inbox</code>, <code>/app/clients</code>,
+<code>/app/people</code>, <code>/app/engagements</code>, <code>/app/projects</code>, <code>/app/time</code>,
+<code>/app/approvals</code>, <code>/app/expenses</code>, <code>/app/invoices</code>, <code>/app/payments</code>,
+<code>/app/bills</code>, <code>/app/billing-runs</code>, <code>/app/accounting/journals</code>,
+<code>/app/reports</code>, <code>/app/documents</code>, <code>/app/settings</code>, and <code>/app/profile</code>.
+The public routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, and <code>/p/:token</code>. There is no
+standalone <code>/copilot</code>, <code>/reports/*</code>, <code>/payments</code> batch, or <code>/settings/stripe</code>
+browser route.</p>
+<p>Current limitations that must not be demonstrated as shipped behavior:</p>
+<ul>
+<li>The public signup wizard creates the authenticated owner, tenant, Stripe
+customer, and SetupIntent after the Account step; it then selects a plan,
+confirms a card with Stripe, starts the trial, and lands at
+<code>/app/copilot</code>. A declined card therefore leaves a provisioned tenant/customer
+without an active trial; signup is not one atomic card-gated transaction.</li>
+<li>Signup confirms the owner email server-side. The login page has no public
+self-service &quot;forgot password&quot; flow. Admin-created users can receive a
+one-time set-password link or temporary password, and signed-in users can
+change their password from Profile.</li>
+<li>The backend exposes a Stripe Customer Portal session endpoint, but the app
+has no self-service billing-management/plan-change UI. Stripe Connect status
+is embedded in <code>/app/settings</code>; its configured callback browser path is not
+in the Angular route table and must be production-tested before a demo.</li>
+<li>The public invoice page is not a general client portal. There is no client
+document/engagement portal for exchanging engagement letters or other files.</li>
+<li>There is no Settings Rate Cards management screen. Existing rate cards can
+be selected on engagement creation and inspected on engagement detail; an
+approved engagement extraction may materialize a linked card when reviewed
+rate hints exist.</li>
+<li>Reports do not offer an interactive &quot;show in transaction currency&quot; toggle.
+Financial statements are rendered in tenant base currency; transaction-
+currency detail is shown only where a particular report supplies it.</li>
+<li>Reports now have From month and To month statement controls. Equal values are
+a monthly statement; a range feeds Income Statement, Cash Flow, and Statutory
+Pack, while Balance Sheet and retained earnings use the ending month as the
+as-of period. Reversed or incomplete ranges are rejected before requests.
+This behavior has focused automated proof under #370, but no live Q2
+production statement is claimed by this guide.</li>
+<li>There is no separate platform-administrator role in the 22-role tenant
+security catalogue. Do not present Tenant Owner as a platform administrator.</li>
+<li>Structured identifiers (bank/tax/card/NRIC/phone/email) ARE masked before model
+processing and before logs. Do NOT claim the same for <strong>names/addresses</strong> unless
+the environment has the optional NER model installed — that layer is opt-in. Do
+not claim scanned-image pixels are redacted. See the masking policy
+(<code>docs/security/pii-masking-policy.md</code>); use fictional or approved data.</li>
+</ul>
+<hr>
+<h2 id="the-firm-meridian-advisory-group-llp">The Firm: Meridian Advisory Group LLP</h2>
+<p>Meridian is a 45-person professional services firm based in London, with a Singapore desk. They serve three market segments:</p>
+<table>
+<thead>
+<tr>
+<th>Segment</th>
+<th>Typical Client</th>
+<th>Relationship</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Enterprise</strong></td>
+<td>PE-backed groups, listed companies</td>
+<td>Multi-year, multi-entity</td>
+<td>High — multiple service lines, complex billing</td>
+</tr>
+<tr>
+<td><strong>Mid-Market</strong></td>
+<td>Owner-managed businesses, £5–50M turnover</td>
+<td>Annual retainer + project work</td>
+<td>Medium — predictable, volume-driven</td>
+</tr>
+<tr>
+<td><strong>Private Wealth</strong></td>
+<td>UHNW individuals, family offices</td>
+<td>Personal, trust &amp; estate</td>
+<td>High — privacy-sensitive, bespoke</td>
+</tr>
+</tbody></table>
+<h3 id="the-partners-service-line-heads">The Partners &amp; Service Line Heads</h3>
+<ul>
+<li><strong>Marcus Chen</strong> — Managing Partner, Accounting &amp; Advisory</li>
+<li><strong>Sarah Williams</strong> — Tax Director</li>
+<li><strong>Priya Sharma</strong> — Head of Company Secretarial (COSEC)</li>
+<li><strong>James O&#39;Brien</strong> — Payroll Manager</li>
+</ul>
+<hr>
+<h2 id="client-portfolio">Client Portfolio</h2>
+<table>
+<thead>
+<tr>
+<th>Client</th>
+<th>Segment</th>
+<th>Services</th>
+<th>Currency</th>
+<th>Billing Model</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Nexus Capital Partners</strong></td>
+<td>Enterprise</td>
+<td>Accounting + Tax + COSEC</td>
+<td>GBP</td>
+<td>Retainer + T&amp;M advisory</td>
+</tr>
+<tr>
+<td><strong>Brightwater Manufacturing Ltd</strong></td>
+<td>Mid-Market</td>
+<td>Accounting + Tax + Payroll</td>
+<td>GBP</td>
+<td>Fixed-fee annual + monthly retainer</td>
+</tr>
+<tr>
+<td><strong>Alderton Family Office</strong></td>
+<td>Private Wealth</td>
+<td>All 4 lines</td>
+<td>GBP + SGD</td>
+<td>Bespoke retainer per entity</td>
+</tr>
+<tr>
+<td><strong>Thornton Tech Solutions</strong></td>
+<td>Mid-Market</td>
+<td>Accounting + Tax + COSEC</td>
+<td>USD</td>
+<td>Fixed-fee + milestone</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="pre-demo-setup">Pre-Demo Setup</h2>
+<p>If a disposable QA environment has just been reset with
+<code>uv run python -m scripts.reset_operational_data --execute --confirm DELETE_ALL_TENANTS</code>,
+there are no tenants or login users. First create a tenant/user through the
+normal signup flow, then seed that tenant with the command below.</p>
+<p>Do not run that destructive reset against a retained production tenant. For a
+production validation, register a new fictional tenant through <code>/signup</code> and
+follow the production E2E runbook instead of seeding business data.</p>
+<ol>
+<li>Seed the demo tenant:<pre><code class="language-bash">cd backend
+uv run python -m scripts.seed_demo_v2 --tenant-id &lt;uuid&gt; --reset
+</code></pre>
+</li>
+<li>Log in as <code>marcus@meridianadvisory.co.uk</code> (Managing Partner — owner role)</li>
+<li>The Aethos Nous home appears — this is Meridian&#39;s operations hub</li>
+</ol>
+<p>Store generated validation credentials only in the ignored local credential
+manifest specified by the runbook and set mode 0600. The retained Ishantech
+runner uses <code>ishantech_e2e_credentials.json</code>; generic disposable demo runs may
+use <code>demo_credentials.json</code>. Treat either file as secret: never paste
+passwords, links, tokens, or sessions into decks, guides, tickets, or
+screenshots.</p>
+<hr>
+<h2 id="demo-operating-pattern">Demo Operating Pattern</h2>
+<p>Use business-language prompts. Users should not need to know internal tool names.
+The reusable prompt library lives at
+<a href="/guides/nous-prompt-library"><code>docs/copilot/prompt-library.md</code></a>.
+The exact prompts used by the live browser validation are listed in the prompt
+library under <strong>Demo Guide v2 Live Validation Prompt Set</strong>.</p>
+<p>Nous conversations are persistent. When you log in, Nous opens the most recent
+conversation and keeps its prior messages available for follow-up questions. Use
+the existing conversation when you want Nous to retain context, such as asking
+&quot;what did you just find?&quot; after an engagement-structure readback. Click <strong>New
+chat</strong> only when you want a separate named conversation and audit trail.</p>
+<p>For document-driven scenarios, attach the PDF or text file first, then send the
+business prompt. Aethos Nous should show the file as attached and only start
+extraction when the prompt is submitted.
+For every AI-assisted step, show three things:</p>
+<ol>
+<li><strong>Aethos Nous intent</strong>: the prompt and the AI&#39;s proposed action.</li>
+<li><strong>Inbox or approval boundary</strong>: invoices, payments, journals, statements,
+emails, and vendor exceptions route to review before final execution.</li>
+<li><strong>Evidence check</strong>: the resulting record, report, audit trail, and Agent Run
+Ledger or Workflow Runs entry.</li>
+</ol>
+<p>High-risk actions are deliberately controlled. Aethos does most of the finance
+operations work, but sensitive accounting and money-movement steps still leave
+clear human approval evidence.</p>
+<hr>
+<h2 id="getting-started-access-login-and-navigation">Getting Started — Access, Login, and Navigation</h2>
+<p>New to running the demo? Read this section once and you will know where every
+screen lives and how to move between them. It assumes nothing.</p>
+<h3 id="1-reach-the-app-and-sign-in">1. Reach the app and sign in</h3>
+<ol>
+<li>Open the web app URL (<code>${PRODUCTION_URL}</code> for a live demo, or
+<code>http://localhost:4201</code> for a local run). You land on the public landing page.</li>
+<li>Click <strong>Sign in</strong> (or go to <code>/login</code>). Enter the tenant owner&#39;s email and
+password — for the Meridian fixture that is
+<code>marcus@meridianadvisory.co.uk</code>.</li>
+<li>On first login for an admin-invited user, Aethos forces a password change
+before anything else; the tenant owner created at signup does not hit this.</li>
+<li>After sign-in you land at <strong>Aethos Nous</strong> (<code>/app/copilot</code>) — the chat home.
+Everything else hangs off the left navigation rail.</li>
+</ol>
+<blockquote>
+<p>A note on signup: the public <code>/signup</code> wizard creates the owner, tenant,
+Stripe customer, and a card-setup intent, then starts a trial. For a demo you
+normally log in to an already-provisioned tenant rather than signing up live.</p>
+</blockquote>
+<h3 id="2-the-screen-layout">2. The screen layout</h3>
+<p>Every authenticated screen shares the same frame:</p>
+<ul>
+<li><strong>Left navigation rail</strong> — jumps between modules (mapped below).</li>
+<li><strong>Top bar</strong> — tenant name, the signed-in user, and sign-out.</li>
+<li><strong>Main panel</strong> — the module you selected.</li>
+<li><strong>Aethos Nous</strong> is itself a full-screen module, not a floating widget.</li>
+</ul>
+<h3 id="3-navigation-map-what-each-left-nav-item-is-for">3. Navigation map — what each left-nav item is for</h3>
+<table>
+<thead>
+<tr>
+<th>Nav item</th>
+<th>Route</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Aethos Nous</strong></td>
+<td><code>/app/copilot</code></td>
+<td>Chat with the AI. Ask questions, drop documents, request actions. The primary surface.</td>
+</tr>
+<tr>
+<td><strong>Inbox</strong></td>
+<td><code>/app/inbox</code></td>
+<td>The human approval queue. AI proposals (invoices, payments, journals, emails) wait here for a person to approve, edit, or reject.</td>
+</tr>
+<tr>
+<td><strong>Clients</strong></td>
+<td><code>/app/clients</code></td>
+<td>Customers and vendors (contacts). A contact can be a customer, a vendor, or both.</td>
+</tr>
+<tr>
+<td><strong>People</strong></td>
+<td><code>/app/people</code></td>
+<td>Employees — role, cost rate, bill rate, utilization target. Feeds margin and WIP.</td>
+</tr>
+<tr>
+<td><strong>Engagements</strong></td>
+<td><code>/app/engagements</code></td>
+<td>The commercial contracts with clients (the &quot;deal&quot;). Holds billing terms.</td>
+</tr>
+<tr>
+<td><strong>Projects</strong></td>
+<td><code>/app/projects</code></td>
+<td>The delivery workstreams that sit under an engagement. Where time and cost land.</td>
+</tr>
+<tr>
+<td><strong>Time</strong></td>
+<td><code>/app/time</code></td>
+<td>Time entries — billable and non-billable hours logged against projects.</td>
+</tr>
+<tr>
+<td><strong>Approvals</strong></td>
+<td><code>/app/approvals</code></td>
+<td>Manager review of submitted timesheets before those hours become billable.</td>
+</tr>
+<tr>
+<td><strong>Expenses</strong></td>
+<td><code>/app/expenses</code></td>
+<td>Project expenses (e.g., billable client travel) with receipts.</td>
+</tr>
+<tr>
+<td><strong>Invoices</strong></td>
+<td><code>/app/invoices</code></td>
+<td>Customer invoices (accounts receivable). Draft → approve → send → paid.</td>
+</tr>
+<tr>
+<td><strong>Payments</strong></td>
+<td><code>/app/payments</code></td>
+<td>Money received against invoices, including FX detail.</td>
+</tr>
+<tr>
+<td><strong>Bills</strong></td>
+<td><code>/app/bills</code></td>
+<td>Vendor bills (accounts payable). Draft → approve → paid.</td>
+</tr>
+<tr>
+<td><strong>Billing Runs / Pay Bills</strong></td>
+<td><code>/app/billing-runs</code></td>
+<td>Batch billing and the vendor payment-batch lifecycle.</td>
+</tr>
+<tr>
+<td><strong>Accounting</strong></td>
+<td><code>/app/accounting/journals</code></td>
+<td>The general ledger — journal entries, manual journals, period locks.</td>
+</tr>
+<tr>
+<td><strong>Reports</strong></td>
+<td><code>/app/reports</code></td>
+<td>All management and financial statements (12 tabs).</td>
+</tr>
+<tr>
+<td><strong>Documents</strong></td>
+<td><code>/app/documents</code></td>
+<td>Uploaded source files (engagement letters, invoices, receipts) and their lineage.</td>
+</tr>
+<tr>
+<td><strong>Settings</strong></td>
+<td><code>/app/settings</code></td>
+<td>Tax, services, collections policy, roles, users, approval controls, agent autonomy, AI runtime, operational health, integrations.</td>
+</tr>
+<tr>
+<td><strong>Profile</strong></td>
+<td><code>/app/profile</code></td>
+<td>The signed-in user&#39;s own account and password.</td>
+</tr>
+</tbody></table>
+<p>The public-facing routes are the landing page (<code>/</code>), <code>/signup</code>, <code>/login</code>, and
+the public invoice page <code>/p/:token</code> a customer opens to view and pay an invoice.</p>
+<h3 id="4-suggested-demo-run-order">4. Suggested demo run order</h3>
+<p>Follow the scenarios in order (1 → 7). If you want the shortest impressive path:
+start in <strong>Aethos Nous</strong> with a couple of read-only questions (Scenario 6.1),
+then show a <strong>document drop → Inbox approval</strong> (1.1), then <strong>Reports</strong> (5.3–5.5).
+Scenarios 1–4 are client stories (O2C, tax, multi-entity, multi-currency),
+Scenario 5 is the monthly close (R2R), Scenario 6 is the AI Finance Ops Manager,
+and Scenario 7 is enterprise controls and audit.</p>
+<hr>
+<h2 id="platform-concepts-explained-read-this-before-demoing">Platform Concepts Explained (Read This Before Demoing)</h2>
+<p>This is the plain-English dictionary of everything the scenarios reference. Each
+entry says <strong>what it is</strong>, <strong>why it matters to a client</strong>, and <strong>where you see
+it</strong>. Read it once and you can confidently narrate any screen and answer
+follow-up questions. Terms are grouped by area.</p>
+<h3 id="a-the-agent-first-operating-model">A. The agent-first operating model</h3>
+<ul>
+<li><strong>Aethos Nous (the Copilot)</strong> — the chat surface and the product&#39;s front door.
+Users type business-language requests (&quot;prepare the June Nexus billing run&quot;)
+and Nous figures out which internal tool to run. <em>Why it matters:</em> users never
+learn hidden commands. <em>Where:</em> <code>/app/copilot</code>.</li>
+<li><strong>Tools</strong> — the concrete internal actions Nous can take (query engagements,
+draft an invoice, propose a bill-pay batch, run close, generate statements).
+Nous always calls a tool to get real data — it does not invent numbers.</li>
+<li><strong>HITL (Human-in-the-loop)</strong> — the rule that the AI proposes but a human
+disposes. Sensitive actions (sending invoices, paying bills, posting journals,
+emailing clients) never fire automatically. <em>Why it matters:</em> this is the core
+trust story — AI does the work, humans keep control of money and the ledger.</li>
+<li><strong>Inbox</strong> — the shared human work queue where every AI proposal waits for a
+decision: <strong>Approve</strong>, <strong>Approve with edits</strong>, or <strong>Reject</strong>. <em>Where:</em>
+<code>/app/inbox</code>.</li>
+<li><strong><code>agent_suggestions</code> vs <code>hitl_tasks</code></strong> — under the hood, the AI&#39;s immutable
+proposed output is an <em>agent suggestion</em>; the human work item created from it is
+a <em>HITL task</em> (what you see as an Inbox card). The split preserves an audit
+trail: the original AI output is never edited, only acted upon.</li>
+<li><strong>Agent autonomy levels (L1/L2/L3)</strong> — how much an agent may do on its own.
+<strong>L1</strong> = observe only; <strong>L2 = suggest</strong> (creates an Inbox item, needs human
+approval) — this is the <strong>default</strong> for every agent; <strong>L3 = auto-apply</strong> (acts
+without a human), granted only after confidence and correction-rate thresholds
+are met <strong>and</strong> an admin approves. <em>Why it matters:</em> autonomy is earned, not
+assumed. <em>Where:</em> Settings → Agent Autonomy.</li>
+<li><strong>Accounting Guardian</strong> — a special control agent that always runs at L3 and
+<strong>cannot be disabled</strong>. It enforces balance, period locks, and posting rules on
+every journal. <em>Why it matters:</em> the books cannot be corrupted even by other
+agents.</li>
+<li><strong>Confidence chip</strong> — the percentage badge on an AI extraction (e.g., &quot;91%,
+amber — mixed billing needs review&quot;). Green = high confidence, amber = review
+recommended. <em>Why it matters:</em> the AI tells you how sure it is.</li>
+<li><strong>Agent Run Ledger</strong> — the record of each AI run: input, output, tools used,
+evidence snapshots, and the human decision. Supports <strong>replay</strong> (re-validating
+a read-only step without re-firing side effects). <em>Where:</em> Settings → Agent Runs.</li>
+<li><strong>Workflow Runs</strong> — the record of multi-step orchestrated workflows (e.g., a
+scheduled close) and where each one is waiting on a human. <em>Where:</em> Settings →
+Workflow Runs.</li>
+<li><strong>AI runtime &amp; semantic router</strong> — Nous can run on the <strong>Advanced (Hermes)</strong>
+runtime or the built-in <strong>Aethos Basic</strong> runtime, and an optional
+confidence-gated <strong>semantic router</strong> classifies a prompt into a finance intent
+before calling a model. <em>Where:</em> Settings → Agent Autonomy → AI Inference
+Settings. <em>For a demo, either runtime is fine.</em></li>
+</ul>
+<h3 id="b-clients-people-and-delivery-structure">B. Clients, people, and delivery structure</h3>
+<ul>
+<li><strong>Contact / Client</strong> — a person or organisation you deal with. Its <strong>kind</strong> is
+<em>customer</em>, <em>vendor</em>, or <em>both</em> (e.g., a family office you bill but also
+reimburse). <em>Where:</em> <code>/app/clients</code>.</li>
+<li><strong>Engagement</strong> — the commercial agreement with a client: the &quot;deal&quot; and its
+billing terms. One client can have many engagements. <em>Where:</em> <code>/app/engagements</code>.</li>
+<li><strong>Project (workstream)</strong> — a unit of delivery <strong>under an engagement</strong>. Time and
+cost are tracked per project, so each workstream has its own P&amp;L while rolling
+up to the engagement. <em>Where:</em> <code>/app/projects</code>.</li>
+<li><strong>Billing arrangements</strong> — how an engagement charges. Aethos supports:<ul>
+<li><strong>time_and_materials (T&amp;M)</strong> — bill hours × rate as incurred.</li>
+<li><strong>fixed_fee</strong> — one agreed price for a defined scope.</li>
+<li><strong>retainer</strong> — a recurring fee for a period (e.g., £8,500/month).</li>
+<li><strong>retainer_draw</strong> — a retainer that is drawn down against work performed.</li>
+<li><strong>milestone</strong> — fixed amounts recognised as deliverables complete.</li>
+<li><strong>capped_tm</strong> — T&amp;M that stops at an agreed cap (client protection).</li>
+<li><strong>mixed</strong> — a combination on one engagement (fixed + retainer + T&amp;M + expenses).
+<em>Why it matters:</em> real PS firms use all of these, often together — Aethos bills
+each correctly from one dataset.</li>
+</ul>
+</li>
+<li><strong>Rate card</strong> — the table of who bills at what rate (e.g., Partner £350/hr,
+Manager £240/hr) attached to an engagement. There is no standalone Settings
+rate-card editor; rate cards are selected on the engagement and can be
+materialised from an approved engagement-letter extraction.</li>
+<li><strong>Service catalogue</strong> — the firm&#39;s standard list of services (management
+accounts, VAT returns, COSEC filings, payroll) that engagements and invoice
+lines draw from. <em>Where:</em> Settings → Services.</li>
+<li><strong>Cost rate vs bill rate</strong> — an employee&#39;s <strong>cost rate</strong> is what they cost the
+firm per hour; the <strong>bill rate</strong> is what the client is charged. The gap is
+margin. <em>Where:</em> <code>/app/people</code>.</li>
+<li><strong>Utilization</strong> — the share of an employee&#39;s time that is billable. Feeds
+capacity and burnout signals. <em>Where:</em> Reports → Utilization.</li>
+<li><strong>Time entry</strong> — logged hours against a project, flagged <strong>billable</strong> or
+<strong>non-billable</strong>, optionally requiring approval before it can be invoiced.</li>
+<li><strong>Project expense</strong> — a cost booked to a project (e.g., billable client travel)
+with a receipt; billable expenses flow into invoicing, non-billable ones do not.</li>
+<li><strong>WIP (Work in Progress)</strong> — delivered-but-not-yet-billed value (hours × rate +
+billable expenses). <em>Why it matters:</em> it shows revenue you have earned but not
+invoiced. <em>Where:</em> Reports → WIP.</li>
+</ul>
+<h3 id="c-order-to-cash-o2c-getting-paid">C. Order-to-Cash (O2C) — getting paid</h3>
+<ul>
+<li><strong>Invoice</strong> — a bill <strong>to a customer</strong> (accounts receivable). Lifecycle:
+<strong>draft → approved → sent → paid</strong>; it can be <strong>partially paid</strong>, <strong>overdue</strong>,
+<strong>disputed/on-hold</strong>, or <strong>void</strong>. Posted invoices are immutable. <em>Where:</em>
+<code>/app/invoices</code>.</li>
+<li><strong>Billing run</strong> — the batch step that turns billing terms, approved time,
+expenses, retainers, and milestones into draft invoices in one pass. <em>Where:</em>
+<code>/app/billing-runs</code>.</li>
+<li><strong>Public invoice page</strong> — the customer-safe page at <code>/p/:token</code> where a client
+views and pays an invoice. It shows only invoice fields — never internal
+comments, run-ledger entries, or approval history.</li>
+<li><strong>Payment</strong> — money received against an invoice. Captures amount, currency,
+and (for foreign currency) the base amount and FX rate used. <em>Where:</em>
+<code>/app/payments</code>.</li>
+<li><strong>Stripe Payment Link vs Stripe Connect</strong> — a <strong>Payment Link</strong> lets a customer
+pay a specific invoice online; <strong>Connect</strong> additionally routes the payout to the
+firm&#39;s connected account. Connect is optional — without it, invoices still work
+via PDF and manual &quot;record payment&quot;.</li>
+<li><strong>Collections</strong> — chasing overdue invoices. The <strong>collections policy</strong> sets
+reminder cadence and tone (gentle → firm → final); drafted reminders route to
+Inbox before any email is sent. <em>Where:</em> Settings → Collections Policy.</li>
+<li><strong>AR Aging</strong> — outstanding receivables bucketed by age (0–30, 31–60, 61–90,
+90+). Ties to the <code>1200 Accounts Receivable</code> control account. <em>Where:</em> Reports →
+AR Aging.</li>
+<li><strong>Tax rate / VAT</strong> — the market tax applied to invoice lines (e.g., UK VAT 20%).
+Missing tax setup blocks invoice posting. <em>Where:</em> Settings → Tax Rates.</li>
+</ul>
+<h3 id="d-procure-to-pay-p2p-paying-vendors">D. Procure-to-Pay (P2P) — paying vendors</h3>
+<ul>
+<li><strong>Bill</strong> — an invoice <strong>from a vendor</strong> (accounts payable). Lifecycle:
+<strong>draft → approved → paid</strong>. <em>Where:</em> <code>/app/bills</code>.</li>
+<li><strong>Extraction</strong> — the AI reading an uploaded vendor invoice into a structured
+bill draft (vendor, amount, tax, suggested GL account).</li>
+<li><strong>Duplicate guard</strong> — a check that the same vendor invoice number/amount is not
+being paid twice; a suspected duplicate cannot be one-click approved.</li>
+<li><strong>PO / service-order match</strong> — comparing the bill to an approved purchase or
+service order; a mismatch keeps the bill in draft until justified.</li>
+<li><strong>GL coding</strong> — assigning the bill to the right expense account (e.g., <code>5100 Project Costs — Subcontractors</code>), suggested by the AI with a confidence score.</li>
+<li><strong>Bill payment batch</strong> — a controlled run to pay multiple approved bills. Its
+lifecycle is <strong>prepare → approve → export → send → settle</strong>, each a separate,
+recorded step. Batches are <strong>single-currency</strong>. <em>Where:</em> <code>/app/billing-runs</code>
+(Pay Bills).</li>
+<li><strong>AP Aging</strong> — outstanding payables bucketed by age; ties to the <code>2000 Accounts Payable</code> control account. <strong>Unallocated GL</strong> preserves any control-account
+amount that cannot be matched to a specific bill. <em>Where:</em> Reports → AP Aging.</li>
+</ul>
+<h3 id="e-record-to-report-r2r-the-ledger-and-the-statements">E. Record-to-Report (R2R) — the ledger and the statements</h3>
+<ul>
+<li><strong>Double-entry / journal entry</strong> — every financial event posts a balanced set
+of debits and credits (debits = credits). <em>Why it matters:</em> this is what makes
+it GAAP-compliant accounting, not a spreadsheet.</li>
+<li><strong>General Ledger (GL) &amp; Chart of Accounts (COA)</strong> — the master list of accounts
+(Bank, AR, AP, Revenue, Expenses…) and the running balances posted to them.</li>
+<li><strong>Control account</strong> — a GL account that must reconcile to a sub-ledger (e.g.,
+<code>1200 AR</code> ties to the invoice list; <code>2000 AP</code> ties to the bill list).</li>
+<li><strong>Sub-ledger auto-posting</strong> — invoices, bills, payments, and expenses generate
+their GL journals automatically (via database triggers), so the ledger is never
+hand-keyed for routine activity.</li>
+<li><strong>Manual journal</strong> — a controller&#39;s hand-made adjustment. It requires a
+<strong>business reason</strong>, must <strong>balance</strong>, respects the <strong>period lock</strong>, and
+high-value ones route to a <strong>different approver</strong> (segregation of duties).</li>
+<li><strong>Reversal</strong> — the only way to correct a posted journal: a new journal with
+flipped debits/credits. Posted entries are immutable — history is never edited.</li>
+<li><strong>Period lock</strong> — closing an accounting month so no new or backdated entries can
+post to it. Enforced by the Accounting Guardian. <em>Where:</em> Accounting → Period
+Locks.</li>
+<li><strong>Month-end close</strong> — the checklist that confirms the period is ready (time and
+expenses approved, AR/AP reconciled, no unposted journals) before locking.</li>
+<li><strong>Year-end close / retained earnings</strong> — rolling the year&#39;s net income into
+<code>3000 Retained Earnings</code> and closing the P&amp;L accounts, done through the same
+reviewed, approval-gated journal path.</li>
+<li><strong>The financial statements</strong> (all under Reports):<ul>
+<li><strong>Trial Balance</strong> — every account&#39;s debit/credit totals; must balance (DR=CR).</li>
+<li><strong>Balance Sheet</strong> — assets = liabilities + equity, as of a period end.</li>
+<li><strong>Income Statement (P&amp;L)</strong> — revenue − expenses = net income, over a period.</li>
+<li><strong>Cash Flow</strong> — cash movement across operating, investing, financing.</li>
+<li><strong>Retained Earnings roll-forward</strong> — opening equity + net income → closing.</li>
+<li><strong>Statutory Pack</strong> — the market-specific bundle of all the above with the
+local tax summary (GB/GBP, US/USD, etc.).</li>
+</ul>
+</li>
+<li><strong>From month / To month controls</strong> — the Reports date range. Equal values give a
+monthly statement; a range feeds the Income Statement, Cash Flow, and Statutory
+Pack, while the Balance Sheet and retained earnings use the ending month.
+Reversed or incomplete ranges are rejected.</li>
+</ul>
+<h3 id="f-multi-currency">F. Multi-currency</h3>
+<ul>
+<li><strong>Base currency</strong> — the tenant&#39;s home reporting currency (Meridian = GBP). All
+statements render in base currency.</li>
+<li><strong>Transaction amount vs base amount</strong> — a foreign-currency line stores both the
+original amount (e.g., $4,500) <strong>and</strong> the base-currency equivalent (£3,560.28).</li>
+<li><strong>FX rate provenance</strong> — each converted line records the exact immutable
+<code>fx_rate</code> row used (<code>fx_rate_id</code>), so an auditor can trace source → journal →
+statement. Rates may be stale on weekends; the system warns when a rate is &gt;3
+days old.</li>
+<li><strong>Realized FX gain/loss</strong> — when the base value at invoice date differs from the
+base value at payment date, the difference posts automatically to <code>7900 Realized FX Gain/Loss</code>.</li>
+</ul>
+<h3 id="g-controls-governance-and-audit">G. Controls, governance, and audit</h3>
+<ul>
+<li><strong>Security roles → duties → privileges</strong> — access is built from fine-grained
+<strong>privileges</strong> (e.g., <code>bills.approve</code>, <code>bill_payments.settle</code>) grouped into
+<strong>duties</strong>, assembled into <strong>roles</strong>. There are <strong>22 seeded roles</strong> (Owner,
+Admin, CFO, Controller, AP Manager, AP Clerk, Finance Approver, Auditor, Viewer,
+Timesheet Employee, …). <em>Where:</em> Settings → Security Roles. <strong>Note:</strong> there is no
+platform-administrator role — Tenant Owner is not a platform admin.</li>
+<li><strong>Legacy role projection</strong> — each catalogue role also maps to one legacy role
+(owner/admin/manager/approver/member/auditor/viewer/employee) that many
+endpoints still enforce; so always demo the actual allowed/denied result, not
+just the role label.</li>
+<li><strong>Finance personas</strong> — business-language groupings (e.g., &quot;money-in approver&quot;,
+&quot;money-out approver&quot;) used to explain what a user can do. <em>Where:</em> Settings →
+Finance Personas / Approval Controls.</li>
+<li><strong>Approval policy / thresholds</strong> — the rules for what needs which approver
+(manual-journal threshold, bill-pay approver role, accounting approver role).
+<em>Where:</em> Settings → Approval Controls.</li>
+<li><strong>Segregation of duties &amp; same-user approval denial</strong> — the person who submits a
+high-value journal or payment cannot also approve it; the denial is
+audit-visible.</li>
+<li><strong>Decision trail / audit / event hash</strong> — every record (bill, invoice, payment,
+journal, close) carries an immutable timeline: the Inbox task, actor role,
+decision type, timestamp, safe before/after summary, and an event hash.</li>
+<li><strong>Source-document lineage</strong> — an uploaded file is evidence, not a throwaway
+prompt: it links from upload → extraction → Inbox decision → the materialised
+record. <em>Where:</em> <code>/app/documents</code>.</li>
+<li><strong>Operational Health</strong> — the operator dashboard: runtime status, table checks,
+rate-limit backend, request/background/agent/tool/workflow failure counts, and
+where alerts route — all shown without leaking secrets. <em>Where:</em> Settings →
+Operational Health.</li>
+<li><strong>Integrations</strong> — the Settings surface for external service connections (e.g.,
+Stripe Connect status, email/Resend, observability). Payroll bureau processing
+(Sage, Brightpay, Xero Payroll) is on the roadmap, not in v1. <em>Where:</em> Settings
+→ Integrations.</li>
+<li><strong>Rate limits &amp; abuse paths</strong> — public endpoints (signup, public invoice) are
+rate-limited; abuse is recorded as sanitized paths, never raw tokens.</li>
+</ul>
+<h3 id="h-how-nous-stays-fast-reliable-and-trustworthy">H. How Nous stays fast, reliable, and trustworthy</h3>
+<p>These are recent enhancements to the AI agent itself. They are mostly invisible
+in normal use but are worth naming when a client asks &quot;how do I know I can trust
+the AI?&quot;:</p>
+<ul>
+<li><strong>Streaming answers</strong> — Nous streams its response token-by-token as it is
+produced, so long answers start appearing immediately instead of after a pause.
+<em>Talking point:</em> &quot;the assistant feels responsive, like a person typing.&quot;</li>
+<li><strong>Automatic fallback</strong> — Nous runs on an advanced runtime (Hermes) with the
+built-in Aethos runtime behind it. If the advanced runtime is briefly
+unavailable, Nous <strong>falls back automatically</strong> and still answers; a circuit
+breaker means users are not made to wait request after request during an
+outage. <em>Where:</em> the answer still arrives; Settings → Operational Health shows
+the provider signal.</li>
+<li><strong>No internal leakage</strong> — Nous only ever shows business language. Tool names,
+system prompts, provider errors, and internal identifiers are filtered out of
+the response, even mid-stream. <em>Talking point:</em> &quot;you see the answer, never the
+plumbing.&quot;</li>
+<li><strong>Number-fidelity guard</strong> — when Nous states a monetary figure, it is checked
+against the source records that produced it. If a figure cannot be verified,
+Nous appends a visible caveat asking you to confirm it against Reports rather
+than presenting an unverified number as fact. <em>Talking point:</em> &quot;the AI does not
+invent totals — and it tells you when it is unsure.&quot;</li>
+<li><strong>Answer-quality evals</strong> — a golden-prompt evaluation suite scores Nous on
+staying on-topic, never leaking internals, routing controlled actions to the
+Inbox, and number-fidelity, so quality is measured, not assumed.</li>
+<li><strong>Provenance</strong> — every answer records which runtime produced it, alongside the
+Agent Run Ledger and Workflow Runs evidence.</li>
+</ul>
+<blockquote>
+<p><strong>The three-part evidence pattern (use it on every AI step):</strong> (1) show the
+<strong>Nous intent</strong> — the prompt and proposed action; (2) show the <strong>Inbox/approval
+boundary</strong> — the item waiting for a human; (3) show the <strong>evidence</strong> — the
+resulting record, report, journal, and Agent Run Ledger / Workflow Runs entry.</p>
+</blockquote>
+<hr>
+<h2 id="scenario-coverage-map">Scenario Coverage Map</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Primary scenarios</th>
+<th>Edge/control checks included</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>O2C</td>
+<td>1.1-1.7, 2.1-2.3, 4.1-4.3</td>
+<td>Engagement/SOW intake, linked rate cards, service catalogue, tax setup, time, expenses, WIP, invoices, public invoice links, Stripe/manual payment, collections, AR payment FX, viewer denial</td>
+</tr>
+<tr>
+<td>P2P</td>
+<td>2.4-2.5</td>
+<td>Vendor invoice extraction, duplicate guard, PO/service-order match, GL coding, bill approval, payment approval, export, mark-sent, settlement, high-value money-out role checks</td>
+</tr>
+<tr>
+<td>R2R</td>
+<td>3.3, 4.1, 5.1-5.6</td>
+<td>Close readiness, reasoned overrides, period lock, Trial Balance, statements, year-end close, manual journal reason/approval/rejection/reversal, multi-currency base amounts, FX provenance</td>
+</tr>
+<tr>
+<td>AI Ops</td>
+<td>6.1-6.2</td>
+<td>Daily Finance Ops Manager, reviewed action plans, specialist dispatch, scheduled runs, stale/high-risk escalations</td>
+</tr>
+<tr>
+<td>Controls and audit</td>
+<td>7.0-7.5</td>
+<td>Tenant-user invite, ERP role assignment, independent login, finance approver, approval policy, finance personas, read-only auditor, decision trails, Agent Run Ledger, Workflow Runs, document lineage, Operational Health, rate limits, alert routing</td>
+</tr>
+<tr>
+<td>Reporting and management</td>
+<td>5.3-5.5, 6.1, 7.2</td>
+<td>AR/AP Aging, WIP, utilization, Project P&amp;L, Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack, action queues</td>
+</tr>
+</tbody></table>
+<hr>
+<h1 id="scenario-1-enterprise-client-nexus-capital-partners">SCENARIO 1 — Enterprise Client: Nexus Capital Partners</h1>
+<blockquote>
+<p><strong>Who</strong>: Nexus Capital Partners is a mid-market PE fund with 6 portfolio companies. They need accounting, tax structuring, and COSEC across their group structure.</p>
+<p><strong>Relationship</strong>: 3-year master engagement, individual service orders per entity. Annual fee: £285,000.</p>
+</blockquote>
+<hr>
+<h2 id="1-1-onboarding-a-new-engagement-via-document-drop">1.1 Onboarding a New Engagement via Document Drop</h2>
+<p><strong>What to show</strong>: The AI reads an engagement letter and populates a complex engagement correctly — no manual data entry.</p>
+<h3 id="steps">Steps</h3>
+<ol>
+<li><p>Go to <strong>Aethos Nous</strong> → drop <code>nexus_engagement_letter.pdf</code> and type:</p>
+<blockquote>
+<p><em>&quot;Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.&quot;</em></p>
+</blockquote>
+<p>The letter says:</p>
+<blockquote>
+<p><em>&quot;We are pleased to confirm our engagement with Nexus Capital Partners LP for the provision of accounting and advisory services for the period 1 January 2026 to 31 December 2026.</em>
+<em>Our fees for services are as follows:</em></p>
+<ul>
+<li><em>Group consolidation accounts (statutory): £42,000 fixed fee</em></li>
+<li><em>Monthly management accounts (6 portfolio companies): £8,500/month retainer</em></li>
+<li><em>CFO advisory services: £350/hour, billed monthly in arrears</em></li>
+<li><em>Out-of-pocket expenses: at cost, billed monthly</em></li>
+</ul>
+</blockquote>
+</li>
+<li><p>Watch the AI extract:</p>
+<ul>
+<li>Client: Nexus Capital Partners</li>
+<li>Billing arrangement: <strong>Mixed</strong> (fixed fee £42,000 + retainer £8,500/month + T&amp;M £350/hr)</li>
+<li>Start date: 2026-01-01</li>
+<li>Confidence chip: 91% (amber — reason: mixed billing requires review)</li>
+<li>Nous reads the extraction payload and linked Inbox task directly; it
+should not ask you to retype the client name, billing model, rate hints,
+project name, or extracted commercial terms.</li>
+</ul>
+</li>
+<li><p>Go to <strong>Inbox</strong> → see the <strong>EngagementDraftCard</strong>:</p>
+<ul>
+<li>Shows extracted terms side-by-side with source document link</li>
+<li>Click source document link → original PDF opens in viewer</li>
+<li>The mixed billing model is pre-selected correctly</li>
+<li>Shows reviewed rate hints:<ul>
+<li>CFO Advisory Partner — £350/hour</li>
+<li>Manager — £240/hour</li>
+<li>Associate — £145/hour</li>
+</ul>
+</li>
+<li>Edit: adjust cap amount, confirm hourly rate</li>
+</ul>
+</li>
+<li><p><strong>Approve</strong> → Engagement created: <em>&quot;Nexus Capital Partners — Group Accounting &amp; Advisory&quot;</em></p>
+</li>
+<li><p>Check:</p>
+<ul>
+<li><strong>Engagements</strong> → Nexus engagement references a linked rate card</li>
+<li><strong>Projects</strong> → first project was created under the engagement</li>
+<li>Engagement detail → the linked rate-card name or ID is present</li>
+<li>Limitation: there is no Settings Rate Cards management screen to open</li>
+<li><strong>Inbox decision history</strong> → approval payload includes <code>rate_card_id</code> and line count</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The AI read a 12-page engagement letter, pulled out the commercial terms, created the engagement and first project, and materialised a rate card from the reviewed commercial hints. Marcus approved the packet instead of re-keying the contract.&quot;</em></p>
+<hr>
+<h2 id="1-2-project-structure-under-the-engagement">1.2 Project Structure Under the Engagement</h2>
+<p><strong>What to show</strong>: One engagement, multiple projects for each portfolio company and workstream.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me the Nexus Capital Partners engagement structure. List the active projects, billing model for each workstream, and anything missing before billing.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return the engagement, child projects/workstreams, billing
+arrangement and terms by workstream, linked source document/rate card state,
+and any setup gaps before billing.</p>
+</li>
+<li><p>Go to <strong>Engagements</strong> → open Nexus Capital Partners</p>
+</li>
+<li><p>Show the embedded projects:</p>
+<ul>
+<li><em>Statutory Accounts — FY2025</em> (fixed fee £42,000)</li>
+<li><em>Monthly Management Accounts — Portfolio</em> (retainer £8,500/month)</li>
+<li><em>CFO Advisory</em> (T&amp;M £350/hr)</li>
+</ul>
+</li>
+<li><p>Click <strong>Projects</strong> in the sidebar → see all projects across all engagements</p>
+</li>
+<li><p>Filter by &quot;Nexus&quot; → see the full project hierarchy</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Each workstream is a separate project within the engagement — separate billing, separate P&amp;L tracking, but all tied to the Nexus master engagement.&quot;</em></p>
+<hr>
+<h2 id="1-3-time-entry-cfo-advisory-hours">1.3 Time Entry: CFO Advisory Hours</h2>
+<p><strong>What to show</strong>: Consultants log time via chat — no timesheet forms.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Log 4.5 hours on the Nexus CFO Advisory project for today — board pack review and cash flow modelling&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous returns a reviewable action card for the time entry:</p>
+<ul>
+<li>Project: Nexus CFO Advisory</li>
+<li>Hours: 4.5</li>
+<li>Billable: Yes</li>
+<li>Narrative: Board pack review and cash flow modelling</li>
+<li>If the authenticated user maps to an employee, the entry is created for
+that employee; otherwise Nous should explain the employee-resolution
+blocker instead of claiming time tools are unavailable.</li>
+</ul>
+</li>
+<li><p>Response: <em>&quot;Logged 4.5 billable hours on Nexus CFO Advisory — £1,575 at £350/hr&quot;</em></p>
+</li>
+<li><p>Type: <em>&quot;Log 2 hours on Nexus CFO Advisory for yesterday — internal planning, non-billable&quot;</em></p>
+</li>
+<li><p>Go to <strong>Time Entries</strong> → see both entries. Filter by project → Nexus CFO Advisory shows 6.5 total hours, 4.5 billable.</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Partners and seniors log time in chat, the way they&#39;d message a colleague. Billable vs non-billable is captured in the same sentence. Scope creep becomes visible instantly.&quot;</em></p>
+<hr>
+<h2 id="1-3a-people-timesheet-approval-and-billable-expenses">1.3A People, Timesheet Approval, and Billable Expenses</h2>
+<p><strong>What to show</strong>: Delivery records flow into WIP and invoicing with staff,
+rate, approval, and receipt evidence.</p>
+<ol>
+<li><p>Go to <strong>People</strong> → open Alice Chen:</p>
+<ul>
+<li>Role, cost rate, target utilization, manager, and default bill rate are visible</li>
+<li>These values feed utilization, project margin, and WIP reporting</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me Alice Chen&#39;s June delivery data. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced for Nexus.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return Alice-specific June approved time, pending/submitted
+time, billable expenses, utilization, WIP value, and invoice-ready entries.
+It should source the answer from time entries, project expenses, employees,
+projects, engagements, and invoice linkage.</p>
+</li>
+<li><p>Go to <strong>Time Entries</strong>:</p>
+<ul>
+<li>Filter to Nexus CFO Advisory</li>
+<li>Confirm billable and non-billable entries are separated</li>
+<li>If using the timesheet approval flow, show approved vs pending entries before billing</li>
+</ul>
+</li>
+<li><p>Go to <strong>Expenses</strong> or upload a receipt through <strong>Aethos Nous</strong>:</p>
+<blockquote>
+<p><em>&quot;Process this client travel receipt for Nexus CFO Advisory. Classify it as a billable project expense, attach the receipt evidence, and send anything uncertain to Inbox.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check:</p>
+<ul>
+<li>Billable expense appears on the project and WIP/revenue workflow</li>
+<li>Receipt/source-document link is preserved</li>
+<li>Non-billable or unapproved items are excluded from invoice drafting</li>
+<li>Project P&amp;L shows delivery cost separately from billed revenue</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Aethos does not invoice from a free-text story. It invoices from approved people, time, expense, and rate-card records, with receipts and approvals available for audit.&quot;</em></p>
+<hr>
+<h2 id="1-4-billing-run-mixed-model-invoice">1.4 Billing Run: Mixed Model Invoice</h2>
+<p><strong>What to show</strong>: A single billing run producing a correctly structured invoice across 3 billing models.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Prepare the June 2026 Nexus billing run across fixed fee, monthly retainer, T&amp;M advisory hours, and approved expenses. Show the draft invoice lines and route the invoice to Inbox before sending.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Billing Runs</strong> → click <strong>Run Billing</strong> for Nexus if you want to show the UI fallback path.</p>
+</li>
+<li><p>The invoice drafter calculates:</p>
+<pre><code>Line 1: Group Statutory Accounts (Fixed Fee — Milestone 1/2)    £21,000.00
+Line 2: Monthly Management Accounts — June 2026 (Retainer)       £8,500.00
+Line 3: CFO Advisory — June 2026 (12.5 hrs × £350)               £4,375.00
+Line 4: Expenses — Travel &amp; Subsistence                             £843.20
+                                                           ─────────────────
+Subtotal                                                          £34,718.20
+VAT @ 20%                                                          £6,943.64
+Total                                                             £41,661.84
+</code></pre>
+</li>
+<li><p>Review the draft → click <strong>Approve</strong> → click <strong>Send</strong></p>
+</li>
+<li><p>When server-side Stripe is configured, show the generated public invoice
+page (<code>/p/&lt;token&gt;</code>)</p>
+<ul>
+<li>Nexus&#39;s finance team clicks Pay → Stripe processes → webhook fires</li>
+<li>Verify both the paid/payment state and the separate DR Bank / CR AR journal.
+Current webhook handling can report <code>journal_posted=false</code> after payment
+state changes; that is a P0, not a successful automatic posting.</li>
+<li>Also test the configured <code>/p/&lt;token&gt;/thanks</code> redirect; it is not a current
+Angular route and must not be presented as working without browser proof.</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Check the Nexus June invoice after sending. Confirm invoice status, payment link readiness, AR Aging bucket, and posted journal evidence.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>AR Aging</strong> → Nexus line shows £41,661.84 in 0-30 days</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;One billing run produces a perfectly structured invoice — fixed milestone, retainer, T&amp;M, and expenses — all from data already in the system. No copy-pasting from timesheets into spreadsheets.&quot;</em></p>
+<hr>
+<h2 id="1-5-revenue-recognition-retainer-vs-fixed-fee">1.5 Revenue Recognition: Retainer vs Fixed Fee</h2>
+<p><strong>What to show</strong>: How revenue is recognised differently across billing models — WIP, deferred revenue, and the accounting guardian&#39;s role.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Explain how Nexus June revenue is recognized across fixed-fee milestone, retainer, T&amp;M advisory WIP, and expenses. Tie the explanation to invoice-backed journals and Project P&amp;L.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>WIP</strong> tab:</p>
+<ul>
+<li>Shows Nexus CFO Advisory: 12.5 hrs × £350 = £4,375 unbilled WIP</li>
+<li>Shows Statutory Accounts project: 0 WIP (fixed fee, recognised on milestone approval)</li>
+</ul>
+</li>
+<li><p>Go to <strong>Accounting</strong> → <strong>Journal Entries</strong> → filter to invoice-backed journals:</p>
+<pre><code>DR  Accounts Receivable      £41,661.84
+CR  Revenue — Advisory Fees  £34,718.20   (recognised this period)
+CR  VAT Payable               £6,943.64
+</code></pre>
+</li>
+<li><p>For the retainer portion specifically, explain:</p>
+<ul>
+<li>Retainer fee recognised in the month it covers (June → June revenue)</li>
+<li>No deferred revenue for monthly retainers</li>
+<li>For annual retainer paid upfront → system would book <code>CR Deferred Revenue</code>, releasing <code>£8,500/month</code></li>
+</ul>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>Project P&amp;L</strong> → Nexus CFO Advisory:</p>
+<pre><code>Revenue (billed):     £4,375.00
+Cost (Alice: 12.5h × £150 cost rate): £1,875.00
+Gross Margin:         £2,500.00 (57%)
+</code></pre>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Revenue recognition is baked into the accounting engine. The journal posts automatically when the invoice is approved. No manual GL entries for month-end accruals on standard billing patterns.&quot;</em></p>
+<hr>
+<h2 id="1-6-tax-advisory-t-m-with-capped-fee">1.6 Tax Advisory: T&amp;M with Capped Fee</h2>
+<p><strong>What to show</strong>: A separate Tax engagement with a T&amp;M cap — protecting the client from overruns while ensuring Meridian is protected too.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Create an engagement for Nexus — Corporation Tax Return FY2025, fixed fee £18,500, capped at £22,000 if advisory hours overrun&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should resolve Nexus from contact data, classify the service line as
+Tax, prepare billing arrangement = <strong>capped_tm</strong>, cap = £22,000, base =
+£18,500, and route the engagement draft to Inbox. It should not ask for
+internal client IDs, service IDs, or engagement IDs already available in
+Aethos.</p>
+</li>
+<li><p>Approve the Inbox item if you want to materialize it during the demo.</p>
+</li>
+<li><p>Log tax advisory hours over time → when hours × rate approaches £22,000:</p>
+<ul>
+<li><strong>Inbox alert</strong> appears: <em>&quot;Nexus Tax Advisory: 89% of £22,000 cap used (£19,580 billed). Alert: approaching cap.&quot;</em></li>
+<li>The project health automation classifies it as a capped-fee risk alert</li>
+</ul>
+</li>
+<li><p>Show the alert card in Inbox → click <strong>Investigate</strong> → navigate to the project</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Meridian agreed a £22,000 cap with the client. The platform monitors every hour logged and alerts the partner before the cap is hit — not after.&quot;</em></p>
+<hr>
+<h2 id="1-7-o2c-controls-pricing-collections-and-public-invoice-edge-checks">1.7 O2C Controls, Pricing, Collections, and Public Invoice Edge Checks</h2>
+<p><strong>What to show</strong>: Order-to-cash is not just invoice creation. Pricing setup,
+tax, payment collection, public links, reminders, and read-only access all stay
+controlled.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review Nexus order-to-cash readiness for June 2026. Check service catalogue mapping, linked rate card, tax rate setup, draft invoices, public invoice link readiness, WIP, and any collections actions waiting for approval.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Settings</strong> and quickly show:</p>
+<ul>
+<li><strong>Services</strong> → standard professional-services catalogue and active service lines</li>
+<li><strong>Tax Rates</strong> → UK VAT rate used by the invoice</li>
+<li>Engagement detail → Nexus linked rate card from the engagement letter</li>
+<li>Limitation: rate-card create/edit is not exposed as a Settings walkthrough</li>
+<li><strong>Collections Policy</strong> → reminder timing and tone policy</li>
+<li><strong>Stripe Connect</strong> → connected status or manual-payment fallback state</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous should return:</p>
+<ul>
+<li>Customer balances and overdue balances by currency</li>
+<li>Invoice-level status: current, overdue, disputed/on-hold, partially paid, sent, draft, paid, or voided</li>
+<li>Due date, aging bucket, balance due, paid amount, public invoice state, and payment-link state</li>
+<li>Last reminder tone/status, reminder count, policy stage, cooldown or max-reminder blockers</li>
+<li>Recommended next action, clearly separated from any draft/send action</li>
+</ul>
+</li>
+<li><p>For a single-invoice drilldown, type:</p>
+<blockquote>
+<p><em>&quot;Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Then ask for the controlled write action:</p>
+<blockquote>
+<p><em>&quot;Draft collections reminders for invoices more than 30 days overdue. Create customer-specific reminder copy and route every email to Inbox before sending.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Inbox</strong> → open a collections email task:</p>
+<ul>
+<li>Invoice, customer, recipient, tone, subject, body, confidence, and eligibility rationale are visible</li>
+<li>Approval sends through the configured email path</li>
+<li>Rejection records the reason and sends nothing</li>
+</ul>
+</li>
+<li><p>Public invoice safety check:</p>
+<ul>
+<li>Open the Nexus public invoice link in a private browser window</li>
+<li>Confirm only customer-facing invoice fields, line items, total, due date, and payment status are visible</li>
+<li>Confirm internal comments, run-ledger entries, source documents, and approval history are not exposed</li>
+</ul>
+</li>
+<li><p>Edge-case checks to call out:</p>
+<ul>
+<li>Missing tax setup blocks invoice posting and points the user to <strong>Settings / Tax Rates</strong></li>
+<li>Viewer users can inspect permitted invoice/report data but cannot approve, send, void, or record payment</li>
+<li>A locked accounting period blocks backdated invoice posting</li>
+<li>If server-side Stripe is configured, a Payment Link can still be created
+without Connect; Connect adds destination/on-behalf-of payout routing. If
+Stripe itself is not configured, the invoice uses the PDF-only path and
+can be settled through manual record payment.</li>
+<li>Stripe webhook/reconciliation evidence is visible through payment and webhook-event records when payment automation is enabled</li>
+<li>Disputed or collections-hold invoices are not reminded until the blocker is resolved</li>
+<li>Partially paid invoices show remaining balance and collect only the remaining balance</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The same AI prompt can check the whole O2C chain: pricing, tax, invoice status, payment link, collections, and accounting evidence. The public invoice is customer-safe, and every external send is still approval-gated.&quot;</em></p>
+<hr>
+<hr>
+<h1 id="scenario-2-mid-market-client-brightwater-manufacturing-ltd">SCENARIO 2 — Mid-Market Client: Brightwater Manufacturing Ltd</h1>
+<blockquote>
+<p><strong>Who</strong>: Brightwater makes precision parts for aerospace. £28M turnover, 180 employees. They&#39;ve been with Meridian 5 years.</p>
+<p><strong>Services</strong>: Monthly management accounts (retainer), annual statutory accounts + CT600 (fixed fee), monthly payroll for 180 employees.</p>
+</blockquote>
+<hr>
+<h2 id="2-1-standard-monthly-retainer-billing">2.1 Standard Monthly Retainer Billing</h2>
+<p><strong>What to show</strong>: The AI identifies routine billing, prepares the work, and keeps the approval boundary visible.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me Brightwater&#39;s June 2026 billing status. Prepare the monthly management accounts retainer invoice if it is due, but route the draft to Inbox before sending.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous summarizes:</p>
+<ul>
+<li>Engagement: Brightwater Monthly Management Accounts</li>
+<li>Billing model: monthly retainer</li>
+<li>Period: June 2026</li>
+<li>Amount: £2,800 plus VAT</li>
+<li>Approval boundary: invoice draft requires review before send</li>
+</ul>
+</li>
+<li><p>Go to <strong>Inbox</strong> → open the invoice draft card:</p>
+<ul>
+<li>Billing terms and period are shown</li>
+<li>Source engagement and client are linked</li>
+<li>Reviewer can approve, reject, or approve with edits</li>
+</ul>
+</li>
+<li><p>Approve the draft → go to <strong>Invoices</strong> → show <code>INV-0024</code> to Brightwater:</p>
+<pre><code>Management Accounts — June 2026 (Retainer)    £2,800.00
+VAT @ 20%                                        £560.00
+Total                                          £3,360.00
+</code></pre>
+<p>Status: <strong>Approved</strong> or <strong>Sent</strong>, depending on the demo step completed.</p>
+</li>
+<li><p>Show the journal entry posted by the guarded invoice approval path:</p>
+<pre><code>DR  Accounts Receivable    £3,360.00
+CR  Revenue                £2,800.00
+CR  VAT Payable              £560.00
+</code></pre>
+</li>
+<li><p>Check:</p>
+<ul>
+<li><strong>Agent Run Ledger</strong> → Aethos Nous run and action evidence are visible</li>
+<li><strong>Inbox decision history</strong> → reviewer, action, and before/after payload are recorded</li>
+<li><strong>Reports / Revenue</strong> and <strong>AR Aging</strong> → Brightwater appears in the correct period</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The AI did the billing work: found the due retainer, prepared the invoice, and explained the basis. The firm still has a clean review gate before the client receives anything.&quot;</em></p>
+<hr>
+<h2 id="2-2-annual-accounts-tax-milestone-billing">2.2 Annual Accounts + Tax — Milestone Billing</h2>
+<p><strong>What to show</strong>: A fixed-fee engagement billed across milestones — draft accounts, review, sign-off.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me Brightwater&#39;s annual statutory accounts and CT600 milestones. Tell me which milestones are complete, which can be billed, and what evidence will be used for the invoice.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Engagements</strong> → Brightwater → <em>&quot;Annual Statutory Accounts + CT600 FY2025&quot;</em></p>
+</li>
+<li><p>Show the engagement detail — Billing arrangement: <strong>Milestone</strong>:</p>
+<pre><code>Milestone 1: Draft accounts filed for review          £4,200  (on completion)
+Milestone 2: Client-reviewed accounts signed          £4,200  (on completion)
+Milestone 3: CT600 submitted to HMRC                  £2,800  (on completion)
+Total fixed fee                                      £11,200
+</code></pre>
+</li>
+<li><p>Mark Milestone 1 as complete → <strong>Billing Run</strong> → invoice for £4,200 + VAT generated</p>
+</li>
+<li><p>Walk through the 3 milestones over 2 months:</p>
+<ul>
+<li>Revenue recognised at each milestone (not upfront)</li>
+<li>WIP accumulates between milestones (hours logged but not yet billed)</li>
+</ul>
+</li>
+<li><p>After Milestone 3: Go to <strong>Reports</strong> → <strong>Project P&amp;L</strong> → Brightwater Annual Accounts:</p>
+<pre><code>Revenue:      £11,200
+Cost (hours): £3,840  (Sarah: 16h × £240/hr cost)
+Gross Margin: £7,360 (66%)
+</code></pre>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The client agreed to three milestone payments tied to deliverables. Revenue is recognised when the milestone is delivered — not upfront, not on cash receipt. This is clean ASC/IFRS 15 percentage-of-completion.&quot;</em></p>
+<hr>
+<h2 id="2-3-payroll-service-per-employee-billing">2.3 Payroll Service — Per-Employee Billing</h2>
+<p><strong>What to show</strong>: Payroll is billed per employee per month — Aethos tracks headcount changes automatically.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Create a payroll engagement for Brightwater — £8.50 per employee per month, 180 employees, starting June 2026&quot;</em></p>
+</blockquote>
+</li>
+<li><p>System creates T&amp;M engagement with rate = £8.50/employee/employee-month</p>
+</li>
+<li><p>Brightwater hires 5 people in July → consultant updates headcount:</p>
+<blockquote>
+<p><em>&quot;Update Brightwater employee count to 185 for July payroll billing&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Billing Run</strong> for July payroll:</p>
+<pre><code>Payroll services — July 2026 (185 employees × £8.50)    £1,572.50
+VAT @ 20%                                                  £314.50
+Total                                                    £1,887.00
+</code></pre>
+</li>
+<li><p>Show the collections agent working in the background:</p>
+<ul>
+<li>Brightwater is consistently a net-30 payer</li>
+<li>Collections agent has learned this pattern and suppresses reminders until day 32</li>
+<li>On day 32, a gentle reminder email is drafted and routed to Inbox before sending</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Payroll billing scales with the client&#39;s headcount. When they hire, the next month&#39;s invoice reflects it automatically. And the collections agent has learned Brightwater always pays by day 32 — no spam reminders before that.&quot;</em></p>
+<hr>
+<h2 id="2-4-vendor-bills-brightwater-subcontractor">2.4 Vendor Bills: Brightwater Subcontractor</h2>
+<p><strong>What to show</strong>: Meridian sub-contracts some Brightwater work to a specialist firm. The invoice comes in, gets extracted, reviewed, and posted to AP.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, upload <code>brightwater_subcontractor_invoice.pdf</code> and type:</p>
+<blockquote>
+<p><em>&quot;Process this vendor invoice for Forster &amp; Reid Ltd. Match it to Brightwater, code it to subcontractor project cost where appropriate, flag any duplicate or PO mismatch risk, and send the bill draft to Inbox for review.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous extracts:</p>
+<ul>
+<li>Vendor: Forster &amp; Reid Ltd (new vendor — matched with 72% confidence against existing contacts)</li>
+<li>Amount: £3,200</li>
+<li>GL suggestion: <strong>Project Costs — Subcontractors</strong> (account 5100), confidence 94%</li>
+<li>Project/customer hint: Brightwater Annual Accounts</li>
+<li>Duplicate guard: no exact vendor invoice number match</li>
+<li>PO/service-order match: no approved PO found, exception requires review</li>
+<li>Tax ID check: UK VAT GB123456789 — ✅ format valid</li>
+</ul>
+</li>
+<li><p><strong>Inbox</strong> → BillExtractedCard shows:</p>
+<ul>
+<li>Amber confidence chip (72% vendor match — needs review)</li>
+<li>GL account pre-selected as 5100 (high confidence)</li>
+<li>Source document link</li>
+<li>Match/coding evidence, duplicate guard details, and required correction fields</li>
+</ul>
+</li>
+<li><p>Review → edit vendor to confirm it is Forster &amp; Reid → enter reason:</p>
+<blockquote>
+<p><em>&quot;Legitimate new subcontractor invoice for Brightwater audit support; no existing PO, approved by engagement partner.&quot;</em>
+Then <strong>Approve</strong>.</p>
+</blockquote>
+</li>
+<li><p>Bill approved → journal posts:</p>
+<pre><code>DR  Project Costs — Subcontractors (5100)    £3,200.00
+CR  Accounts Payable                          £3,200.00
+</code></pre>
+</li>
+<li><p>Go to <strong>Bills</strong> → BILL-0041 shows approved, due 15 July 2026 (Net 30)</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Which vendor bills are due soon, which are blocked, and what evidence supports payment? Show vendor, bill number, amount, due date, status, coding evidence, source document, duplicate risk, PO/service-order match, payment-batch state, blockers, and next action. Do not create a payment batch yet.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous should return:</p>
+<ul>
+<li>Vendor balances and due-soon totals by currency</li>
+<li>Bill-level state: draft, approved, paid, voided, duplicate risk, or missing evidence</li>
+<li>Coding status, source document availability, duplicate review state, PO/service-order match state</li>
+<li>Payment readiness, blockers, safe batch status, export presence, send/settlement state</li>
+<li>No raw bank details, export hashes, tool calls, traces, logs, or raw payloads</li>
+</ul>
+</li>
+<li><p>For a single bill drilldown, type:</p>
+<blockquote>
+<p><em>&quot;Review bill BILL-0041. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Then ask for the controlled payment action:</p>
+</li>
+</ol>
+<blockquote>
+<p><em>&quot;Prepare this week&#39;s bill-pay run. Prioritize due and overdue approved bills, exclude anything disputed, explain the rationale, and send the payment batch to Inbox.&quot;</em></p>
+</blockquote>
+<ol start="11">
+<li><strong>Inbox</strong> → approve the bill-pay proposal. Then go to <strong>Pay Bills</strong>:</li>
+</ol>
+<ul>
+<li>Draft payment batch exists</li>
+<li>Forster &amp; Reid is selected with due-date rationale</li>
+<li>An AP Manager/AP Clerk with <code>bills.approve</code> can approve the source bill</li>
+<li>Use an AP Manager with <code>bill_payments.prepare</code>,
+<code>bill_payments.approve</code>, <code>bill_payments.export</code>, and
+<code>bill_payments.settle</code> for the batch lifecycle; no legacy-role fallback is
+required</li>
+<li>The seeded AP Clerk duty currently includes those same broad payment
+privileges, so using a separate AP Manager here demonstrates process
+segregation rather than claiming the default Clerk role enforces it</li>
+<li>Export CSV/NACHA file where available</li>
+<li>Mark batch sent</li>
+<li>Confirm settlement when bank confirmation is received</li>
+</ul>
+<ol start="12">
+<li>Check:</li>
+</ol>
+<ul>
+<li><strong>Bills</strong> → bill status moves from approved to paid/settled</li>
+<li><strong>AP Aging</strong> → Forster &amp; Reid drops out of unpaid AP</li>
+<li><strong>Journal Entries</strong> → settlement journal evidence is visible</li>
+<li><strong>Financial Events</strong> or decision trail → bill approval, batch approval, export/send, and settlement events are recorded</li>
+</ul>
+<p><strong>Talking point</strong>: <em>&quot;Meridian received the subcontractor invoice, the AI extracted and coded it, the partner approved the exception in Inbox, and bill pay followed a controlled approve-export-send-settle lifecycle.&quot;</em></p>
+<hr>
+<h2 id="2-5-p2p-exception-and-payment-control-edge-checks">2.5 P2P Exception and Payment-Control Edge Checks</h2>
+<p><strong>What to show</strong>: Vendor invoice intake, bill approval, and payment approval are
+separate controls. Exceptions must be explained before a bill or payment batch
+can move forward.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review this possible duplicate vendor invoice. Compare the vendor, invoice number, amount, date, source document, and coding evidence. If it is legitimate, require a duplicate-review reason before approval.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Inbox</strong> → duplicate bill draft check:</p>
+<ul>
+<li>One-click approval is blocked</li>
+<li><strong>Approve with edits</strong> requires a duplicate-review reason</li>
+<li>The reason is persisted to the created bill&#39;s review evidence</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me vendor match evidence, duplicate guard details, GL coding suggestions, project and customer hints, source document link, and required reviewer corrections for this invoice before I approve it.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Bills</strong> → open the bill detail:</p>
+<ul>
+<li><code>vendor_invoice_review</code> evidence is visible in business terms</li>
+<li>Line-level PO/service-order match summary is visible</li>
+<li>Quantity, unit-price, unmatched-line, or service-period exceptions keep the bill in draft until corrected or justified</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Which vendor bills are due soon, which are blocked, and what evidence supports payment? Show vendor, bill number, amount, due date, status, coding evidence, source document, duplicate risk, PO/service-order match, payment-batch state, blockers, and next action. Do not create a payment batch yet.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Then type:</p>
+<blockquote>
+<p><em>&quot;Prepare a payment approval packet for bills due in the next 10 days. Include vendor, amount, due date, coding evidence, duplicate status, cash impact, and the approver role required for the batch.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Payment edge checks:</p>
+<ul>
+<li>Direct batch actions enforce <code>bill_payments.prepare</code>,
+<code>bill_payments.approve</code>, <code>bill_payments.export</code>, and
+<code>bill_payments.settle</code>; prove AP Manager succeeds without admin fallback</li>
+<li>Bill create/void and approval separately enforce <code>bills.manage</code> and
+<code>bills.approve</code>; verify a seeded AP role succeeds without admin fallback</li>
+<li>Finance Approver can approve/reject manager-threshold Inbox/procurement reviews but cannot create bills, create procurement documents, or approve Admin/Owner-threshold spend</li>
+<li>Viewer and Auditor users can inspect Pay Bills when granted
+<code>bill_payments.read</code>, but cannot create/approve a batch, export files,
+mark sent, or settle it</li>
+<li>Limitation: vendor-bank validation is not a proven execution block and the
+current export can contain blank/placeholder bank fields. Stop before
+download/upload and record the gap.</li>
+<li>Payment file export, mark-sent, and settlement confirmation are separate recorded lifecycle steps</li>
+<li>Settlement posts a DR Accounts Payable / CR Bank journal and updates AP Aging and Cash Flow</li>
+<li>Draft, paid, voided, duplicate-risk, PO-mismatch, and missing-evidence bills are explained before payment</li>
+<li>Existing draft/approved/sent payment batches are shown without exposing raw bank details or export hashes</li>
+<li>Limitation: partial AP payments, early-pay discounts, mixed-currency
+batches, bank-balance checks, and duplicate-open-batch prevention are not
+supported/proven by the current Pay Bills service</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;P2P is deliberately staged: extract and code the invoice, approve the bill, approve the payment batch, export/send, then settle. The AI prepares each packet, but duplicate risk, PO mismatch, and money-out approval are never silently bypassed.&quot;</em></p>
+<hr>
+<hr>
+<h1 id="scenario-3-private-wealth-alderton-family-office">SCENARIO 3 — Private Wealth: Alderton Family Office</h1>
+<blockquote>
+<p><strong>Who</strong>: The Alderton family manages £420M in assets across 12 entities: a family investment company, 4 trading subsidiaries, 3 trusts, 2 SIPP wrappers, and 2 personal tax accounts. They demand discretion, bespoke reporting, and fast response.</p>
+<p><strong>Annual fees</strong>: £148,000 across all entities and service lines.</p>
+</blockquote>
+<hr>
+<h2 id="3-1-multi-entity-engagement-structure">3.1 Multi-Entity Engagement Structure</h2>
+<p><strong>What to show</strong>: One client, multiple entities, separate engagements, unified view.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me the Alderton Family Office structure. List the entities, active engagements, currencies, billing models, and any upcoming deadlines or approvals.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Contacts</strong> → search &quot;Alderton&quot; → show the Alderton Family Office as <code>kind=both</code> (they&#39;re a customer for services but also a vendor when they reimburse Meridian&#39;s disbursements through their entity)</p>
+</li>
+<li><p>Go to <strong>Engagements</strong> → filter by client = Alderton:</p>
+<pre><code>Alderton Family Investment Co — Annual Accounts           Fixed £28,000
+Alderton Trading Group — Group Management Accounts        Retainer £4,500/mo
+Alderton Trust (1985) — Trust Accounts &amp; Tax             Fixed £12,500
+Alderton Trust (2008) — Trust Accounts &amp; Tax             Fixed £9,200
+Sir Richard Alderton — Personal Tax Return               Fixed £8,400
+Lady Catherine Alderton — Personal Tax Return            Fixed £6,800
+Alderton COSEC Retainer — All entities                   Retainer £3,200/mo
+</code></pre>
+</li>
+<li><p>Click into <em>Alderton Trading Group — Management Accounts</em>:</p>
+<ul>
+<li>Billing: Retainer £4,500/month, billed on 1st</li>
+<li>Currency: GBP</li>
+<li>Show the 6-month invoice history — always paid on day 7 (fastest paying client)</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Seven separate engagements for one family. In the old world, Meridian managed this across 7 spreadsheets and 3 billing systems. Here it&#39;s one view, one Aethos Nous, one inbox.&quot;</em></p>
+<hr>
+<h2 id="3-2-bespoke-tax-return-fixed-fee-with-scope-creep-risk">3.2 Bespoke Tax Return — Fixed Fee with Scope Creep Risk</h2>
+<p><strong>What to show</strong>: A personal tax return engagement with unexpected complexity mid-year — and how the platform handles the conversation.</p>
+<ol>
+<li><p>Open engagement: <em>&quot;Sir Richard Alderton — Personal Tax Return FY2025&quot;</em></p>
+<ul>
+<li>Fixed fee: £8,400</li>
+<li>Project: Tax Return + 2 Trusts</li>
+</ul>
+</li>
+<li><p>Partway through: Sir Richard&#39;s advisor calls — he sold his property portfolio in March 2025, generating a complex CGT calculation across 12 properties with partial PPR relief.</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, Sarah (tax director) types:</p>
+<blockquote>
+<p><em>&quot;The Alderton personal tax return now includes complex CGT on 12 property disposals with PPR calculations. How much additional fee should we quote for this scope change?&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous responds with reporting context:</p>
+<blockquote>
+<p><em>&quot;Based on similar CGT-heavy returns in your history: average additional hours = 14–22h at £280/hr = £3,920–£6,160. Alderton&#39;s base rate is £240/hr (agreed blended). Comparable: Thornton property CGT last year — 18h, £4,320 additional fee. Recommend: quote £4,800–£5,500 for CGT work.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Sarah raises a <strong>supplemental engagement</strong> for the CGT work:</p>
+<ul>
+<li>Billing: Fixed £5,000 (agreed with client)</li>
+<li>Creates new invoice milestone: &quot;CGT Computation &amp; Submission — £5,000&quot;</li>
+</ul>
+</li>
+<li><p>Generate the engagement letter out of band, then attach it in
+<code>/app/copilot</code> for reviewed intake. Aethos does not currently provide a
+general Alderton/client document portal; <code>/p/:token</code> is invoice-only.</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;When scope creeps, Sarah knows exactly what to charge because the system has history. The AI cited a comparable past matter — actual numbers, not a gut feel.&quot;</em></p>
+<hr>
+<h2 id="3-3-trust-accounts-multi-currency-with-singapore-dividend-income">3.3 Trust Accounts: Multi-Currency with Singapore Dividend Income</h2>
+<p><strong>What to show</strong>: The Alderton 1985 Trust holds Singapore-listed shares. Annual income declared in SGD.</p>
+<ol>
+<li><p>Open engagement: <em>&quot;Alderton Trust (1985) — Trust Accounts &amp; Tax&quot;</em></p>
+<ul>
+<li>Base billing: GBP</li>
+<li>Trust holds: SGD-denominated assets</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Prepare a manual journal packet for the 1985 Trust&#39;s S$42,000 SingTel dividend received on 28 March 2026. Show the GBP base-currency impact using the posting-date FX rate, route it to Inbox before posting, and verify the Trial Balance remains balanced after approval.&quot;</em></p>
+</blockquote>
+<p>Live validation prompt:</p>
+<blockquote>
+<p><em>&quot;Prepare an SGD 18,000 dividend income journal for Alderton Trust for June 2026. Show the GBP base-currency impact, FX rate provenance, required approval role, and route it to Inbox before posting.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous responds using the FX rates table:</p>
+<blockquote>
+<p><em>&quot;At 28 March 2026 rate (1 GBP = 1.7234 SGD): S$42,000 = £24,370.31. Rate is current. This journal needs controller review before posting.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Inbox</strong> → controller reviews the manual journal packet:</p>
+<ul>
+<li>Business reason: &quot;Record SingTel dividend income for 1985 Trust accounts&quot;</li>
+<li>Period lock status: open</li>
+<li>Required approval role: Accounting/Admin if above threshold</li>
+<li>Same-user approval denied for threshold journals and Nous AI-prepared manual journals</li>
+</ul>
+</li>
+<li><p>Approve as Marcus or Rachel → Journal entry posts:</p>
+<pre><code>DR  Cash — Singapore Account     S$42,000.00   [base £24,370.31]
+CR  Dividend Income — Foreign    S$42,000.00   [base £24,370.31]
+</code></pre>
+<ul>
+<li>entry_date = 28 March 2026</li>
+<li><code>base_amount</code> stored in GBP</li>
+<li><code>fx_rate_id</code> points to the immutable <code>fx_rates</code> row used</li>
+<li><code>manual_journal.posted</code> audit evidence includes reason, actor role, line count, and debit total</li>
+</ul>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>Trial Balance</strong> → show the Foreign Dividend Income account (credit balance £24,370.31) and Cash account (debit balance includes £24,370.31)</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Every foreign income item keeps the transaction currency, the GBP base amount, and the exact FX row used. The auditor can trace the number from source document to journal to Trial Balance.&quot;</em></p>
+<hr>
+<h2 id="3-4-cosec-automated-filing-reminders">3.4 COSEC: Automated Filing Reminders</h2>
+<p><strong>What to show</strong>: The COSEC retainer covers all 12 Alderton entities&#39; statutory filings — confirmation statements, accounts filing deadlines, trust deed changes.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review COSEC filing reminders for Alderton entities. Show upcoming filing dates, missing evidence, billing impact, and which reminders need approval before sending.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return the COSEC compliance-calendar view:</p>
+<ul>
+<li>Entity name and filing/reference type</li>
+<li>Upcoming filing date/deadline</li>
+<li>Missing evidence, such as board minutes, register confirmation, or signed accounts approval</li>
+<li>Billing impact against the retainer or out-of-scope work</li>
+<li>Whether the reminder must be approved in Inbox before sending</li>
+</ul>
+</li>
+<li><p>Go to <strong>Inbox</strong> → show any COSEC reminder or project health review card. The reminder must remain a draft until reviewed; Nous must not send client email directly.</p>
+</li>
+<li><p>Click <strong>Investigate</strong> → navigates to the COSEC engagement project timeline or obligation source record.</p>
+</li>
+<li><p>Priya (COSEC manager) is notified via the Inbox:</p>
+<blockquote>
+<p>&quot;3 Alderton entities have confirmation statements due in the next 30 days&quot;</p>
+</blockquote>
+</li>
+<li><p>Show <strong>Projects</strong> → filter by &quot;COSEC&quot; → see utilisation across all Alderton COSEC work:</p>
+<ul>
+<li>12 entities, each with a project</li>
+<li>Priya&#39;s hours tracked across all</li>
+<li>Retainer hours: 18 of 22 monthly hours used (scope creep approaching)</li>
+</ul>
+</li>
+<li><p>Project health automation has already created a retainer floor warning:</p>
+<blockquote>
+<p><em>&quot;Alderton COSEC Retainer: 82% of monthly hours used by day 20. If current pace continues, overage of 8–12 hours likely.&quot;</em></p>
+</blockquote>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Priya doesn&#39;t chase deadlines in a spreadsheet. The system watches every entity&#39;s milestone calendar and alerts her proactively — not after the deadline passes.&quot;</em></p>
+<hr>
+<hr>
+<h1 id="scenario-4-mid-market-international-thornton-tech-solutions">SCENARIO 4 — Mid-Market International: Thornton Tech Solutions</h1>
+<blockquote>
+<p><strong>Who</strong>: Thornton Tech is a London-based SaaS company, incorporated in the UK but billing in USD (US clients, US investors). They need UK statutory accounts (GBP), US tax compliance (USD), and COSEC for their UK holding co.</p>
+<p><strong>Challenge</strong>: Multi-currency accounting — expenses in GBP, revenue in USD, reporting in both.</p>
+</blockquote>
+<hr>
+<h2 id="4-1-usd-billed-engagement-gbp-base-currency">4.1 USD-Billed Engagement, GBP Base Currency</h2>
+<p><strong>What to show</strong>: Meridian invoices Thornton in USD, but Meridian&#39;s books are in GBP. FX handling is automatic.</p>
+<ol>
+<li><p>Go to <strong>Engagements</strong> → <em>&quot;Thornton Tech — Accounting &amp; Advisory FY2026&quot;</em></p>
+<ul>
+<li>Currency: USD (Thornton&#39;s invoicing currency)</li>
+<li>Meridian&#39;s base currency: GBP</li>
+</ul>
+</li>
+<li><p>Show the engagement detail:</p>
+<pre><code>Monthly advisory retainer: $4,500/month
+Annual statutory accounts: $18,000 fixed
+</code></pre>
+<p>Before posting, use <strong>Settings</strong> -&gt; <strong>Historical FX provenance</strong> to look up
+USD -&gt; GBP for the invoice date. Record the requested date, matched date,
+rate, source, immutable FX row ID, and staleness. This panel is read-only.</p>
+</li>
+<li><p>Go to <strong>Billing Runs</strong> → invoice for April 2026 advisory:</p>
+<pre><code>Advisory Retainer — April 2026    $4,500.00 USD
+</code></pre>
+<p>Invoice sent in USD.</p>
+</li>
+<li><p>Thornton pays via Stripe Payment Link → $4,500 received. If using manual demo data, record the same receipt from <strong>Invoices</strong> → <strong>Record payment</strong>.</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review the latest Thornton USD payment. Confirm the transaction amount, GBP base amount, FX rate used, realised FX impact, and whether AR Aging and Cash Flow updated after settlement.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Payments</strong> → show the receipt:</p>
+<ul>
+<li><code>amount</code>: $4,500.00</li>
+<li><code>currency</code>: USD</li>
+<li><code>base_amount</code>: £3,560.28</li>
+<li><code>fx_rate_id</code>: populated for the payment-date USD→GBP rate</li>
+</ul>
+</li>
+<li><p>Go to <strong>Accounting</strong> → <strong>Journal Entries</strong> → show the payment journal:</p>
+<pre><code>DR  Bank (1100)                   $4,500.00  [£3,560.28 @ 1.2641 GBP/USD]
+CR  Accounts Receivable            $4,500.00  [£3,560.28 @ 1.2641 GBP/USD]
+</code></pre>
+<ul>
+<li><code>base_amount</code> = £3,560.28 locked at the payment-date rate</li>
+<li><code>fx_rate_id</code> is stored on both payment journal lines</li>
+<li>If the invoice-date base total differs from the payment-date base amount, realised FX is calculated automatically</li>
+</ul>
+</li>
+<li><p>Next month USD weakens. Invoice at new rate:</p>
+<ul>
+<li>May invoice: $4,500 → £3,492.18 at 1.2882 GBP/USD (rate deteriorated)</li>
+<li>Realised FX service posts the base-currency adjustment:</li>
+</ul>
+<pre><code>DR  Realized FX Loss (7900)    £68.10
+CR  Accounts Receivable        £68.10
+</code></pre>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>Revenue by Engagement</strong> → Thornton:</p>
+<ul>
+<li>Verify the tenant-base GBP revenue and any transaction-currency detail the
+current response actually supplies</li>
+<li>Limitation: there is no interactive USD/GBP report-currency toggle</li>
+<li><strong>AR Aging</strong> no longer includes the paid invoice</li>
+<li><strong>Cash Flow</strong> reflects the GBP base receipt</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Thornton pays in dollars. Meridian&#39;s books are in pounds. Every receipt captures the USD transaction amount, the GBP base amount, the FX row used, and any realised gain or loss.&quot;</em></p>
+<hr>
+<h2 id="4-2-startup-equity-event-milestone-billing-for-fundraise-advisory">4.2 Startup Equity Event: Milestone Billing for Fundraise Advisory</h2>
+<p><strong>What to show</strong>: Thornton is raising a Series A. Meridian advises on the tax structuring. This is high-stakes work billed on a success milestone.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Create a new engagement for Thornton Tech — Series A tax structuring advisory. Success fee: 0.75% of funds raised, payable on closing. Estimated raise: $12M.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>System creates:</p>
+<ul>
+<li>Billing arrangement: <strong>Milestone</strong> (single milestone: &quot;Series A Close&quot;)</li>
+<li>Milestone amount: 0.75% × $12,000,000 = $90,000 (estimated)</li>
+<li>Note: actual amount confirmed at close</li>
+</ul>
+</li>
+<li><p>Months later: Series A closes at $14.2M.</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>: <em>&quot;Thornton Series A closed at $14.2M. Update the milestone amount and invoice.&quot;</em></p>
+</li>
+<li><p>Agent updates milestone to 0.75% × $14,200,000 = $106,500 → billing run generates:</p>
+<pre><code>Series A Tax Structuring — Success Fee    $106,500.00
+                                          £84,142.35 (at closing rate)
+</code></pre>
+</li>
+<li><p>Invoice sent → Thornton pays → $106,500 posted:</p>
+<pre><code>DR  Bank — USD Account           $106,500.00   [£84,142.35]
+CR  Accounts Receivable          $106,500.00   [£84,142.35]
+</code></pre>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>Project P&amp;L</strong> → Thornton Series A:</p>
+<pre><code>Revenue:     $106,500.00  (£84,142.35)
+Cost:        $8,400.00    (£6,636.84)  — 42 hours at Sarah&#39;s $200/hr cost
+Gross Margin: 92%
+</code></pre>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;A £84,000 success fee. One billing run. The AI updated the milestone amount, generated the invoice, and posted the journal. The partner&#39;s only job was approving the updated amount.&quot;</em></p>
+<hr>
+<h2 id="4-3-cosec-company-changes-per-event-billing">4.3 COSEC: Company Changes → Per-Event Billing</h2>
+<p><strong>What to show</strong>: COSEC for Thornton is billed per statutory event, not a retainer. Each Companies House filing triggers a bill.</p>
+<ol>
+<li><p>Thornton appoints a new director. In <strong>Aethos Nous</strong>:</p>
+<blockquote>
+<p><em>&quot;Bill Thornton Tech for director appointment — AP01 filing, COSEC standard fee £650&quot;</em></p>
+</blockquote>
+</li>
+<li><p>System creates: Billing arrangement = <strong>Fixed</strong>, one milestone, £650</p>
+</li>
+<li><p>Thornton issues new shares for the Series A. In <strong>Aethos Nous</strong>:</p>
+<blockquote>
+<p><em>&quot;Log COSEC work for Thornton — SH01 shares allotment filing and shareholder register update, £1,200&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Upload <code>docs/demo-assets/thornton_cosec_instruction.pdf</code> in <strong>Aethos Nous</strong> and send:</p>
+<blockquote>
+<p><em>&quot;Review this COSEC instruction for Thornton. Identify the company change, create the required filing/project work item, identify billing impact, and route any external filing or invoice action to Inbox.&quot;</em></p>
+</blockquote>
+<p>Nous classifies the file as a COSEC instruction, prepares the company-change / filing work item review packet, identifies billing impact, and leaves external filing and invoice actions approval-gated in Inbox.</p>
+</li>
+<li><p>Thornton updates registered office. Another £250.</p>
+</li>
+<li><p>Go to <strong>Engagements</strong> → Thornton COSEC → show three separate mini-engagements or one T&amp;M billing:</p>
+<ul>
+<li>Director appointment: £650</li>
+<li>Share allotment: £1,200</li>
+<li>Registered office: £250</li>
+<li>Total April COSEC work: £2,100</li>
+</ul>
+</li>
+<li><p>Billing run → single invoice consolidating all three COSEC events for April:</p>
+<pre><code>Director Appointment (AP01 filing)       £650.00
+Share Allotment (SH01 + register)      £1,200.00
+Registered Office Update                 £250.00
+Subtotal                               £2,100.00
+VAT @ 20%                                £420.00
+Total                                  £2,520.00
+</code></pre>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;COSEC work is event-driven, not time-driven. Each corporate action is logged as it happens. The monthly billing run consolidates everything into one clean invoice.&quot;</em></p>
+<hr>
+<hr>
+<h1 id="scenario-5-record-to-report-month-end-close">SCENARIO 5 — Record to Report: Month-End Close</h1>
+<blockquote>
+<p><strong>What to show</strong>: At month-end, Meridian closes the books across all 4 client service lines. Show the close process, trial balance, and period lock.</p>
+</blockquote>
+<hr>
+<h2 id="5-1-ai-assisted-pre-close-checklist">5.1 AI-Assisted Pre-Close Checklist</h2>
+<ol>
+<li><p>Marcus (Managing Partner) opens <strong>Aethos Nous</strong> and types:</p>
+<blockquote>
+<p><em>&quot;Prepare month-end close for June 2026. Summarize readiness blockers, missing approvals, unposted journals, open AR/AP, and proposed close tasks. Route the close preparation to Inbox before creating close tasks.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous summarizes the pre-close checks:</p>
+<pre><code>✅ All June time entries approved (47/47)
+✅ All June expenses approved (12/12)
+⚠️ 2 bills received but not yet approved (Forster &amp; Reid, £3,200; BT Broadband, £189)
+⚠️ Brightwater WIP: 6.5 hours unbilled (£1,872 at £288/hr blended rate)
+✅ AR sub-ledger reconciles to AR control account (£127,420.00)
+✅ AP sub-ledger reconciles to AP control account (£42,318.00)
+✅ Bank accounts reconciled (3/3 accounts)
+✅ No transactions in locked prior periods
+✅ VAT return period aligns with invoice dates
+⚠️ Alderton SGD dividend income: FX rate &gt;3 days old at transaction date (warning only)
+</code></pre>
+</li>
+<li><p><strong>Inbox</strong> → approve the close-preparation task. Approval bootstraps close tasks and records workflow evidence.</p>
+</li>
+<li><p>Two bills need approving:</p>
+<ul>
+<li>Marcus clicks <strong>Resolve</strong> on the bill items → navigated to Bills list → approves both</li>
+<li>Or: dismiss with reason (&quot;Intentionally carrying to July&quot;)</li>
+</ul>
+</li>
+<li><p>WIP warning: Marcus decides to bill Brightwater for the 6.5 hours before close:</p>
+<ul>
+<li>Billing run → £1,872 + VAT invoice for Brightwater</li>
+</ul>
+</li>
+<li><p>If a blocker is valid but intentionally waived, open <strong>Accounting</strong> → close package and record an override reason:</p>
+<blockquote>
+<p><em>&quot;BT Broadband bill received after cutoff; approved to carry to July close package.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Checklist now shows ✅ for all items or documented overrides → <strong>Lock June 2026</strong></p>
+</li>
+<li><p>Check:</p>
+<ul>
+<li><strong>Workflow Runs</strong> → close workflow completed with waiting-on-human steps resolved</li>
+<li><strong>Action Queue</strong> → close items are no longer stale</li>
+<li><strong>Close Package</strong> → period-end AR/AP tie to posted base-currency control
+accounts even if a later receipt/settlement exists; unmatched control
+activity is shown as unallocated</li>
+<li><strong>Close Package</strong> → WIP is visibly labeled a current-rate-card estimate,
+because historical rate-card values are not versioned</li>
+<li><strong>Close Package</strong> → GL readiness and override reasons are visible</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="5-2-period-lock-in-action">5.2 Period Lock in Action</h2>
+<ol>
+<li><p>Period locked: June 2026</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Can I post a correcting journal dated 15 June 2026 now that June is locked? Explain the safe options and do not post anything.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Try to post a backdated entry:</p>
+<ul>
+<li>In <strong>Accounting</strong> → <strong>New Journal Entry</strong> → set date to 15 June 2026</li>
+<li>Click Post → error: <em>&quot;Period 2026-06 is locked. Entry rejected by Accounting Guardian.&quot;</em></li>
+</ul>
+</li>
+<li><p>Correct approach: reopen June (owner-only) OR post a July correcting entry with description &quot;Correction re June accrual&quot;</p>
+</li>
+<li><p>Go to <strong>Accounting</strong> → <strong>Period Locks</strong> → show the lock record: locked by Marcus, timestamp, all entries frozen.</p>
+</li>
+</ol>
+<hr>
+<h2 id="5-3-trial-balance-review">5.3 Trial Balance Review</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Verify June 2026 Trial Balance. Confirm total debits equal total credits, highlight FX gain/loss, and point me to any unposted journals or close blockers.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Reports</strong> → <strong>Trial Balance</strong> → set period to June 2026</p>
+</li>
+<li><p>Show the 12-account COA with balances:</p>
+<pre><code>Code   Account                        DR            CR
+──────────────────────────────────────────────────────
+1100   Bank (GBP)                £87,420.31
+1101   Bank (USD — converted)    £42,318.94
+1200   Accounts Receivable       £76,840.20
+2000   Accounts Payable                        £18,420.00
+2300   VAT Payable                             £24,618.90
+3000   Retained Earnings                       £48,200.00
+4000   Revenue — Advisory       £124,800.00
+4001   Revenue — Tax             £38,200.00
+4002   Revenue — COSEC           £18,400.00
+4003   Revenue — Payroll          £8,640.00
+5000   Expenses                  £68,240.00
+5100   Employee Expenses          £9,180.00
+7900   Realized FX Gain/Loss        £240.35
+──────────────────────────────────────────────────────
+Total                          £343,479.80   £343,479.80
+</code></pre>
+<p>✅ <strong>Balanced — DR = CR</strong></p>
+</li>
+<li><p>FX note: £240.35 in account 7900 (net realized FX loss from USD invoices received)</p>
+</li>
+</ol>
+<hr>
+<h2 id="5-4-management-reporting-snapshot">5.4 Management Reporting Snapshot</h2>
+<p>Before presenting AR or AP Aging, explain that each public report is a current
+snapshot in the tenant&#39;s base currency. Partial receipts and payments reduce
+the posted control-account balance, the total ties to <code>1200 Accounts Receivable</code> or <code>2000 Accounts Payable</code>, and <strong>Unallocated GL</strong> preserves any
+control-account amount that cannot be matched to an invoice or bill. A close
+package instead calculates its aging as of the selected period end.</p>
+<ol>
+<li><p><strong>Reports</strong> → <strong>Project P&amp;L</strong> → sort by Gross Margin descending:</p>
+<ul>
+<li>Thornton Series A: 92% (exceptional)</li>
+<li>Nexus CFO Advisory: 57% (good)</li>
+<li>Brightwater Annual Accounts: 66% (good)</li>
+<li>Brightwater Payroll: 38% (volume margin, acceptable)</li>
+</ul>
+</li>
+<li><p><strong>Reports</strong> → <strong>Utilization</strong> → June:</p>
+<ul>
+<li>Sarah Williams: 87% billable (high — approaching burnout threshold)</li>
+<li>Priya Sharma: 71% billable (healthy)</li>
+<li>Alice Chen: 64% billable (below target — investigate)</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, Marcus types:</p>
+<blockquote>
+<p><em>&quot;Alice is at 64% utilisation in June. Which clients have unbilled WIP tied to Alice?&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous response:</p>
+<blockquote>
+<p><em>&quot;Alice has 22 unbilled hours across 3 projects: Brightwater Management Accounts (8h, £2,240), Nexus CFO Advisory (9h, £3,150), Alderton Trust 1985 (5h, £1,200). Total WIP: £6,590. Brightwater is past month-end — recommend billing today.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Marcus approves the Brightwater billing run from the chat response card.</p>
+</li>
+</ol>
+<hr>
+<h2 id="5-5-financial-statement-package-and-year-end-close">5.5 Financial Statement Package and Year-End Close</h2>
+<p><strong>What to show</strong>: Aethos Nous generates a statement package from reports, not from hallucinated numbers, and year-end close remains approval-gated.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Give me the June 2026 month-end management pack. Explain the major variances versus May 2026, show revenue, expenses, project margin, utilization, AR/AP movement, journals, close task blockers, draft journals, and remaining close blockers. Do not post journals or lock the period.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check the management-pack response:</p>
+<ul>
+<li>Periods are normalized to June 2026 and May 2026 even if the prompt uses business language</li>
+<li>Revenue, expenses, net income, cash movement, and balance-sheet totals cite report data</li>
+<li>AR/AP movement is shown separately from open AR/AP aging</li>
+<li>Project margin and utilization highlights identify the source project or employee rows</li>
+<li>Draft journals, locked-period state, missing close tasks, pending reviews, and close blockers are listed without mutating records</li>
+</ul>
+</li>
+<li><p>Ask a drilldown follow-up:</p>
+<blockquote>
+<p><em>&quot;Drill into the draft journals and close task blockers for June 2026. Which ones block close, who owns them, and what should happen next?&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Verify:</p>
+<ul>
+<li>Aethos Nous keeps the answer read-only</li>
+<li>No Inbox task, journal, or period lock is created by this readback</li>
+<li>The blocker list agrees to <strong>Accounting</strong> → <strong>Journal Entries</strong> and the close package</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Generate the financial statement package for June 2026 with Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, Statutory Pack, close-readiness warnings, and evidence-backed management commentary. Compare it to May 2026 and show the variances.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check the response:</p>
+<ul>
+<li>Numbers match Reports tabs</li>
+<li>Variances cite report rows and close-readiness evidence</li>
+<li>Missing prerequisites remain visible instead of hidden</li>
+<li>No records are mutated by statement generation</li>
+</ul>
+</li>
+<li><p>In <strong>Reports</strong>, open:</p>
+<ul>
+<li>Trial Balance</li>
+<li>Balance Sheet</li>
+<li>Income Statement</li>
+<li>Cash Flow</li>
+<li>Statutory Pack</li>
+</ul>
+<p>Use <strong>From month = 2026-06</strong> and <strong>To month = 2026-06</strong> for the monthly
+package. To exercise the implemented range control, use From 2026-04 and To
+2026-06: Income Statement, Cash Flow, and Statutory Pack receive the full
+inclusive range, while Balance Sheet and retained earnings are as of June.
+Capture the actual network parameters and tie-out before calling this Q2 a
+live PASS; the guide itself is not that evidence.</p>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&amp;L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Inbox</strong> → review the year-end close task:</p>
+<ul>
+<li>Retained earnings account: <code>3000 Retained Earnings</code></li>
+<li>Posting preview shows revenue and expense close-out lines</li>
+<li>Duplicate close and locked-year risks are listed</li>
+<li>Current-vs-prior year commentary is included</li>
+</ul>
+</li>
+<li><p>Approve as Owner/Admin → go to <strong>Accounting</strong>:</p>
+</li>
+</ol>
+<ul>
+<li>A <code>year_end_close</code> journal appears</li>
+<li>P&amp;L accounts are closed for the fiscal year</li>
+<li>Duplicate year-end close attempt is blocked with a readable error</li>
+</ul>
+<p><strong>Talking point</strong>: <em>&quot;Management-pack review is read-only and source-backed. Statement generation is deterministic. Year-end close is not an AI text answer; it is a reviewed accounting task that posts through the same guarded journal path.&quot;</em></p>
+<hr>
+<h2 id="5-6-manual-journal-lifecycle-and-r2r-edge-checks">5.6 Manual Journal Lifecycle and R2R Edge Checks</h2>
+<p><strong>What to show</strong>: Manual accounting changes are possible, but every path is
+balanced, reasoned, policy-aware, and reversible through a new entry instead of
+editing history.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review this manual journal proposal for balance, account validity, period lock status, business reason, supporting evidence, approval role, and whether the approver is different from the submitter. Do not post it without Inbox approval.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should summarize the manual-journal review packet:</p>
+<ul>
+<li>Balance check and debit/credit equality</li>
+<li>Account validity for debit and credit lines</li>
+<li>Period lock status</li>
+<li>Business reason and supporting evidence</li>
+<li>Required approval role and whether the approver must be different from the submitter</li>
+<li>Confirmation that the journal is not posted without Inbox approval</li>
+</ul>
+</li>
+<li><p>In <strong>Accounting</strong> → <strong>Journal Entries</strong>, demonstrate:</p>
+<ul>
+<li>A balanced under-threshold manual journal created from the Accounting UI with a business reason posts through the guarded path</li>
+<li>A missing or short reason is rejected with a clear validation message</li>
+<li>An imbalanced journal is rejected and no journal is posted</li>
+<li>A posting date in a locked period is rejected with the period-lock message</li>
+</ul>
+</li>
+<li><p>High-value journal approval:</p>
+<ul>
+<li>Set or show the manual-journal approval threshold in <strong>Settings / Approval Controls</strong></li>
+<li>Submit a high-value balanced journal with a reason</li>
+<li>It creates an Inbox review task instead of posting immediately</li>
+<li>Same-user approval is denied and remains audit-visible</li>
+<li>A different Accounting/Admin approver can approve and post it</li>
+<li>Rejection captures the rejection reason and posts no journal</li>
+</ul>
+</li>
+<li><p>Reversal check:</p>
+<blockquote>
+<p><em>&quot;Prepare a reversal packet for this posted manual journal. Explain why reversal is appropriate, propose an open-period reversal date, show the flipped debit and credit lines, and confirm the reversal will create a new journal rather than editing the original.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Verify:</p>
+<ul>
+<li>Reversal creates a new <code>manual_reversal</code> journal with flipped lines</li>
+<li>The original journal remains immutable</li>
+<li>Attempting to reverse the same original twice is blocked</li>
+<li>Non-manual journals cannot be reversed through the manual-journal path</li>
+<li>Trial Balance and financial statements remain balanced after posting or reversal</li>
+</ul>
+</li>
+<li><p>Multi-currency edge check:</p>
+<ul>
+<li>Foreign-currency manual journal lines store transaction amount, base amount, and FX rate provenance</li>
+<li>If no FX rate exists for the posting date/currency pair, posting is rejected rather than silently guessing</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Manual journals are not a back door. The controller can still make accounting adjustments, but Aethos requires a reason, validates balance and period, routes high-value items to a different approver, and fixes mistakes with reversals rather than edits.&quot;</em></p>
+<hr>
+<hr>
+<h1 id="scenario-6-finance-ops-manager-command-center">SCENARIO 6 — Finance Ops Manager Command Center</h1>
+<blockquote>
+<p><strong>What to show</strong>: A finance department run by AI agents, with humans reviewing exceptions and high-risk actions.</p>
+</blockquote>
+<hr>
+<h2 id="6-1-daily-finance-ops-check-and-reviewed-work-plan">6.1 Daily Finance Ops Check and Reviewed Work Plan</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Run today&#39;s finance ops check for June 2026. Tell me what needs billing, payment, collections, close, and review. Separate read-only findings from actions that need Inbox approval.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous returns sections:</p>
+<ul>
+<li>AR: overdue invoices, collection drafts, paid invoice exceptions</li>
+<li>AP: approved bills due, duplicate or unmatched bills</li>
+<li>WIP: unbilled time and expenses</li>
+<li>Close: readiness blockers and open tasks</li>
+<li>Reports: margin, utilization, action queue exceptions</li>
+<li>Agent activity: failed/skipped runs and pending approvals</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Create the next recommended finance ops work items for June 2026. Create at most five manager-reviewed work items. Route the action plan to Inbox for review. Do not approve invoices, payments, journals, or emails directly.&quot;</em></p>
+</blockquote>
+</li>
+<li><p><strong>Inbox</strong> → approve the Finance Ops action plan.</p>
+</li>
+<li><p>After approval, type:</p>
+<blockquote>
+<p><em>&quot;After I approve the action plan, create the specialist follow-up tasks for the approved Plan Items. Keep final invoices, payments, journals, statements, and emails behind their own approvals.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check:</p>
+<ul>
+<li>Parent action-plan task is approved</li>
+<li>Child Finance Ops action-item tasks appear</li>
+<li>Plan Item approval dispatches specialist workflows such as collections, bill pay, and close prep</li>
+<li>Downstream money/accounting/email actions still require their own approval</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The Finance Ops Manager consolidates AR, AP, WIP, close, and reporting into one daily operating plan. It creates work for the specialist agents, but it does not silently send emails, pay bills, or post journals.&quot;</em></p>
+<hr>
+<h2 id="6-2-scheduled-finance-ops-manager">6.2 Scheduled Finance Ops Manager</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show me the Finance Ops Manager control room. Include the current schedule, next run, latest scheduled run, failed or skipped workflows, open action plans, open Plan Items, stale approval escalations, and operational health. Do not show tool names, traces, logs, context IDs, or raw system details.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous should return:</p>
+<ul>
+<li>Current schedule, cadence, run hour, time horizon, and next run</li>
+<li>Latest scheduled Finance Ops Manager run and status</li>
+<li>Failed or skipped workflows that need review</li>
+<li>Open Finance Ops action plans, Plan Items, and escalation notices waiting in Inbox</li>
+<li>Operational Health status, rate-limit backend, recent failure counts, and alert route</li>
+<li>No raw traces, logs, tool calls, context references, or stack traces</li>
+</ul>
+</li>
+<li><p>Or go to <strong>Settings</strong> → <strong>Agent Autonomy</strong> → Finance Ops Manager Schedule.</p>
+</li>
+<li><p>Configure:</p>
+<ul>
+<li>Cadence: every business morning</li>
+<li>Time: 07:00 UTC</li>
+<li>Creates reviewed action plan in Inbox</li>
+<li>Escalates stale high-risk approvals</li>
+</ul>
+</li>
+<li><p>Check:</p>
+<ul>
+<li><strong>Workflow Runs</strong> → latest scheduled run, status, period, and business summary</li>
+<li><strong>Inbox</strong> → scheduled action plan, Plan Items, and escalation notices awaiting review</li>
+<li><strong>Operational Health</strong> → runtime, table, limiter, failure, workflow, tool, and alert signals</li>
+<li><strong>Reports / Action Queue</strong> → assigned-to-me and all-work queues show owners and SLA chips</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;This is not just chat. It is a scheduled finance-ops manager that wakes up, inspects the business, prepares a work plan, and escalates stale approvals.&quot;</em></p>
+<hr>
+<h1 id="scenario-7-enterprise-controls-audit-and-operations">SCENARIO 7 — Enterprise Controls, Audit, and Operations</h1>
+<blockquote>
+<p><strong>What to show</strong>: The platform is enterprise-ready because agents are governed, traceable, and role-aware.</p>
+</blockquote>
+<hr>
+<h2 id="7-0-tenant-user-administration-and-independent-erp-login">7.0 Tenant User Administration and Independent ERP Login</h2>
+<p><strong>What to show</strong>: Tenant owners can invite finance operators into the main
+Aethos app, assign an ERP role, and audit access changes without direct database
+work.</p>
+<ol>
+<li><p>Log in as Marcus or another owner/admin user.</p>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Security Roles</strong>.</p>
+</li>
+<li><p>Show all 22 seeded roles and their current legacy enforcement projection:</p>
+<ul>
+<li><code>owner</code>: Tenant Owner</li>
+<li><code>admin</code>: Tenant Admin, CFO, Finance Controller, GL Accountant, Close
+Manager, AI Operations Admin</li>
+<li><code>manager</code>: Finance Ops Manager, Procurement Manager, AP Manager, AP Clerk,
+AR Manager, Billing Specialist, Collections Specialist, Engagement Manager,
+Resource Manager</li>
+<li><code>approver</code>: Finance Approver</li>
+<li><code>member</code>: Finance Operator, Buyer / Requester</li>
+<li><code>auditor</code>: Auditor</li>
+<li><code>viewer</code>: Executive Viewer</li>
+<li><code>employee</code>: Timesheet Employee</li>
+</ul>
+<p>There is no Platform Administrator role in this catalogue. Platform support
+and control-plane administration require a separately designed and tested
+boundary; they must not be represented by Tenant Owner.</p>
+</li>
+<li><p>Optional tenant-admin check: create a disposable role named
+<strong>Demo Billing Reviewer</strong> from seeded duties such as Finance read access,
+Billing management, and Manager-threshold approval. Confirm the role appears
+as tenant-created, not system-created.</p>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Tenant Users</strong>.</p>
+</li>
+<li><p>Create four demo ERP users:</p>
+<ul>
+<li>Finance Ops Manager: security role <code>Finance Ops Manager</code></li>
+<li>Finance Approver: security role <code>Finance Approver</code></li>
+<li>Finance Controller: security role <code>Finance Controller</code></li>
+<li>Read-only Auditor: security role <code>Auditor</code></li>
+</ul>
+<p>This four-person switch is only the short demo. The production launch run
+must create and independently test all 22 configured roles.</p>
+</li>
+<li><p>For each user, set or capture the initial password. Confirm the user row
+shows initial password change required.</p>
+</li>
+<li><p>After invite, show the generated temporary password or set-password link.
+Store it only in the secure demo credential file or your password manager,
+not in shared screenshots.</p>
+</li>
+<li><p>Continue in the tenant&#39;s same recorded browser context. Explicitly sign out,
+then log in sequentially as each invited user at the main Aethos app, not the
+timesheet portal. Confirm the first screen is Account/Profile and that
+changing the initial password is required before normal app navigation.</p>
+</li>
+<li><p>Validate the Finance Ops Manager can:</p>
+</li>
+</ol>
+<ul>
+<li>Open <strong>Aethos Nous</strong></li>
+<li>Open <strong>Reports</strong></li>
+<li>Inspect permitted Inbox and finance records</li>
+<li>Create permitted operational records such as clients, engagements, projects,
+bills, procurement documents, and draft invoices</li>
+<li>Ask a role-aware access prompt:<blockquote>
+<p><em>&quot;Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.&quot;</em></p>
+</blockquote>
+</li>
+</ul>
+<ol start="11">
+<li>Validate the Finance Approver:</li>
+</ol>
+<ul>
+<li>Can approve or reject manager-threshold Inbox/procurement review work</li>
+<li>Cannot create clients, engagements, bills, procurement documents, journals,
+or tenant settings</li>
+<li>Cannot directly approve payment batches because the seeded role lacks
+<code>bill_payments.approve</code>, and cannot approve Admin/Owner-threshold
+accounting or high-risk AI work</li>
+</ul>
+<ol start="12">
+<li>Validate the Finance Controller:</li>
+</ol>
+<ul>
+<li>Can inspect accounting, journals, close, statements, and audit evidence</li>
+<li>Can approve admin-threshold accounting work where policy allows</li>
+<li>Cannot grant Tenant Owner authority</li>
+</ul>
+<ol start="13">
+<li>Validate the Auditor:</li>
+</ol>
+<ul>
+<li>Can inspect reports, source documents, record details, Inbox history, and
+decision trails</li>
+<li>Cannot approve, reject, create, post, pay, send, lock, or change settings</li>
+</ul>
+<ol start="14">
+<li>Switch back to Marcus and update the invited user:</li>
+</ol>
+<ul>
+<li>Change display name or role where allowed</li>
+<li>Confirm the Settings audit trail records the actor, target user, event,
+prior role codes, and new role codes</li>
+<li>Deactivate a disposable test user and confirm they can no longer access
+the tenant</li>
+</ul>
+<ol start="15">
+<li>Explain the current role model:</li>
+</ol>
+<ul>
+<li>Main ERP users are assigned seeded security roles made of duties and
+privileges</li>
+<li>Each assignment projects to one legacy <code>tenant_users.role</code>; many API
+endpoints still enforce that legacy hierarchy rather than an individual
+catalogue privilege</li>
+<li>Invoice, bill, payment-batch, and procurement endpoints now enforce their
+named catalogue privileges; procurement approval also preserves amount
+thresholds and rejects requester self-approval</li>
+<li>Distinct catalogue roles with the same projection can therefore have the
+same effective behavior on legacy-gated routes; demonstrate the actual
+positive and negative result, not the role label alone</li>
+<li>Tenant Admins can create users, create tenant roles from seeded duties,
+assign non-owner roles, and set initial passwords</li>
+<li>Only Tenant Owners can grant Tenant Owner authority</li>
+<li>Timesheet-only employees are invited and tested separately through the
+People/timesheet flow</li>
+<li>Users cannot demote or deactivate themselves</li>
+</ul>
+<p><strong>Talking point</strong>: <em>&quot;Aethos can run finance work through AI agents, but access is still tenant-scoped, role-assigned, privilege-driven, and auditable. Tenant Admins manage users and roles; the finance manager operates; the finance approver reviews; the auditor inspects evidence; and owner-level approvals stay with the owner.&quot;</em></p>
+<hr>
+<h2 id="7-0a-ai-inference-runtime-and-model-routing">7.0A AI Inference Runtime and Model Routing</h2>
+<p><strong>What to show</strong>: Tenant admins can configure the AI runtime and model routing
+without editing deployment files.</p>
+<ol>
+<li><p>Log in as Marcus or another Tenant Admin / Owner.</p>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Agent Autonomy</strong> → <strong>AI Inference Settings</strong>.</p>
+</li>
+<li><p>Show the default OpenRouter chain:</p>
+<ul>
+<li>Primary: <code>google/gemma-4-31b-it:free</code></li>
+<li>Free router: <code>openrouter/free</code></li>
+<li>Fallback: <code>anthropic/claude-haiku-4.5</code></li>
+</ul>
+</li>
+<li><p>Explain the runtime selector:</p>
+<ul>
+<li><strong>Advanced Nous powered by Hermes</strong> keeps conversation orchestration and
+memory in Hermes</li>
+<li><strong>Aethos Basic AI</strong> uses the built-in Aethos runtime directly</li>
+</ul>
+</li>
+<li><p>Explain the response routing controls:</p>
+<ul>
+<li><strong>Semantic router</strong> lets Nous classify business-language prompts into
+finance intents with confidence before calling the model runtime</li>
+<li><strong>Minimum confidence</strong> controls when a semantic answer is allowed. Keep the
+demo default at <code>0.72</code></li>
+<li><strong>Response order</strong> defaults to <code>Semantic router, then configured runtime</code>.
+If the prompt is low-confidence, Nous falls back to Hermes or Aethos Basic</li>
+</ul>
+</li>
+<li><p>Save the settings and refresh the card. The effective model-chain chips
+should match the selected routing order.</p>
+</li>
+<li><p>Note the current boundary: Aethos Basic, Nous fallback, and tenant-scoped
+document/reporting agents use the tenant model chain. Hermes uses the mounted
+Nous profile for its primary model until dynamic per-tenant Hermes model
+switching is added.</p>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The tenant admin can decide whether Nous first uses Aethos&#39; semantic finance router or goes straight to the configured model runtime. The semantic router is confidence-gated and still routes controlled finance actions through Inbox.&quot;</em></p>
+<hr>
+<h2 id="7-1-approval-policy-personas-and-denied-actions">7.1 Approval Policy, Personas, and Denied Actions</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;What am I allowed to approve, what requires Owner approval, and which Inbox items are high risk? Include my finance personas, effective thresholds, pending high-risk tasks, and why each item needs review. Do not show tool names, policy reason codes, raw payloads, traces, logs, or context IDs.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Aethos Nous should return:</p>
+<ul>
+<li>Current tenant role and matching finance personas</li>
+<li>Finance Approver/Manager/Admin/Owner approval thresholds in business language</li>
+<li>Which policy rules the current user can approve</li>
+<li>Pending high-risk Inbox tasks, required approver role, and reason for review</li>
+<li>Tasks requiring a higher role than the current user</li>
+<li>Denied-action explanations without raw payloads or internal reason codes</li>
+</ul>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Approval Controls</strong>:</p>
+<ul>
+<li>Manual journal threshold</li>
+<li>Bill-pay approval role</li>
+<li>Accounting approval role</li>
+<li>Lower-risk draft, money-in, and external-send categories can use Finance
+Approver; money-out, accounting, and high-risk AI stay Admin/Owner gated</li>
+<li>Finance role personas catalog</li>
+</ul>
+</li>
+<li><p>In the same recorded browser context, sign out and log in as Finance Approver:</p>
+<blockquote>
+<p><em>&quot;What can I approve now, what requires Admin or Owner, and which actions are intentionally blocked for the Finance Approver role?&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check:</p>
+<ul>
+<li>Manager-threshold Inbox/procurement reviews can be approved or rejected</li>
+<li>Create/edit/post/pay/send/settings actions remain blocked</li>
+<li>Admin/Owner-threshold money-out, accounting, and high-risk AI work remains blocked</li>
+</ul>
+</li>
+<li><p>In that same context, sign out and log in as Auditor:</p>
+<blockquote>
+<p><em>&quot;As a read-only auditor, show me the records I can inspect for this bill-payment batch and which actions are intentionally blocked for my role.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check:</p>
+<ul>
+<li>Auditor can inspect permitted records</li>
+<li>Mutation buttons are disabled or absent</li>
+<li>Direct mutation API attempts fail cleanly</li>
+<li>Same-user high-value manual-journal approval is denied and audit-visible</li>
+<li>Nous does not expose tool calls, policy reason codes, raw task payloads, traces, logs, or context IDs</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Aethos lets AI agents do the routine work, but approval policy and role controls decide what can actually mutate finance records.&quot;</em></p>
+<hr>
+<h2 id="7-2-decision-trail-and-agent-run-ledger">7.2 Decision Trail and Agent Run Ledger</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return the latest relevant Inbox task or decision event with:</p>
+<ul>
+<li>Task title, kind, status, and priority</li>
+<li>Actor role and decision type when a decision exists</li>
+<li>Timestamp from the decision event or task update</li>
+<li>Safe before/after review summary</li>
+<li>Linked source entity and recent journal context</li>
+<li>Segregation-of-duties note for manual journal approvals</li>
+</ul>
+</li>
+<li><p>Open a bill created from the Brightwater invoice:</p>
+<ul>
+<li>Source document link</li>
+<li>Vendor match evidence</li>
+<li>Reviewer edits</li>
+<li>Duplicate-review reason</li>
+<li>GL coding evidence</li>
+<li>Payment eligibility</li>
+</ul>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Agent Runs</strong>:</p>
+<ul>
+<li>Filter by recent Aethos Nous run</li>
+<li>Open run details</li>
+<li>Show actions, evidence snapshots, and source records</li>
+<li>Use Validate Replay for supported read-only steps</li>
+<li>For posting, payment, or email steps, show the planned operator action instead of replaying the side effect</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Every AI-assisted decision has a record: input, output, reviewer, before/after payload, and action evidence. Replay is safe by design; it validates or plans side effects instead of firing them again.&quot;</em></p>
+<hr>
+<h2 id="7-3-operational-health">7.3 Operational Health</h2>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review operational health for this tenant. Summarize runtime status, table checks, rate-limit backend, request failures, background failures, agent/tool/workflow failures, and routed alerts without exposing secrets or tokens.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return safe platform-owned health context:</p>
+<ul>
+<li>Runtime and Nous runtime</li>
+<li>Langfuse observability configuration status, not raw traces</li>
+<li>Rate-limit backend and public abuse-path indicators</li>
+<li>Background worker failure spikes</li>
+<li>Agent, tool, and workflow failure spikes</li>
+<li>Degraded service flags and routed-alert metadata</li>
+<li>Explicit safety statement that raw logs, traces, stack traces, context IDs,
+and secrets are not exposed</li>
+</ul>
+</li>
+<li><p>Go to <strong>Settings</strong> → <strong>Operational Health</strong>:</p>
+<ul>
+<li>Runtime and table checks</li>
+<li>Rate-limit backend state</li>
+<li>Request/background failure summaries</li>
+<li>Agent/tool/workflow failures</li>
+<li>Alert routing</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Show which operational alerts would route to the runbook or webhook today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Check:</p>
+<ul>
+<li>No secrets, raw JWTs, public invoice tokens, document text, or request payloads appear</li>
+<li>Alerts route to runbook/webhook metadata only</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Enterprise readiness is not just features. It is knowing when the system is unhealthy, protecting public endpoints, and giving operators safe signals without leaking sensitive data.&quot;</em></p>
+<hr>
+<h2 id="7-4-documents-source-evidence-and-record-scoped-audit">7.4 Documents, Source Evidence, and Record-Scoped Audit</h2>
+<p><strong>What to show</strong>: Uploaded files are not just chat attachments. They become
+source evidence tied to Inbox decisions and materialized business records.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Find source documents connected to this bill, invoice, engagement, or close task. Summarize extraction status, Inbox decision outcome, and the materialized record it supports.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Go to <strong>Documents</strong>:</p>
+<ul>
+<li>Show the generated demo files in <code>docs/demo-assets/</code></li>
+<li>Engagement letter → extracted engagement draft → approved engagement, first project, linked rate card</li>
+<li>Vendor invoice → extracted bill draft → reviewed bill → payment batch</li>
+<li>Dividend notice → manual journal packet → approved posted journal</li>
+<li>COSEC instruction → engagement/project or billing event evidence</li>
+</ul>
+</li>
+<li><p>Open a source document link from an Inbox task or business record:</p>
+<ul>
+<li>The file opens from the source-document surface</li>
+<li>Extraction status, confidence, and document type are visible</li>
+<li>Deleted or unauthorized document access follows normal tenant/RBAC controls</li>
+</ul>
+</li>
+<li><p>Record-scoped audit check:</p>
+<ul>
+<li>Open the related bill, invoice, engagement, journal, or close record</li>
+<li>Confirm the decision timeline shows the Inbox task, actor role, decision type, timestamp, safe before/after summary, and event hash</li>
+<li>Viewer/auditor can inspect permitted evidence without gaining mutation access</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The PDF is evidence, not a one-off prompt input. Aethos carries source-document lineage from upload to Inbox decision to the business record and audit timeline.&quot;</em></p>
+<hr>
+<h2 id="7-5-configuration-telemetry-and-abuse-path-checks">7.5 Configuration, Telemetry, and Abuse-Path Checks</h2>
+<p><strong>What to show</strong>: Enterprise operation includes configuration surfaces, safe
+telemetry, and abuse-path behavior, not only happy-path finance workflows.</p>
+<ol>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review configuration and telemetry readiness. Show approval controls, scheduled Finance Ops Manager settings, Nous runtime, Langfuse observability status, operational alerts, and any public abuse-path controls that need attention.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Nous should return:</p>
+<ul>
+<li>Approval controls and effective thresholds</li>
+<li>Scheduled Finance Ops Manager cadence, escalation windows, last run, open scheduled plans, and approval boundary</li>
+<li>Nous runtime mode and whether Hermes/basic fallback is configured</li>
+<li>Langfuse observability configuration status without raw traces</li>
+<li>Operational alerts and public abuse-path controls such as rate limits and sanitized public paths</li>
+</ul>
+</li>
+<li><p>In <strong>Settings</strong>, show the implemented configuration surfaces:</p>
+<ul>
+<li><strong>Services</strong>: active service catalogue used by engagements and invoice lines</li>
+<li><strong>Tax Rates</strong>: market tax setup used by invoices and bills</li>
+<li><strong>Collections Policy</strong>: reminder cadence and tone</li>
+<li><strong>Agent Autonomy</strong>: scheduled Finance Ops Manager cadence and escalation settings</li>
+<li><strong>Approval Controls</strong>: policy matrix and finance persona catalog</li>
+<li><strong>Agent Runs</strong> and <strong>Workflow Runs</strong>: run evidence, replay-safe validation, and failures</li>
+<li><strong>Operational Health</strong>: runtime shape, table checks, failure counters, limiter state, and routed alerts</li>
+</ul>
+</li>
+<li><p>In <strong>Aethos Nous</strong>, type:</p>
+<blockquote>
+<p><em>&quot;Review agent activity and workflow telemetry for this tenant. Highlight failures, skipped actions, pending Inbox approvals, stale work, and anything that needs escalation.&quot;</em></p>
+</blockquote>
+</li>
+<li><p>Abuse-path checks to explain:</p>
+<ul>
+<li>Signup and public invoice endpoints are rate-limited</li>
+<li>Repeated public invoice abuse records sanitized paths, not raw public tokens</li>
+<li>Unauthorized tenant-health access is denied by RBAC</li>
+<li>Distributed rate-limit backend state is visible without exposing hashed subjects or credentials</li>
+<li>If the distributed limiter backend is unavailable, the system reports the fallback/deny-safe state in operational health</li>
+<li>Routed alerts expose channel/runbook metadata only, not webhook secrets or customer payloads</li>
+</ul>
+</li>
+<li><p>Operator checklist:</p>
+<ul>
+<li>Health output is safe to paste into a support ticket</li>
+<li>No raw JWTs, public invoice tokens, bank details, API keys, document text, or customer payload snapshots are shown</li>
+<li>Agent/tool/workflow failure counts are visible enough to triage without leaking data</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The same platform that lets AI run finance work also shows operators when automation is degraded, abusive, or waiting on review. That is the difference between a demo bot and an enterprise operating system.&quot;</em></p>
+<hr>
+<h1 id="demo-closing-the-agentic-difference">DEMO CLOSING: The Agentic Difference</h1>
+<h2 id="what-meridian-39-s-team-doesn-39-t-do-anymore">What Meridian&#39;s team doesn&#39;t do anymore</h2>
+<table>
+<thead>
+<tr>
+<th>Old way (before Aethos)</th>
+<th>New way</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Type engagement terms from PDF into billing software</td>
+<td>Drop PDF → AI extracts client, engagement, first project, and rate card → one Inbox approval</td>
+</tr>
+<tr>
+<td>Send monthly retainer invoices manually on 1st</td>
+<td>Aethos Nous or the scheduled Finance Ops Manager prepares due invoices → Inbox approval before send</td>
+</tr>
+<tr>
+<td>Spreadsheet for subcontractor invoices received</td>
+<td>Upload invoice → vendor match, duplicate guard, GL coding, bill approval, and bill-pay batch</td>
+</tr>
+<tr>
+<td>Chase clients with standard email templates</td>
+<td>Collections drafts personalised reminders based on client history → Inbox approval before send</td>
+</tr>
+<tr>
+<td>Pull timesheets from 3 systems to calculate WIP</td>
+<td>Time and WIP are live; Aethos Nous recommends what to bill and why</td>
+</tr>
+<tr>
+<td>Month-end: 3-day close spreadsheet checklist</td>
+<td>AI close prep creates reviewed tasks, close package evidence, and reasoned overrides</td>
+</tr>
+<tr>
+<td>FX conversion done manually in Excel</td>
+<td>FX rates, base amounts, and rate provenance are stored on payment and journal lines</td>
+</tr>
+<tr>
+<td>Partner calls to ask &quot;did Brightwater pay?&quot;</td>
+<td>Finance Ops Manager flags AR, AP, WIP, close, and approval blockers each day</td>
+</tr>
+<tr>
+<td>Teach users hidden commands</td>
+<td>Prompt library and demo guide give business-language prompts users can reuse</td>
+</tr>
+</tbody></table>
+<h2 id="the-key-numbers-for-this-demo">The key numbers for this demo</h2>
+<ul>
+<li><strong>4 clients</strong> | <strong>£640K+ annual fees</strong> | <strong>7 service lines</strong> | <strong>3 billing models</strong></li>
+<li><strong>4 currencies</strong> (GBP, USD, SGD, EUR)</li>
+<li><strong>One AI Finance Ops Manager</strong> coordinating specialist AR, AP, WIP, close, reporting, and controls workflows</li>
+<li><strong>Approval gates</strong> for invoice sending, bill payment, high-value journals, year-end close, and external emails</li>
+<li><strong>One Inbox</strong>, <strong>Agent Run Ledger</strong>, and <strong>Workflow Runs</strong> for human judgment and audit evidence</li>
+<li><strong>Prompt library</strong> plus scenario guide using real business prompts instead of internal tool names</li>
+</ul>
+<hr>
+<h2 id="objection-handlers">Objection Handlers</h2>
+<p><strong>&quot;We already have Xero/QBO — why do we need this?&quot;</strong></p>
+<blockquote>
+<p>Xero tells you what happened. Aethos coordinates the work: engagement terms, billing rules, WIP, AP, close, approvals, and evidence. The AI prepares the action; Inbox controls what is sent, posted, paid, or emailed.</p>
+</blockquote>
+<p><strong>&quot;Our clients have complex requirements — can AI handle that?&quot;</strong></p>
+<blockquote>
+<p>AI extracts and proposes. Humans approve. The AI doesn&#39;t post a £106,500 invoice without the partner confirming. Complexity is handled at the engagement setup stage; once set, billing runs correctly every time.</p>
+</blockquote>
+<p><strong>&quot;What if the AI makes a mistake?&quot;</strong></p>
+<blockquote>
+<p>Every AI suggestion has a confidence score, source evidence, Inbox decision history, and Agent Run Ledger entry. Low-confidence extraction is flagged for review. Accounting actions pass through balance checks, period-lock checks, approval policy, and same-user approval denial.</p>
+</blockquote>
+<p><strong>&quot;Do users need to know tool names?&quot;</strong></p>
+<blockquote>
+<p>No. Users prompt in business language: &quot;prepare bill pay&quot;, &quot;run close readiness&quot;, &quot;generate financial statements&quot;, &quot;show the decision trail&quot;. Aethos Nous infers the workflow. Tool names are for engineering and QA proof, not operator training.</p>
+</blockquote>
+<p><strong>&quot;Is this enterprise-ready enough for finance operations?&quot;</strong></p>
+<blockquote>
+<p>The demo shows role-aware approvals, read-only auditor access, decision trails, replay-safe run evidence, operational health, rate-limit status, and safe alert routing. The current model is AI-led operations with explicit controls around money, journals, statements, and external communications.</p>
+</blockquote>
+<p><strong>&quot;What about GDPR / data privacy for our clients?&quot;</strong></p>
+<blockquote>
+<p>Structured financial and government identifiers — bank accounts/IBAN, tax IDs,
+card numbers, Singapore NRIC/FIN, phone, and email — are redacted before any
+text is sent to an external AI model <em>and</em> before it is written to logs or
+traces (deterministic regex at both boundaries, exception paths included).
+Person and place <strong>names</strong> are additionally masked on the pre-model document
+path <strong>where the optional NER model is enabled</strong> in that environment; without
+it, name masking is not guaranteed, so present name/address redaction as
+environment-dependent, not universal. Tenant access and source-document
+permissions are separate controls. See <code>docs/security/pii-masking-policy.md</code>.
+Still use fictional or contractually approved data in the demo and review the
+extracted proposal before posting.</p>
+</blockquote>
+<p><strong>&quot;We do payroll — can this handle PAYE, RTI?&quot;</strong></p>
+<blockquote>
+<p>Payroll in v1 handles the billing and time-tracking side — what you charge clients for payroll services, not the payroll bureau processing itself. The payroll processing integrations (Sage, Brightpay, Xero Payroll) are on the roadmap.</p>
+</blockquote>
+<hr>
+<h2 id="appendix-sample-files-for-demo">Appendix: Sample Files for Demo</h2>
+<p>Generated demo PDFs are in <code>docs/demo-assets/</code>. Regenerate them with:</p>
+<pre><code class="language-bash">python3 scripts/generate_demo_assets.py
+</code></pre>
+<ul>
+<li><code>nexus_engagement_letter.pdf</code> — Multi-page engagement letter with mixed billing terms</li>
+<li><code>brightwater_subcontractor_invoice.pdf</code> — Forster &amp; Reid invoice, UK VAT number</li>
+<li><code>alderton_sgd_dividend_notice.pdf</code> — Singapore dividend income statement in SGD</li>
+<li><code>thornton_cosec_instruction.pdf</code> — New director appointment instruction letter</li>
+</ul>
+<blockquote>
+<p><strong>Tip for demos</strong>: Keep the mode-0600 credential manifest ready, but perform role changes by explicit sign-out/sign-in in one continuous recorded browser context per tenant. This preserves a single auditable recording while showing that the manager operates, the approver decides manager-threshold reviews, the controller handles accounting controls, the auditor inspects evidence only, and Marcus keeps owner-only settings and approvals.</p>
+</blockquote>
