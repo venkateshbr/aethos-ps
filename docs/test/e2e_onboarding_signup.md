@@ -39,6 +39,15 @@ executable evidence; absent mappings and browser-blocked flows are not PASS.
 | 2 | Visitor | Clicks "Get started" | `/signup` page |
 | 3 | Visitor | Enters email, password, tenant name, country | POST `/api/v1/auth/signup` creates/confirms the auth user, tenant (`provisioning`/subscription `incomplete`), owner membership plus Tenant Owner assignment, Stripe customer, and SetupIntent; frontend signs the owner in before plan/card |
 
+### §1.1a Public guides and tutorials
+
+An unauthenticated visitor can discover the **User guides & tutorials** region
+on `/`, open `/guides`, filter the library, and read each published guide at
+`/guides/:slug`. The individual guide page must render the generated HTML inside
+the Aethos shell, retain keyboard-visible navigation, and avoid horizontal page
+overflow at a 390px viewport. Executable evidence:
+`frontend/e2e/guides.spec.ts`.
+
 ### §1.2 Plan selection and trial subscription
 
 | # | Actor | Action | System effect |
@@ -168,6 +177,7 @@ The formerly mapped `backend/tests/e2e/test_onboarding_signup.py` and
 | --- | --- |
 | `frontend/e2e/00-signup.spec.ts` | One visible-browser three-page happy path against a configurable host; not Connect, recovery, billing management, edge matrix, or first invoice. |
 | `frontend/e2e/landing.spec.ts` | Landing/signup navigation smoke. |
+| `frontend/e2e/guides.spec.ts` | Public homepage discovery, library search, formatted guide navigation, and narrow-viewport proof. |
 | `backend/tests/api/test_signup_and_billing.py` | Signup validation, SetupIntent, and price-catalogue integration; no complete start-trial lifecycle test. |
 | `backend/tests/api/test_stripe_connect.py` | Bounded Connect API proof; does not prove the missing Angular return route. |
 | `tests/e2e-real/step1-real-signup.js` | Legacy/supplemental step-one script, not the current complete browser workflow. |

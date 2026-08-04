@@ -1,0 +1,305 @@
+<h1 id="aethos-demo-guide">Aethos — Demo Guide</h1>
+<blockquote>
+<p><strong>Archived v1 guide.</strong> This document is retained as historical demo evidence
+and is not the current product walkthrough. Routes, roles, privacy wording,
+and several workflows below are stale. Use
+<a href="/guides/scenario-demo-guide-v2"><code>DEMO_GUIDE_v2.md</code></a> for the maintained guide; verify every
+production claim against the current launch-readiness audit before presenting
+it as live functionality.</p>
+</blockquote>
+<blockquote>
+<p><strong>Version</strong>: 1.0 · <strong>Date</strong>: 2026-06-20
+<strong>Purpose</strong>: Walk a prospect through the Aethos PS platform in ~35 minutes
+<strong>Audience</strong>: Firm owners, senior accountants, PS operations leads</p>
+</blockquote>
+<hr>
+<h2 id="before-you-start">Before You Start</h2>
+<h3 id="setup-checklist">Setup Checklist</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Backend running: <code>cd backend &amp;&amp; uv run uvicorn app.main:app --reload --port 8011</code></li>
+<li><input disabled="" type="checkbox"> Frontend running: <code>cd frontend &amp;&amp; ng serve --port 4201</code></li>
+<li><input disabled="" type="checkbox"> Demo data seeded: <code>cd backend &amp;&amp; uv run python -m scripts.seed_demo --tenant-id &lt;your-demo-tenant-id&gt; --reset</code></li>
+<li><input disabled="" type="checkbox"> Browser open at <code>http://localhost:4201</code></li>
+<li><input disabled="" type="checkbox"> Dark theme visible (Aethos dark slate — should be default)</li>
+<li><input disabled="" type="checkbox"> Sample PDFs ready: <code>docs/demo-assets/sample-engagement-letter.pdf</code> and <code>docs/demo-assets/sample-vendor-invoice.pdf</code></li>
+</ul>
+<h3 id="demo-tenant-state-after-seed-script">Demo Tenant State (after seed script)</h3>
+<ul>
+<li><strong>Contacts</strong>: Acme Corp (customer), Blackwood Consulting (customer, GBP), CloudPeak Systems (both), Apex Staffing (vendor)</li>
+<li><strong>Engagements</strong>: Acme — Digital Transformation (T&amp;M, USD), Blackwood — Annual Retainer (GBP £5k/mo)</li>
+<li><strong>Invoices</strong>: INV-TEST-001 ($8,500 paid), INV-TEST-002 (£5,000 sent)</li>
+<li><strong>Bills</strong>: CloudPeak draft (in Inbox), Apex approved (in AP)</li>
+<li><strong>Reports</strong>: All 6 tabs have data</li>
+</ul>
+<hr>
+<h2 id="scenario-a-engagement-to-cash-10-min">Scenario A — Engagement to Cash (10 min)</h2>
+<blockquote>
+<p><strong>Story</strong>: &quot;A new client sends you their engagement letter. Show me how Aethos handles everything from that document to a paid invoice — with minimal manual entry.&quot;</p>
+</blockquote>
+<h3 id="a1-drop-the-engagement-letter-2-min">A1 — Drop the Engagement Letter (2 min)</h3>
+<ol>
+<li>Open <strong>Copilot</strong> (home screen — <code>/copilot</code>)</li>
+<li>Click the <strong>paperclip/upload icon</strong> in the chat bar</li>
+<li>Drop <code>sample-engagement-letter.pdf</code></li>
+<li>Watch the streaming response: <em>&quot;Extracting engagement details...&quot;</em> → <strong>confidence chip</strong> appears</li>
+<li>An <strong>EngagementDraftCard</strong> appears in chat:<ul>
+<li>Client name, billing arrangement, currency, total value, start/end dates</li>
+<li>Confidence score (e.g. 94%) in a colored chip</li>
+<li><strong>Approve / Edit / Reject</strong> buttons</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The AI read the PDF, pulled out the key commercial terms, and is asking for your approval before creating anything. You can edit any field before approving.&quot;</em></p>
+<h3 id="a2-approve-from-inbox-1-min">A2 — Approve from Inbox (1 min)</h3>
+<ol>
+<li>Navigate to <strong>Inbox</strong> (<code>/inbox</code>)</li>
+<li>Show the HITL card for the extracted engagement</li>
+<li>Press <strong>J/K</strong> to navigate, <strong>A</strong> to approve (keyboard-first design)</li>
+<li>Card shows: source document link, confidence chip, all extracted fields</li>
+<li>Approve → toast: <em>&quot;Engagement created&quot;</em></li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Every AI action lands here first. Nothing gets created without your say-so — unless you&#39;ve specifically promoted an agent to auto-execute.&quot;</em></p>
+<h3 id="a3-log-time-via-chat-2-min">A3 — Log Time via Chat (2 min)</h3>
+<ol>
+<li>Go back to <strong>Copilot</strong></li>
+<li>Type: <em>&quot;Log 4 hours on the Acme Digital Transformation project for today, billable&quot;</em></li>
+<li>Watch the tool call execute → <em>&quot;Time entry logged — 4 hrs, Acme Phase 1, $800 billable&quot;</em></li>
+<li>Navigate to <strong>Time Entries</strong> (<code>/time</code>) to confirm it&#39;s there</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Chat is the primary UI. Your consultants don&#39;t need to learn another form — they log time the way they&#39;d type a Slack message.&quot;</em></p>
+<h3 id="a4-run-billing-3-min">A4 — Run Billing (3 min)</h3>
+<ol>
+<li>Go to <strong>Billing Runs</strong> (<code>/billing-runs</code>)</li>
+<li>The seed data has pre-seeded the Acme engagement with time entries</li>
+<li>Select the engagement → review proposed invoice (T&amp;M lines, hours × rate)</li>
+<li>Click <strong>Confirm</strong> → Invoice INV-TEST-001 is drafted</li>
+<li>Navigate to <strong>Invoices</strong> (<code>/invoices</code>) → open INV-TEST-001</li>
+<li>Click <strong>Approve</strong> → then <strong>Send</strong> → Stripe Payment Link is generated</li>
+<li>Show the <strong>public invoice URL</strong> (<code>/p/&lt;token&gt;</code>) — client-facing, branded, Stripe Pay button</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The invoice drafter pulled every billable time entry, calculated the amount, applied tax, and generated a Stripe payment link. Your client clicks Pay — done.&quot;</em></p>
+<h3 id="a5-show-ar-aging-1-min">A5 — Show AR Aging (1 min)</h3>
+<ol>
+<li>Go to <strong>Reports</strong> → <strong>AR Aging</strong> tab</li>
+<li>Point out the INV-TEST-002 (Blackwood, GBP) in the 0-30 bucket</li>
+<li>After payment is recorded on INV-TEST-001, AR clears</li>
+</ol>
+<hr>
+<h2 id="scenario-b-procure-to-pay-8-min">Scenario B — Procure to Pay (8 min)</h2>
+<blockquote>
+<p><strong>Story</strong>: &quot;You receive a vendor invoice from a cloud provider. Show me how the AP process works — with AI handling extraction and the platform managing payment.&quot;</p>
+</blockquote>
+<h3 id="b1-drop-vendor-invoice-2-min">B1 — Drop Vendor Invoice (2 min)</h3>
+<ol>
+<li><strong>Copilot</strong> → upload icon → drop <code>sample-vendor-invoice.pdf</code></li>
+<li>Streaming: <em>&quot;Extracting vendor invoice...&quot;</em></li>
+<li><strong>BillExtractedCard</strong> appears: vendor name, invoice#, line items, amount, due date, <strong>confidence chip</strong></li>
+<li>Also flags duplicate detection: <em>&quot;No duplicate found for this invoice number&quot;</em></li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Same pattern as the engagement letter — AI extracts, confidence score shows how sure it is, you approve or edit. If it&#39;s seen the same invoice# before, it flags it as a potential duplicate.&quot;</em></p>
+<h3 id="b2-approve-the-bill-1-min">B2 — Approve the Bill (1 min)</h3>
+<ol>
+<li>Go to <strong>Inbox</strong> → see the CloudPeak bill card</li>
+<li>Click <strong>Approve</strong> → bill is created in AP, journal auto-posts: <code>DR Expense / CR Accounts Payable</code></li>
+<li>Navigate to <strong>Bills</strong> (<code>/bills</code>) → CloudPeak bill shows as <strong>Approved</strong></li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The moment you approve, the accounting entry is posted automatically — debit expense, credit AP. No separate journal entry step.&quot;</em></p>
+<h3 id="b3-pay-bills-3-min">B3 — Pay Bills (3 min)</h3>
+<ol>
+<li>Go to <strong>Billing Runs</strong> → <strong>Pay Bills</strong> tab</li>
+<li>Seed data shows Apex Staffing bill ($3,600 approved, due in 7 days)</li>
+<li><strong>bill_pay_agent</strong> has already proposed this batch (see it pre-selected)</li>
+<li>Step 1: Select bills (show select-all, total amount)</li>
+<li>Step 2: Review — bank account label, pay date, format (NACHA)</li>
+<li>Step 3: Confirm → <strong>Download NACHA file</strong> button</li>
+<li>Download the file → show the structured payment instruction</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;The agent looks at what&#39;s due in the next 7 days and proposes the batch. High-value bills over $50k require an extra confirmation. You download the NACHA file and upload it to your bank — done.&quot;</em></p>
+<h3 id="b4-show-ap-aging-1-min">B4 — Show AP Aging (1 min)</h3>
+<ol>
+<li><strong>Reports</strong> → <strong>AP Aging</strong> tab</li>
+<li>CloudPeak and Apex visible in the aging buckets</li>
+<li>After batch is marked sent, Apex clears</li>
+</ol>
+<hr>
+<h2 id="scenario-c-record-to-report-8-min">Scenario C — Record to Report (8 min)</h2>
+<blockquote>
+<p><strong>Story</strong>: &quot;Walk me through how the books stay accurate automatically — and how you close a period.&quot;</p>
+</blockquote>
+<h3 id="c1-auto-posted-journals-3-min">C1 — Auto-Posted Journals (3 min)</h3>
+<ol>
+<li>Navigate to <strong>Accounting</strong> → <strong>Journal Entries</strong></li>
+<li>Show the journal entries auto-posted from Scenario A and B:<ul>
+<li><code>invoice_sent</code> → DR Accounts Receivable / CR Revenue</li>
+<li><code>payment_received</code> → DR Bank / CR Accounts Receivable</li>
+<li><code>bill_approved</code> → DR Expense / CR Accounts Payable</li>
+<li><code>bill_paid</code> (when batch is settled) → DR Accounts Payable / CR Bank</li>
+</ul>
+</li>
+<li>Click into one entry → show the balanced lines (DR = CR)</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Every financial event posts a balanced journal entry automatically — triggered by the database, not application code. The accounting guardian validates every entry before it&#39;s posted. You can&#39;t have an unbalanced journal in this system.&quot;</em></p>
+<h3 id="c2-trial-balance-1-min">C2 — Trial Balance (1 min)</h3>
+<ol>
+<li><strong>Reports</strong> → <strong>Trial Balance</strong> tab</li>
+<li>Show all accounts with DR/CR totals</li>
+<li>Green indicator: <em>&quot;✓ Balanced (DR = CR)&quot;</em></li>
+</ol>
+<h3 id="c3-period-lock-2-min">C3 — Period Lock (2 min)</h3>
+<ol>
+<li><strong>Accounting</strong> → <strong>Period Locks</strong></li>
+<li>Lock the previous month (e.g. May 2026)</li>
+<li>Try to post a backdated entry → show 422 error: <em>&quot;Period 2026-05 is locked&quot;</em></li>
+<li>Show reopen button (owner only)</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Period locks prevent backdating — once you close a month, nothing can post into it unless you explicitly reopen it as the owner.&quot;</em></p>
+<h3 id="c4-reports-overview-2-min">C4 — Reports Overview (2 min)</h3>
+<ol>
+<li><strong>Reports</strong> → quickly tab through:<ul>
+<li><strong>AR Aging</strong>: color-coded buckets, total outstanding</li>
+<li><strong>AP Aging</strong>: what we owe</li>
+<li><strong>Project P&amp;L</strong>: revenue vs cost, gross margin per project</li>
+<li><strong>Utilization</strong>: billable % per person</li>
+<li><strong>WIP</strong>: unbilled effort in dollars</li>
+</ul>
+</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;Six management reports, all real-time from the GL. No separate reporting tool — everything is in the same system where the transactions happened.&quot;</em></p>
+<hr>
+<h2 id="scenario-d-agentic-intelligence-5-min">Scenario D — Agentic Intelligence (5 min)</h2>
+<blockquote>
+<p><strong>Story</strong>: &quot;Show me how the AI is working in the background, not just when I ask it to.&quot;</p>
+</blockquote>
+<h3 id="d1-copilot-financial-q-a-2-min">D1 — Copilot Financial Q&amp;A (2 min)</h3>
+<ol>
+<li><strong>Copilot</strong> → type: <em>&quot;Show me WIP across all active projects&quot;</em></li>
+<li>Watch tool call: <code>get_wip()</code> → structured result in chat</li>
+<li>Type: <em>&quot;Which clients owe us money past 60 days?&quot;</em></li>
+<li>Watch: <code>get_ar_aging()</code> → lists overdue invoices with client names and amounts</li>
+</ol>
+<p><strong>Talking point</strong>: <em>&quot;You can ask financial questions in plain English. The agent calls the right report, pulls live data, and gives you a direct answer — not a link to a dashboard.&quot;</em></p>
+<h3 id="d2-inbox-autonomy-promotion-2-min">D2 — Inbox: Autonomy Promotion (2 min)</h3>
+<ol>
+<li><strong>Inbox</strong> → show the autonomy promotion card: <em>&quot;Promote Expense Extractor to L3?&quot;</em></li>
+<li>Show the metrics: approval rate 97%, 47/50 samples, confidence avg 91%</li>
+<li>Explain: <em>&quot;The system has been tracking every approval decision. When an agent meets the thresholds — 95% approval rate over 30+ samples — it surfaces a promotion card. You, as the admin, decide whether to trust it to act automatically.&quot;</em></li>
+<li>Show the accounting_guardian note: <em>&quot;Some agents can never be promoted past L2 — like bill payment. Others, like the accounting guardian, are always L3 by design.&quot;</em></li>
+</ol>
+<h3 id="d3-source-document-links-1-min">D3 — Source Document Links (1 min)</h3>
+<ol>
+<li>Open any HITL card in Inbox</li>
+<li>Click the <strong>source document link</strong> (paperclip icon)</li>
+<li>Show the original PDF in the document viewer</li>
+<li><em>&quot;You can always trace any AI-extracted data back to the original document.&quot;</em></li>
+</ol>
+<hr>
+<h2 id="scenario-e-multi-currency-settings-5-min">Scenario E — Multi-Currency &amp; Settings (5 min)</h2>
+<blockquote>
+<p><strong>Story</strong>: &quot;We work with clients in the UK and Singapore. Show me how Aethos handles multi-currency.&quot;</p>
+</blockquote>
+<h3 id="e1-gbp-engagement-2-min">E1 — GBP Engagement (2 min)</h3>
+<ol>
+<li><strong>Engagements</strong> → open Blackwood Consulting (GBP £5,000/mo retainer)</li>
+<li><strong>Invoices</strong> → INV-TEST-002 → show GBP amount on invoice</li>
+<li><strong>Accounting</strong> → Journal Entries → find the INV-TEST-002 journal</li>
+<li>Show the journal lines: <code>amount = £5,000 GBP</code>, <code>base_amount = $6,350 USD</code> (at current FX rate)</li>
+<li><em>&quot;Journal lines store both the foreign currency amount and the base currency equivalent at the FX rate on the date of posting. The rate is never retroactively changed.&quot;</em></li>
+</ol>
+<h3 id="e2-fx-rates-1-min">E2 — FX Rates (1 min)</h3>
+<ol>
+<li>Mention (or show if exposed): FX rates refresh every day at 8am UTC from Open Exchange Rates</li>
+<li>If a rate is &gt;3 days old, the system warns before posting a multi-currency entry</li>
+</ol>
+<h3 id="e3-settings-2-min">E3 — Settings (2 min)</h3>
+<ol>
+<li><strong>Settings</strong> → <strong>Stripe Connect</strong> → show onboarded state (connected, payouts enabled)</li>
+<li><strong>Settings</strong> → <strong>Autonomy</strong> → per-agent level overview</li>
+<li><strong>Settings</strong> → <strong>Tax Rates</strong> → pre-seeded rates for the firm&#39;s market (UK: VAT 20%/5%/0%)</li>
+<li><strong>Profile</strong> → show firm name, country, plan tier (Starter/Growth/Pro), trial end date</li>
+</ol>
+<hr>
+<h2 id="key-talking-points-use-throughout">Key Talking Points (use throughout)</h2>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>What to Say</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Agent-first</strong></td>
+<td>&quot;We don&#39;t require you to enter data. You drop a document and the agent handles it. Manual entry is always there as a fallback, but it&#39;s not the primary path.&quot;</td>
+</tr>
+<tr>
+<td><strong>HITL by default</strong></td>
+<td>&quot;Every AI action needs your approval by default. You can promote specific agents to auto-execute once you trust their track record.&quot;</td>
+</tr>
+<tr>
+<td><strong>Confidence chips</strong></td>
+<td>&quot;Every AI suggestion has a confidence score. High confidence = green. If it&#39;s amber or red, that&#39;s the system telling you to review carefully.&quot;</td>
+</tr>
+<tr>
+<td><strong>Accounting guardian</strong></td>
+<td>&quot;The accounting engine validates every journal before it posts — balance check, period lock, account validity. You can&#39;t get an unbalanced book.&quot;</td>
+</tr>
+<tr>
+<td><strong>Agentic, not just AI</strong></td>
+<td>&quot;There&#39;s a difference between an AI chatbot and an agentic platform. Agents here have memory, they track their own performance, they suggest when to promote themselves, and they degrade gracefully if the LLM is unavailable.&quot;</td>
+</tr>
+<tr>
+<td><strong>Multi-currency</strong></td>
+<td>&quot;Day-1 support for USD, GBP, SGD, INR, and AUD. FX rates update daily. Every journal stores both the foreign amount and the base-currency equivalent — the rate is locked at posting time.&quot;</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="common-questions">Common Questions</h2>
+<p><strong>Q: What if the AI makes a mistake?</strong></p>
+<blockquote>
+<p>&quot;Every extraction goes through the Inbox for approval before anything is created. You can edit any field before approving. And all AI decisions are logged — corrections feed back into performance tracking.&quot;</p>
+</blockquote>
+<p><strong>Q: Can I still use forms? We have staff who prefer that.</strong></p>
+<blockquote>
+<p>&quot;Yes — every module has a traditional form as a fallback. Chat and document upload are the primary paths, but nothing is removed. You can enter time manually, create invoices from scratch, and post manual journal entries.&quot;</p>
+</blockquote>
+<p><strong>Q: What happens if the LLM API is down?</strong></p>
+<blockquote>
+<p>&quot;Agents degrade gracefully — the core ERP (invoices, time, bills, journals) keeps working. The AI extraction queue pauses and picks up when the API is back. Nothing blocks the essential financial workflows.&quot;</p>
+</blockquote>
+<p><strong>Q: Is my financial data sent to AI models?</strong></p>
+<blockquote>
+<p>&quot;PII is masked before any data leaves our system. Bank account numbers, tax IDs, and full card numbers are never sent to external AI APIs. The extraction agents see masked versions of sensitive fields.&quot;</p>
+</blockquote>
+<p><strong>Q: What about accountants who need to close the books?</strong></p>
+<blockquote>
+<p>&quot;Period locks are in place — once you lock a month, nothing backdates into it. We&#39;re adding a guided close assistant in the next version that checks your open items, suggests accruals, and walks you through the close checklist.&quot;</p>
+</blockquote>
+<hr>
+<h2 id="demo-reset">Demo Reset</h2>
+<p>To reset the demo tenant to a clean state:</p>
+<pre><code class="language-bash">cd backend
+uv run python -m scripts.seed_demo --tenant-id &lt;uuid&gt; --reset
+</code></pre>
+<p>This removes all <code>INV-TEST-*</code> and <code>BILL-TEST-*</code> prefixed data and re-seeds fresh demo content.</p>
+<hr>
+<h2 id="platform-overview-card-leave-behind">Platform Overview Card (leave-behind)</h2>
+<pre><code>Aethos — for Professional Services
+
+What it replaces:
+  • QBO/Xero + spreadsheets for PS billing
+  • Harvest/BQE Core for time &amp; expense
+  • Manual AP processes
+
+What&#39;s different:
+  ✓ AI extracts engagement letters, vendor invoices, expense receipts
+  ✓ Every AI action needs approval — nothing posts without your say-so
+  ✓ Double-entry GL auto-posts on every transaction (no manual journals)
+  ✓ 6 billing models: T&amp;M, fixed, milestone, retainer, retainer-draw, capped T&amp;M
+  ✓ Multi-currency (USD/GBP/SGD/INR/AUD) from day 1
+  ✓ Stripe Connect — client pays via link, funds go directly to your account
+  ✓ Agents work in the background: collections emails, payment batch proposals,
+    project health alerts, FX rate refreshes — all automatic
+
+Pricing: Starter $29 · Growth $79 · Pro $199 / month
+         (also available in GBP / SGD / INR / AUD)
+         14-day free trial, no commitment
+</code></pre>

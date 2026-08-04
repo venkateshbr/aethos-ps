@@ -31,6 +31,16 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/login/login.component').then(m => m.LoginComponent),
   },
+  {
+    path: 'guides',
+    loadComponent: () =>
+      import('./features/guides/guide-library.component').then(m => m.GuideLibraryComponent),
+  },
+  {
+    path: 'guides/:slug',
+    loadComponent: () =>
+      import('./features/guides/guide-reader.component').then(m => m.GuideReaderComponent),
+  },
 
   // ── App shell — authenticated routes ────────────────────────────────────────
   // Guarded by authGuard (parent) + authChildGuard (child re-check) per #111.
