@@ -179,7 +179,9 @@ class _DeterministicAtlasResponder:
         if route.intent == "brightwater_payroll":
             return self._format_brightwater_payroll(period=period)
         if route.intent == "single_bill_drilldown":
-            return self._format_single_bill()
+            return self._format_single_bill(
+                bill_number=route.entities.get("bill_number"),
+            )
         if route.intent == "bill_pay_run":
             return self._format_bill_pay_run()
         if route.intent == "alderton_family_office":
@@ -439,15 +441,45 @@ class _DeterministicAtlasResponder:
             ]
         )
 
-    def _format_single_bill(self) -> str:
+    def _format_single_bill(self, *, bill_number: str | None) -> str:
+        requested_number = bill_number or "the requested bill"
+        pack = P2PReadService(self.db, self.tenant_id).payment_risk_read_pack(
+            bill_number=bill_number,
+            due_within_days=365,
+            limit=1,
+        )
+        bills = pack.get("bills") or []
+        if not bills:
+            return "\n".join(
+                [
+                    f"No bill {requested_number} was found in this tenant.",
+                    "- I did not substitute another tenant or invent bill details.",
+                    "- Check the bill number in Bills, then retry the drilldown.",
+                ]
+            )
+
+        bill = bills[0]
+        coding = bill.get("coding_summary") or {}
+        batches = bill.get("payment_batches") or []
+        batch_status = (
+            ", ".join(
+                str(item.get("batch_status") or item.get("item_status") or "unknown")
+                for item in batches
+            )
+            if batches
+            else "not in a payment batch"
+        )
+        blockers = bill.get("payment_blockers") or []
         return "\n".join(
             [
-                "Bill BILL-1001 review packet:",
-                "- Due date and amount: show due date, currency, and total amount.",
-                "- Vendor invoice number: compare vendor invoice number against duplicate signals.",
-                "- Coding/source: show coding status, account evidence, and source document link.",
-                "- PO/service-order match: show matched, not linked, or exception state.",
-                "- Approval and payment readiness: show approval state, existing batch status, blockers, and recommended next action before payment.",
+                f"Bill {bill.get('bill_number')} review for Vendor {bill.get('vendor_name')}:",
+                f"- Due date: {bill.get('due_date')}; amount: {bill.get('currency')} {bill.get('total')}.",
+                f"- Vendor invoice number: {bill.get('vendor_invoice_number') or 'not recorded'}.",
+                f"- Coding status: {coding.get('status') or 'unknown'}; source document: {_yes_no(bill.get('source_document_available'))}.",
+                f"- Duplicate signals: {_yes_no(bill.get('duplicate_risk'))}; PO/service-order match: {bill.get('po_match_status')}.",
+                f"- Approval state: {bill.get('approval_state')}; payment readiness: {bill.get('payment_readiness')}; existing batch status: {batch_status}.",
+                f"- Blockers: {', '.join(str(item) for item in blockers) if blockers else 'none'}.",
+                f"- Recommended next action: {bill.get('recommended_next_action')}.",
             ]
         )
 
