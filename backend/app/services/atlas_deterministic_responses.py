@@ -806,7 +806,6 @@ class _DeterministicAtlasResponder:
             output_payload=result,
         )
         self._materialized_tool_name = "create_finance_ops_action_plan"
-        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
 
         status_message = result.get("message")
         if not isinstance(status_message, str) or not status_message.strip():
@@ -821,7 +820,7 @@ class _DeterministicAtlasResponder:
             [
                 f"Created the next recommended Finance Ops action plan for {_period_label(period)} and routed it to Inbox for review.",
                 "- Work-item limit: at most five manager-reviewed items.",
-                f"- Inbox review reference: {suggestion_ref}.",
+                "- Open Inbox to review and approve the prepared action plan.",
                 f"- Status: {status_message.strip()}",
                 f"- Approval boundary: {approval_boundary.strip()}",
             ]
