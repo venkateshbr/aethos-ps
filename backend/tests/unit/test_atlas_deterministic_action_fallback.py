@@ -94,7 +94,8 @@ async def test_semantic_responder_materializes_finance_ops_action_plan(
 
     assert response is not None
     assert response.route.intent == "finance_ops_action_plan"
-    assert "suggestion-plan-1" in response.text
+    assert "suggestion-plan-1" not in response.text
+    assert "Open Inbox" in response.text
     assert "Inbox" in response.text
     assert "No invoice, payment, journal, or email was approved" in response.text
     assert len(calls) == 1
