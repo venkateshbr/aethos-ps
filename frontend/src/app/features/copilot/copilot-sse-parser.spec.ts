@@ -1,4 +1,4 @@
-import { collectCompleteSseLines } from './copilot.component';
+import { collectCompleteSseLines, toolStatusText } from './copilot.component';
 
 describe('collectCompleteSseLines', () => {
   const wire = [
@@ -29,5 +29,16 @@ describe('collectCompleteSseLines', () => {
     const batch = collectCompleteSseLines('', 'data: {"done":true}\r\n\r\ndata: final', true);
     expect(batch.lines).toEqual(['data: {"done":true}', '', 'data: final']);
     expect(batch.remainder).toBe('');
+  });
+});
+
+describe('toolStatusText', () => {
+  it('uses user-safe status text without exposing an internal tool name', () => {
+    const internalName = 'log_time_entry';
+
+    expect(toolStatusText(false)).toBe('Preparing secure action');
+    expect(toolStatusText(true)).toBe('Secure action prepared');
+    expect(toolStatusText(false)).not.toContain(internalName);
+    expect(toolStatusText(true)).not.toContain(internalName);
   });
 });
