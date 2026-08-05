@@ -12,8 +12,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
@@ -244,7 +245,12 @@ class _DeterministicAtlasResponder:
         )
 
     async def _format_time_log(self, message: str) -> str:
-        arguments = _time_log_arguments(message)
+        tenant_today = (
+            _tenant_today(self.db, self.tenant_id)
+            if re.search(r"\btoday\b", message, re.IGNORECASE)
+            else None
+        )
+        arguments = _time_log_arguments(message, today=tenant_today)
         if arguments is None:
             return self._format_time_log_failure(
                 "Project, hours, date, and exact description are required."
@@ -1195,6 +1201,38 @@ def _time_log_arguments(
             re.search(r"\bnon[- ]?billable\b", message, re.IGNORECASE)
         ),
     }
+
+
+def _tenant_today(db: Client, tenant_id: str) -> date:
+    """Resolve relative dates in the tenant's configured IANA timezone."""
+    timezone_name = "UTC"
+    try:
+        result = (
+            db.table("tenants")
+            .select("timezone")
+            .eq("id", tenant_id)
+            .single()
+            .execute()
+        )
+        data = result.data if isinstance(result.data, dict) else {}
+        configured = data.get("timezone")
+        if isinstance(configured, str) and configured.strip():
+            timezone_name = configured.strip()
+    except Exception:
+        logger.warning(
+            "Unable to load tenant timezone for relative time-entry date",
+            extra={"tenant_id": tenant_id},
+        )
+
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Invalid tenant timezone; using UTC for relative time-entry date",
+            extra={"tenant_id": tenant_id, "timezone": timezone_name},
+        )
+        timezone = UTC
+    return datetime.now(timezone).date()
 
 
 def _client_name_from_text(text: str) -> str | None:
