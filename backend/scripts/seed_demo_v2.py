@@ -17,6 +17,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from app.domain.journal_helper import JournalLineSpec, post_journal
 from scripts.seed_demo import (
     _approve_bill,
     _approve_invoice,
@@ -414,6 +415,34 @@ def _post_manual_journal(
     posted: bool,
 ) -> str:
     accounts = _account_map(db, tenant_id)
+    specs = [
+        JournalLineSpec(
+            direction=direction,
+            account_code=account_code,
+            account_id=accounts.get(account_code),
+            amount=amount,
+            currency="GBP",
+            base_amount=amount,
+            description=line_description,
+        )
+        for direction, account_code, amount, line_description in lines
+        if accounts.get(account_code)
+    ]
+    if posted:
+        je = post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by=owner_id,
+            description=description,
+            entry_date=entry_date,
+            reference_type="manual",
+            reference_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant_id}:{entry_number}")),
+            lines=specs,
+            entry_number=entry_number,
+            extra_entry_fields={"entry_type": "standard"},
+        )
+        return str(je["id"])
+
     je = (
         db.table("journal_entries")
         .insert(
@@ -426,7 +455,7 @@ def _post_manual_journal(
                 "period": period,
                 "reference_type": "manual",
                 "created_by": owner_id,
-                "posted_at": datetime.now(UTC).isoformat() if posted else None,
+                "posted_at": None,
             }
         )
         .execute()
