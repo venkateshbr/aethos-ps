@@ -202,6 +202,53 @@ manifest. Never reuse these credentials for a real customer tenant.
 
 ## Automated rerun
 
+### Safe stateful Meridian run
+
+Stateful acceptance is now separate from the route/read-only smoke run. Never
+enable it for Sterling Bridge or a customer tenant. Provision a disposable
+tenant whose name contains `Meridian`, then mark the ignored Playwright auth
+metadata with:
+
+```json
+{
+  "disposableDemoTenant": true
+}
+```
+
+Before reseeding, verify the exact tenant ID and name with a read-only query.
+The reset command now requires an exact name match and refuses to run without
+it:
+
+```bash
+cd backend
+uv run python -m scripts.seed_demo_v2 \
+  --tenant-id '<disposable-tenant-uuid>' \
+  --reset \
+  --require-tenant-name 'Meridian Demo'
+```
+
+The stateful browser run approves the engagement-letter, time-entry, and
+vendor-invoice artifacts through the public Inbox UI. It refuses to start
+stateful mutations unless the auth metadata says the tenant is disposable,
+the tenant name contains `Meridian`, and the tenant name is not Sterling
+Bridge. It captures a generated bill number from the approval response when
+available and uses that value for the subsequent single-bill drilldown.
+
+```bash
+cd frontend
+AETHOS_RUN_PRODUCTION_VALIDATION=true \
+AETHOS_DEMO_STATEFUL_VALIDATION=true \
+AETHOS_PS_WEB_URL=https://aethos.ishirock.tech \
+AETHOS_TS_WEB_URL=https://timesheet.aethos.ishirock.tech \
+CI=1 \
+npx playwright test e2e/demo-v2-production-validation.spec.ts --project=chromium
+```
+
+Run this twice from a freshly reset disposable tenant for the release gate.
+Each run must record the UI approvals and finish with zero critical failures.
+
+### Read-only/route smoke rerun
+
 Run from `frontend/`:
 
 ```bash
