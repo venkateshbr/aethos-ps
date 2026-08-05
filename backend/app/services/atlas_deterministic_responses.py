@@ -917,6 +917,15 @@ class _DeterministicAtlasResponder:
             f"- Close status {pack.get('close_status', {}).get('status')}; remaining close blockers {len(pack.get('close_blockers') or [])}.",
         ]
         if drilldown:
+            for blocker in (pack.get("close_blockers") or [])[:25]:
+                lines.append(
+                    "- Close blocker "
+                    f"{blocker.get('code')}: {blocker.get('label')} is "
+                    f"{blocker.get('status')}; source {blocker.get('source')}; "
+                    f"owner role {blocker.get('owner_role')}; close impact: "
+                    f"{blocker.get('close_impact')}; next action: "
+                    f"{blocker.get('recommended_action')}"
+                )
             for task in (pack.get("close_task_checklist_state") or {}).get("tasks", [])[:8]:
                 lines.append(
                     f"- Close task {task.get('code')}: {task.get('title')} is {task.get('status')}; owner role {task.get('owner_role')}; next action is resolve or document waiver before close."
