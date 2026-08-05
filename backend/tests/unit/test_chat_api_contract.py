@@ -536,6 +536,7 @@ async def test_deterministic_manual_journal_honors_explicit_gbp_base_currency(
     assert "GBP base-currency impact 10533.60" in answer
     assert "SGD->GBP rate" in answer
     assert "Inbox" in answer
+    assert "task-gbp" not in answer
 
 
 def test_first_user_message_names_blank_chat_thread(
