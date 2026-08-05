@@ -353,3 +353,65 @@ async def test_demo_guide_today_uses_tenant_local_date(
 
     assert response is not None
     assert calls[0]["date"] == "2026-08-06"
+
+
+@pytest.mark.asyncio
+async def test_management_pack_drilldown_renders_every_close_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _R2RReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def management_pack_read_pack(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "period": "2026-06",
+                "comparison_period": "2026-05",
+                "financial_statements": {"current": {"income_statement": {}}},
+                "working_capital_movement": {},
+                "project_margin_highlights": [],
+                "utilization_highlights": [],
+                "journal_summary": {"response_summary": "1 draft", "draft_count": 0},
+                "close_status": {"status": "blocked"},
+                "close_task_checklist_state": {"tasks": []},
+                "close_blockers": [
+                    {
+                        "code": "unposted_journals",
+                        "label": "Unposted journals",
+                        "status": "blocked",
+                        "source": "journal_entries",
+                        "owner_role": "controller",
+                        "close_impact": "Blocks period lock.",
+                        "recommended_action": "Review, post, or reject each draft journal.",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "R2RReadService",
+        _R2RReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Drill into the draft journals and close task blockers for June 2026. "
+            "Which ones block close, who owns them, and what should happen next?"
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "management_pack_drilldown"
+    assert "Unposted journals" in response.text
+    assert "source journal_entries" in response.text
+    assert "owner role controller" in response.text
+    assert "Blocks period lock" in response.text
+    assert "Review, post, or reject each draft journal" in response.text
