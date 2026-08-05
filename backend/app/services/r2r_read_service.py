@@ -579,21 +579,53 @@ def _close_blockers(
     close_task_state: dict[str, object],
     draft_journals: list[dict[str, object]],
 ) -> list[dict[str, object]]:
+    owner_roles = {
+        "subledger_reconciliation": "finance_manager",
+        "trial_balance": "controller",
+        "unposted_journals": "controller",
+        "close_reviews": "designated_approver",
+        "close_tasks": "finance_manager",
+        "period_lock": "owner",
+    }
+    recommended_actions = {
+        "subledger_reconciliation": "Investigate and clear each reconciliation finding.",
+        "trial_balance": "Correct the imbalance and verify total debits equal total credits.",
+        "unposted_journals": "Review, post, or reject each draft journal.",
+        "close_reviews": "Resolve each pending close review in Inbox.",
+        "close_tasks": "Complete or document an approved waiver for each blocking close task.",
+        "period_lock": "Clear all blocking controls before locking the period.",
+    }
     blockers: list[dict[str, object]] = []
     for item in close_status.get("checklist", []):
         if not isinstance(item, dict):
             continue
         if item.get("status") in {"complete"} and not item.get("blocking"):
             continue
+        code = str(item.get("code") or "unknown")
+        task_owners = close_task_state.get("owner_roles")
+        owner_role = owner_roles.get(code, "finance_manager")
+        if code == "close_tasks" and isinstance(task_owners, list) and task_owners:
+            owner_role = ", ".join(str(value) for value in task_owners)
+        is_blocking = bool(item.get("blocking"))
         blockers.append(
             {
-                "code": item.get("code"),
+                "code": code,
                 "label": item.get("label"),
                 "status": item.get("status"),
-                "blocking": item.get("blocking"),
+                "blocking": is_blocking,
                 "summary": item.get("summary"),
                 "count": item.get("count"),
                 "source": "close_status.checklist",
+                "owner_role": owner_role,
+                "close_impact": (
+                    "Blocks period lock."
+                    if is_blocking
+                    else "Does not currently block period lock."
+                ),
+                "recommended_action": recommended_actions.get(
+                    code,
+                    "Resolve the control exception before close.",
+                ),
             }
         )
     if close_task_state.get("status") == "not_bootstrapped":
@@ -606,6 +638,9 @@ def _close_blockers(
                 "summary": close_task_state.get("message"),
                 "count": 0,
                 "source": "accounting_close_tasks",
+                "owner_role": "finance_manager",
+                "close_impact": "Blocks period lock because no owned checklist exists.",
+                "recommended_action": "Bootstrap the period checklist and assign each task owner.",
             }
         )
     if draft_journals and not any(item.get("code") == "unposted_journals" for item in blockers):
@@ -618,6 +653,9 @@ def _close_blockers(
                 "summary": f"{len(draft_journals)} draft journal(s) remain unposted.",
                 "count": len(draft_journals),
                 "source": "journal_entries",
+                "owner_role": "controller",
+                "close_impact": "Blocks period lock.",
+                "recommended_action": "Review, post, or reject each draft journal.",
             }
         )
     return blockers
