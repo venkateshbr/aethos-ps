@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
-from app.services.atlas_deterministic_responses import render_semantic_atlas_response
+from app.services.atlas_deterministic_responses import (
+    _time_log_arguments,
+    render_semantic_atlas_response,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -275,3 +279,19 @@ async def test_semantic_responder_materializes_exact_time_log_review(
         output_payload=invocation_call.kwargs["output_payload"],
         error_message=None,
     )
+
+
+def test_time_log_arguments_accept_demo_guide_natural_language() -> None:
+    arguments = _time_log_arguments(
+        "Log 4.5 hours on the Nexus CFO Advisory project for today - "
+        "board pack review and cash flow modelling",
+        today=date(2026, 8, 5),
+    )
+
+    assert arguments == {
+        "project_name": "Nexus CFO Advisory",
+        "hours": "4.5",
+        "date": "2026-08-05",
+        "description": "board pack review and cash flow modelling",
+        "billable": True,
+    }
