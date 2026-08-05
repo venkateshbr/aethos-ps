@@ -75,6 +75,11 @@ export function collectCompleteSseLines(
   };
 }
 
+/** Keep transport-level tool identifiers out of the end-user interface. */
+export function toolStatusText(done: boolean): string {
+  return done ? 'Secure action prepared' : 'Preparing secure action';
+}
+
 @Component({
   selector: 'app-copilot',
   standalone: true,
@@ -250,14 +255,14 @@ export function collectCompleteSseLines(
                   <!-- Tool-call card -->
                   <div
                     class="bg-surface/50 border border-border-default border-l-2 border-l-accent rounded px-3 py-2 text-xs text-text-muted"
-                    [attr.aria-label]="msg.toolDone ? 'Tool completed: ' + msg.toolName : 'Running tool: ' + msg.toolName"
+                    [attr.aria-label]="toolStatusText(!!msg.toolDone)"
                   >
                     @if (!msg.toolDone) {
                       <span class="inline-block w-3 h-3 rounded-full border-2 border-accent-light border-t-transparent animate-spin mr-2 align-middle"></span>
                     } @else {
                       <mat-icon class="text-accent-light text-xs align-middle mr-1 leading-none">check_circle</mat-icon>
                     }
-                    &#9889; {{ msg.toolName }}
+                    &#9889; {{ toolStatusText(!!msg.toolDone) }}
                   </div>
                 }
 
@@ -460,6 +465,7 @@ export function collectCompleteSseLines(
   `],
 })
 export class CopilotComponent implements OnInit {
+  readonly toolStatusText = toolStatusText;
   private http = inject(HttpClient);
 
   // --- State ---
