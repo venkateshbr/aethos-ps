@@ -885,7 +885,7 @@ class _DeterministicAtlasResponder:
         lines = [
             "Prepared the manual journal review packet and routed it to Inbox before posting.",
             f"Requested transaction: {tx.get('currency')} {tx.get('amount')} with {tx.get('base_currency')} base-currency impact {tx.get('base_amount')}. FX provenance: {tx.get('fx_rate_provenance')}.",
-            f"Review path: {result.get('review_path')}; task id: {result.get('task_id')}; approval boundary: {result.get('approval_boundary')}",
+            f"Review path: {result.get('review_path')}; open Inbox to review the prepared journal; approval boundary: {result.get('approval_boundary')}",
             "Journal lines:",
         ]
         for line in result.get("journal_lines") or []:
