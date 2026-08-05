@@ -2,19 +2,36 @@
 
 ## Decision
 
-Production is reachable and every authenticated product route exercised by the
-Demo Guide v2 rendered successfully. The current retained tenant is useful for
-platform exploration, but the published Meridian Demo Guide v2 is **not ready
-to present verbatim** against that tenant.
+The Demo Guide v2 production release gate is **passed** on build
+`825ed5c739308864987413502299fbbcc44dc094`. Two independent stateful browser
+runs completed after exact-name guarded resets of a disposable Meridian tenant.
+Each run recorded 69 passes, zero warnings, zero failures, and completed all
+three public Inbox materializations (engagement onboarding, time entry, and
+reviewed duplicate vendor invoice).
 
-The first production browser pass recorded 58 passes and 8 failures across 66
-checks. The automatic retry recorded 57 passes and 9 failures. The failures are
-concentrated in scenario-data mismatch, time-entry handling, R2R prompt
-sequencing, and one visible internal tool-call card.
+Evidence:
 
-Do not represent a failing guide step as shipped behavior. Use the Sterling
-Bridge records that exist, or provision a disposable tenant with the complete
-Meridian fixture before a customer demo.
+- [Clean run 1](demo-v2-production-2026-08-05T15-07-43-724Z/report.md)
+- [Clean run 2](demo-v2-production-2026-08-05T15-16-20-687Z/report.md)
+- [Production deployment](https://github.com/venkateshbr/aethos-ps/actions/runs/31017334689)
+
+Sterling Bridge was not reset or mutated. The earlier Sterling-only findings
+below are retained as historical diagnosis of the original failures.
+
+### Disposable validation tenant and credentials
+
+| Item | Value |
+| --- | --- |
+| Tenant | Meridian Demo 1785937550 |
+| Tenant ID | `f3db719f-9b1d-4b07-8b08-c071fbd5730c` |
+| Purpose | Pre-launch disposable Demo Guide v2 validation only |
+| Credential handoff | Repository-local ignored file `meridian_demo_e2e_credentials.json` |
+| Browser auth metadata | Repository-local ignored file `frontend/e2e/.auth/o2c-tenant.meta.json` |
+| Local file mode | `0600` |
+
+Credential values must not be committed, pasted into issues, or copied into
+this runbook. This tenant was activated as an operator demo exception in Stripe
+test mode; it is not a paying customer tenant.
 
 ## Production tenant inventory
 
@@ -259,15 +276,14 @@ CI=1 \
 npx playwright test e2e/demo-v2-production-validation.spec.ts --project=chromium
 ```
 
-Expected release gate: both the initial run and retry complete with zero
-critical failures. Until #479 is resolved, this exact test is expected to fail
-against Sterling because it asserts the Meridian fixture.
+Expected release gate: two independent runs from freshly reset disposable
+Meridian state complete with zero critical failures. This gate passed on
+2026-08-05; the two reports are linked in the Decision section.
 
 ## Production-state note
 
-The two-pass validation uploaded the three fictional demo PDFs twice and
-created reviewed Finance Ops action-plan Inbox tasks. These are intentional QA
-artifacts in the retained demo tenant. Do not delete them until the founder has
-reviewed the evidence. Afterwards, remove them through the product's governed
-UI or the documented tenant cleanup procedure, never through an ad-hoc database
-delete.
+The two clean passes uploaded fictional demo PDFs and created governed review
+artifacts only in `Meridian Demo 1785937550`. They are intentional QA records.
+Do not delete them until the founder has reviewed the evidence. Afterwards,
+reset only this exact disposable tenant with the guarded seed command above.
+Never use that command for Sterling Bridge or a customer tenant.
