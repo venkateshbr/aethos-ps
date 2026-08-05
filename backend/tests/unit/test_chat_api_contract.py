@@ -381,7 +381,7 @@ def test_chat_message_stream_uses_deterministic_response_before_runtime(
     assert messages[1]["model"] == "aethos-semantic-intent"
 
 
-def test_chat_message_stream_emits_semantic_tool_frames_before_delta(
+def test_chat_message_stream_hides_semantic_tool_frames_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import app.api.v1.endpoints.chat as chat_module
@@ -438,8 +438,6 @@ def test_chat_message_stream_emits_semantic_tool_frames_before_delta(
         if line.startswith("data: ")
     ]
     assert events == [
-        {"tool_start": "log_time_entry"},
-        {"tool_result": "log_time_entry"},
         {"delta": "Prepared the time entry and routed it to Inbox for review."},
         {"done": True, "finish_reason": "stop"},
     ]
