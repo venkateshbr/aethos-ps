@@ -334,7 +334,6 @@ class _DeterministicAtlasResponder:
             started_at=started_at,
         )
         self._materialized_tool_name = "log_time_entry"
-        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
         return "\n".join(
             [
                 "Prepared the time entry and routed it to Inbox for review.",
@@ -343,7 +342,7 @@ class _DeterministicAtlasResponder:
                     f"{arguments['project_name']} for {arguments['date']}."
                 ),
                 f"- Description: {arguments['description']}",
-                f"- Inbox review reference: {suggestion_ref}.",
+                "- Open Inbox to review and approve the prepared entry.",
                 "- No time entry was posted before approval.",
             ]
         )
