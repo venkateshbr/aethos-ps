@@ -289,7 +289,7 @@ const commonInvalidAnswerPatterns = [
   /temporarily unavailable|server error|stack trace|traceback|HTTP 400|validation errors?/i,
   /\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\b/i,
   /couldn'?t locate|not showing up|not found|no .* on file|need .* from you|need .* details|need more information|need some details/i,
-  /can you provide|can you confirm|do you want me to|please provide|once you provide/i,
+  /can you provide|can you confirm|please provide|once you provide/i,
   /not exposed|requires? access to .*outside|would require access|contact your infrastructure team/i,
   /context_ref|raw payload|policy reason code|aethos\.[a-z0-9_.]+/i,
 ];
