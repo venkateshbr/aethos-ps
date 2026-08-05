@@ -32,6 +32,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import settings as runtime_settings
 from app.core.db import get_service_role_client, get_user_rls_client
 from app.core.logging import trace_id_var
 from app.core.tenant import get_tenant_id
@@ -403,7 +404,7 @@ async def send_message(
                 semantic_reply = await maybe_semantic_response(ai_settings)
                 if semantic_reply is not None:
                     tool_name = getattr(semantic_reply, "tool_name", None)
-                    if tool_name:
+                    if tool_name and not runtime_settings.atlas_hide_tool_events:
                         yield f"data: {json.dumps({'tool_start': tool_name})}\n\n"
                         yield f"data: {json.dumps({'tool_result': tool_name})}\n\n"
                     frame = f"data: {json.dumps({'delta': semantic_reply.text})}\n\n"
