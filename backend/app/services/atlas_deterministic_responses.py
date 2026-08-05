@@ -919,18 +919,6 @@ class _DeterministicAtlasResponder:
         )
 
     def _format_management_pack(self, *, period: str | None, drilldown: bool = False) -> str:
-        if not drilldown:
-            return "\n".join(
-                [
-                    "Month-end management pack for June 2026 versus May 2026:",
-                    "- Revenue: compare June 2026 revenue with May 2026 and explain major variance drivers by service line, client, and billing model.",
-                    "- Expenses and margin: highlight subcontractor, payroll, software, and delivery-cost variance, then show gross margin and net income movement.",
-                    "- Utilization: include partner/manager/staff utilization, Alice delivery context, and unbilled WIP that may affect June billing.",
-                    "- AR/AP and cash: summarize accounts receivable aging, accounts payable due soon, payment batches, and cash-impact items.",
-                    "- Journals and close blockers: list draft journals, approval gaps, reconciliations, and close tasks that block period lock.",
-                    "- Next actions: route journals, invoice sends, payment batches, and close overrides through Inbox approval; I did not post journals or lock the period.",
-                ]
-            )
         pack = R2RReadService(self.db, self.tenant_id).management_pack_read_pack(
             period=period or "2026-06",
             comparison_period=None,
@@ -947,6 +935,23 @@ class _DeterministicAtlasResponder:
             f"- Journals: {pack.get('journal_summary', {}).get('response_summary')}; draft journals {pack.get('journal_summary', {}).get('draft_count')}.",
             f"- Close status {pack.get('close_status', {}).get('status')}; remaining close blockers {len(pack.get('close_blockers') or [])}.",
         ]
+        for variance in (pack.get("statement_variances") or [])[:5]:
+            delta_pct = variance.get("delta_pct")
+            pct_text = f" ({delta_pct}%)" if delta_pct is not None else ""
+            lines.append(
+                f"- {variance.get('label')}: {variance.get('current')} versus "
+                f"{variance.get('comparison')}; variance {variance.get('delta')}{pct_text}."
+            )
+        for project in (pack.get("project_margin_highlights") or [])[:5]:
+            lines.append(
+                f"- Project margin {project.get('project_name')}: "
+                f"{project.get('gross_margin_pct')}% ({project.get('risk_level') or 'reported'})."
+            )
+        for employee in (pack.get("utilization_highlights") or [])[:5]:
+            lines.append(
+                f"- Utilization {employee.get('employee_name') or 'Unnamed employee'}: "
+                f"{employee.get('utilization_pct')}% ({employee.get('risk_level') or 'reported'})."
+            )
         if drilldown:
             for blocker in (pack.get("close_blockers") or [])[:25]:
                 lines.append(
@@ -965,6 +970,8 @@ class _DeterministicAtlasResponder:
                 lines.append(
                     f"- Draft journal {journal.get('entry_number')}: {journal.get('description')} blocks close until reviewed, posted, rejected, or reversed through the journal lifecycle."
                 )
+        for action in (pack.get("recommended_next_actions") or [])[:8]:
+            lines.append(f"- Next action: {action}")
         lines.append("I did not post journals or lock the period.")
         return "\n".join(lines)
 
