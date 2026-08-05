@@ -416,3 +416,66 @@ async def test_management_pack_drilldown_renders_every_close_blocker(
     assert "owner role controller" in response.text
     assert "Blocks period lock" in response.text
     assert "Review, post, or reject each draft journal" in response.text
+
+
+@pytest.mark.asyncio
+async def test_single_bill_drilldown_uses_tenant_read_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _P2PReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def payment_risk_read_pack(self, **kwargs: object) -> dict[str, object]:
+            assert kwargs["bill_number"] == "BILL-0041"
+            return {
+                "bills": [
+                    {
+                        "bill_number": "BILL-0041",
+                        "vendor_name": "Forster & Reid Ltd",
+                        "due_date": "2026-07-05",
+                        "currency": "GBP",
+                        "total": "3200.00",
+                        "vendor_invoice_number": "FR-2026-0615",
+                        "coding_summary": {"status": "complete"},
+                        "source_document_available": True,
+                        "po_match_status": "matched",
+                        "duplicate_risk": False,
+                        "approval_state": "approved",
+                        "payment_readiness": "ready",
+                        "payment_batches": [],
+                        "payment_blockers": [],
+                        "recommended_next_action": "Add the bill to the next payment batch.",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "P2PReadService",
+        _P2PReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Review bill BILL-0041. Show due date, amount, vendor invoice number, "
+            "coding status, source document, duplicate signals, PO/service-order "
+            "match, approval state, payment readiness, existing batch status, and "
+            "recommended next action."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "single_bill_drilldown"
+    assert "Forster & Reid Ltd" in response.text
+    assert "GBP 3200.00" in response.text
+    assert "FR-2026-0615" in response.text
+    assert "Add the bill to the next payment batch" in response.text
