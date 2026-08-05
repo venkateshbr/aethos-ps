@@ -259,7 +259,8 @@ async def test_semantic_responder_materializes_exact_time_log_review(
     assert response is not None
     assert response.route.intent == "time_log"
     assert response.tool_name == "log_time_entry"
-    assert "suggestion-time-1" in response.text
+    assert "suggestion-time-1" not in response.text
+    assert "Open Inbox" in response.text
     assert calls == [
         {
             "project_name": "Nexus Advisory",
