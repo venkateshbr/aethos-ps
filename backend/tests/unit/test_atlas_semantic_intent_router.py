@@ -86,6 +86,31 @@ def test_semantic_router_recognizes_explicit_project_time_log() -> None:
     assert route.confidence >= 0.80
 
 
+def test_semantic_router_prefers_single_bill_for_demo_guide_prompt() -> None:
+    route = AtlasSemanticIntentRouter().classify(
+        "Review bill BILL-1001. Show due date, amount, vendor invoice number, "
+        "coding status, source document, duplicate signals, PO/service-order "
+        "match, approval state, payment readiness, existing batch status, and "
+        "recommended next action."
+    )
+
+    assert route is not None
+    assert route.intent == "single_bill_drilldown"
+
+
+def test_semantic_router_prefers_management_pack_for_demo_guide_prompt() -> None:
+    route = AtlasSemanticIntentRouter().classify(
+        "Give me the June 2026 month-end management pack. Explain the major "
+        "variances versus May 2026, show revenue, expenses, project margin, "
+        "utilization, AR/AP movement, journals, close task blockers, draft "
+        "journals, and remaining close blockers. Do not post journals or lock "
+        "the period."
+    )
+
+    assert route is not None
+    assert route.intent == "management_pack"
+
+
 def test_semantic_router_recognizes_model_and_observability_status() -> None:
     route = AtlasSemanticIntentRouter().classify(
         "Show model provider status, Langfuse observability, and operational alerts for Atlas."
