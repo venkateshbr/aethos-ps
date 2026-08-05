@@ -503,9 +503,9 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "revenue_recognition",
         (
-            ("revenue recognition", "recognized revenue", "recognised revenue"),
+            ("revenue recognition", "recognized revenue", "recognised revenue", "revenue"),
             ("recognized", "recognised", "deferred", "milestone"),
-            ("period", "june 2026", "service line"),
+            ("period", "june", "june 2026", "service line"),
         ),
         priority=58,
     ),

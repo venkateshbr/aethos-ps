@@ -169,6 +169,9 @@ async function approvePromptArtifact(page: Page, step: PromptStep): Promise<void
   await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
   const taskCard = page.locator('[id^="task-"]').filter({ hasText: step.approveAfter }).first();
   await expect(taskCard).toBeVisible({ timeout: 90_000 });
+  const taskId = await taskCard.getAttribute('id');
+  expect(taskId, `Inbox task id for ${step.id}`).toMatch(/^task-[0-9a-f-]+$/i);
+  const approvedTaskCard = page.locator(`#${taskId}`);
   const approve = taskCard.getByRole('button', { name: /^approve/i }).first();
   await expect(approve).toBeEnabled({ timeout: 30_000 });
   const duplicateReview = /review duplicate/i.test(await approve.innerText());
@@ -187,7 +190,9 @@ async function approvePromptArtifact(page: Page, step: PromptStep): Promise<void
   expect(response.status(), `Inbox approval for ${step.id}`).toBe(200);
   const body = await response.json().catch(() => null) as unknown;
   generatedBillNumber = findBillNumber(body) ?? generatedBillNumber;
-  await expect(taskCard).toBeHidden({ timeout: 120_000 });
+  // Pin the approved card by id. A broad text locator can re-bind to another
+  // legitimate task with the same client/agent text after this one disappears.
+  await expect(approvedTaskCard).toBeHidden({ timeout: 120_000 });
   record({
     id: `${step.id}-approval`,
     section: step.section,
@@ -550,7 +555,9 @@ const promptSteps: PromptStep[] = [
     section: '1.3 Time entry',
     prompt: 'Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling',
     expected: [/time|hours|Nexus|review|Inbox|logged/i],
-    approveAfter: /Nexus CFO Advisory|time entry/i,
+    // Copilot policy reviews intentionally use the generic agent title; the
+    // task payload is not rendered in the collapsed Inbox card.
+    approveAfter: /Review: Copilot Agent/i,
   },
   {
     id: '1-3a-delivery-data',
