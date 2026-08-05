@@ -479,3 +479,81 @@ async def test_single_bill_drilldown_uses_tenant_read_pack(
     assert "GBP 3200.00" in response.text
     assert "FR-2026-0615" in response.text
     assert "Add the bill to the next payment batch" in response.text
+
+
+@pytest.mark.asyncio
+async def test_management_pack_summary_uses_comparative_tenant_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _R2RReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def management_pack_read_pack(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "period": "2026-06",
+                "comparison_period": "2026-05",
+                "financial_statements": {
+                    "current": {
+                        "income_statement": {
+                            "total_revenue": "10000.00",
+                            "total_expenses": "6000.00",
+                            "net_income": "4000.00",
+                        }
+                    }
+                },
+                "statement_variances": [
+                    {
+                        "label": "Revenue",
+                        "current": "10000.00",
+                        "comparison": "8000.00",
+                        "delta": "2000.00",
+                        "delta_pct": 25.0,
+                    }
+                ],
+                "working_capital_movement": {
+                    "period_ar_activity": {"current": "3000.00", "delta": "500.00"},
+                    "period_ap_activity": {"current": "1500.00", "delta": "-100.00"},
+                    "wip_total": {"current": "900.00", "delta": "50.00"},
+                },
+                "project_margin_highlights": [
+                    {"project_name": "Nexus CFO Advisory", "gross_margin_pct": 57.0}
+                ],
+                "utilization_highlights": [
+                    {"employee_name": "Alice Chen", "utilization_pct": 64.0}
+                ],
+                "journal_summary": {"response_summary": "1 draft", "draft_count": 1},
+                "close_status": {"status": "blocked"},
+                "close_blockers": [{"code": "unposted_journals"}],
+                "recommended_next_actions": ["Review the draft journal."],
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "R2RReadService",
+        _R2RReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Give me the June 2026 month-end management pack. Explain the major "
+            "variances versus May 2026, show revenue, expenses, project margin, "
+            "utilization, AR/AP movement, journals, close task blockers, draft "
+            "journals, and remaining close blockers. Do not post journals or lock "
+            "the period."
+        ),
+    )
+
+    assert response is not None
+    assert "Revenue: 10000.00 versus 8000.00; variance 2000.00 (25.0%)" in response.text
+    assert "Nexus CFO Advisory: 57.0%" in response.text
+    assert "Alice Chen: 64.0%" in response.text
+    assert "Review the draft journal" in response.text
