@@ -558,3 +558,13 @@ async def test_management_pack_summary_uses_comparative_tenant_data(
     assert "Nexus CFO Advisory: 57.0%" in response.text
     assert "Alice Chen: 64.0%" in response.text
     assert "Review the draft journal" in response.text
+
+
+def test_primary_period_is_first_month_mentioned_in_comparison_prompt() -> None:
+    from app.services.atlas_deterministic_responses import _period_from_text
+
+    period = _period_from_text(
+        "Give me the June 2026 month-end management pack with variances versus May 2026."
+    )
+
+    assert period == "2026-06"

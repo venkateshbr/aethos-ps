@@ -1171,10 +1171,12 @@ def _period_from_text(message: str) -> str | None:
     direct = re.search(r"\b(20\d{2}-\d{2})\b", text)
     if direct:
         return direct.group(1)
-    for month, number in _MONTHS.items():
-        match = re.search(rf"\b{month}\s+(20\d{{2}})\b", text)
-        if match:
-            return f"{match.group(1)}-{number}"
+    month_match = re.search(
+        rf"\b({'|'.join(_MONTHS)})\s+(20\d{{2}})\b",
+        text,
+    )
+    if month_match:
+        return f"{month_match.group(2)}-{_MONTHS[month_match.group(1)]}"
     try:
         return normalise_period(message)
     except ValueError:
