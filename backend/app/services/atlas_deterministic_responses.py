@@ -1232,7 +1232,7 @@ def _time_log_arguments(
         re.IGNORECASE,
     )
     if not description_match:
-        description_match = re.search(r"\s[-–—]\s*(.+?)\s*$", message)
+        description_match = re.search(r"\s[-\u2013\u2014]\s*(.+?)\s*$", message)
     entry_date = _date_from_text(message)
     if entry_date is None and re.search(r"\btoday\b", message, re.IGNORECASE):
         entry_date = (today or date.today()).isoformat()
