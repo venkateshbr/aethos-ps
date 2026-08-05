@@ -436,7 +436,7 @@ def _post_manual_journal(
             description=description,
             entry_date=entry_date,
             reference_type="manual",
-            reference_id=entry_number,
+            reference_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant_id}:{entry_number}")),
             lines=specs,
             entry_number=entry_number,
             extra_entry_fields={"entry_type": "standard"},
