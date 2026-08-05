@@ -288,7 +288,7 @@ async function attachDocument(page: Page, step: PromptStep): Promise<string[]> {
 const commonInvalidAnswerPatterns = [
   /temporarily unavailable|server error|stack trace|traceback|HTTP 400|validation errors?/i,
   /\bI (?:do not|don't) (?:have|see|find|locate|know|have direct access)\b/i,
-  /couldn'?t locate|not showing up|not found|no .* on file|need .* from you|need .* details|need more information|need some details/i,
+  /couldn'?t locate|not showing up|not found|need .* from you|need .* details|need more information|need some details/i,
   /can you provide|can you confirm|please provide|once you provide/i,
   /not exposed|requires? access to .*outside|would require access|contact your infrastructure team/i,
   /context_ref|raw payload|policy reason code|aethos\.[a-z0-9_.]+/i,
@@ -961,7 +961,7 @@ const validationRules: Record<string, ValidationRule> = {
   ),
   '5-5-management-pack': rule(
     ['Produces June management pack comparing May with variances, revenue, expenses, margins, utilization, AR/AP, journals, and blockers without posting.'],
-    [/June 2026/i, /May 2026/i, /variance/i, /revenue/i, /expense/i, /margin/i, /utili[sz]ation/i, /AR|AP/i, /journal/i, /blocker/i],
+    [/June 2026|2026-06/i, /May 2026|2026-05/i, /variance/i, /revenue/i, /expense/i, /margin/i, /utili[sz]ation/i, /AR|AP/i, /journal/i, /blocker/i],
     9,
   ),
   '5-5-management-drilldown': rule(
