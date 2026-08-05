@@ -22,6 +22,7 @@ import * as path from 'node:path';
 const WEB = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos.ishirock.tech';
 const TIMESHEET = process.env.AETHOS_TS_WEB_URL ?? 'https://timesheet.aethos.ishirock.tech';
 const PRODUCTION_VALIDATION_ENABLED = process.env.AETHOS_RUN_PRODUCTION_VALIDATION === 'true';
+const STATEFUL_VALIDATION_ENABLED = process.env.AETHOS_DEMO_STATEFUL_VALIDATION === 'true';
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const AUTH_STATE = path.join(__dirname, '.auth', 'o2c-tenant.json');
@@ -51,6 +52,7 @@ type PromptStep = {
   timeoutMs?: number;
   expected?: RegExp[];
   sameThread?: boolean;
+  approveAfter?: RegExp;
 };
 type ValidationRule = {
   criteria: string[];
@@ -70,6 +72,14 @@ type BusinessValidation = {
 const evidence: Evidence[] = [];
 const consoleErrors: string[] = [];
 const networkFailures: string[] = [];
+let authMeta: {
+  email: string;
+  password: string;
+  tenantName?: string;
+  tenantId?: string;
+  disposableDemoTenant?: boolean;
+} | null = null;
+let generatedBillNumber = process.env.AETHOS_DEMO_BILL_NUMBER ?? 'BILL-1001';
 
 function rel(file: string): string {
   return path.relative(REPO_ROOT, file);
@@ -94,7 +104,9 @@ async function authenticate(page: Page): Promise<void> {
     password: string;
     tenantName?: string;
     tenantId?: string;
+    disposableDemoTenant?: boolean;
   };
+  authMeta = meta;
   await page.goto(`${WEB}/login`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible({ timeout: 30_000 });
   await page.locator('#email, input[type="email"]').first().fill(meta.email);
@@ -116,6 +128,75 @@ async function authenticate(page: Page): Promise<void> {
       `Tenant ID: ${meta.tenantId ?? 'unknown'}`,
       `User: ${meta.email}`,
     ],
+  });
+}
+
+function promptFor(step: PromptStep): string {
+  return step.prompt.replaceAll('{{billNumber}}', generatedBillNumber);
+}
+
+function findBillNumber(value: unknown): string | null {
+  if (typeof value === 'string') return value.match(/\bBILL-\d+\b/i)?.[0]?.toUpperCase() ?? null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findBillNumber(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === 'object') {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      const found = findBillNumber(item);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+async function approvePromptArtifact(page: Page, step: PromptStep): Promise<void> {
+  if (!step.approveAfter) return;
+  if (!STATEFUL_VALIDATION_ENABLED) {
+    record({
+      id: `${step.id}-approval`,
+      section: step.section,
+      action: 'Inbox approval and materialization',
+      status: 'SKIP',
+      notes: ['Set AETHOS_DEMO_STATEFUL_VALIDATION=true on a disposable Meridian tenant.'],
+    });
+    return;
+  }
+
+  await gotoWithRetry(page, `${WEB}/app/inbox`);
+  await expect(page.getByRole('heading', { name: /^inbox$/i })).toBeVisible({ timeout: 30_000 });
+  const taskCard = page.locator('[id^="task-"]').filter({ hasText: step.approveAfter }).first();
+  await expect(taskCard).toBeVisible({ timeout: 90_000 });
+  const approve = taskCard.getByRole('button', { name: /^approve/i }).first();
+  await expect(approve).toBeEnabled({ timeout: 30_000 });
+  const duplicateReview = /review duplicate/i.test(await approve.innerText());
+  const approvalResponse = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && /\/api\/v1\/inbox\/tasks\/[^/]+\/approve(?:-with-edits)?$/.test(response.url())
+  ), { timeout: 90_000 });
+  await approve.click();
+  if (duplicateReview) {
+    const reason = page.locator('#edit-duplicate-review-reason');
+    await expect(reason).toBeVisible({ timeout: 30_000 });
+    await reason.fill('Disposable demo fixture replayed intentionally for end-to-end workflow validation.');
+    await page.getByRole('button', { name: /save & approve/i }).click();
+  }
+  const response = await approvalResponse;
+  expect(response.status(), `Inbox approval for ${step.id}`).toBe(200);
+  const body = await response.json().catch(() => null) as unknown;
+  generatedBillNumber = findBillNumber(body) ?? generatedBillNumber;
+  await expect(taskCard).toBeHidden({ timeout: 120_000 });
+  record({
+    id: `${step.id}-approval`,
+    section: step.section,
+    action: 'Inbox approval and materialization',
+    status: 'PASS',
+    screenshot: await screenshot(page, `${step.id}-approved`),
+    notes: step.id === '2-4-vendor-invoice'
+      ? [`Captured generated bill number: ${generatedBillNumber}`]
+      : ['Approved through the public Inbox UI.'],
   });
 }
 
@@ -277,6 +358,7 @@ async function sendAtlasPrompt(page: Page, step: PromptStep): Promise<void> {
     const result = await trySendAtlasPrompt(page, step, attempt);
     if (result.status !== 'FAIL' || !result.validation?.forbiddenHits.includes('No Atlas response captured.')) {
       record(result);
+      if (result.status === 'PASS') await approvePromptArtifact(page, step);
       return;
     }
     lastFailure = result;
@@ -294,7 +376,8 @@ async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number)
   try {
     const input = page.getByLabel('Message input');
     await expect(input).toBeEnabled({ timeout: 45_000 });
-    await input.fill(step.prompt);
+    const prompt = promptFor(step);
+    await input.fill(prompt);
     await screenshot(page, `${step.id}-prompt`);
     await page.getByRole('button', { name: /send message/i }).click();
     await page.locator('[aria-label^="Nous:"]').nth(beforeAssistant).waitFor({
@@ -322,7 +405,7 @@ async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number)
       section: step.section,
       action: 'Atlas prompt',
       status: validation.verdict,
-      prompt: step.prompt,
+      prompt,
       response,
       screenshot: shot,
       notes,
@@ -335,7 +418,7 @@ async function trySendAtlasPrompt(page: Page, step: PromptStep, attempt: number)
       section: step.section,
       action: 'Atlas prompt',
       status: 'FAIL',
-      prompt: step.prompt,
+      prompt: promptFor(step),
       screenshot: shot,
       notes: notes.concat(String(err).slice(0, 500)),
     };
@@ -454,6 +537,7 @@ const promptSteps: PromptStep[] = [
     attachment: 'docs/demo-assets/nexus_engagement_letter.pdf',
     prompt: 'Review this engagement letter, create the client, engagement, billing terms, rate card, and first project. Send anything risky to Inbox.',
     expected: [/Nexus|engagement|billing|Inbox/i],
+    approveAfter: /Nexus|engagement/i,
   },
   {
     id: '1-2-engagement-structure',
@@ -466,6 +550,7 @@ const promptSteps: PromptStep[] = [
     section: '1.3 Time entry',
     prompt: 'Log 4.5 hours on the Nexus CFO Advisory project for today - board pack review and cash flow modelling',
     expected: [/time|hours|Nexus|review|Inbox|logged/i],
+    approveAfter: /Nexus CFO Advisory|time entry/i,
   },
   {
     id: '1-3a-delivery-data',
@@ -539,6 +624,7 @@ const promptSteps: PromptStep[] = [
     attachment: 'docs/demo-assets/brightwater_subcontractor_invoice.pdf',
     prompt: 'Process this vendor invoice for Brightwater. Match it to the right vendor and project, flag duplicate risk, code it to the right account, compare any PO or service-order evidence, and send exceptions to Inbox.',
     expected: [/Brightwater|vendor|bill|Inbox|duplicate/i],
+    approveAfter: /Brightwater|vendor invoice|bill draft/i,
   },
   {
     id: '2-4-payment-risk-read',
@@ -549,8 +635,8 @@ const promptSteps: PromptStep[] = [
   {
     id: '2-4-single-bill',
     section: '2.4 Single bill drilldown',
-    prompt: 'Review bill BILL-1001. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.',
-    expected: [/BILL-1001|bill|payment|recommended/i],
+    prompt: 'Review bill {{billNumber}}. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.',
+    expected: [/BILL-\d+|bill|payment|recommended/i],
   },
   {
     id: '2-5-bill-pay',
@@ -801,8 +887,8 @@ const validationRules: Record<string, ValidationRule> = {
     8,
   ),
   '2-4-single-bill': rule(
-    ['Reviews BILL-1001 with due date, vendor invoice number, coding, source, duplicate, approval, payment readiness, and next action.'],
-    [/BILL-1001/i, /due date|due/i, /vendor invoice/i, /coding|coded|account/i, /source document|source/i, /duplicate/i, /approval/i, /payment readiness|payment/i, /next action|recommend/i],
+    ['Reviews the generated bill with due date, vendor invoice number, coding, source, duplicate, approval, payment readiness, and next action.'],
+    [/BILL-\d+/i, /due date|due/i, /vendor invoice/i, /coding|coded|account/i, /source document|source/i, /duplicate/i, /approval/i, /payment readiness|payment/i, /next action|recommend/i],
     8,
   ),
   '2-5-bill-pay': rule(
@@ -961,6 +1047,11 @@ test.describe('Demo Guide v2 production browser validation', () => {
     });
 
     await authenticate(page);
+    if (STATEFUL_VALIDATION_ENABLED) {
+      expect(authMeta?.disposableDemoTenant).toBe(true);
+      expect(authMeta?.tenantName ?? '').toMatch(/Meridian/i);
+      expect(authMeta?.tenantName ?? '').not.toMatch(/Sterling Bridge/i);
+    }
 
     for (const [id, label, url] of routes) {
       await gotoAndRecord(page, id, label, url);
