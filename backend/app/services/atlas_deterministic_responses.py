@@ -12,6 +12,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from app.api.v1.endpoints import atlas_tools
@@ -1152,12 +1153,22 @@ def _date_from_text(message: str) -> str | None:
     return f"{match.group(3)}-{_MONTHS[match.group(2)]}-{int(match.group(1)):02d}"
 
 
-def _time_log_arguments(message: str) -> dict[str, object] | None:
+def _time_log_arguments(
+    message: str,
+    *,
+    today: date | None = None,
+) -> dict[str, object] | None:
     project_match = re.search(
         r"\bproject\s+[\"“]([^\"”]+)[\"”]",
         message,
         re.IGNORECASE,
     )
+    if not project_match:
+        project_match = re.search(
+            r"\bon\s+(?:the\s+)?(.+?)\s+project\b",
+            message,
+            re.IGNORECASE,
+        )
     hours_match = re.search(
         r"\b(?:exactly\s+)?(\d+(?:\.\d+)?)\s+(?:billable\s+)?hours?\b",
         message,
@@ -1168,7 +1179,11 @@ def _time_log_arguments(message: str) -> dict[str, object] | None:
         message,
         re.IGNORECASE,
     )
+    if not description_match:
+        description_match = re.search(r"\s[-–—]\s*(.+?)\s*$", message)
     entry_date = _date_from_text(message)
+    if entry_date is None and re.search(r"\btoday\b", message, re.IGNORECASE):
+        entry_date = (today or date.today()).isoformat()
     if not project_match or not hours_match or not description_match or not entry_date:
         return None
     return {
