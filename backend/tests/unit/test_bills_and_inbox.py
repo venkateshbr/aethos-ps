@@ -1010,6 +1010,43 @@ async def test_materialise_bill_creates_lines_and_review_evidence() -> None:
 
 
 @pytest.mark.asyncio
+async def test_materialise_bill_allows_explicit_reviewed_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.services.bills_service import BillsService
+    from app.services.inbox_service import InboxService
+
+    create_bill = AsyncMock(return_value=SimpleNamespace(id="bill-2", total="110.00"))
+    monkeypatch.setattr(BillsService, "create_bill", create_bill)
+    svc = InboxService(_P2PDb(), "tenant-1")
+
+    result = await svc._materialise_bill(
+        {
+            "client_id": "vendor-1",
+            "vendor_name": "AWS",
+            "vendor_invoice_number": "AWS-100",
+            "currency": "USD",
+            "subtotal": "100.00",
+            "tax_total": "10.00",
+            "total": "110.00",
+            "possible_duplicate": True,
+            "duplicate_review": {
+                "approved_duplicate": True,
+                "reason": "Legitimate split invoice after AP review.",
+            },
+            "lines": [{"description": "Cloud hosting", "amount": "100.00"}],
+        },
+        user_id="manager-1",
+    )
+
+    assert result == {"entity_type": "bill", "entity_id": "bill-2"}
+    assert create_bill.await_args.kwargs["allow_duplicate"] is True
+
+
+@pytest.mark.asyncio
 async def test_materialise_bill_falls_back_when_extracted_lines_are_malformed() -> None:
     from app.services.inbox_service import InboxService
 

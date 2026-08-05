@@ -111,6 +111,17 @@ def test_semantic_router_prefers_management_pack_for_demo_guide_prompt() -> None
     assert route.intent == "management_pack"
 
 
+def test_semantic_router_recognizes_demo_revenue_explanation_prompt() -> None:
+    route = AtlasSemanticIntentRouter().classify(
+        "Explain how Nexus June revenue is recognized across fixed-fee milestone, "
+        "retainer, T&M advisory WIP, and expenses. Tie the explanation to "
+        "invoice-backed journals and Project P&L."
+    )
+
+    assert route is not None
+    assert route.intent == "revenue_recognition"
+
+
 def test_semantic_router_recognizes_model_and_observability_status() -> None:
     route = AtlasSemanticIntentRouter().classify(
         "Show model provider status, Langfuse observability, and operational alerts for Atlas."

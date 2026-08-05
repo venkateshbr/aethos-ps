@@ -37,7 +37,7 @@ from app.agents.engagement_letter_agent import run_engagement_letter_agent
 from app.agents.expense_extractor_agent import run_expense_extractor_agent
 from app.agents.schemas import BillDraft, EngagementDraft, ProjectExpenseDraft
 from app.agents.suggestion_writer import write_agent_suggestion
-from app.agents.vendor_invoice_agent import run_vendor_invoice_agent
+from app.agents.vendor_invoice_agent import _check_duplicate, run_vendor_invoice_agent
 from app.core.config import settings
 from app.domain.money import serialise_money
 from app.workers.procrastinate_app import app
@@ -469,6 +469,24 @@ def _known_vendor_invoice_output(filename: str) -> dict | None:
     }
 
 
+def _normalise_known_vendor_invoice_output(
+    output: dict,
+    deps: AgentDeps,
+) -> dict:
+    """Add live duplicate evidence skipped by the deterministic demo fixture."""
+    result = dict(output)
+    possible_duplicate = _check_duplicate(
+        deps,
+        str(result.get("vendor_invoice_number") or "") or None,
+    )
+    result["possible_duplicate"] = possible_duplicate
+    result["duplicate_risk"] = possible_duplicate
+    result["match_status"] = _vendor_invoice_match_status(result)
+    result["coding_status"] = _vendor_invoice_coding_status(result)
+    result["review_exceptions"] = _vendor_invoice_review_exceptions(result)
+    return result
+
+
 def _normalise_cosec_instruction_output(filename: str) -> dict:
     client_name = "Thornton Tech Solutions Ltd" if "thornton" in filename.lower() else None
     company_change = (
@@ -698,7 +716,10 @@ async def extract_document_worker(document_id: str, tenant_id: str) -> dict:
         elif known_vendor_invoice is not None:
             agent_name = "vendor_invoice_agent"
             action_type = "create_bill_draft"
-            output_dict = dict(known_vendor_invoice)
+            output_dict = _normalise_known_vendor_invoice_output(
+                known_vendor_invoice,
+                deps,
+            )
             confidence = 0.94
         else:
             draft = await run_vendor_invoice_agent(document_id, deps, document_bytes, mime_type)

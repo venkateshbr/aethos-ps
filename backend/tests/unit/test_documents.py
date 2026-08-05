@@ -246,6 +246,28 @@ def test_known_brightwater_vendor_invoice_output_has_review_exceptions() -> None
     assert output["review_exceptions"]
 
 
+def test_known_vendor_invoice_refreshes_live_duplicate_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.workers import document_extraction
+
+    output = document_extraction._known_vendor_invoice_output(
+        "brightwater_subcontractor_invoice.pdf"
+    )
+    assert output is not None
+    monkeypatch.setattr(document_extraction, "_check_duplicate", lambda *_: True)
+
+    refreshed = document_extraction._normalise_known_vendor_invoice_output(
+        output,
+        object(),  # type: ignore[arg-type]
+    )
+
+    assert refreshed["possible_duplicate"] is True
+    assert refreshed["duplicate_risk"] is True
+    assert refreshed["match_status"] == "duplicate_review_required"
+    assert refreshed["review_exceptions"][0]["code"] == "possible_duplicate"
+
+
 # ---------------------------------------------------------------------------
 # File size guard
 # ---------------------------------------------------------------------------

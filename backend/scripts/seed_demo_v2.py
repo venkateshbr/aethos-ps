@@ -94,6 +94,23 @@ def _owner_id(db: Client, tenant_id: str) -> str:
     return str(rows[0]["user_id"]) if rows else SYSTEM_USER_ID
 
 
+def _link_employee_to_user(
+    db: Client,
+    *,
+    employee_id: str,
+    user_id: str,
+) -> None:
+    """Link the demo operator to a seeded employee for user-scoped workflows."""
+    if user_id == SYSTEM_USER_ID:
+        return
+    (
+        db.table("employees")
+        .update({"user_id": user_id})
+        .eq("id", employee_id)
+        .execute()
+    )
+
+
 def _account_map(db: Client, tenant_id: str) -> dict[str, str]:
     rows = db.table("accounts").select("id, code").eq("tenant_id", tenant_id).execute().data or []
     return {str(row["code"]): str(row["id"]) for row in rows}
@@ -562,6 +579,7 @@ def seed_demo_v2(
     priya = _ensure_employee(db, tenant_id=tenant_id, first_name="Priya", last_name="Sharma", email="priya.sharma@meridianadvisory.example", title="Head of COSEC", bill_rate=_d("220.00"), cost_rate=_d("115.00"), currency="GBP")
     james = _ensure_employee(db, tenant_id=tenant_id, first_name="James", last_name="O'Brien", email="james.obrien@meridianadvisory.example", title="Payroll Manager", bill_rate=_d("180.00"), cost_rate=_d("95.00"), currency="GBP")
     alice = _ensure_employee(db, tenant_id=tenant_id, first_name="Alice", last_name="Chen", email="alice.chen@meridianadvisory.example", title="Senior Consultant", bill_rate=_d("250.00"), cost_rate=_d("120.00"), currency="GBP")
+    _link_employee_to_user(db, employee_id=marcus, user_id=owner_id)
     _update_employee(db, marcus, practice_area="advisory", seniority="partner", target=_d("65.00"))
     _update_employee(db, sarah, practice_area="tax", seniority="director", target=_d("75.00"))
     _update_employee(db, priya, practice_area="cosec", seniority="manager", target=_d("70.00"))

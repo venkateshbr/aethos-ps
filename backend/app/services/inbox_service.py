@@ -1672,6 +1672,7 @@ class InboxService:
                 payload,
                 user_id=user_id,
             ),
+            allow_duplicate=self._duplicate_bill_review_approved(payload),
         )
         if total != Decimal(str(bill.total)):
             logger.info(
@@ -1688,11 +1689,7 @@ class InboxService:
     def _raise_if_duplicate_bill_review_required(payload: dict) -> None:
         if not payload.get("possible_duplicate"):
             return
-        duplicate_review = payload.get("duplicate_review")
-        if not isinstance(duplicate_review, dict):
-            duplicate_review = {}
-        reason = _non_empty(duplicate_review.get("reason"))
-        if duplicate_review.get("approved_duplicate") is True and reason:
+        if InboxService._duplicate_bill_review_approved(payload):
             return
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1704,6 +1701,14 @@ class InboxService:
                 ),
             },
         )
+
+    @staticmethod
+    def _duplicate_bill_review_approved(payload: dict) -> bool:
+        duplicate_review = payload.get("duplicate_review")
+        if not isinstance(duplicate_review, dict):
+            return False
+        reason = _non_empty(duplicate_review.get("reason"))
+        return duplicate_review.get("approved_duplicate") is True and bool(reason)
 
     @staticmethod
     def _vendor_invoice_matched_client_id(payload: dict) -> str | None:
