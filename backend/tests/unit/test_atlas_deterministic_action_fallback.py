@@ -7,6 +7,7 @@ import pytest
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
+from app.services import atlas_deterministic_responses
 from app.services.atlas_deterministic_responses import (
     _time_log_arguments,
     render_semantic_atlas_response,
@@ -295,3 +296,60 @@ def test_time_log_arguments_accept_demo_guide_natural_language() -> None:
         "description": "board pack review and cash flow modelling",
         "billable": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_today_uses_tenant_local_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = MagicMock()
+    ledger.start_run = AsyncMock(return_value="semantic-time-run-local-date")
+    ledger.record_tool_invocation = AsyncMock()
+    ledger.complete_run = AsyncMock()
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "AgentRunLedger",
+        lambda *_args, **_kwargs: ledger,
+    )
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "_tenant_today",
+        lambda *_args, **_kwargs: date(2026, 8, 6),
+        raising=False,
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _log_time(
+        db: object,
+        context: object,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        del db, context
+        calls.append(arguments)
+        return {
+            "requires_review": True,
+            "suggestion_id": "suggestion-time-local-date",
+            "action_type": "copilot_log_time_entry",
+            "tool_name": "log_time_entry",
+            "risk_class": "write_low_risk",
+        }
+
+    monkeypatch.setattr(atlas_tools, "_log_time_entry", _log_time)
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Log 4.5 hours on the Nexus CFO Advisory project for today - "
+            "board pack review and cash flow modelling"
+        ),
+    )
+
+    assert response is not None
+    assert calls[0]["date"] == "2026-08-06"
