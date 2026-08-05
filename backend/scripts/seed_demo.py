@@ -54,6 +54,7 @@ from decimal import Decimal
 for _k in ("AGENT_MODELS", "CORS_ORIGINS"):
     os.environ.pop(_k, None)
 
+from app.domain.journal_helper import JournalLineSpec, post_journal  # noqa: E402
 from supabase import Client, create_client  # noqa: E402 — must follow env pop
 
 # ---------------------------------------------------------------------------
@@ -695,52 +696,36 @@ def _approve_invoice(db: Client, tenant_id: str, invoice_id: str) -> None:
     acct_map = {r["code"]: r["id"] for r in acct_rows}
 
     if acct_map.get("1200") and acct_map.get("4000"):
-        je_number = f"JE-INV-{invoice_number}"
-        period = entry_date[:7]
-        je = (
-            db.table("journal_entries")
-            .insert(
-                {
-                    "tenant_id": tenant_id,
-                    "entry_number": je_number,
-                    "entry_type": "auto",
-                    "description": f"AR for invoice {invoice_number}",
-                    "entry_date": str(entry_date),
-                    "period": period,
-                    "reference_type": "invoice",
-                    "reference_id": invoice_id,
-                    "posted_at": datetime.now(UTC).isoformat(),
-                    "created_by": "00000000-0000-0000-0000-000000000000",
-                }
-            )
-            .execute()
-        ).data[0]
-        je_id = je["id"]
-
-        db.table("journal_lines").insert(
-            [
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je_id,
-                    "direction": "DR",
-                    "account_id": acct_map["1200"],
-                    "amount": _m(total),
-                    "currency": currency,
-                    "base_amount": _m(total),
-                    "description": f"AR for invoice {invoice_number}",
-                },
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je_id,
-                    "direction": "CR",
-                    "account_id": acct_map["4000"],
-                    "amount": _m(total),
-                    "currency": currency,
-                    "base_amount": _m(total),
-                    "description": f"Revenue for invoice {invoice_number}",
-                },
-            ]
-        ).execute()
+        post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by="00000000-0000-0000-0000-000000000000",
+            description=f"AR for invoice {invoice_number}",
+            entry_date=str(entry_date),
+            reference_type="invoice",
+            reference_id=invoice_id,
+            entry_number=f"JE-INV-{invoice_number}",
+            lines=[
+                JournalLineSpec(
+                    direction="DR",
+                    account_code="1200",
+                    account_id=acct_map["1200"],
+                    amount=total,
+                    currency=currency,
+                    base_amount=total,
+                    description=f"AR for invoice {invoice_number}",
+                ),
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="4000",
+                    account_id=acct_map["4000"],
+                    amount=total,
+                    currency=currency,
+                    base_amount=total,
+                    description=f"Revenue for invoice {invoice_number}",
+                ),
+            ],
+        )
 
     db.table("invoices").update({"status": "approved"}).eq("id", invoice_id).execute()
 
@@ -784,51 +769,38 @@ def _pay_invoice(
     acct_map = {r["code"]: r["id"] for r in acct_rows}
 
     if acct_map.get("1100") and acct_map.get("1200"):
-        period = date.today().isoformat()[:7]
         inv_row = db.table("invoices").select("invoice_number").eq("id", invoice_id).execute().data[0]
         inv_num = inv_row["invoice_number"]
-        je = (
-            db.table("journal_entries")
-            .insert(
-                {
-                    "tenant_id": tenant_id,
-                    "entry_number": f"JE-PMT-{inv_num}",
-                    "entry_type": "auto",
-                    "description": f"Payment received for invoice {inv_num}",
-                    "entry_date": _today(),
-                    "period": period,
-                    "reference_type": "payment",
-                    "reference_id": invoice_id,
-                    "posted_at": datetime.now(UTC).isoformat(),
-                    "created_by": "00000000-0000-0000-0000-000000000000",
-                }
-            )
-            .execute()
-        ).data[0]
-        db.table("journal_lines").insert(
-            [
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je["id"],
-                    "direction": "DR",
-                    "account_id": acct_map["1100"],
-                    "amount": _m(amount),
-                    "currency": currency,
-                    "base_amount": _m(amount),
-                    "description": f"Payment received for invoice {inv_num}",
-                },
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je["id"],
-                    "direction": "CR",
-                    "account_id": acct_map["1200"],
-                    "amount": _m(amount),
-                    "currency": currency,
-                    "base_amount": _m(amount),
-                    "description": f"Payment received for invoice {inv_num}",
-                },
-            ]
-        ).execute()
+        post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by="00000000-0000-0000-0000-000000000000",
+            description=f"Payment received for invoice {inv_num}",
+            entry_date=_today(),
+            reference_type="payment",
+            reference_id=invoice_id,
+            entry_number=f"JE-PMT-{inv_num}",
+            lines=[
+                JournalLineSpec(
+                    direction="DR",
+                    account_code="1100",
+                    account_id=acct_map["1100"],
+                    amount=amount,
+                    currency=currency,
+                    base_amount=amount,
+                    description=f"Payment received for invoice {inv_num}",
+                ),
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="1200",
+                    account_id=acct_map["1200"],
+                    amount=amount,
+                    currency=currency,
+                    base_amount=amount,
+                    description=f"Payment received for invoice {inv_num}",
+                ),
+            ],
+        )
 
 
 def _create_bill(
@@ -904,49 +876,36 @@ def _approve_bill(
     acct_map = {r["code"]: r["id"] for r in acct_rows}
 
     if acct_map.get("5000") and acct_map.get("2000"):
-        period = str(entry_date)[:7]
-        je = (
-            db.table("journal_entries")
-            .insert(
-                {
-                    "tenant_id": tenant_id,
-                    "entry_number": f"JE-BILL-{bill_number}",
-                    "entry_type": "auto",
-                    "description": f"AP for bill {bill_number}",
-                    "entry_date": str(entry_date),
-                    "period": period,
-                    "reference_type": "bill",
-                    "reference_id": bill_id,
-                    "posted_at": datetime.now(UTC).isoformat(),
-                    "created_by": "00000000-0000-0000-0000-000000000000",
-                }
-            )
-            .execute()
-        ).data[0]
-        db.table("journal_lines").insert(
-            [
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je["id"],
-                    "direction": "DR",
-                    "account_id": acct_map["5000"],
-                    "amount": _m(total),
-                    "currency": currency,
-                    "base_amount": _m(total),
-                    "description": f"Expense for bill {bill_number}",
-                },
-                {
-                    "tenant_id": tenant_id,
-                    "journal_entry_id": je["id"],
-                    "direction": "CR",
-                    "account_id": acct_map["2000"],
-                    "amount": _m(total),
-                    "currency": currency,
-                    "base_amount": _m(total),
-                    "description": f"AP liability for bill {bill_number}",
-                },
-            ]
-        ).execute()
+        post_journal(
+            db=db,
+            tenant_id=tenant_id,
+            created_by="00000000-0000-0000-0000-000000000000",
+            description=f"AP for bill {bill_number}",
+            entry_date=str(entry_date),
+            reference_type="bill",
+            reference_id=bill_id,
+            entry_number=f"JE-BILL-{bill_number}",
+            lines=[
+                JournalLineSpec(
+                    direction="DR",
+                    account_code="5000",
+                    account_id=acct_map["5000"],
+                    amount=total,
+                    currency=currency,
+                    base_amount=total,
+                    description=f"Expense for bill {bill_number}",
+                ),
+                JournalLineSpec(
+                    direction="CR",
+                    account_code="2000",
+                    account_id=acct_map["2000"],
+                    amount=total,
+                    currency=currency,
+                    base_amount=total,
+                    description=f"AP liability for bill {bill_number}",
+                ),
+            ],
+        )
 
     db.table("bills").update({"status": "approved"}).eq("id", bill_id).execute()
 
