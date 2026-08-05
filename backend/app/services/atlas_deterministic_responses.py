@@ -12,7 +12,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
@@ -177,7 +179,9 @@ class _DeterministicAtlasResponder:
         if route.intent == "brightwater_payroll":
             return self._format_brightwater_payroll(period=period)
         if route.intent == "single_bill_drilldown":
-            return self._format_single_bill()
+            return self._format_single_bill(
+                bill_number=route.entities.get("bill_number"),
+            )
         if route.intent == "bill_pay_run":
             return self._format_bill_pay_run()
         if route.intent == "alderton_family_office":
@@ -243,7 +247,12 @@ class _DeterministicAtlasResponder:
         )
 
     async def _format_time_log(self, message: str) -> str:
-        arguments = _time_log_arguments(message)
+        tenant_today = (
+            _tenant_today(self.db, self.tenant_id)
+            if re.search(r"\btoday\b", message, re.IGNORECASE)
+            else None
+        )
+        arguments = _time_log_arguments(message, today=tenant_today)
         if arguments is None:
             return self._format_time_log_failure(
                 "Project, hours, date, and exact description are required."
@@ -327,7 +336,6 @@ class _DeterministicAtlasResponder:
             started_at=started_at,
         )
         self._materialized_tool_name = "log_time_entry"
-        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
         return "\n".join(
             [
                 "Prepared the time entry and routed it to Inbox for review.",
@@ -336,7 +344,7 @@ class _DeterministicAtlasResponder:
                     f"{arguments['project_name']} for {arguments['date']}."
                 ),
                 f"- Description: {arguments['description']}",
-                f"- Inbox review reference: {suggestion_ref}.",
+                "- Open Inbox to review and approve the prepared entry.",
                 "- No time entry was posted before approval.",
             ]
         )
@@ -433,15 +441,45 @@ class _DeterministicAtlasResponder:
             ]
         )
 
-    def _format_single_bill(self) -> str:
+    def _format_single_bill(self, *, bill_number: str | None) -> str:
+        requested_number = bill_number or "the requested bill"
+        pack = P2PReadService(self.db, self.tenant_id).payment_risk_read_pack(
+            bill_number=bill_number,
+            due_within_days=365,
+            limit=1,
+        )
+        bills = pack.get("bills") or []
+        if not bills:
+            return "\n".join(
+                [
+                    f"No bill {requested_number} was found in this tenant.",
+                    "- I did not substitute another tenant or invent bill details.",
+                    "- Check the bill number in Bills, then retry the drilldown.",
+                ]
+            )
+
+        bill = bills[0]
+        coding = bill.get("coding_summary") or {}
+        batches = bill.get("payment_batches") or []
+        batch_status = (
+            ", ".join(
+                str(item.get("batch_status") or item.get("item_status") or "unknown")
+                for item in batches
+            )
+            if batches
+            else "not in a payment batch"
+        )
+        blockers = bill.get("payment_blockers") or []
         return "\n".join(
             [
-                "Bill BILL-1001 review packet:",
-                "- Due date and amount: show due date, currency, and total amount.",
-                "- Vendor invoice number: compare vendor invoice number against duplicate signals.",
-                "- Coding/source: show coding status, account evidence, and source document link.",
-                "- PO/service-order match: show matched, not linked, or exception state.",
-                "- Approval and payment readiness: show approval state, existing batch status, blockers, and recommended next action before payment.",
+                f"Bill {bill.get('bill_number')} review for Vendor {bill.get('vendor_name')}:",
+                f"- Due date: {bill.get('due_date')}; amount: {bill.get('currency')} {bill.get('total')}.",
+                f"- Vendor invoice number: {bill.get('vendor_invoice_number') or 'not recorded'}.",
+                f"- Coding status: {coding.get('status') or 'unknown'}; source document: {_yes_no(bill.get('source_document_available'))}.",
+                f"- Duplicate signals: {_yes_no(bill.get('duplicate_risk'))}; PO/service-order match: {bill.get('po_match_status')}.",
+                f"- Approval state: {bill.get('approval_state')}; payment readiness: {bill.get('payment_readiness')}; existing batch status: {batch_status}.",
+                f"- Blockers: {', '.join(str(item) for item in blockers) if blockers else 'none'}.",
+                f"- Recommended next action: {bill.get('recommended_next_action')}.",
             ]
         )
 
@@ -768,7 +806,6 @@ class _DeterministicAtlasResponder:
             output_payload=result,
         )
         self._materialized_tool_name = "create_finance_ops_action_plan"
-        suggestion_ref = suggestion_id.strip() if isinstance(suggestion_id, str) else ""
 
         status_message = result.get("message")
         if not isinstance(status_message, str) or not status_message.strip():
@@ -783,7 +820,7 @@ class _DeterministicAtlasResponder:
             [
                 f"Created the next recommended Finance Ops action plan for {_period_label(period)} and routed it to Inbox for review.",
                 "- Work-item limit: at most five manager-reviewed items.",
-                f"- Inbox review reference: {suggestion_ref}.",
+                "- Open Inbox to review and approve the prepared action plan.",
                 f"- Status: {status_message.strip()}",
                 f"- Approval boundary: {approval_boundary.strip()}",
             ]
@@ -848,7 +885,7 @@ class _DeterministicAtlasResponder:
         lines = [
             "Prepared the manual journal review packet and routed it to Inbox before posting.",
             f"Requested transaction: {tx.get('currency')} {tx.get('amount')} with {tx.get('base_currency')} base-currency impact {tx.get('base_amount')}. FX provenance: {tx.get('fx_rate_provenance')}.",
-            f"Review path: {result.get('review_path')}; task id: {result.get('task_id')}; approval boundary: {result.get('approval_boundary')}",
+            f"Review path: {result.get('review_path')}; open Inbox to review the prepared journal; approval boundary: {result.get('approval_boundary')}",
             "Journal lines:",
         ]
         for line in result.get("journal_lines") or []:
@@ -881,18 +918,6 @@ class _DeterministicAtlasResponder:
         )
 
     def _format_management_pack(self, *, period: str | None, drilldown: bool = False) -> str:
-        if not drilldown:
-            return "\n".join(
-                [
-                    "Month-end management pack for June 2026 versus May 2026:",
-                    "- Revenue: compare June 2026 revenue with May 2026 and explain major variance drivers by service line, client, and billing model.",
-                    "- Expenses and margin: highlight subcontractor, payroll, software, and delivery-cost variance, then show gross margin and net income movement.",
-                    "- Utilization: include partner/manager/staff utilization, Alice delivery context, and unbilled WIP that may affect June billing.",
-                    "- AR/AP and cash: summarize accounts receivable aging, accounts payable due soon, payment batches, and cash-impact items.",
-                    "- Journals and close blockers: list draft journals, approval gaps, reconciliations, and close tasks that block period lock.",
-                    "- Next actions: route journals, invoice sends, payment batches, and close overrides through Inbox approval; I did not post journals or lock the period.",
-                ]
-            )
         pack = R2RReadService(self.db, self.tenant_id).management_pack_read_pack(
             period=period or "2026-06",
             comparison_period=None,
@@ -909,7 +934,33 @@ class _DeterministicAtlasResponder:
             f"- Journals: {pack.get('journal_summary', {}).get('response_summary')}; draft journals {pack.get('journal_summary', {}).get('draft_count')}.",
             f"- Close status {pack.get('close_status', {}).get('status')}; remaining close blockers {len(pack.get('close_blockers') or [])}.",
         ]
+        for variance in (pack.get("statement_variances") or [])[:5]:
+            delta_pct = variance.get("delta_pct")
+            pct_text = f" ({delta_pct}%)" if delta_pct is not None else ""
+            lines.append(
+                f"- {variance.get('label')}: {variance.get('current')} versus "
+                f"{variance.get('comparison')}; variance {variance.get('delta')}{pct_text}."
+            )
+        for project in (pack.get("project_margin_highlights") or [])[:5]:
+            lines.append(
+                f"- Project margin {project.get('project_name')}: "
+                f"{project.get('gross_margin_pct')}% ({project.get('risk_level') or 'reported'})."
+            )
+        for employee in (pack.get("utilization_highlights") or [])[:5]:
+            lines.append(
+                f"- Utilization {employee.get('employee_name') or 'Unnamed employee'}: "
+                f"{employee.get('utilization_pct')}% ({employee.get('risk_level') or 'reported'})."
+            )
         if drilldown:
+            for blocker in (pack.get("close_blockers") or [])[:25]:
+                lines.append(
+                    "- Close blocker "
+                    f"{blocker.get('code')}: {blocker.get('label')} is "
+                    f"{blocker.get('status')}; source {blocker.get('source')}; "
+                    f"owner role {blocker.get('owner_role')}; close impact: "
+                    f"{blocker.get('close_impact')}; next action: "
+                    f"{blocker.get('recommended_action')}"
+                )
             for task in (pack.get("close_task_checklist_state") or {}).get("tasks", [])[:8]:
                 lines.append(
                     f"- Close task {task.get('code')}: {task.get('title')} is {task.get('status')}; owner role {task.get('owner_role')}; next action is resolve or document waiver before close."
@@ -918,6 +969,8 @@ class _DeterministicAtlasResponder:
                 lines.append(
                     f"- Draft journal {journal.get('entry_number')}: {journal.get('description')} blocks close until reviewed, posted, rejected, or reversed through the journal lifecycle."
                 )
+        for action in (pack.get("recommended_next_actions") or [])[:8]:
+            lines.append(f"- Next action: {action}")
         lines.append("I did not post journals or lock the period.")
         return "\n".join(lines)
 
@@ -1152,12 +1205,22 @@ def _date_from_text(message: str) -> str | None:
     return f"{match.group(3)}-{_MONTHS[match.group(2)]}-{int(match.group(1)):02d}"
 
 
-def _time_log_arguments(message: str) -> dict[str, object] | None:
+def _time_log_arguments(
+    message: str,
+    *,
+    today: date | None = None,
+) -> dict[str, object] | None:
     project_match = re.search(
         r"\bproject\s+[\"“]([^\"”]+)[\"”]",
         message,
         re.IGNORECASE,
     )
+    if not project_match:
+        project_match = re.search(
+            r"\bon\s+(?:the\s+)?(.+?)\s+project\b",
+            message,
+            re.IGNORECASE,
+        )
     hours_match = re.search(
         r"\b(?:exactly\s+)?(\d+(?:\.\d+)?)\s+(?:billable\s+)?hours?\b",
         message,
@@ -1168,7 +1231,11 @@ def _time_log_arguments(message: str) -> dict[str, object] | None:
         message,
         re.IGNORECASE,
     )
+    if not description_match:
+        description_match = re.search(r"\s[-\u2013\u2014]\s*(.+?)\s*$", message)
     entry_date = _date_from_text(message)
+    if entry_date is None and re.search(r"\btoday\b", message, re.IGNORECASE):
+        entry_date = (today or date.today()).isoformat()
     if not project_match or not hours_match or not description_match or not entry_date:
         return None
     return {
@@ -1180,6 +1247,38 @@ def _time_log_arguments(message: str) -> dict[str, object] | None:
             re.search(r"\bnon[- ]?billable\b", message, re.IGNORECASE)
         ),
     }
+
+
+def _tenant_today(db: Client, tenant_id: str) -> date:
+    """Resolve relative dates in the tenant's configured IANA timezone."""
+    timezone_name = "UTC"
+    try:
+        result = (
+            db.table("tenants")
+            .select("timezone")
+            .eq("id", tenant_id)
+            .single()
+            .execute()
+        )
+        data = result.data if isinstance(result.data, dict) else {}
+        configured = data.get("timezone")
+        if isinstance(configured, str) and configured.strip():
+            timezone_name = configured.strip()
+    except Exception:
+        logger.warning(
+            "Unable to load tenant timezone for relative time-entry date",
+            extra={"tenant_id": tenant_id},
+        )
+
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Invalid tenant timezone; using UTC for relative time-entry date",
+            extra={"tenant_id": tenant_id, "timezone": timezone_name},
+        )
+        timezone = UTC
+    return datetime.now(timezone).date()
 
 
 def _client_name_from_text(text: str) -> str | None:

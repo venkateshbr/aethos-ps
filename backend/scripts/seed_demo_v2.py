@@ -1,7 +1,8 @@
 """Seed the Demo Guide v2 Meridian fixture into an existing tenant.
 
 Usage:
-    uv run python -m scripts.seed_demo_v2 --tenant-id <uuid> --reset
+    uv run python -m scripts.seed_demo_v2 --tenant-id <uuid> --reset \
+      --require-tenant-name "Meridian Demo"
 
 This is intentionally tenant-scoped. It preserves tenant membership, chart of
 accounts, tax rates, FX rates, and platform configuration, while replacing the
@@ -479,7 +480,19 @@ def _seed_close_tasks(db: Client, *, tenant_id: str) -> None:
     ).execute()
 
 
-def seed_demo_v2(tenant_id: str, reset: bool = False) -> None:
+def _guard_reset_target(*, actual_name: str, required_name: str) -> None:
+    if actual_name != required_name:
+        raise ValueError(
+            "Refusing reset: tenant name does not exactly match "
+            f"--require-tenant-name ({actual_name!r} != {required_name!r})."
+        )
+
+
+def seed_demo_v2(
+    tenant_id: str,
+    reset: bool = False,
+    required_tenant_name: str | None = None,
+) -> None:
     db = _make_client()
     tenant_row = (
         db.table("tenants")
@@ -490,10 +503,17 @@ def seed_demo_v2(tenant_id: str, reset: bool = False) -> None:
     ).data
     if not tenant_row:
         _fail(f"Tenant {tenant_id!r} not found.")
-    print(f"\nSeeding Demo Guide v2 data into tenant: {tenant_row[0].get('name')} ({tenant_id})")
+    tenant_name = str(tenant_row[0].get("name") or "")
+    print(f"\nSeeding Demo Guide v2 data into tenant: {tenant_name} ({tenant_id})")
 
     _set_tenant(db, tenant_id)
     if reset:
+        if not required_tenant_name:
+            raise ValueError("--reset requires --require-tenant-name as a safety check.")
+        _guard_reset_target(
+            actual_name=tenant_name,
+            required_name=required_tenant_name,
+        )
         reset_demo_v2_data(db, tenant_id)
     owner_id = _owner_id(db, tenant_id)
 
@@ -770,6 +790,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed Demo Guide v2 Meridian data.")
     parser.add_argument("--tenant-id", required=True, metavar="UUID")
     parser.add_argument("--reset", action="store_true", default=False)
+    parser.add_argument("--require-tenant-name")
     return parser.parse_args()
 
 
@@ -780,7 +801,11 @@ if __name__ == "__main__":
     except ValueError:
         _fail(f"--tenant-id must be a valid UUID, got: {args.tenant_id!r}")
     try:
-        seed_demo_v2(args.tenant_id, reset=args.reset)
+        seed_demo_v2(
+            args.tenant_id,
+            reset=args.reset,
+            required_tenant_name=args.require_tenant_name,
+        )
     except SystemExit:
         raise
     except Exception as exc:

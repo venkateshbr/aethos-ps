@@ -300,10 +300,10 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "single_bill_drilldown",
         (
-            ("bill-1001", "bill 1001", "single bill"),
+            ("review bill", "bill-1001", "bill 1001", "single bill"),
             ("vendor invoice number", "due date", "po", "approval", "payment readiness"),
         ),
-        priority=74,
+        priority=84,
         min_concept_hits=1,
     ),
     _IntentDefinition(
@@ -450,8 +450,10 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
             ("management pack", "close task blockers", "draft journals"),
             ("blockers", "drilldown", "close task"),
             ("draft journals", "remaining", "resolve"),
+            ("drill", "drilldown", "which ones block close"),
         ),
-        priority=64,
+        priority=73,
+        min_concept_hits=4,
     ),
     _IntentDefinition(
         "management_pack",
@@ -460,7 +462,7 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
             ("june 2026", "may 2026", "variance", "month end"),
             ("revenue", "expenses", "margin", "utilization", "utilisation"),
         ),
-        priority=63,
+        priority=72,
     ),
     _IntentDefinition(
         "delivery_context",

@@ -381,7 +381,7 @@ def test_chat_message_stream_uses_deterministic_response_before_runtime(
     assert messages[1]["model"] == "aethos-semantic-intent"
 
 
-def test_chat_message_stream_emits_semantic_tool_frames_before_delta(
+def test_chat_message_stream_hides_semantic_tool_frames_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import app.api.v1.endpoints.chat as chat_module
@@ -438,8 +438,6 @@ def test_chat_message_stream_emits_semantic_tool_frames_before_delta(
         if line.startswith("data: ")
     ]
     assert events == [
-        {"tool_start": "log_time_entry"},
-        {"tool_result": "log_time_entry"},
         {"delta": "Prepared the time entry and routed it to Inbox for review."},
         {"done": True, "finish_reason": "stop"},
     ]
@@ -538,6 +536,7 @@ async def test_deterministic_manual_journal_honors_explicit_gbp_base_currency(
     assert "GBP base-currency impact 10533.60" in answer
     assert "SGD->GBP rate" in answer
     assert "Inbox" in answer
+    assert "task-gbp" not in answer
 
 
 def test_first_user_message_names_blank_chat_thread(

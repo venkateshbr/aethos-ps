@@ -1830,6 +1830,12 @@ def test_r2r_management_pack_read_pack_returns_close_reporting_drilldown() -> No
     assert body["journal_summary"]["draft_count"] == 1
     assert body["journal_summary"]["draft_journals"][0]["entry_number"] == "JE-DRAFT"
     assert any(item["code"] == "unposted_journals" for item in body["close_blockers"])
+    assert all(
+        item.get("owner_role")
+        and item.get("close_impact")
+        and item.get("recommended_action")
+        for item in body["close_blockers"]
+    )
     assert body["project_margin_highlights"][0]["risk_level"] == "high"
     assert body["utilization_highlights"][0]["risk_level"] == "low_utilization"
     assert body["working_capital_movement"]["period_ar_activity"]["current"] == "10000.00"

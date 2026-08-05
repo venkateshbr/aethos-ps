@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
-from app.services.atlas_deterministic_responses import render_semantic_atlas_response
+from app.services import atlas_deterministic_responses
+from app.services.atlas_deterministic_responses import (
+    _time_log_arguments,
+    render_semantic_atlas_response,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -89,7 +94,8 @@ async def test_semantic_responder_materializes_finance_ops_action_plan(
 
     assert response is not None
     assert response.route.intent == "finance_ops_action_plan"
-    assert "suggestion-plan-1" in response.text
+    assert "suggestion-plan-1" not in response.text
+    assert "Open Inbox" in response.text
     assert "Inbox" in response.text
     assert "No invoice, payment, journal, or email was approved" in response.text
     assert len(calls) == 1
@@ -254,7 +260,8 @@ async def test_semantic_responder_materializes_exact_time_log_review(
     assert response is not None
     assert response.route.intent == "time_log"
     assert response.tool_name == "log_time_entry"
-    assert "suggestion-time-1" in response.text
+    assert "suggestion-time-1" not in response.text
+    assert "Open Inbox" in response.text
     assert calls == [
         {
             "project_name": "Nexus Advisory",
@@ -275,3 +282,279 @@ async def test_semantic_responder_materializes_exact_time_log_review(
         output_payload=invocation_call.kwargs["output_payload"],
         error_message=None,
     )
+
+
+def test_time_log_arguments_accept_demo_guide_natural_language() -> None:
+    arguments = _time_log_arguments(
+        "Log 4.5 hours on the Nexus CFO Advisory project for today - "
+        "board pack review and cash flow modelling",
+        today=date(2026, 8, 5),
+    )
+
+    assert arguments == {
+        "project_name": "Nexus CFO Advisory",
+        "hours": "4.5",
+        "date": "2026-08-05",
+        "description": "board pack review and cash flow modelling",
+        "billable": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_today_uses_tenant_local_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = MagicMock()
+    ledger.start_run = AsyncMock(return_value="semantic-time-run-local-date")
+    ledger.record_tool_invocation = AsyncMock()
+    ledger.complete_run = AsyncMock()
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "AgentRunLedger",
+        lambda *_args, **_kwargs: ledger,
+    )
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "_tenant_today",
+        lambda *_args, **_kwargs: date(2026, 8, 6),
+        raising=False,
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _log_time(
+        db: object,
+        context: object,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        del db, context
+        calls.append(arguments)
+        return {
+            "requires_review": True,
+            "suggestion_id": "suggestion-time-local-date",
+            "action_type": "copilot_log_time_entry",
+            "tool_name": "log_time_entry",
+            "risk_class": "write_low_risk",
+        }
+
+    monkeypatch.setattr(atlas_tools, "_log_time_entry", _log_time)
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Log 4.5 hours on the Nexus CFO Advisory project for today - "
+            "board pack review and cash flow modelling"
+        ),
+    )
+
+    assert response is not None
+    assert calls[0]["date"] == "2026-08-06"
+
+
+@pytest.mark.asyncio
+async def test_management_pack_drilldown_renders_every_close_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _R2RReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def management_pack_read_pack(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "period": "2026-06",
+                "comparison_period": "2026-05",
+                "financial_statements": {"current": {"income_statement": {}}},
+                "working_capital_movement": {},
+                "project_margin_highlights": [],
+                "utilization_highlights": [],
+                "journal_summary": {"response_summary": "1 draft", "draft_count": 0},
+                "close_status": {"status": "blocked"},
+                "close_task_checklist_state": {"tasks": []},
+                "close_blockers": [
+                    {
+                        "code": "unposted_journals",
+                        "label": "Unposted journals",
+                        "status": "blocked",
+                        "source": "journal_entries",
+                        "owner_role": "controller",
+                        "close_impact": "Blocks period lock.",
+                        "recommended_action": "Review, post, or reject each draft journal.",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "R2RReadService",
+        _R2RReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Drill into the draft journals and close task blockers for June 2026. "
+            "Which ones block close, who owns them, and what should happen next?"
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "management_pack_drilldown"
+    assert "Unposted journals" in response.text
+    assert "source journal_entries" in response.text
+    assert "owner role controller" in response.text
+    assert "Blocks period lock" in response.text
+    assert "Review, post, or reject each draft journal" in response.text
+
+
+@pytest.mark.asyncio
+async def test_single_bill_drilldown_uses_tenant_read_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _P2PReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def payment_risk_read_pack(self, **kwargs: object) -> dict[str, object]:
+            assert kwargs["bill_number"] == "BILL-0041"
+            return {
+                "bills": [
+                    {
+                        "bill_number": "BILL-0041",
+                        "vendor_name": "Forster & Reid Ltd",
+                        "due_date": "2026-07-05",
+                        "currency": "GBP",
+                        "total": "3200.00",
+                        "vendor_invoice_number": "FR-2026-0615",
+                        "coding_summary": {"status": "complete"},
+                        "source_document_available": True,
+                        "po_match_status": "matched",
+                        "duplicate_risk": False,
+                        "approval_state": "approved",
+                        "payment_readiness": "ready",
+                        "payment_batches": [],
+                        "payment_blockers": [],
+                        "recommended_next_action": "Add the bill to the next payment batch.",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "P2PReadService",
+        _P2PReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Review bill BILL-0041. Show due date, amount, vendor invoice number, "
+            "coding status, source document, duplicate signals, PO/service-order "
+            "match, approval state, payment readiness, existing batch status, and "
+            "recommended next action."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "single_bill_drilldown"
+    assert "Forster & Reid Ltd" in response.text
+    assert "GBP 3200.00" in response.text
+    assert "FR-2026-0615" in response.text
+    assert "Add the bill to the next payment batch" in response.text
+
+
+@pytest.mark.asyncio
+async def test_management_pack_summary_uses_comparative_tenant_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _R2RReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def management_pack_read_pack(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "period": "2026-06",
+                "comparison_period": "2026-05",
+                "financial_statements": {
+                    "current": {
+                        "income_statement": {
+                            "total_revenue": "10000.00",
+                            "total_expenses": "6000.00",
+                            "net_income": "4000.00",
+                        }
+                    }
+                },
+                "statement_variances": [
+                    {
+                        "label": "Revenue",
+                        "current": "10000.00",
+                        "comparison": "8000.00",
+                        "delta": "2000.00",
+                        "delta_pct": 25.0,
+                    }
+                ],
+                "working_capital_movement": {
+                    "period_ar_activity": {"current": "3000.00", "delta": "500.00"},
+                    "period_ap_activity": {"current": "1500.00", "delta": "-100.00"},
+                    "wip_total": {"current": "900.00", "delta": "50.00"},
+                },
+                "project_margin_highlights": [
+                    {"project_name": "Nexus CFO Advisory", "gross_margin_pct": 57.0}
+                ],
+                "utilization_highlights": [
+                    {"employee_name": "Alice Chen", "utilization_pct": 64.0}
+                ],
+                "journal_summary": {"response_summary": "1 draft", "draft_count": 1},
+                "close_status": {"status": "blocked"},
+                "close_blockers": [{"code": "unposted_journals"}],
+                "recommended_next_actions": ["Review the draft journal."],
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "R2RReadService",
+        _R2RReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Give me the June 2026 month-end management pack. Explain the major "
+            "variances versus May 2026, show revenue, expenses, project margin, "
+            "utilization, AR/AP movement, journals, close task blockers, draft "
+            "journals, and remaining close blockers. Do not post journals or lock "
+            "the period."
+        ),
+    )
+
+    assert response is not None
+    assert "Revenue: 10000.00 versus 8000.00; variance 2000.00 (25.0%)" in response.text
+    assert "Nexus CFO Advisory: 57.0%" in response.text
+    assert "Alice Chen: 64.0%" in response.text
+    assert "Review the draft journal" in response.text
