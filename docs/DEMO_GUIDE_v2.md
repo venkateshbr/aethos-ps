@@ -4,9 +4,14 @@
 > **Base Currency**: GBP (£)
 > **Service Lines**: Accounting & Advisory · Tax Services · Company Secretarial · Payroll
 > **Markets**: UK (primary), Singapore, US (cross-border clients)
-> **Guide version**: 2.5 · 2026-07-15 · adds Getting Started (login + navigation
-> map) and a full Platform Concepts glossary so a first-time presenter can follow
-> every scenario step by step and explain each concept to clients.
+> **Guide version**: 2.6 · 2026-08-05 · adds the current pre-launch production
+> validation boundary and retained-tenant warning.
+
+> **Production warning (2026-08-05):** the only retained production tenant is
+> Sterling Bridge Advisory Group, while this guide requires the Meridian fixture.
+> Do not present the named scenarios verbatim against Sterling. Read the
+> [current pre-launch validation runbook](qa/prelaunch-platform-validation-runbook-2026-08-05.md)
+> and resolve [#479](https://github.com/venkateshbr/aethos-ps/issues/479) first.
 
 ## Current Product Boundaries
 

@@ -8,7 +8,8 @@ Related docs:
 
 - Aethos Nous prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
 - Nous/Hermes technical architecture: [`docs/architecture/atlas-hermes-ai-agent-architecture.md`](../architecture/atlas-hermes-ai-agent-architecture.md)
-- Current launch QA runbook: [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](../qa/ishantech-production-e2e-runbook-2026-07-11.md)
+- Current pre-launch QA runbook: [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](../qa/prelaunch-platform-validation-runbook-2026-08-05.md)
+- Earlier Ishantech launch QA runbook: [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](../qa/ishantech-production-e2e-runbook-2026-07-11.md)
 - Historical launch scenario runbook: [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](../qa/launch-e2e-scenario-runbook-2026-06-24.md)
 - Enterprise E2E scenarios: [`docs/qa/enterprise-e2e-scenario-library.md`](../qa/enterprise-e2e-scenario-library.md)
 - Engagement to Cash test guide: [`docs/test/e2e_engagement_to_cash.md`](../test/e2e_engagement_to_cash.md)
