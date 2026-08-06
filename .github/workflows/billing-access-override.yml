@@ -1,0 +1,113 @@
+name: Governed Billing Access Override
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Grant or revoke the override
+        required: true
+        type: choice
+        options: [grant, revoke]
+      tenant_id:
+        description: Exact production tenant UUID
+        required: true
+        type: string
+      tenant_name:
+        description: Exact production tenant name
+        required: true
+        type: string
+      until:
+        description: Grant expiry as an ISO-8601 UTC timestamp; omit for revoke
+        required: false
+        type: string
+      reason:
+        description: Approved business reason (at least 8 characters)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply audited production override
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PRODUCTION_ENV_BLOB: ${{ secrets.AETHOS_PRODUCTION_ENV }}
+      ACTION: ${{ inputs.action }}
+      TENANT_ID: ${{ inputs.tenant_id }}
+      TENANT_NAME: ${{ inputs.tenant_name }}
+      OVERRIDE_UNTIL: ${{ inputs.until }}
+      REASON: ${{ inputs.reason }}
+      OPERATOR: github:${{ github.actor }}
+    steps:
+      - name: Validate guarded request
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TENANT_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "Invalid tenant UUID"; exit 1; }
+          [ -n "$TENANT_NAME" ] || { echo "Tenant name is required"; exit 1; }
+          [ "${#REASON}" -ge 8 ] || { echo "Reason must contain at least 8 characters"; exit 1; }
+          if [ "$ACTION" = "grant" ]; then
+            [ -n "$OVERRIDE_UNTIL" ] || { echo "Grant requires an expiry"; exit 1; }
+            date --date="$OVERRIDE_UNTIL" --iso-8601=seconds >/dev/null
+          else
+            [ -z "$OVERRIDE_UNTIL" ] || { echo "Revoke must not include an expiry"; exit 1; }
+          fi
+
+      - name: Call service-role-only audited RPC
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW_ENV="$(mktemp)"
+          RESPONSE="$(mktemp)"
+          trap 'rm -f "$RAW_ENV" "$RESPONSE"' EXIT
+          printf '%s\n' "$PRODUCTION_ENV_BLOB" > "$RAW_ENV"
+          value_for() {
+            awk -v wanted="$1" '
+              index($0, "=") > 0 {
+                key=substr($0, 1, index($0, "=")-1)
+                if (key == wanted) value=substr($0, index($0, "=")+1)
+              }
+              END { sub(/\r$/, "", value); printf "%s", value }
+            ' "$RAW_ENV"
+          }
+          SUPABASE_URL="$(value_for SUPABASE_URL)"
+          SERVICE_KEY="$(value_for SUPABASE_SERVICE_ROLE_KEY)"
+          [ -n "$SUPABASE_URL" ] && [ -n "$SERVICE_KEY" ] || {
+            echo "Production Supabase service configuration is missing"; exit 1;
+          }
+
+          if [ "$ACTION" = "grant" ]; then
+            RPC="grant_billing_access_override"
+            BODY="$(jq -n \
+              --arg tenant_id "$TENANT_ID" \
+              --arg tenant_name "$TENANT_NAME" \
+              --arg until "$OVERRIDE_UNTIL" \
+              --arg reason "$REASON" \
+              --arg actor "$OPERATOR" \
+              '{p_tenant_id:$tenant_id,p_tenant_name:$tenant_name,p_until:$until,p_reason:$reason,p_actor:$actor}')"
+          else
+            RPC="revoke_billing_access_override"
+            BODY="$(jq -n \
+              --arg tenant_id "$TENANT_ID" \
+              --arg tenant_name "$TENANT_NAME" \
+              --arg reason "$REASON" \
+              --arg actor "$OPERATOR" \
+              '{p_tenant_id:$tenant_id,p_tenant_name:$tenant_name,p_reason:$reason,p_actor:$actor}')"
+          fi
+
+          HTTP="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' \
+            --request POST "$SUPABASE_URL/rest/v1/rpc/$RPC" \
+            --header "apikey: $SERVICE_KEY" \
+            --header "Authorization: Bearer $SERVICE_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "$BODY")"
+          if [ "$HTTP" != "200" ]; then
+            echo "Override RPC failed with HTTP $HTTP"
+            jq -c '{code,message,hint}' "$RESPONSE" 2>/dev/null || true
+            exit 1
+          fi
+          EVENT_ID="$(jq -r '.' "$RESPONSE")"
+          echo "Applied $ACTION for guarded tenant $TENANT_ID; audit event $EVENT_ID; actor $OPERATOR"
