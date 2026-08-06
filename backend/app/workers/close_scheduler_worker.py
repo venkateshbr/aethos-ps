@@ -27,6 +27,7 @@ from app.agents.revenue_recognition_agent import (
     write_scheduled_revenue_release_suggestions,
 )
 from app.core.db import get_service_role_client
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.services.close_package_service import ClosePackageService
 from app.services.close_status_service import CloseStatusService
 from app.services.close_tasks_service import CloseTasksService
@@ -65,9 +66,9 @@ async def run_monthly_financial_close(timestamp: int) -> dict[str, Any]:
 
 async def _run_monthly_financial_close(db, period: str) -> dict[str, Any]:
     """Run scheduled close preparation across active tenants."""
-    tenants = (
+    tenants = filter_tenants_with_write_access(
         db.table("tenants")
-        .select("id")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
         .in_("status", ["active", "trialing"])
         .execute()
         .data

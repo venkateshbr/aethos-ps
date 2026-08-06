@@ -209,6 +209,26 @@ def test_create_subscription_stripe_error_raises_billing_error(
             )
 
 
+def test_retrieve_subscription_returns_current_provider_state(
+    stripe_svc: StripeService,
+) -> None:
+    """Reconciliation reads status and trial boundary from Stripe."""
+    fake_sub = MagicMock()
+    fake_sub.id = "sub_test_001"
+    fake_sub.status = "active"
+    fake_sub.trial_end = 1_786_000_000
+
+    with patch("stripe.Subscription.retrieve", return_value=fake_sub) as retrieve:
+        result = asyncio.run(stripe_svc.retrieve_subscription("sub_test_001"))
+
+    assert result == {
+        "subscription_id": "sub_test_001",
+        "status": "active",
+        "trial_end": 1_786_000_000,
+    }
+    retrieve.assert_called_once_with("sub_test_001")
+
+
 # ---------------------------------------------------------------------------
 # create_billing_portal_session
 # ---------------------------------------------------------------------------
@@ -351,9 +371,7 @@ def test_price_catalogue_all_tiers_all_currencies() -> None:
                 )
                 # Value must be a non-empty string
                 val = PRICE_IDS[tier][interval][currency]
-                assert isinstance(val, str) and val, (
-                    f"Empty price_id: {tier}/{interval}/{currency}"
-                )
+                assert isinstance(val, str) and val, f"Empty price_id: {tier}/{interval}/{currency}"
 
 
 def test_get_price_id_known_combination() -> None:

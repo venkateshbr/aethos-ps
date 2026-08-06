@@ -15,6 +15,7 @@ import logging
 from datetime import UTC, date, datetime
 
 from app.core.db import get_service_role_client
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.workers.procrastinate_app import app
 
 logger = logging.getLogger(__name__)
@@ -46,11 +47,11 @@ def _create_monthly_billing_runs(db, period_start: date) -> dict:
     # Find all active retainer engagements across this tenant's scope
     tenants_result = (
         db.table("tenants")
-        .select("id")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
         .in_("status", ["active", "trialing"])
         .execute()
     )
-    tenant_rows = tenants_result.data or []
+    tenant_rows = filter_tenants_with_write_access(tenants_result.data or [])
 
     created = 0
     skipped = 0
@@ -351,9 +352,7 @@ def _create_billing_run_review_task(
             "kind": "approve_billing_run",
             "priority": "med",
             "title": f"Review {billing_run.get('name', 'billing run')}",
-            "description": (
-                f"{len(engagement_ids)} retainer engagements are ready for billing."
-            ),
+            "description": (f"{len(engagement_ids)} retainer engagements are ready for billing."),
             "payload": output_snapshot,
             "status": "open",
         }

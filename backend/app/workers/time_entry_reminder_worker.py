@@ -13,6 +13,7 @@ from app.agents.time_entry_agent import (
     draft_time_entry_reminder,
 )
 from app.core.config import settings
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.services.resend_service import ResendService
 from app.workers.procrastinate_app import app
 from supabase import create_client
@@ -31,9 +32,11 @@ async def time_entry_reminder_worker(timestamp: int) -> dict:
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
     resend = ResendService()
     as_of = date.today()
-    tenants = (
+    tenants = filter_tenants_with_write_access(
         db.table("tenants")
-        .select("id, name")
+        .select(
+            "id, name, stripe_subscription_status, trial_ends_at, billing_access_override_until"
+        )
         .in_("status", ["active", "trialing"])
         .execute()
         .data
@@ -438,9 +441,9 @@ def _finish_workflow_run(
 
 def _mark_suggestion_rejected(db, tenant_id: str, suggestion_id: str) -> None:
     try:
-        db.table("agent_suggestions").update({"status": "rejected"}).eq(
-            "tenant_id", tenant_id
-        ).eq("id", suggestion_id).execute()
+        db.table("agent_suggestions").update({"status": "rejected"}).eq("tenant_id", tenant_id).eq(
+            "id", suggestion_id
+        ).execute()
     except Exception:
         logger.warning(
             "time_entry_reminder_worker: failed to reject failed auto-send suggestion",

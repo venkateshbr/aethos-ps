@@ -15,6 +15,8 @@ interface OrgProfile {
   country: string;
   plan_tier: string;
   status: string;
+  provider_status: string;
+  access_mode: 'full' | 'read_only';
   trial_ends_at: string | null;
   member_since: string;
 }
@@ -78,7 +80,7 @@ const PLAN_LABELS: Record<string, string> = {
                 <span class="text-sm flex-1">
                   <span class="inline-flex items-center gap-1.5">
                     <span class="text-text-primary font-medium">{{ planLabel() }}</span>
-                    <span [class]="statusChipClass()">{{ profile()!.status }}</span>
+                    <span [class]="statusChipClass()">{{ statusLabel() }}</span>
                   </span>
                 </span>
               </div>
@@ -176,7 +178,25 @@ export class ProfileComponent implements OnInit {
     const s = this.profile()?.status ?? '';
     if (s === 'trialing') return 'text-xs px-2 py-0.5 rounded bg-confidence-med/15 text-confidence-med';
     if (s === 'active')   return 'text-xs px-2 py-0.5 rounded bg-confidence-high/15 text-confidence-high';
+    if (s === 'trial_expired' || s === 'past_due' || s === 'unpaid') {
+      return 'text-xs px-2 py-0.5 rounded bg-confidence-low/15 text-confidence-low';
+    }
     return 'text-xs px-2 py-0.5 rounded bg-surface text-text-muted';
+  }
+
+  protected statusLabel() {
+    const labels: Record<string, string> = {
+      active: 'Active',
+      trialing: 'Trialing',
+      grace_period: 'Billing grace period',
+      trial_expired: 'Trial ended · Read-only',
+      override_active: 'Access override',
+      past_due: 'Past due · Read-only',
+      unpaid: 'Unpaid · Read-only',
+      canceled: 'Canceled · Read-only',
+    };
+    const status = this.profile()?.status ?? 'unknown';
+    return labels[status] ?? status;
   }
 
   protected async logout() {

@@ -1299,9 +1299,11 @@ System-seeded rates stay read-only.</li>
 <li>Rate card management — create rate cards with a currency, effective date, and
 per-role billing rates (each optionally tagged to a service line). Rate cards
 are selectable when pricing engagements; expand a card to review its roles.</li>
-<li>Plan and billing management — view the current subscription plan tier and
-status (with a trial countdown while trialing) and open the Stripe Customer
-Portal to change plan, update the payment method, or download invoices.</li>
+<li>Plan and billing management — view one canonical subscription state across
+the app shell, Account, and Settings. A delayed Stripe update receives up to
+24 hours of reconciliation grace; after that an expired trial becomes
+read-only. Reads, reports, exports, Settings, and the Stripe Customer Portal
+remain available so billing can be restored.</li>
 <li>Read-only historical FX provenance lookup by currency pair and requested
 date; it shows the matched rate date, row ID, source, and staleness without
 creating or replacing a global rate.</li>
@@ -1375,7 +1377,7 @@ failure, workflow failure, and routed-alert signals.</li>
 </tr>
 <tr>
 <td>Plan &amp; Billing</td>
-<td>Current plan tier/status shows; &quot;Manage plan &amp; billing&quot; opens the Stripe Customer Portal (returns to Settings)</td>
+<td>Current plan/effective status and full/read-only access show consistently; &quot;Manage plan &amp; billing&quot; opens the Stripe Customer Portal (returns to Settings)</td>
 </tr>
 <tr>
 <td>Historical FX provenance</td>

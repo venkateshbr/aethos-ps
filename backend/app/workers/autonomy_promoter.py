@@ -30,6 +30,7 @@ from decimal import Decimal
 
 from app.agents.tool_registry import risk_class_allows, risk_class_for_action
 from app.core.config import settings
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.workers.procrastinate_app import app
 from supabase import create_client
 
@@ -63,7 +64,14 @@ async def autonomy_promoter_worker(timestamp: int) -> dict:
     """
     _ = timestamp  # provided by Procrastinate periodic; unused
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
-    tenants = db.table("tenants").select("id").eq("status", "active").execute().data or []
+    tenants = filter_tenants_with_write_access(
+        db.table("tenants")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
+        .eq("status", "active")
+        .execute()
+        .data
+        or []
+    )
     proposed = 0
     demoted = 0
 

@@ -20,10 +20,65 @@ import stripe
 
 from app.core.config import settings
 from app.core.db import get_service_role_client
+from app.services.billing.stripe_service import StripeService
 from app.services.stripe_checkout_payments import record_checkout_session_payment
 from app.workers.procrastinate_app import app
 
 logger = logging.getLogger(__name__)
+
+
+@app.periodic(cron="15 * * * *")
+@app.task(name="stripe_reconcile.reconcile_subscription_states", queue="cron")
+def reconcile_subscription_states(timestamp: int) -> dict:
+    """Converge locally overdue trials with Stripe's current subscription state."""
+    if not settings.stripe_secret_key:
+        logger.warning("stripe_reconcile_worker: skipping subscriptions — Stripe not configured")
+        return {"reconciled": 0, "unchanged": 0, "errors": 0}
+
+    db = get_service_role_client()
+    as_of = datetime.fromtimestamp(timestamp, tz=UTC)
+    tenants = (
+        db.table("tenants")
+        .select("id, stripe_subscription_id, stripe_subscription_status, trial_ends_at")
+        .eq("stripe_subscription_status", "trialing")
+        .lt("trial_ends_at", as_of.isoformat())
+        .execute()
+        .data
+        or []
+    )
+    stripe_svc = StripeService(settings)
+    reconciled = 0
+    unchanged = 0
+    errors = 0
+
+    for tenant in tenants:
+        subscription_id = tenant.get("stripe_subscription_id")
+        if not subscription_id:
+            unchanged += 1
+            continue
+        try:
+            provider = asyncio.run(stripe_svc.retrieve_subscription(subscription_id))
+            update: dict[str, object] = {
+                "stripe_subscription_status": provider["status"],
+                "stripe_subscription_reconciled_at": as_of.isoformat(),
+            }
+            if provider.get("trial_end"):
+                update["trial_ends_at"] = datetime.fromtimestamp(
+                    int(provider["trial_end"]), tz=UTC
+                ).isoformat()
+            (db.table("tenants").update(update).eq("id", tenant["id"]).execute())
+            if provider["status"] == tenant.get("stripe_subscription_status"):
+                unchanged += 1
+            else:
+                reconciled += 1
+        except Exception:
+            errors += 1
+            logger.exception(
+                "stripe_reconcile_worker: subscription reconciliation failed",
+                extra={"tenant_id": tenant.get("id")},
+            )
+
+    return {"reconciled": reconciled, "unchanged": unchanged, "errors": errors}
 
 
 @app.task(name="stripe_reconcile.reconcile_sent_invoices")

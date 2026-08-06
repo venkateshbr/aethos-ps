@@ -22,6 +22,7 @@ from app.services.approval_policy import (
     approval_policy_settings_from_mapping,
     default_approval_policy_settings,
 )
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.workers.procrastinate_app import app
 from app.workers.workflow_runs import finish_workflow_run, start_workflow_run
 
@@ -85,9 +86,7 @@ async def _run_scheduled_finance_ops_manager(
             result = await _run_for_tenant(db, schedule=schedule, as_of=as_of)
             totals["tenants_processed"] += 1
             totals["plans_created"] += int(bool(result.get("plan_created")))
-            totals["plans_skipped_duplicate"] += int(
-                bool(result.get("plan_skipped_duplicate"))
-            )
+            totals["plans_skipped_duplicate"] += int(bool(result.get("plan_skipped_duplicate")))
             totals["escalations_created"] += int(result.get("escalations_created") or 0)
             workflow_status = (
                 "waiting_on_human"
@@ -99,9 +98,7 @@ async def _run_scheduled_finance_ops_manager(
                 workflow_id,
                 status=workflow_status,
                 current_step=(
-                    "hitl_review"
-                    if workflow_status == "waiting_on_human"
-                    else "completed"
+                    "hitl_review" if workflow_status == "waiting_on_human" else "completed"
                 ),
                 state_snapshot=result,
             )
@@ -307,13 +304,14 @@ def _create_escalation_tasks(
 
 
 def _eligible_schedules(db: Any, *, as_of: datetime) -> list[dict[str, Any]]:
-    tenants = (
+    tenants = filter_tenants_with_write_access(
         db.table("tenants")
-        .select("id")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
         .in_("status", ["active", "trialing"])
         .execute()
         .data
-        or []
+        or [],
+        as_of=as_of,
     )
     configured = _configured_schedules(db)
     schedules: list[dict[str, Any]] = []
@@ -331,13 +329,7 @@ def _eligible_schedules(db: Any, *, as_of: datetime) -> list[dict[str, Any]]:
 
 def _configured_schedules(db: Any) -> dict[str, dict[str, Any]]:
     try:
-        rows = (
-            db.table("finance_ops_schedules")
-            .select("*")
-            .execute()
-            .data
-            or []
-        )
+        rows = db.table("finance_ops_schedules").select("*").execute().data or []
     except Exception:
         return {}
     return {str(row["tenant_id"]): dict(row) for row in rows if row.get("tenant_id")}
@@ -425,8 +417,7 @@ def _escalation_payload_for_task(
     high_risk = (
         str(task.get("priority") or "") in {"high", "critical"}
         or decision.risk_class in {"write_money_in", "write_money_out", "accounting"}
-        or ROLE_HIERARCHY.get(decision.required_role, 0)
-        >= ROLE_HIERARCHY[UserRole.admin]
+        or ROLE_HIERARCHY.get(decision.required_role, 0) >= ROLE_HIERARCHY[UserRole.admin]
     )
     age_hours = _task_age_hours(task, as_of=as_of)
     due_at = _parse_datetime(task.get("due_at"))

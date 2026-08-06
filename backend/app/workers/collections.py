@@ -27,6 +27,7 @@ from app.agents.collections_agent import (
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.config import settings
 from app.models.collections_policy import CollectionsPolicyConfig
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.services.collections_policy_service import (
     default_collections_policy,
     row_to_collections_policy,
@@ -56,8 +57,13 @@ async def collections_worker(timestamp: int) -> dict:
     resend = ResendService()
     today = date.today().isoformat()
 
-    tenants = (
-        db.table("tenants").select("id").eq("status", "active").execute().data or []
+    tenants = filter_tenants_with_write_access(
+        db.table("tenants")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
+        .eq("status", "active")
+        .execute()
+        .data
+        or []
     )
     sent = 0
     hitl = 0
@@ -142,12 +148,9 @@ async def collections_worker(timestamp: int) -> dict:
                         .eq("id", inv.get("client_id", ""))
                         .execute()
                     )
-                    billing_addr = (
-                        (client_result.data[0] if client_result.data else {}).get(
-                            "billing_address"
-                        )
-                        or {}
-                    )
+                    billing_addr = (client_result.data[0] if client_result.data else {}).get(
+                        "billing_address"
+                    ) or {}
                     email = billing_addr.get("email", "")
                     draft.client_email = email
 
@@ -246,16 +249,8 @@ async def collections_worker(timestamp: int) -> dict:
             finish_workflow_run(
                 db,
                 workflow_id,
-                status=(
-                    "waiting_on_human"
-                    if tenant_counts["hitl_queued"]
-                    else "succeeded"
-                ),
-                current_step=(
-                    "hitl_review"
-                    if tenant_counts["hitl_queued"]
-                    else "completed"
-                ),
+                status=("waiting_on_human" if tenant_counts["hitl_queued"] else "succeeded"),
+                current_step=("hitl_review" if tenant_counts["hitl_queued"] else "completed"),
                 state_snapshot=tenant_counts,
             )
         except Exception as exc:
@@ -401,9 +396,9 @@ def _collections_action_count(
 def _mark_suggestion_rejected(db, tenant_id: str, suggestion_id: str) -> None:
     """Best-effort correction when an audited L3 send fails after insert."""
     try:
-        db.table("agent_suggestions").update({"status": "rejected"}).eq(
-            "tenant_id", tenant_id
-        ).eq("id", suggestion_id).execute()
+        db.table("agent_suggestions").update({"status": "rejected"}).eq("tenant_id", tenant_id).eq(
+            "id", suggestion_id
+        ).execute()
     except Exception:
         logger.warning(
             "collections_worker: failed to reject failed auto-send suggestion",

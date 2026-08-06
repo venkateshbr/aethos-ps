@@ -35,6 +35,7 @@ from app.agents.intelligence_agent import (
 )
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.config import settings
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.workers.procrastinate_app import app
 from supabase import create_client
 
@@ -63,8 +64,13 @@ async def intelligence_worker(timestamp: int) -> dict:
     _ = timestamp  # provided by Procrastinate periodic; unused
     db = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
-    tenants = (
-        db.table("tenants").select("id").eq("status", "active").execute().data or []
+    tenants = filter_tenants_with_write_access(
+        db.table("tenants")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
+        .eq("status", "active")
+        .execute()
+        .data
+        or []
     )
 
     total_alerts = 0
