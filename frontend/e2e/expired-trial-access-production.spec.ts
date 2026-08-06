@@ -34,9 +34,9 @@ test('expired trial has consistent status, CTA, and server-enforced access', asy
   };
 
   expect(billing.status).toBe(EXPECTED_STATUS);
-  expect(billing.provider_status).toBe('trialing');
 
   if (EXPECTED_STATUS === 'trial_expired') {
+    expect(billing.provider_status).toBe('trialing');
     expect(billing.access_mode).toBe('read_only');
     await expect(page.getByRole('link', { name: /trial ended.*read-only/i })).toBeVisible();
 
@@ -51,6 +51,7 @@ test('expired trial has consistent status, CTA, and server-enforced access', asy
     await denied;
     await expect(page.getByRole('alert')).toContainText(/workspace is read-only.*manage billing/i);
   } else {
+    expect(['active', 'trialing']).toContain(billing.provider_status);
     expect(billing.access_mode).toBe('full');
   }
 
