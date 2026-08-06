@@ -893,9 +893,11 @@ Settings are used for:
 - Rate card management — create rate cards with a currency, effective date, and
   per-role billing rates (each optionally tagged to a service line). Rate cards
   are selectable when pricing engagements; expand a card to review its roles.
-- Plan and billing management — view the current subscription plan tier and
-  status (with a trial countdown while trialing) and open the Stripe Customer
-  Portal to change plan, update the payment method, or download invoices.
+- Plan and billing management — view one canonical subscription state across
+  the app shell, Account, and Settings. A delayed Stripe update receives up to
+  24 hours of reconciliation grace; after that an expired trial becomes
+  read-only. Reads, reports, exports, Settings, and the Stripe Customer Portal
+  remain available so billing can be restored.
 - Read-only historical FX provenance lookup by currency pair and requested
   date; it shows the matched rate date, row ID, source, and staleness without
   creating or replacing a global rate.
@@ -954,7 +956,7 @@ Settings demo checklist:
 | Services | Active service catalogue maps to engagements, invoice lines, and reporting |
 | Rate Cards | Create a rate card with per-role rates; confirm it is selectable when pricing an engagement |
 | Tax Rates | Market tax setup exists before invoice/bill posting; a custom rate can be created, edited (name/rate/market), and activated/deactivated |
-| Plan & Billing | Current plan tier/status shows; "Manage plan & billing" opens the Stripe Customer Portal (returns to Settings) |
+| Plan & Billing | Current plan/effective status and full/read-only access show consistently; "Manage plan & billing" opens the Stripe Customer Portal (returns to Settings) |
 | Historical FX provenance | Requested pair/date resolves to the expected matched date, source, immutable row ID, and staleness; the panel is inspection-only |
 | Collections Policy | Reminder cadence and tone are configured before email tasks are approved |
 | Stripe Connect | Payment-link readiness or manual-payment fallback is clear |

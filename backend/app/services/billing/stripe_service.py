@@ -33,6 +33,7 @@ _SIGNUP_PRICE_TIERS = ("starter", "growth", "pro")
 _SIGNUP_PRICE_INTERVALS = ("monthly", "annual")
 _SIGNUP_PRICE_CURRENCIES = ("usd", "gbp", "sgd", "inr", "aud")
 
+
 def country_to_currency(country: str) -> str:
     """Return the ISO 4217 currency code for a 2-letter country code.
 
@@ -247,6 +248,21 @@ class StripeService:
                 "status": sub.status,
             },
         )
+        return {
+            "subscription_id": sub.id,
+            "status": sub.status,
+            "trial_end": sub.trial_end,
+        }
+
+    async def retrieve_subscription(self, subscription_id: str) -> dict:
+        """Return Stripe's current state for subscription reconciliation."""
+        try:
+            sub = stripe.Subscription.retrieve(subscription_id)
+        except stripe.StripeError as exc:
+            raise BillingError(
+                f"Could not retrieve subscription: {exc.user_message or str(exc)}",
+                code=exc.code or "stripe_error",
+            ) from exc
         return {
             "subscription_id": sub.id,
             "status": sub.status,

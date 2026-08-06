@@ -21,15 +21,14 @@ from app.agents.base import AgentDeps
 from app.agents.project_health_agent import check_project_health
 from app.agents.suggestion_writer import write_agent_suggestion
 from app.core.db import get_service_role_client
+from app.services.billing.access_policy import filter_tenants_with_write_access
 from app.workers.procrastinate_app import app
 from app.workers.workflow_runs import finish_workflow_run, start_workflow_run
 
 logger = logging.getLogger(__name__)
 
 DEDUP_DAYS = 7
-ACTIVE_PROJECT_SELECT = (
-    "id, name, engagement_id, budget_hours, budget, currency, status"
-)
+ACTIVE_PROJECT_SELECT = "id, name, engagement_id, budget_hours, budget, currency, status"
 
 
 # ---------------------------------------------------------------------------
@@ -100,9 +99,7 @@ async def _process_project(project: dict, deps: AgentDeps) -> int:
         alerts = await check_project_health(project, deps)
         for alert in alerts:
             project_id_str = str(alert.project_id)
-            if _is_duplicate_alert(
-                deps.db, deps.tenant_id, project_id_str, alert.alert_type
-            ):
+            if _is_duplicate_alert(deps.db, deps.tenant_id, project_id_str, alert.alert_type):
                 logger.debug(
                     "project_health_worker: dedup suppressed %s for project %s",
                     alert.alert_type,
@@ -174,9 +171,9 @@ def run_project_health_checks(timestamp: int) -> dict:
     db = get_service_role_client()
 
     # Fetch all active tenants
-    tenants = (
+    tenants = filter_tenants_with_write_access(
         db.table("tenants")
-        .select("id")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
         .in_("status", ["active", "trialing"])
         .execute()
         .data
@@ -201,9 +198,7 @@ def run_project_health_checks(timestamp: int) -> dict:
 
             projects = _fetch_active_projects(db, tenant_id)
 
-            alerts_for_tenant = asyncio.run(
-                _run_tenant_checks(projects, deps)
-            )
+            alerts_for_tenant = asyncio.run(_run_tenant_checks(projects, deps))
             total_alerts += alerts_for_tenant
             tenants_checked += 1
             finish_workflow_run(

@@ -26,6 +26,7 @@ from app.models.auth import (
     StartTrialResponse,
 )
 from app.repositories.tenant_repo import TenantRepository
+from app.services.billing.access_policy import evaluate_billing_access
 from app.services.billing.price_catalogue import currency_for_country, get_prices_for_currency
 from app.services.billing.stripe_service import StripeService
 from supabase import Client
@@ -257,16 +258,39 @@ def subscription_status(
     _: CurrentUser = Depends(get_current_user),  # noqa: B008
 ) -> dict:
     """Returns trial countdown and subscription status for the app shell badge."""
-    tenant = db.table("tenants").select(
-        "trial_ends_at, stripe_subscription_status, plan_tier"
-    ).eq("id", tenant_id).execute()
+    tenant = (
+        db.table("tenants")
+        .select(
+            "trial_ends_at, stripe_subscription_status, plan_tier, billing_access_override_until"
+        )
+        .eq("id", tenant_id)
+        .execute()
+    )
     if not tenant.data:
-        return {"status": "unknown", "trial_ends_at": None, "plan_tier": "trial"}
+        return {
+            "status": "unknown",
+            "provider_status": "unknown",
+            "access_mode": "read_only",
+            "action": "contact_support",
+            "trial_ends_at": None,
+            "plan_tier": "trial",
+            "override_until": None,
+        }
     t = tenant.data[0]
+    provider_status = t.get("stripe_subscription_status") or "unknown"
+    access = evaluate_billing_access(
+        provider_status=provider_status,
+        trial_ends_at=t.get("trial_ends_at"),
+        override_until=t.get("billing_access_override_until"),
+    )
     return {
-        "status": t.get("stripe_subscription_status", "trialing"),
+        "status": access.effective_status,
+        "provider_status": provider_status,
+        "access_mode": access.access_mode,
+        "action": access.action,
         "trial_ends_at": t.get("trial_ends_at"),
         "plan_tier": t.get("plan_tier", "trial"),
+        "override_until": t.get("billing_access_override_until"),
     }
 
 
@@ -284,20 +308,33 @@ def get_profile(
     Includes tenant name, country, plan tier, subscription status and
     trial dates.  User email comes from the JWT (current_user.email).
     """
-    tenant = db.table("tenants").select(
-        "name, country, plan_tier, status, stripe_subscription_status, "
-        "trial_ends_at, created_at"
-    ).eq("id", tenant_id).execute()
+    tenant = (
+        db.table("tenants")
+        .select(
+            "name, country, plan_tier, status, stripe_subscription_status, "
+            "trial_ends_at, created_at, billing_access_override_until"
+        )
+        .eq("id", tenant_id)
+        .execute()
+    )
     if not tenant.data:
         return {"tenant_id": tenant_id, "email": current_user.email}
     t = tenant.data[0]
+    provider_status = t.get("stripe_subscription_status") or t.get("status") or "unknown"
+    access = evaluate_billing_access(
+        provider_status=provider_status,
+        trial_ends_at=t.get("trial_ends_at"),
+        override_until=t.get("billing_access_override_until"),
+    )
     return {
         "tenant_id": tenant_id,
         "email": current_user.email,
         "org_name": t.get("name", ""),
         "country": t.get("country", ""),
         "plan_tier": t.get("plan_tier", "starter"),
-        "status": t.get("stripe_subscription_status", t.get("status", "unknown")),
+        "status": access.effective_status,
+        "provider_status": provider_status,
+        "access_mode": access.access_mode,
         "trial_ends_at": t.get("trial_ends_at"),
         "member_since": t.get("created_at", "")[:10] if t.get("created_at") else "",
     }

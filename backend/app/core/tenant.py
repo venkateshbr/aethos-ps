@@ -48,6 +48,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from app.core.auth import CurrentUser, get_current_user
 from app.core.db import get_service_role_client
 from app.core.logging import tenant_id_var, trace_id_var
+from app.services.billing.access_policy import evaluate_billing_access
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,12 @@ _EMPLOYEE_ALLOWED_PATHS = frozenset(
 )
 _EMPLOYEE_TIMESHEET_PATH = "/api/v1/timesheet"
 
+_BILLING_READ_ONLY_ALLOWED_PREFIXES = (
+    "/api/v1/auth/",
+    "/api/v1/billing/",
+)
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
 
 def _employee_path_is_allowed(path: str) -> bool:
     """Return whether a legacy employee may use this tenant-scoped path."""
@@ -123,6 +130,50 @@ def _employee_path_is_allowed(path: str) -> bool:
         or path == _EMPLOYEE_TIMESHEET_PATH
         or path.startswith(f"{_EMPLOYEE_TIMESHEET_PATH}/")
     )
+
+
+def _billing_path_is_allowed(request: Request) -> bool:
+    """Reads and account-recovery/billing actions remain available read-only."""
+    return request.method.upper() in _SAFE_METHODS or request.url.path.startswith(
+        _BILLING_READ_ONLY_ALLOWED_PREFIXES
+    )
+
+
+def _enforce_billing_access(db: Client, *, tenant_id: str, request: Request) -> None:
+    if _billing_path_is_allowed(request):
+        return
+
+    try:
+        result = (
+            db.table("tenants")
+            .select("stripe_subscription_status, trial_ends_at, billing_access_override_until")
+            .eq("id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        # Rolling-deploy compatibility before migration 0113 is applied.
+        result = (
+            db.table("tenants")
+            .select("stripe_subscription_status, trial_ends_at")
+            .eq("id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+    tenant = result.data[0] if result.data else {}
+    access = evaluate_billing_access(
+        provider_status=tenant.get("stripe_subscription_status"),
+        trial_ends_at=tenant.get("trial_ends_at"),
+        override_until=tenant.get("billing_access_override_until"),
+    )
+    if access.access_mode == "read_only":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "code": "SUBSCRIPTION_REQUIRED",
+                "message": "This workspace is read-only. Manage billing to restore changes.",
+            },
+        )
 
 
 def _lookup_active_membership(
@@ -233,9 +284,7 @@ def get_tenant_id(
     # Per-request memoization (defensive — Depends already dedupes)
     # ------------------------------------------------------------------
     cached: str | None = getattr(request.state, _VERIFIED_TENANT_STATE_KEY, None)
-    access_checked = bool(
-        getattr(request.state, _VERIFIED_TENANT_ACCESS_STATE_KEY, False)
-    )
+    access_checked = bool(getattr(request.state, _VERIFIED_TENANT_ACCESS_STATE_KEY, False))
     if cached is not None and access_checked:
         return cached
 
@@ -291,18 +340,21 @@ def get_tenant_id(
     # Also refresh the logging context var so subsequent log lines carry the
     # verified id (the middleware may have stashed an unverified header value).
     tenant_id_var.set(tenant_uuid)
-    if (
-        str(membership.get("role") or "").strip().lower() == "employee"
-        and not _employee_path_is_allowed(request.url.path)
-    ):
+    if str(
+        membership.get("role") or ""
+    ).strip().lower() == "employee" and not _employee_path_is_allowed(request.url.path):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TIMESHEET_PORTAL_ONLY",
         )
-    if membership.get("must_change_password") and request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS:
+    if (
+        membership.get("must_change_password")
+        and request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PASSWORD_CHANGE_REQUIRED",
         )
+    _enforce_billing_access(db, tenant_id=tenant_uuid, request=request)
     setattr(request.state, _VERIFIED_TENANT_ACCESS_STATE_KEY, True)
     return tenant_uuid

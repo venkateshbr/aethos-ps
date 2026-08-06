@@ -15,32 +15,44 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from app.services.billing.access_policy import filter_tenants_with_write_access
+
 # job_key -> defaults, derived from the workers' original hardcoded crons.
 JOB_DEFINITIONS: dict[str, dict[str, Any]] = {
     "collections": {
         "label": "Collections reminders",
         "description": "Daily dunning: drafts overdue-invoice reminders to Inbox.",
-        "cadence": "daily", "run_hour_utc": 6, "run_weekday_utc": 0,
+        "cadence": "daily",
+        "run_hour_utc": 6,
+        "run_weekday_utc": 0,
     },
     "billing_run": {
         "label": "Monthly billing run",
         "description": "Prepares the monthly pre-bill draft invoices.",
-        "cadence": "monthly", "run_hour_utc": 8, "run_weekday_utc": 0,
+        "cadence": "monthly",
+        "run_hour_utc": 8,
+        "run_weekday_utc": 0,
     },
     "close_prep": {
         "label": "Month-end close preparation",
         "description": "Proposes deferred-revenue/accrual/prepaid/recurring close journals.",
-        "cadence": "monthly", "run_hour_utc": 7, "run_weekday_utc": 0,
+        "cadence": "monthly",
+        "run_hour_utc": 7,
+        "run_weekday_utc": 0,
     },
     "project_health": {
         "label": "Project health checks",
         "description": "Scores project health (budget/margin/scope) and raises alerts.",
-        "cadence": "daily", "run_hour_utc": 7, "run_weekday_utc": 0,
+        "cadence": "daily",
+        "run_hour_utc": 7,
+        "run_weekday_utc": 0,
     },
     "time_reminder": {
         "label": "Timesheet reminders",
         "description": "Weekly nudge to employees with missing time entries.",
-        "cadence": "weekly", "run_hour_utc": 16, "run_weekday_utc": 4,
+        "cadence": "weekly",
+        "run_hour_utc": 16,
+        "run_weekday_utc": 4,
     },
 }
 
@@ -81,12 +93,7 @@ def _configured_rows(db: Any, job_key: str) -> dict[str, dict[str, Any]]:
     """tenant_id -> configured row for a job (empty on any read failure)."""
     try:
         rows = (
-            db.table("automation_schedules")
-            .select("*")
-            .eq("job_key", job_key)
-            .execute()
-            .data
-            or []
+            db.table("automation_schedules").select("*").eq("job_key", job_key).execute().data or []
         )
     except Exception:
         return {}
@@ -102,9 +109,14 @@ def eligible_tenants(db: Any, job_key: str, *, as_of: datetime) -> list[str]:
     """
     if job_key not in VALID_JOB_KEYS:
         return []
-    tenants = (
-        db.table("tenants").select("id").in_("status", ["active", "trialing"]).execute().data
-        or []
+    tenants = filter_tenants_with_write_access(
+        db.table("tenants")
+        .select("id, stripe_subscription_status, trial_ends_at, billing_access_override_until")
+        .in_("status", ["active", "trialing"])
+        .execute()
+        .data
+        or [],
+        as_of=as_of,
     )
     configured = _configured_rows(db, job_key)
     due: list[str] = []
@@ -158,9 +170,7 @@ def list_for_tenant(db: Any, tenant_id: str) -> list[dict[str, Any]]:
     return result
 
 
-def update_schedule(
-    db: Any, tenant_id: str, job_key: str, patch: dict[str, Any]
-) -> dict[str, Any]:
+def update_schedule(db: Any, tenant_id: str, job_key: str, patch: dict[str, Any]) -> dict[str, Any]:
     """Upsert one tenant's schedule for a job. Validates job_key/cadence/hour."""
     if job_key not in VALID_JOB_KEYS:
         raise ValueError(f"Unknown job_key: {job_key}")
@@ -174,11 +184,7 @@ def update_schedule(
         raise ValueError("run_hour_utc must be 0-23")
     if "run_weekday_utc" in payload and not (0 <= int(payload["run_weekday_utc"]) <= 6):
         raise ValueError("run_weekday_utc must be 0-6")
-    (
-        db.table("automation_schedules")
-        .upsert(payload, on_conflict="tenant_id,job_key")
-        .execute()
-    )
+    (db.table("automation_schedules").upsert(payload, on_conflict="tenant_id,job_key").execute())
     return next(
         (row for row in list_for_tenant(db, tenant_id) if row["job_key"] == job_key),
         default_schedule(job_key),

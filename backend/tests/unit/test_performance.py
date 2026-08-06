@@ -28,17 +28,25 @@ def test_subscription_status_returns_expected_keys_when_tenant_found():
     mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
         {
             "stripe_subscription_status": "trialing",
-            "trial_ends_at": "2026-06-03T00:00:00Z",
+            "trial_ends_at": "2099-06-03T00:00:00Z",
             "plan_tier": "starter",
         }
     ]
 
     result = subscription_status(tenant_id="tenant-123", db=mock_db, _=MagicMock())
 
-    assert set(result.keys()) == {"status", "trial_ends_at", "plan_tier"}
+    assert set(result.keys()) == {
+        "status",
+        "provider_status",
+        "access_mode",
+        "action",
+        "trial_ends_at",
+        "plan_tier",
+        "override_until",
+    }
     assert result["status"] == "trialing"
     assert result["plan_tier"] == "starter"
-    assert result["trial_ends_at"] == "2026-06-03T00:00:00Z"
+    assert result["trial_ends_at"] == "2099-06-03T00:00:00Z"
 
 
 def test_subscription_status_returns_unknown_when_tenant_not_found():
@@ -56,7 +64,7 @@ def test_subscription_status_returns_unknown_when_tenant_not_found():
 
 
 def test_subscription_status_defaults_missing_fields():
-    """subscription_status must default stripe_subscription_status to 'trialing'."""
+    """Missing provider evidence must not manufacture an active trial."""
     from app.api.v1.endpoints.billing import subscription_status
 
     mock_db = MagicMock()
@@ -65,9 +73,37 @@ def test_subscription_status_defaults_missing_fields():
 
     result = subscription_status(tenant_id="tenant-456", db=mock_db, _=MagicMock())
 
-    assert result["status"] == "trialing"
+    assert result["status"] == "unknown"
+    assert result["access_mode"] == "read_only"
     assert result["plan_tier"] == "trial"
     assert result["trial_ends_at"] is None
+
+
+def test_subscription_status_derives_expired_trial_access() -> None:
+    """The API must not describe a trial past grace as still trialing."""
+    from app.api.v1.endpoints.billing import subscription_status
+
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {
+            "stripe_subscription_status": "trialing",
+            "trial_ends_at": "2020-01-01T00:00:00Z",
+            "plan_tier": "starter",
+            "billing_access_override_until": None,
+        }
+    ]
+
+    result = subscription_status(tenant_id="tenant-expired", db=mock_db, _=MagicMock())
+
+    assert result == {
+        "status": "trial_expired",
+        "provider_status": "trialing",
+        "access_mode": "read_only",
+        "action": "manage_billing",
+        "trial_ends_at": "2020-01-01T00:00:00Z",
+        "plan_tier": "starter",
+        "override_until": None,
+    }
 
 
 # ---------------------------------------------------------------------------

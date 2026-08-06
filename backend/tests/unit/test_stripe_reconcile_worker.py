@@ -201,3 +201,38 @@ def test_skips_duplicate_reconciled_payment() -> None:
     assert result["reconciled"] == 0
     assert result["skipped"] == 1
     assert result["errors"] == 0
+
+
+def test_reconciles_overdue_trial_from_current_stripe_state() -> None:
+    """An overdue local trial converges when its webhook was delayed."""
+    from app.workers.stripe_reconcile_worker import reconcile_subscription_states
+
+    tenant = {
+        "id": "tenant-001",
+        "stripe_subscription_id": "sub_test_001",
+        "stripe_subscription_status": "trialing",
+        "trial_ends_at": "2026-08-03T14:43:50Z",
+    }
+    db = _make_db_mock([tenant])
+
+    with (
+        patch("app.workers.stripe_reconcile_worker.settings") as mock_settings,
+        patch("app.workers.stripe_reconcile_worker.get_service_role_client", return_value=db),
+        patch(
+            "app.workers.stripe_reconcile_worker.StripeService.retrieve_subscription",
+            return_value={
+                "subscription_id": "sub_test_001",
+                "status": "active",
+                "trial_end": 1_786_000_000,
+            },
+        ) as retrieve,
+    ):
+        mock_settings.stripe_secret_key = "sk_test_placeholder"
+        result = reconcile_subscription_states(timestamp=1_786_100_000)
+
+    assert result == {"reconciled": 1, "unchanged": 0, "errors": 0}
+    retrieve.assert_called_once_with("sub_test_001")
+    db.table.return_value.update.assert_called_once()
+    update = db.table.return_value.update.call_args.args[0]
+    assert update["stripe_subscription_status"] == "active"
+    assert update["stripe_subscription_reconciled_at"].endswith("+00:00")

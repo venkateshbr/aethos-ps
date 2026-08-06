@@ -14,6 +14,8 @@ interface NavItem {
 }
 
 interface SubscriptionStatus {
+  status?: string;
+  access_mode?: 'full' | 'read_only';
   trial_ends_at?: string | null;
   [key: string]: unknown;
 }
@@ -100,16 +102,23 @@ interface SubscriptionStatus {
           <div class="flex-1"></div>
 
           <!-- Trial badge -->
-          @if (trialDaysLeft() !== null && trialDaysLeft()! <= 14) {
+          @if (billingStatus() === 'trial_expired') {
+            <a routerLink="/app/settings"
+               class="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-confidence-low/10 border border-confidence-low/40 mr-2"
+               aria-label="Trial ended; workspace is read-only. Manage billing">
+              <mat-icon class="text-confidence-low" style="font-size:0.875rem;width:0.875rem;height:0.875rem;">lock</mat-icon>
+              <span class="text-xs text-confidence-low font-medium whitespace-nowrap">Trial ended · Read-only</span>
+            </a>
+          } @else if (billingStatus() === 'grace_period') {
+            <a routerLink="/app/settings"
+               class="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-confidence-med/10 border border-confidence-med/40 mr-2">
+              <mat-icon class="text-confidence-med" style="font-size:0.875rem;width:0.875rem;height:0.875rem;">sync</mat-icon>
+              <span class="text-xs text-confidence-med font-medium whitespace-nowrap">Billing update pending</span>
+            </a>
+          } @else if (trialDaysLeft() !== null && trialDaysLeft()! <= 14) {
             <div class="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-confidence-med/10 border border-confidence-med/40 mr-2">
               <mat-icon class="text-confidence-med" style="font-size:0.875rem;width:0.875rem;height:0.875rem;">schedule</mat-icon>
-              <span class="text-xs text-confidence-med font-medium whitespace-nowrap">
-                @if (trialDaysLeft()! > 0) {
-                  {{ trialDaysLeft() }}d left
-                } @else {
-                  Trial ended
-                }
-              </span>
+              <span class="text-xs text-confidence-med font-medium whitespace-nowrap">{{ trialDaysLeft() }}d left</span>
             </div>
           }
 
@@ -173,6 +182,7 @@ export class ShellComponent implements OnInit {
   private supa  = inject(SupabaseService);
   private router = inject(Router);
   trialDaysLeft = signal<number | null>(null);
+  billingStatus = signal<string>('unknown');
 
   async logout() {
     await this.supa.client.auth.signOut().catch(() => {});
@@ -209,6 +219,7 @@ export class ShellComponent implements OnInit {
   ngOnInit(): void {
     this.http.get<SubscriptionStatus>('/api/v1/billing/subscription-status').subscribe({
       next: (res) => {
+        this.billingStatus.set(res.status ?? 'unknown');
         if (res.trial_ends_at) {
           const endsAt = new Date(res.trial_ends_at);
           const diffMs = endsAt.getTime() - Date.now();

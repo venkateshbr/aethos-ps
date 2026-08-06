@@ -4,8 +4,12 @@ import { MatIconModule } from '@angular/material/icon';
 
 export interface SubscriptionStatus {
   status: string;
+  provider_status: string;
+  access_mode: 'full' | 'read_only';
+  action: 'manage_billing' | 'contact_support' | null;
   trial_ends_at: string | null;
   plan_tier: string;
+  override_until: string | null;
 }
 
 @Component({
@@ -52,6 +56,11 @@ export interface SubscriptionStatus {
                   } @else {
                     Trial has ended.
                   }
+                </p>
+              }
+              @if (status()?.access_mode === 'read_only') {
+                <p class="text-xs text-confidence-low mt-1 font-medium">
+                  Workspace is read-only until billing is restored.
                 </p>
               }
             </div>
@@ -103,6 +112,9 @@ export class SubscriptionComponent implements OnInit {
     const labels: Record<string, string> = {
       active: 'Active',
       trialing: 'Trialing',
+      grace_period: 'Billing grace period',
+      trial_expired: 'Trial ended',
+      override_active: 'Access override',
       past_due: 'Past due',
       canceled: 'Canceled',
       unpaid: 'Unpaid',
@@ -115,6 +127,9 @@ export class SubscriptionComponent implements OnInit {
     switch (this.status()?.status) {
       case 'active': return 'bg-accent/15 text-accent-light';
       case 'trialing': return 'bg-indigo-950 text-indigo-400';
+      case 'grace_period': return 'bg-confidence-med/10 text-confidence-med';
+      case 'override_active': return 'bg-accent/15 text-accent-light';
+      case 'trial_expired': return 'bg-confidence-low/10 text-confidence-low';
       case 'past_due':
       case 'unpaid': return 'bg-confidence-low/10 text-confidence-low';
       case 'canceled': return 'bg-surface text-text-disabled';

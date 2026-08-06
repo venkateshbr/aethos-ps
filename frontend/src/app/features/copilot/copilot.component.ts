@@ -627,6 +627,10 @@ export class CopilotComponent implements OnInit {
         headers: this.apiHeaders(),
         body: JSON.stringify({ title }),
       });
+      if (res.status === 402) {
+        this.error.set('This workspace is read-only. Manage billing in Settings to continue.');
+        return null;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { id: string; title: string; created_at: string };
       this.threads.update(t => [{ id: data.id, title: data.title, created_at: data.created_at }, ...t]);
@@ -696,7 +700,9 @@ export class CopilotComponent implements OnInit {
     if (!threadId) {
       threadId = await this.createThread(this.titleFromContent(content));
       if (!threadId) {
-        this.error.set('Could not start a conversation. Please try again.');
+        if (!this.error()) {
+          this.error.set('Could not start a conversation. Please try again.');
+        }
         return;
       }
       this.draftConversation.set(false);
@@ -757,6 +763,7 @@ export class CopilotComponent implements OnInit {
         { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify({ content: contentForAgent }), signal: streamAbort.signal }
       );
 
+      if (response.status === 402) throw new Error('SUBSCRIPTION_REQUIRED');
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
       if (!response.body)  throw new Error('No response body');
 
@@ -864,9 +871,13 @@ export class CopilotComponent implements OnInit {
       const isTimeout = err instanceof DOMException && err.name === 'TimeoutError';
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Nous send error:', message);
-      this.error.set(isTimeout
-        ? 'Nous took too long to respond. Please try again.'
-        : 'Something went wrong. Please try again.');
+      this.error.set(
+        message === 'SUBSCRIPTION_REQUIRED'
+          ? 'This workspace is read-only. Manage billing in Settings to continue.'
+          : isTimeout
+            ? 'Nous took too long to respond. Please try again.'
+            : 'Something went wrong. Please try again.',
+      );
       this.messages.update(msgs => {
         const assistantMsg = msgs.find(m => m.id === assistantId);
         if (assistantMsg && !assistantMsg.content && !assistantMsg.cardType) {

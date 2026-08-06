@@ -106,6 +106,7 @@ Reuse [`e2e_engagement_to_cash.md`](e2e_engagement_to_cash.md) §1, prefixed wit
 | §3.9 | Owner forgets password | `/login` has no self-service recovery UI. Signed-in password change and admin-created-user set-password links do not solve a locked-out owner; use an approved support/admin recovery process and file the product gap. |
 | §3.10 | Owner deletes tenant | No Delete Tenant UI exists. Owner-only API cancels the subscription and soft-deletes the tenant; it does not delete user/tenant rows or the Stripe customer. Do not describe it as cascading removal. |
 | §3.11 | Prompt injection at signup (e.g., embedded in `tenant_name`) | Must be safely rendered and treated as untrusted data in every later model context; absence of an executable signup-to-agent red-team test is a coverage gap |
+| §3.12 | Trial end passes while the last Stripe webhook still says `trialing` | Reconcile from Stripe hourly. Permit a maximum 24-hour provider-reconciliation grace, then expose `trial_expired` consistently and make the workspace read-only. Login, reads, reports, exports, Settings, and the Stripe billing portal remain available; ERP mutations and scheduled automation return/observe the billing gate. |
 
 ---
 
@@ -117,7 +118,7 @@ Reuse [`e2e_engagement_to_cash.md`](e2e_engagement_to_cash.md) §1, prefixed wit
 | E2 | User wants a plan currency different from country | Current catalogue currency is derived from tenant country; arbitrary USD selection is not exposed. Do not claim automatic-tax behavior. |
 | E3 | Tenant name with emoji / RTL characters | Store/render safely without XSS; verify each actual surface rather than assuming invoice-template inclusion |
 | E4 | Country with limited Stripe Connect eligibility | Stripe decides eligibility, but the current missing Angular callback remains a blocker; record the visible provider/UI result |
-| E5 | Trial expires or renewal fails mid-action | Stripe controls subscription outcome; current read-only grace gating is not proven. Verify actual webhook/status/UI behavior and file any unrestricted-access gap. |
+| E5 | Trial expires or renewal fails mid-action | Stripe remains provider evidence. The canonical product state is `trialing` before the boundary, `grace_period` for at most 24 hours while reconciliation catches delayed webhooks, then `trial_expired/read_only`. A current Stripe `active` event restores full access idempotently. |
 
 ---
 
@@ -178,6 +179,7 @@ The formerly mapped `backend/tests/e2e/test_onboarding_signup.py` and
 | `frontend/e2e/00-signup.spec.ts` | One visible-browser three-page happy path against a configurable host; not Connect, recovery, billing management, edge matrix, or first invoice. |
 | `frontend/e2e/landing.spec.ts` | Landing/signup navigation smoke. |
 | `frontend/e2e/guides.spec.ts` | Public homepage discovery, library search, formatted guide navigation, and narrow-viewport proof. |
+| `frontend/e2e/expired-trial-access-production.spec.ts` | Dedicated guarded production proof for the shell badge, Settings CTA, canonical billing API response, and a visibly denied Nous mutation. It is excluded from the ordinary suite and requires the retained Sterling credential manifest plus explicit production consent. |
 | `backend/tests/api/test_signup_and_billing.py` | Signup validation, SetupIntent, and price-catalogue integration; no complete start-trial lifecycle test. |
 | `backend/tests/api/test_stripe_connect.py` | Bounded Connect API proof; does not prove the missing Angular return route. |
 | `tests/e2e-real/step1-real-signup.js` | Legacy/supplemental step-one script, not the current complete browser workflow. |
@@ -187,6 +189,27 @@ The retained production run must use the visible UI only; API-seeded or direct
 callback setup is supplemental and cannot convert a BLOCKED browser step into
 PASS.
 
-## §10 Evidence Template
+## §10 Governed demo/partner access override
+
+Expired demo or partner workspaces must not be repaired by editing tenant rows.
+Migration `0120_billing_access_policy.sql` exposes service-role-only grant/revoke
+functions that require an exact tenant ID/name pair, reason, actor, and (for a
+grant) a future end no more than 180 days away. Every action writes
+`billing_access_override_events` and the effective state becomes
+`override_active/full` only until the recorded expiry.
+
+Operator command (dry-run unless `--execute` is supplied):
+
+```bash
+cd backend
+uv run python -m scripts.billing_access_override grant \
+  --tenant-id '<exact uuid>' \
+  --tenant-name '<exact tenant name>' \
+  --until '2026-09-05T00:00:00Z' \
+  --reason '<approved business reason>' \
+  --actor '<operator identity>'
+```
+
+## §11 Evidence Template
 
 See [`agent-harness/templates/E2E_ONBOARDING_REGRESSION.md`](../../agent-harness/templates/E2E_ONBOARDING_REGRESSION.md) for the field-by-field evidence template.

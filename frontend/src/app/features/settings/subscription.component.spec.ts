@@ -6,8 +6,12 @@ import { SubscriptionComponent, SubscriptionStatus } from './subscription.compon
 
 const STATUS: SubscriptionStatus = {
   status: 'active',
+  provider_status: 'active',
+  access_mode: 'full',
+  action: null,
   trial_ends_at: null,
   plan_tier: 'growth',
+  override_until: null,
 };
 
 describe('SubscriptionComponent', () => {
@@ -38,8 +42,28 @@ describe('SubscriptionComponent', () => {
 
   it('shows a trial countdown when trialing', async () => {
     const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
-    await setup({ status: 'trialing', trial_ends_at: soon, plan_tier: 'trial' });
+    await setup({
+      status: 'trialing', provider_status: 'trialing', access_mode: 'full', action: null,
+      trial_ends_at: soon, plan_tier: 'trial', override_until: null,
+    });
     expect(fixture.nativeElement.textContent).toContain('Trial ends in 3 days');
+  });
+
+  it('shows one consistent read-only state after trial expiry', async () => {
+    await setup({
+      status: 'trial_expired',
+      provider_status: 'trialing',
+      access_mode: 'read_only',
+      action: 'manage_billing',
+      trial_ends_at: '2020-01-01T00:00:00Z',
+      plan_tier: 'starter',
+      override_until: null,
+    });
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Trial ended');
+    expect(text).toContain('Workspace is read-only');
+    expect(text).not.toContain('Trialing');
   });
 
   it('opens the Stripe portal with a same-origin return URL', async () => {
