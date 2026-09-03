@@ -63,17 +63,20 @@ See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 
 ## User And QA Guides
 
-- `/guides` in the web app — public, searchable HTML library generated from the maintained Markdown sources below.
+- `/app/guides` in the web app — searchable HTML library generated from the maintained Markdown sources below. **Owner/admin only** (`adminGuard`): the library includes the Nous runtime and learning-operations manual, which covers secret rotation and open security gaps. The old public `/guides` path redirects there.
 - [`docs/user-guide/platform-user-guide.md`](docs/user-guide/platform-user-guide.md) — user-facing guide to the full platform and operating model.
 - [`docs/copilot/prompt-library.md`](docs/copilot/prompt-library.md) — user-facing Nous prompt examples.
+- [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](docs/infra/HERMES_RUNTIME_OPERATIONS.md) — Nous runtime (Hermes) configuration, verification, and the state of the self-learning loop.
 - [`docs/qa/enterprise-e2e-scenario-library.md`](docs/qa/enterprise-e2e-scenario-library.md) — enterprise-readiness E2E scenarios to automate as slices land.
 - [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](docs/qa/launch-e2e-scenario-runbook-2026-06-24.md) — launch workflow evidence and scenario runbook.
 - [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](docs/qa/ishantech-production-e2e-runbook-2026-07-11.md) — current deterministic production E2E script and accounting oracles.
 - [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md) — **current** release gate (Demo Guide v2 gate passed 2026-08-05).
 - [`docs/qa/launch-readiness-audit-2026-07-11.md`](docs/qa/launch-readiness-audit-2026-07-11.md) — historical NO-GO audit; see its 2026-09-03 supersession note for which blockers have since landed.
 
-The public library currently publishes the platform user guide, Nous prompt
-library, and both demo guides. Run `cd frontend && npm run guides:generate`
+The library publishes the platform user guide, the Nous prompt library, the
+Nous-on-Hermes runtime and learning operations manual, and both demo guides.
+Each guide has an **Export PDF** action (print-to-PDF; real text, not a
+raster). Run `cd frontend && npm run guides:generate`
 after changing those Markdown sources; frontend start and production-build
 commands also regenerate the HTML automatically.
 

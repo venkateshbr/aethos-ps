@@ -18,10 +18,6 @@ import { ThemeService } from '../../core/services/theme.service';
         </a>
         <nav aria-label="Primary navigation" class="flex items-center gap-2 sm:gap-5">
           <a
-            routerLink="/guides"
-            class="rounded-md px-2 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >Guides</a>
-          <a
             routerLink="/login"
             class="rounded-md px-2 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >Sign in</a>
@@ -53,44 +49,6 @@ import { ThemeService } from '../../core/services/theme.service';
           </div>
         </section>
 
-        <section
-          aria-label="User guides and tutorials"
-          class="border-y border-border-subtle bg-surface-sunken/50 px-5 py-14 md:px-8 md:py-20"
-        >
-          <div class="mx-auto max-w-6xl">
-            <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div>
-                <p class="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-accent-light">Aethos field manual</p>
-                <h2 class="text-3xl font-bold tracking-tight md:text-4xl">User guides & tutorials</h2>
-                <p class="mt-4 max-w-2xl text-sm leading-6 text-text-muted md:text-base">
-                  Learn the operating model, copy proven Nous prompts, or follow a complete scenario from first document to close.
-                </p>
-              </div>
-              <a
-                routerLink="/guides"
-                class="inline-flex w-fit items-center gap-3 rounded-md border border-border-default bg-surface px-4 py-3 text-sm font-medium text-text-primary transition-colors hover:border-border-strong hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >Browse all guides <span aria-hidden="true" class="text-accent-light">→</span></a>
-            </div>
-
-            <div class="mt-9 grid gap-px overflow-hidden rounded-lg border border-border-default bg-border-default md:grid-cols-3">
-              <a routerLink="/guides/platform-user-guide" class="group bg-surface p-5 transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent">
-                <span class="font-mono text-xs text-accent-light">01 · ESSENTIALS</span>
-                <h3 class="mt-8 text-lg font-semibold group-hover:text-accent-light">Platform user guide</h3>
-                <p class="mt-2 text-sm leading-6 text-text-muted">Roles, workflows, Inbox, reports, and controls in one complete reference.</p>
-              </a>
-              <a routerLink="/guides/nous-prompt-library" class="group bg-surface p-5 transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent">
-                <span class="font-mono text-xs text-accent-light">02 · TUTORIALS</span>
-                <h3 class="mt-8 text-lg font-semibold group-hover:text-accent-light">Nous prompt library</h3>
-                <p class="mt-2 text-sm leading-6 text-text-muted">Ready-to-use prompts for billing, collections, close, and finance operations.</p>
-              </a>
-              <a routerLink="/guides/scenario-demo-guide-v2" class="group bg-surface p-5 transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent">
-                <span class="font-mono text-xs text-accent-light">03 · DEMO</span>
-                <h3 class="mt-8 text-lg font-semibold group-hover:text-accent-light">Scenario demo guide</h3>
-                <p class="mt-2 text-sm leading-6 text-text-muted">Rehearse a realistic, end-to-end advisory firm walkthrough.</p>
-              </a>
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer class="px-5 py-4 md:px-8 flex items-center justify-between text-text-muted text-xs">

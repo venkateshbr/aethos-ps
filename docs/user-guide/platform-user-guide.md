@@ -76,12 +76,14 @@ result and the approval boundary.
 | Expenses | `/app/expenses` | Staff, AP | List and create project expenses; receipts extracted by Nous; approval/GL posting is tracked in #518 | ENT-P2P-003 |
 | Approvals | `/app/approvals` | Managers | Timesheet approval queue for portal submissions | Timesheet e2e |
 | Profile | `/app/profile` | All users | Change password, account details | ENT-RBAC-002 |
-| Guides (public) | `/guides`, `/guides/:slug` | Everyone | Searchable HTML library of this guide, the Nous prompt library and both demo guides | #478 |
+| Guides | `/app/guides`, `/app/guides/:slug` | Owners and admins | Searchable HTML library of this guide, the Nous prompt library, the Nous-on-Hermes operations manual and both demo guides; each has an Export PDF action | #478 |
 | Settings | `/app/settings` | Admins, Owner, operators, auditors where read-only | Configure services, tax, tenant users, autonomy, approval policy, personas, schedules, and inspect health/run ledgers | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 |
 
 All authenticated browser modules are under `/app/*`. The public browser
-routes are `/`, `/signup`, `/login`, `/p/:token`, `/guides`, `/guides/:slug`,
-and the Stripe Connect return handler `/settings/billing/connect/return`. Route fragments such as
+routes are `/`, `/signup`, `/login`, `/p/:token` and the Stripe Connect return
+handler `/settings/billing/connect/return`. The guide library is **not** public:
+`/guides` redirects to `/app/guides`, which requires a signed-in tenant owner or
+admin. Route fragments such as
 `/copilot`, `/reports/ar-aging`, `/payments` for bill-pay batches,
 `/engagements/new`, and `/settings/stripe` are not current Angular routes.
 

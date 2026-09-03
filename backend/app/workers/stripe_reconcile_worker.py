@@ -183,3 +183,59 @@ def reconcile_sent_invoices(tenant_id: str, min_age_hours: float = 24) -> dict:
         errors,
     )
     return {"reconciled": reconciled, "skipped": skipped, "errors": errors}
+
+
+@app.periodic(cron="30 * * * *")
+@app.task(name="stripe_reconcile.reconcile_sent_invoices_all_tenants", queue="cron")
+def reconcile_sent_invoices_all_tenants(timestamp: int) -> dict:
+    """Hourly safety net for Stripe payments whose webhook never landed (#493).
+
+    ``reconcile_sent_invoices`` existed but had no schedule, so it only ran when
+    an admin called ``POST /api/v1/payments/reconcile-stripe`` by hand. A
+    delivery Stripe gave up on — or one this service failed to process until
+    after Stripe's retry window — left cash collected and nothing in the ledger
+    until somebody noticed. Fan the per-tenant reconciliation out across active
+    tenants so the gap closes within an hour without human intervention.
+    """
+    if not settings.stripe_secret_key:
+        logger.warning("stripe_reconcile_worker: skipping invoice sweep — Stripe not configured")
+        return {"tenants": 0, "reconciled": 0, "skipped": 0, "errors": 0}
+
+    db = get_service_role_client()
+    tenants = (
+        db.table("tenants")
+        .select("id")
+        .is_("deleted_at", None)
+        .execute()
+        .data
+        or []
+    )
+
+    totals = {"tenants": 0, "reconciled": 0, "skipped": 0, "errors": 0}
+    for tenant in tenants:
+        tenant_id = tenant.get("id")
+        if not tenant_id:
+            continue
+        totals["tenants"] += 1
+        try:
+            result = reconcile_sent_invoices(tenant_id=tenant_id)
+        except Exception as exc:  # one bad tenant must not stop the sweep
+            totals["errors"] += 1
+            logger.error(
+                "stripe_reconcile_worker: invoice sweep failed for tenant %s: %s",
+                tenant_id,
+                exc,
+                extra={"tenant_id": tenant_id},
+            )
+            continue
+        for key in ("reconciled", "skipped", "errors"):
+            totals[key] += int(result.get(key, 0) or 0)
+
+    logger.info(
+        "stripe_reconcile_worker: invoice sweep done tenants=%d reconciled=%d skipped=%d errors=%d",
+        totals["tenants"],
+        totals["reconciled"],
+        totals["skipped"],
+        totals["errors"],
+    )
+    return totals

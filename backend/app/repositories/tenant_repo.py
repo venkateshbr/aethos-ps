@@ -146,12 +146,17 @@ class TenantRepository:
     # ------------------------------------------------------------------
 
     async def get_webhook_event(self, provider_event_id: str) -> dict | None:
-        """Return a webhook_events row if this event has been processed."""
+        """Return the webhook_events row for this delivery, if we have seen it.
+
+        Callers must inspect ``processing_status``: a ``failed`` row means the
+        handler raised on an earlier delivery and the event still needs to be
+        processed, so it must NOT be treated as a duplicate (#493).
+        """
 
         def _get() -> dict | None:
             result = (
                 self.client.table("webhook_events")
-                .select("id, provider_event_id, processed_at")
+                .select("id, provider_event_id, processed_at, processing_status, attempts")
                 .eq("provider_event_id", provider_event_id)
                 .execute()
             )
@@ -164,17 +169,29 @@ class TenantRepository:
         provider_event_id: str,
         event_type: str,
         tenant_id: str | None = None,
+        processing_status: str = "processed",
+        error_class: str | None = None,
+        attempts: int = 1,
     ) -> None:
-        """Record that a webhook event has been processed (idempotency log)."""
+        """Record the outcome of a webhook delivery (idempotency + audit log).
 
-        def _insert() -> None:
-            self.client.table("webhook_events").insert(
+        Upserts on ``provider_event_id`` so a Stripe retry of a previously
+        failed event updates the same row (and its attempt count) instead of
+        violating the unique constraint (#493).
+        """
+
+        def _upsert() -> None:
+            self.client.table("webhook_events").upsert(
                 {
                     "provider_event_id": provider_event_id,
                     "event_type": event_type,
                     "tenant_id": tenant_id,
                     "provider": "stripe",
-                }
+                    "processing_status": processing_status,
+                    "error_class": error_class,
+                    "attempts": attempts,
+                },
+                on_conflict="provider_event_id",
             ).execute()
 
-        await asyncio.to_thread(_insert)
+        await asyncio.to_thread(_upsert)

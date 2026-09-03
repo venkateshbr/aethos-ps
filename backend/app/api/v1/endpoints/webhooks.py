@@ -79,9 +79,14 @@ async def stripe_webhook(
 ) -> dict:
     """Process a Stripe webhook event.
 
-    Returns ``{"received": True}`` for all events including unknowns —
-    Stripe retries on any non-2xx response, so we must not 400/500 on
-    events we don't handle.
+    Returns ``{"received": True}`` for events we handled and for events we
+    deliberately ignore (unknown types, livemode mismatch, stale subscription
+    updates) — Stripe retries on any non-2xx, and none of those need a retry.
+
+    A handler that *raises* is different: the payment or journal write did not
+    happen, so we record the delivery as ``failed`` and return 500 so Stripe
+    retries it. Acknowledging a failed handler is what let collected cash go
+    unrecorded (#493).
     """
     # ------------------------------------------------------------------
     # 1. Read raw body and signature header
@@ -132,29 +137,20 @@ async def stripe_webhook(
     # ------------------------------------------------------------------
     tenant_repo = TenantRepository(db)
     existing = await tenant_repo.get_webhook_event(event_id)
-    if existing:
+    # Only a *successfully processed* delivery is a duplicate. A row left in
+    # `failed` means an earlier attempt raised before the payment/journal was
+    # written, so this redelivery must run the handler again (#493).
+    if existing and (existing.get("processing_status") or "processed") == "processed":
         logger.info(
             "Stripe webhook already processed — skipping",
             extra={"event_id": event_id, "event_type": event_type},
         )
         return {"received": True}
 
-    # ------------------------------------------------------------------
-    # 4. Dispatch to handler
-    # ------------------------------------------------------------------
-    try:
-        await _dispatch(event, tenant_repo, db)
-    except Exception:
-        # Log but do not re-raise — we must return 200 so Stripe stops retrying.
-        # The event is still recorded in webhook_events for audit / reconciliation.
-        logger.error(
-            "Stripe webhook handler error",
-            exc_info=True,
-            extra={"event_id": event_id, "event_type": event_type},
-        )
+    attempts = int((existing or {}).get("attempts") or 0) + 1
 
     # ------------------------------------------------------------------
-    # 5. Record processed event (idempotency log)
+    # 4. Dispatch to handler
     # ------------------------------------------------------------------
     stripe_customer_id: str | None = _extract_customer_id(event)
     tenant_id: str | None = _extract_tenant_id(event)
@@ -164,10 +160,48 @@ async def stripe_webhook(
             tenant_id = tenant.get("id")
 
     try:
+        await _dispatch(event, tenant_repo, db)
+    except Exception as exc:
+        # Do NOT acknowledge. Recording the delivery as `failed` and returning
+        # 5xx makes Stripe retry with its own backoff, and the idempotency
+        # guard above lets the retry re-run the handler. Acknowledging here is
+        # what allowed a collected payment to disappear from the ledger (#493).
+        logger.error(
+            "Stripe webhook handler error — asking Stripe to retry",
+            exc_info=True,
+            extra={"event_id": event_id, "event_type": event_type},
+        )
+        try:
+            await tenant_repo.record_webhook_event(
+                provider_event_id=event_id,
+                event_type=event_type,
+                tenant_id=tenant_id,
+                processing_status="failed",
+                error_class=type(exc).__name__,
+                attempts=attempts,
+            )
+        except Exception:
+            logger.error(
+                "Failed to record webhook failure",
+                exc_info=True,
+                extra={"event_id": event_id},
+            )
+        # Generic message only — never leak handler internals to the caller.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed; retry expected.",
+        ) from exc
+
+    # ------------------------------------------------------------------
+    # 5. Record processed event (idempotency log)
+    # ------------------------------------------------------------------
+    try:
         await tenant_repo.record_webhook_event(
             provider_event_id=event_id,
             event_type=event_type,
             tenant_id=tenant_id,
+            processing_status="processed",
+            attempts=attempts,
         )
     except Exception:
         logger.error(

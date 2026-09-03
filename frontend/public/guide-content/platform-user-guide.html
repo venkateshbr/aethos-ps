@@ -5,7 +5,7 @@ update the relevant workflow, control, and testing notes.</p>
 <p>Related docs:</p>
 <ul>
 <li>Aethos Nous prompts: <a href="/guides/nous-prompt-library"><code>docs/copilot/prompt-library.md</code></a></li>
-<li>Nous runtime and learning operations: <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/infra/HERMES_RUNTIME_OPERATIONS.md" target="_blank" rel="noreferrer"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a></li>
+<li>Nous runtime and learning operations: <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a></li>
 <li>Nous/Hermes technical architecture: <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/architecture/atlas-hermes-ai-agent-architecture.md" target="_blank" rel="noreferrer"><code>docs/architecture/atlas-hermes-ai-agent-architecture.md</code></a></li>
 <li>Current pre-launch QA runbook: <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md" target="_blank" rel="noreferrer"><code>docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md</code></a></li>
 <li>Earlier Ishantech launch QA runbook: <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/qa/ishantech-production-e2e-runbook-2026-07-11.md" target="_blank" rel="noreferrer"><code>docs/qa/ishantech-production-e2e-runbook-2026-07-11.md</code></a></li>
@@ -195,10 +195,10 @@ result and the approval boundary.</p>
 <td>ENT-RBAC-002</td>
 </tr>
 <tr>
-<td>Guides (public)</td>
-<td><code>/guides</code>, <code>/guides/:slug</code></td>
-<td>Everyone</td>
-<td>Searchable HTML library of this guide, the Nous prompt library and both demo guides</td>
+<td>Guides</td>
+<td><code>/app/guides</code>, <code>/app/guides/:slug</code></td>
+<td>Owners and admins</td>
+<td>Searchable HTML library of this guide, the Nous prompt library, the Nous-on-Hermes operations manual and both demo guides; each has an Export PDF action</td>
 <td>#478</td>
 </tr>
 <tr>
@@ -210,8 +210,10 @@ result and the approval boundary.</p>
 </tr>
 </tbody></table>
 <p>All authenticated browser modules are under <code>/app/*</code>. The public browser
-routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, <code>/p/:token</code>, <code>/guides</code>, <code>/guides/:slug</code>,
-and the Stripe Connect return handler <code>/settings/billing/connect/return</code>. Route fragments such as
+routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, <code>/p/:token</code> and the Stripe Connect return
+handler <code>/settings/billing/connect/return</code>. The guide library is <strong>not</strong> public:
+<code>/guides</code> redirects to <code>/app/guides</code>, which requires a signed-in tenant owner or
+admin. Route fragments such as
 <code>/copilot</code>, <code>/reports/ar-aging</code>, <code>/payments</code> for bill-pay batches,
 <code>/engagements/new</code>, and <code>/settings/stripe</code> are not current Angular routes.</p>
 <h3 id="signup-password-and-subscription-lifecycle">Signup, password, and subscription lifecycle</h3>
@@ -677,7 +679,7 @@ and that promotion path is currently disabled pending the evaluation wiring
 engineering team, not as self-modifications.</li>
 </ul>
 <p>Administrators and operators: the full runtime, tooling and learning-loop
-reference is <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/infra/HERMES_RUNTIME_OPERATIONS.md" target="_blank" rel="noreferrer"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a>.</p>
+reference is <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a>.</p>
 <h3 id="current-ai-approval-boundary">Current AI approval boundary</h3>
 <table>
 <thead>
@@ -1466,7 +1468,7 @@ next run, failed or skipped workflows, open Inbox work, and redacted
 operational health from one business prompt.</li>
 <li>Use Settings -&gt; Agent Autonomy -&gt; AI Inference Settings to choose the tenant
 Nous runtime (Aethos Basic or the advanced Hermes runtime; operator guide:
-<a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/infra/HERMES_RUNTIME_OPERATIONS.md" target="_blank" rel="noreferrer"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a>), semantic response order, and model-routing order. The default
+<a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a>), semantic response order, and model-routing order. The default
 Nous response order is <code>semantic_intent</code> -&gt; <code>atlas_runtime</code>, meaning
 high-confidence operational finance prompts are handled by Aethos read-packs
 and guarded workflow tools before falling back to Hermes or Aethos Basic.

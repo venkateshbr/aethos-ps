@@ -42,7 +42,7 @@ backend/app/
   evals/         Offline agent-eval gate (golden prompts + rubric), run in CI via scripts/agent_eval_gate.py
   core/          Config, auth, RBAC, middleware
 frontend/src/app/
-  features/      Lazy-loaded modules (landing, signup, login, guides, dashboard, copilot [Nous], documents, inbox, engagements, projects, clients [Contacts], invoices, public-invoice, bills, billing-runs [Pay Bills wizard], expenses, time-entries, approvals, payments, people, reports, accounting, settings, profile; onboarding is an empty placeholder — #519)
+  features/      Lazy-loaded modules (landing, signup, login, dashboard, copilot [Nous], documents, inbox, engagements, projects, clients [Contacts], invoices, public-invoice, bills, billing-runs [Pay Bills wizard], expenses, time-entries, approvals, payments, people, reports, accounting, settings, profile, guides [owner/admin only, /app/guides]; onboarding is an empty placeholder — #519)
   shared/        Reusable components, money pipe, shell (top nav)
   core/          Singleton services, guards, interceptors
 frontend/projects/timesheet/   Employee timesheet portal (separate SPA, shares Supabase auth)

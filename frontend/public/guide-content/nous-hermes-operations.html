@@ -1,0 +1,465 @@
+<h1 id="aethos-nous-on-hermes-runtime-and-learning-operations">Aethos Nous on Hermes — Runtime and Learning Operations</h1>
+<blockquote>
+<p><strong>Audience</strong>: operators, SRE (Sthira), backend (Karya), analytics (Dhruva), security (Prahari).
+<strong>User-facing counterpart</strong>: <a href="/guides/platform-user-guide"><code>docs/user-guide/platform-user-guide.md</code></a> §3.
+<strong>Design reference</strong>: <a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/architecture/atlas-hermes-ai-agent-architecture.md" target="_blank" rel="noreferrer"><code>docs/architecture/atlas-hermes-ai-agent-architecture.md</code></a>.
+<strong>Created</strong>: 2026-09-03 from the Hermes runtime and self-learning review (issues #529–#536).
+<strong>Status of this document</strong>: describes what the code does today, including the parts that do <strong>not</strong> work yet. Every gap is labelled with its issue number. Do not present a gap as shipped behaviour.</p>
+</blockquote>
+<hr>
+<h2 id="1-what-quot-nous-on-hermes-quot-actually-is">1. What &quot;Nous on Hermes&quot; actually is</h2>
+<p>Nous is the product-facing AI interface. A chat turn passes through up to three stages:</p>
+<pre><code>user prompt (POST /api/v1/chat/threads/{id}/messages, SSE)
+  │
+  ├─1─ semantic intent router          app/services/atlas_semantic_intent_router.py
+  │     38 static intents, confidence &gt;= 0.72 (tenant-configurable)
+  │     hit → deterministic responder / read pack → answer returned, STAGE 2 AND 3 NEVER RUN
+  │
+  ├─2─ configured runtime              app/services/atlas_runtime.py
+  │     aethos_basic  → CopilotAgent tool loop      app/agents/copilot/graph.py
+  │     hermes_agent  → Hermes container            app/services/hermes_client.py
+  │
+  └─3─ fallback                        hermes_agent → aethos_basic when Hermes errors,
+        circuit breaker opens, or the answer fails the output-safety filter
+</code></pre>
+<p>Hermes never touches the database. It calls back into Aethos through the <strong>tool broker</strong>:</p>
+<pre><code>Hermes container ──MCP──&gt; integrations/hermes/aethos_mcp_server.py
+                           (28 @mcp.tool wrappers, each takes a context token)
+                              │  Bearer AETHOS_HERMES_TOOL_TOKEN
+                              ▼
+                POST /api/v1/atlas-tools/execute      app/api/v1/endpoints/atlas_tools.py
+                  → resolves tenant/user/thread from atlas_tool_sessions (cts_… token)
+                  → dispatches to Aethos services (read packs) or HITL writers
+</code></pre>
+<p><strong>Two consequences operators must internalise:</strong></p>
+<ol>
+<li><strong>The router short-circuits Hermes.</strong> Most demo and prompt-library questions match one of the 38 intents and are answered by deterministic code, not by Hermes. &quot;We migrated to Hermes&quot; is only true for the long tail unless the router is reordered or disabled (#530).</li>
+<li><strong>Hermes authenticates as a container, not as a user.</strong> The broker verifies the shared tool token and resolves the tenant from a short-lived session token, but today it does <strong>not</strong> check the calling user&#39;s privileges, and two write tools bypass the agent tool policy entirely (#529). Until that lands, treat Hermes access as equivalent to &quot;any authenticated user of the tenant can read anything the read packs expose&quot;.</li>
+</ol>
+<hr>
+<h2 id="2-configuration-reference">2. Configuration reference</h2>
+<h3 id="runtime-selection">Runtime selection</h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Where</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ATLAS_AI_RUNTIME</code></td>
+<td>env / <code>app/core/config.py:114</code></td>
+<td><code>aethos_basic</code></td>
+<td><code>aethos_basic</code> or <code>hermes_agent</code>. Compose passes it through (<code>docker-compose.hostinger.yml:63</code>).</td>
+</tr>
+<tr>
+<td><code>tenant_ai_settings.atlas_runtime</code></td>
+<td>DB, Settings → AI Inference Settings</td>
+<td>unset → env default</td>
+<td>Per-tenant override resolved by <code>app/services/ai_settings_service.py</code>.</td>
+</tr>
+<tr>
+<td><code>atlas_response_order</code></td>
+<td><code>tenant_ai_settings</code></td>
+<td><code>[&quot;semantic_intent&quot;,&quot;atlas_runtime&quot;]</code></td>
+<td>Put <code>atlas_runtime</code> first (or drop <code>semantic_intent</code>) to send everything to Hermes.</td>
+</tr>
+<tr>
+<td><code>atlas_semantic_threshold</code></td>
+<td><code>tenant_ai_settings</code></td>
+<td><code>0.72</code></td>
+<td>Higher = fewer deterministic answers, more Hermes.</td>
+</tr>
+<tr>
+<td><code>ATLAS_HERMES_FALLBACK_TO_BASIC</code></td>
+<td>env</td>
+<td><code>true</code></td>
+<td>Keep <code>true</code> in production; it hides Hermes outages, so pair it with the verification in §4.</td>
+</tr>
+</tbody></table>
+<h3 id="hermes-connection">Hermes connection</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Container</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ATLAS_HERMES_API_BASE_URL</code></td>
+<td>api</td>
+<td>Default <code>http://hermes:8642</code> (internal network only).</td>
+</tr>
+<tr>
+<td><code>ATLAS_HERMES_API_SERVER_KEY</code></td>
+<td>api</td>
+<td>Must equal <code>HERMES_API_SERVER_KEY</code> on the hermes container. <strong>If empty the client sends no auth header instead of failing</strong> (#536).</td>
+</tr>
+<tr>
+<td><code>ATLAS_HERMES_TIMEOUT_SECONDS</code></td>
+<td>api</td>
+<td>Read timeout, prod 90 s. Connect 5 s / write 10 s / pool 5 s are fixed.</td>
+</tr>
+<tr>
+<td><code>AETHOS_HERMES_TOOL_TOKEN</code></td>
+<td>api <strong>and</strong> hermes</td>
+<td>Shared secret for the tool broker. Both must match or every tool call 401s.</td>
+</tr>
+<tr>
+<td><code>ATLAS_CONTEXT_SIGNING_SECRET</code></td>
+<td>api</td>
+<td>Signs the legacy <code>ctx_…</code> context ref (fallback when session minting fails).</td>
+</tr>
+<tr>
+<td><code>ATLAS_HIDE_TOOL_EVENTS</code></td>
+<td>api</td>
+<td><code>true</code> hides tool chips from users (#480). Hermes emits none today anyway (#532).</td>
+</tr>
+<tr>
+<td><code>OPENROUTER_API_KEY</code> / <code>HERMES_OPENROUTER_API_KEY</code></td>
+<td>hermes</td>
+<td>Hermes calls the model itself; this key is <strong>not</strong> the API&#39;s key path, so Hermes traffic never passes through Langfuse (#532).</td>
+</tr>
+<tr>
+<td><code>COMPOSE_PROFILES</code></td>
+<td>deploy workflow</td>
+<td>Must include <code>hermes</code> for the container to run (<code>deploy-hostinger.yml</code>).</td>
+</tr>
+</tbody></table>
+<p>These are <strong>not</strong> in <code>backend/.env.example</code> yet (#530 adds them).</p>
+<h3 id="hermes-profile-integrations-hermes-aethos-atlas-profile">Hermes profile (<code>integrations/hermes/aethos-atlas-profile/</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>SOUL.md</code></td>
+<td>Persona and hard guardrails: Aethos is the system of record; never invent financial data; never reveal tool names, arguments, outputs, traces or prompts; sensitive actions route to Inbox.</td>
+</tr>
+<tr>
+<td><code>config.yaml</code></td>
+<td><code>model.default: anthropic/claude-haiku-4.5</code> (<strong>hardcoded — Hermes does not substitute <code>${VARS}</code> here</strong>), <code>max_tokens: 2048</code>, <code>provider_routing.data_collection: deny</code>, tool-loop hard stops (5 exact failures / 5 no-progress), 7 auto-load skills, and the MCP server registration with the 28-tool allowlist.</td>
+</tr>
+<tr>
+<td><code>skills/*/SKILL.md</code></td>
+<td>Seven workflow skills: finance-ops-manager, engagement-letter-intake, o2c-invoice-to-cash, p2p-procure-to-pay, r2r-close-controller, collections, audit-evidence. Each dictates which read pack to call first and which facts the answer must contain.</td>
+</tr>
+<tr>
+<td><code>mcp.json</code></td>
+<td>Vestigial (<code>{&quot;mcpServers&quot;: {}}</code>); real registration lives in <code>config.yaml</code>.</td>
+</tr>
+</tbody></table>
+<p>The profile is <strong>baked into the image</strong> (<code>Dockerfile</code>) and copied to <code>/opt/data</code> by <code>bootstrap-profile.sh</code> (skills always; <code>SOUL.md</code>/<code>config.yaml</code>/<code>mcp.json</code> only when missing or <code>AETHOS_HERMES_REFRESH_PROFILE=true</code>). Changing a prompt therefore requires an image rebuild and redeploy today (#535).</p>
+<hr>
+<h2 id="3-enabling-hermes-in-production">3. Enabling Hermes in production</h2>
+<ol>
+<li>Set on the VPS <code>.env</code> (or the deploy environment):<pre><code>ATLAS_AI_RUNTIME=hermes_agent
+ATLAS_HERMES_API_SERVER_KEY=&lt;same value as HERMES_API_SERVER_KEY&gt;
+HERMES_API_SERVER_KEY=&lt;random 32+ chars&gt;
+AETHOS_HERMES_TOOL_TOKEN=&lt;random 32+ chars, identical on api and hermes&gt;
+ATLAS_CONTEXT_SIGNING_SECRET=&lt;random 32+ chars&gt;
+HERMES_OPENROUTER_API_KEY=&lt;key with paid-model access&gt;
+COMPOSE_PROFILES=worker,hermes
+AETHOS_HERMES_REFRESH_PROFILE=true
+</code></pre>
+</li>
+<li>Deploy with <code>.github/workflows/deploy-hostinger.yml</code>; record the SHA.</li>
+<li>Verify the container: <code>docker compose ps hermes</code> and its healthcheck (curls <code>/health</code> with the bearer key every 30 s).</li>
+<li>Verify the API sees it: a chat turn should produce an <code>agent_runs</code> row with agent <code>nous_hermes_runtime</code> and prompt version <code>hermes-v1</code>.</li>
+<li><strong>Confirm the turn was not a silent fallback</strong> — see §4.</li>
+</ol>
+<p>Rollback: set <code>ATLAS_AI_RUNTIME=aethos_basic</code> and restart the api container; no data migration is involved. Per-tenant rollback: Settings → AI Inference Settings → Aethos Basic.</p>
+<h3 id="secret-rotation">Secret rotation</h3>
+<table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Blast radius</th>
+<th>Procedure</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>AETHOS_HERMES_TOOL_TOKEN</code></td>
+<td>All Hermes tool calls 401 until both containers hold the new value</td>
+<td>Update <code>.env</code>, restart <code>api</code> and <code>hermes</code> together</td>
+</tr>
+<tr>
+<td><code>HERMES_API_SERVER_KEY</code> / <code>ATLAS_HERMES_API_SERVER_KEY</code></td>
+<td>API cannot reach Hermes; every turn falls back to Basic</td>
+<td>Same, restart both</td>
+</tr>
+<tr>
+<td><code>ATLAS_CONTEXT_SIGNING_SECRET</code></td>
+<td>In-flight legacy context refs invalid (session tokens unaffected)</td>
+<td>Rotate any time; brief tool errors possible</td>
+</tr>
+<tr>
+<td><code>HERMES_OPENROUTER_API_KEY</code></td>
+<td>Hermes answers fail → fallback to Basic</td>
+<td>Rotate at the provider, restart <code>hermes</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="4-verifying-which-runtime-answered">4. Verifying which runtime answered</h2>
+<p>Fallback is silent by design, so &quot;Hermes is configured&quot; is not evidence that Hermes answered.</p>
+<ul>
+<li><strong>Per turn</strong>: <code>agent_runs</code> row for the thread — agent name <code>nous_hermes_runtime</code> means the Hermes adapter ran; <code>copilot_agent</code> means Basic. A Hermes turn that fell back produces a Basic row.</li>
+<li><strong>Router short-circuit</strong>: the API logs <code>atlas_semantic_response_used</code> when the deterministic path answered; no runtime row means no model was called at all.</li>
+<li><strong>Container</strong>: <code>docker compose logs hermes --since 10m</code> should show the MCP tool calls for the turn.</li>
+<li><strong>Broker</strong>: <code>atlas_tool_sessions</code> gains one row per Hermes turn (see §6 — these are never pruned today, #536).</li>
+<li><strong>Deliberate test</strong>: temporarily set the tenant&#39;s response order to <code>atlas_runtime</code> only and ask a long-tail question (see <code>docs/infra/LOCAL_HERMES_TESTING.md</code>).</li>
+</ul>
+<p>There is currently <strong>no runtime badge in the Nous UI and no Hermes check in <code>/health/ready</code></strong> (#530).</p>
+<hr>
+<h2 id="5-what-is-guaranteed-on-each-path">5. What is guaranteed on each path</h2>
+<table>
+<thead>
+<tr>
+<th>Guarantee</th>
+<th>Basic (<code>aethos_basic</code>)</th>
+<th>Hermes (<code>hermes_agent</code>)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Streaming answer</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Tool-call chips in the UI</td>
+<td>yes</td>
+<td><strong>no</strong> (#532)</td>
+</tr>
+<tr>
+<td>Output safety filter (no tool names, prompts, provider errors)</td>
+<td>yes</td>
+<td>yes — regex over the first 160 chars, plus a full-answer scan; a tail leak truncates the answer silently (#532)</td>
+</tr>
+<tr>
+<td>Number-fidelity guard (stated figures checked against tool results)</td>
+<td>yes</td>
+<td><strong>no</strong> (#532) — the user guide claim applies to Basic only</td>
+</tr>
+<tr>
+<td>Langfuse trace</td>
+<td>yes</td>
+<td><strong>no</strong> (#532) — Hermes calls the provider from its own container</td>
+</tr>
+<tr>
+<td><code>agent_tool_invocations</code> ledger / replayable steps</td>
+<td>yes</td>
+<td><strong>no</strong> (#532) — one run row, zero steps</td>
+</tr>
+<tr>
+<td>Agent tool policy on writes (role, risk, kill switch, HITL routing)</td>
+<td>yes</td>
+<td>partial — most writes reuse the policy path, <strong>two do not</strong> (#529)</td>
+</tr>
+<tr>
+<td>Per-user read authorisation</td>
+<td>endpoint RBAC</td>
+<td><strong>none in the broker</strong> (#529)</td>
+</tr>
+<tr>
+<td>HITL for money/accounting/external send</td>
+<td>yes</td>
+<td>yes (write tools create Inbox tasks, never post directly)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="6-data-the-runtime-writes">6. Data the runtime writes</h2>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Written by</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>chat_threads</code>, <code>chat_messages</code></td>
+<td>chat endpoint</td>
+<td>Per tenant/user; resumed on login. No feedback column yet (#533).</td>
+</tr>
+<tr>
+<td><code>agent_runs</code></td>
+<td><code>chat.py</code></td>
+<td>One row per turn: agent, prompt version, model version, trace id, replay pointer.</td>
+</tr>
+<tr>
+<td><code>agent_tool_invocations</code></td>
+<td>Basic agent only</td>
+<td>Hermes tool calls are absent (#532).</td>
+</tr>
+<tr>
+<td><code>atlas_tool_sessions</code></td>
+<td><code>atlas_context.create_atlas_tool_session</code></td>
+<td>Short <code>cts_…</code> token → tenant/user/thread/scope, 15-minute TTL, service-role only (RLS with no policies). <strong>Never pruned; nonce never verified; not single-use</strong> (#536).</td>
+</tr>
+<tr>
+<td><code>agent_suggestions</code> + <code>hitl_tasks</code></td>
+<td>write tools via <code>suggestion_writer</code> (or directly, #529)</td>
+<td>The HITL surface; approval materialises the record.</td>
+</tr>
+<tr>
+<td><code>agent_corrections</code></td>
+<td><code>inbox_service.approve_with_edits</code> / <code>reject</code></td>
+<td>Full before/after snapshots, append-only. <strong>Chat turns produce none</strong> (#533).</td>
+</tr>
+<tr>
+<td><code>agent_eval_candidates</code></td>
+<td><code>inbox_repo._record_eval_candidate</code></td>
+<td>Hashes only; no UI, no promotion path (#534).</td>
+</tr>
+<tr>
+<td>Hermes conversation memory</td>
+<td>Hermes itself (<code>store: true</code>, key <code>aethos:{tenant}:{user}:{thread}</code>)</td>
+<td>Lives in the shared <code>hermes-data</code> volume. No retention, no clearing path, no isolation proof (#531). Not covered by tenant export/erasure.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="7-the-self-learning-loop-current-state">7. The self-learning loop — current state</h2>
+<p>A learning loop needs six stages. Today only the first is partly built:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>State</th>
+<th>Where</th>
+<th>Gap</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>1. Capture</strong></td>
+<td>partial</td>
+<td><code>agent_corrections</code> from Inbox edits/rejections</td>
+<td>No feedback on chat answers at all — no thumbs, no <code>chat_messages.feedback</code>. Most Nous output is never rated (#533).</td>
+</tr>
+<tr>
+<td><strong>2. Curate</strong></td>
+<td>dead end</td>
+<td><code>agent_eval_candidates</code> auto-created from corrections</td>
+<td>Stores hashes only; no reviewer UI; the <code>accepted/dismissed/exported</code> statuses are unreachable; nothing turns a candidate into an eval case (#534).</td>
+</tr>
+<tr>
+<td><strong>3. Evaluate</strong></td>
+<td>self-test only</td>
+<td><code>scripts/agent_eval_gate.py</code> in CI</td>
+<td>The CI gate scores hand-written fixtures against the rubric — it never calls a model. The only real scorer (<code>app/evals/runner.py</code>, which <em>does</em> exercise whichever runtime the tenant is on) runs solely from the opt-in <code>tests/eval/test_agent_eval_live.py</code>, writes results nowhere, and covers 8 golden prompts. 13 of 14 YAML eval packs have no runner (#534).</td>
+</tr>
+<tr>
+<td><strong>4. Deploy a change</strong></td>
+<td>manual</td>
+<td>Prompts in three places: Basic <code>SYSTEM_PROMPT</code>, the Hermes instruction string, and the image-baked <code>SOUL.md</code> + skills</td>
+<td>No prompt registry, versions are hardcoded strings, and a skill edit needs an image rebuild + redeploy with no eval gate in front of it (#535).</td>
+</tr>
+<tr>
+<td><strong>5. Measure</strong></td>
+<td>missing</td>
+<td>—</td>
+<td>No Langfuse scores anywhere in the repo; Hermes turns are untraced; number-fidelity findings are logged but not persisted or counted (#532).</td>
+</tr>
+<tr>
+<td><strong>6. Promote autonomy</strong></td>
+<td>broken</td>
+<td><code>autonomy_promoter</code> requires <code>agent_autonomy_settings.eval_passed_at</code></td>
+<td><strong>Nothing ever writes <code>eval_passed_at</code></strong>, and the demotion query still uses the PostgREST filter that #395 fixed elsewhere. No agent can reach L3 and no misbehaving agent can be demoted (#496, #534).</td>
+</tr>
+</tbody></table>
+<p><strong>Operator summary</strong>: Nous does not learn today. It improves only when an engineer changes a prompt, a skill, a read pack or the router by hand. Tell customers exactly that; the guide wording in §3 of the user guide has been corrected to match.</p>
+<h3 id="the-target-loop-issues-533-534-535">The target loop (issues #533 → #534 → #535)</h3>
+<pre><code>answer ──👎/edit──&gt; correction (+intent, runtime, trace)
+   → eval candidate (with payloads)
+   → reviewer accepts in Settings → Eval Candidates
+   → scripts/promote_eval_candidates.py writes a case into docs/test/agent_evals/&lt;agent&gt;.yaml
+   → nightly live eval runs the packs against a seeded staging tenant on the real runtime
+   → results → agent_eval_runs + Langfuse scores; on pass stamp eval_passed_at
+   → autonomy_promoter offers L2 → L3 to an admin (never silently)
+   → prompt/skill changes ship through the same gate, with rollback on regression
+</code></pre>
+<h3 id="weekly-operating-rhythm-once-the-loop-exists-dhruva">Weekly operating rhythm once the loop exists (Dhruva)</h3>
+<ol>
+<li>Review new eval candidates (accept / dismiss with a note).</li>
+<li>Promote accepted ones into eval packs; open the PR.</li>
+<li>Read the nightly eval drift report; investigate any intent whose score dropped.</li>
+<li>Review router misroutes (worst intents by 👎 rate) and propose threshold/concept changes as an Inbox task.</li>
+<li>Review autonomy promotion offers with the admin; check demotions fired where they should.</li>
+</ol>
+<hr>
+<h2 id="8-troubleshooting">8. Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>Check</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Answers look canned, no Hermes logs</td>
+<td>Router answered (stage 1)</td>
+<td>API log <code>atlas_semantic_response_used</code>; raise <code>atlas_semantic_threshold</code> or reorder</td>
+</tr>
+<tr>
+<td>Every turn is Basic although runtime is <code>hermes_agent</code></td>
+<td>Hermes unreachable or key mismatch → silent fallback</td>
+<td><code>docker compose ps hermes</code>; <code>curl -H &quot;Authorization: Bearer $KEY&quot; http://hermes:8642/health</code> from the api container</td>
+</tr>
+<tr>
+<td>Hermes answers then stops mid-sentence</td>
+<td>Output-safety tail leak truncation</td>
+<td><code>atlas_runtime</code> safety patterns; #532 replaces silent truncation with a visible notice</td>
+</tr>
+<tr>
+<td>Tool calls 401</td>
+<td><code>AETHOS_HERMES_TOOL_TOKEN</code> differs between containers</td>
+<td>Compare both env values; restart both</td>
+</tr>
+<tr>
+<td>Tool calls 400 &quot;invalid context&quot;</td>
+<td>Session token expired (15 min) or mangled by a weak model</td>
+<td><code>atlas_tool_sessions</code> row; consider a stronger <code>model.default</code></td>
+</tr>
+<tr>
+<td>Hermes returns nothing on tool-heavy prompts</td>
+<td>Free-tier token quota</td>
+<td><code>config.yaml</code> <code>model.default</code> must be a paid model; see <code>LOCAL_HERMES_TESTING.md</code></td>
+</tr>
+<tr>
+<td>Circuit breaker keeps opening</td>
+<td>Provider errors or timeouts</td>
+<td>Breaker is in-process per worker (#536); check Hermes logs for provider 429s</td>
+</tr>
+<tr>
+<td><code>atlas_tool_sessions</code> growing unbounded</td>
+<td>No pruning job</td>
+<td>#536; safe to delete rows with <code>expires_at &lt; now()</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="9-security-posture-read-before-granting-access">9. Security posture (read before granting access)</h2>
+<ul>
+<li>The tool token is a <strong>container</strong> credential. Anyone who can reach the api container&#39;s broker endpoint with that token can execute any of the 28 tools for any tenant whose session token they hold. Keep the broker on the internal network only (it is today), rate-limit it (#536), and rotate the token on any container compromise.</li>
+<li>Session tokens are replayable within their 15-minute TTL (nonce minted but unchecked, not single-use) — #536.</li>
+<li>Read packs run with the service-role client and no per-user privilege check (#529): a viewer can obtain data the UI hides from them.</li>
+<li>Two write tools bypass the agent tool policy (#529): a viewer can cause an accounting review packet to be created.</li>
+<li>Document text reaches the model without untrusted-content fencing; prompt injection inside an uploaded invoice is flagged by the extraction agents but not neutralised in the read pack (#536).</li>
+<li>Hermes memory isolation is not proven and the volume is shared across tenants (#531). Do not describe Nous memory as tenant-isolated in a DPA until that test exists.</li>
+<li>Raw document binaries (scanned receipts/invoices) are sent to the model provider unmasked (#498).</li>
+</ul>
+<hr>
+<h2 id="10-related-documents">10. Related documents</h2>
+<ul>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/architecture/atlas-hermes-ai-agent-architecture.md" target="_blank" rel="noreferrer"><code>docs/architecture/atlas-hermes-ai-agent-architecture.md</code></a> — design, flows, tool catalogue (still uses the pre-rename name &quot;Atlas&quot; in places).</li>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/architecture/nous-hermes-agentic-assessment.md" target="_blank" rel="noreferrer"><code>docs/architecture/nous-hermes-agentic-assessment.md</code></a> — the assessment that drove the migration; several &quot;done&quot; items are not done (#532).</li>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/infra/LOCAL_HERMES_TESTING.md" target="_blank" rel="noreferrer"><code>docs/infra/LOCAL_HERMES_TESTING.md</code></a> — local container testing, the two known gotchas.</li>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/infra/LANGFUSE_OBSERVABILITY.md" target="_blank" rel="noreferrer"><code>docs/infra/LANGFUSE_OBSERVABILITY.md</code></a> — traced surfaces (Hermes correctly absent).</li>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/prd/aethos-atlas-powered-by-hermes-migration-plan.md" target="_blank" rel="noreferrer"><code>docs/prd/aethos-atlas-powered-by-hermes-migration-plan.md</code></a> — migration phases; Phase 7 (cutover) not executed.</li>
+<li><a href="https://github.com/venkateshbr/aethos-ps/blob/main/docs/test/agent_eval_gate.md" target="_blank" rel="noreferrer"><code>docs/test/agent_eval_gate.md</code></a> — the offline gate as it exists today.</li>
+</ul>

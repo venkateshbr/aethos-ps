@@ -231,14 +231,15 @@ def test_agent_models_default_when_unset() -> None:
         assert s.agent_models[-1] == "anthropic/claude-haiku-4.5"
 
 
-def test_atlas_ai_runtime_defaults_to_aethos_basic() -> None:
+def test_atlas_ai_runtime_defaults_to_hermes_agent() -> None:
+    """#530 — Hermes is the default runtime; it degrades to Basic on outage."""
     with patch.dict(os.environ, _REQUIRED_ENV, clear=False):
         os.environ.pop("ATLAS_AI_RUNTIME", None)
         import app.core.config as cfg
 
         reload(cfg)
         s = cfg.Settings()
-        assert s.atlas_ai_runtime == "aethos_basic"
+        assert s.atlas_ai_runtime == "hermes_agent"
         assert s.atlas_hermes_api_base_url == "http://hermes:8642"
         assert s.atlas_hermes_timeout_seconds == 90.0
         assert s.atlas_hide_tool_events is True

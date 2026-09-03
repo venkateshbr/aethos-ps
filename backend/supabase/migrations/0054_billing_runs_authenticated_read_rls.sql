@@ -8,13 +8,25 @@
 
 BEGIN;
 
-DROP POLICY IF EXISTS "authenticated_member_read" ON billing_runs;
+-- #492: `billing_runs` had no CREATE TABLE migration, so applying this file to
+-- a fresh database aborted the whole chain here. Migration 0122 now creates the
+-- table (and this policy). Skip when the relation does not exist yet so the
+-- chain stays applicable in original order.
+DO $$
+BEGIN
+    IF to_regclass('public.billing_runs') IS NULL THEN
+        RAISE NOTICE 'billing_runs not present yet; policy created by migration 0122';
+        RETURN;
+    END IF;
 
-CREATE POLICY "authenticated_member_read" ON billing_runs
-    FOR SELECT
-    TO authenticated
-    USING (
-        public.is_tenant_member(auth.uid(), tenant_id)
-    );
+    DROP POLICY IF EXISTS "authenticated_member_read" ON billing_runs;
+
+    CREATE POLICY "authenticated_member_read" ON billing_runs
+        FOR SELECT
+        TO authenticated
+        USING (
+            public.is_tenant_member(auth.uid(), tenant_id)
+        );
+END $$;
 
 COMMIT;

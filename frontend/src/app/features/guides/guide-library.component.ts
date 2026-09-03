@@ -1,16 +1,13 @@
 import { Component, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { GuideHeaderComponent } from './guide-header.component';
 import { GUIDE_CATALOG } from './guide-catalog.generated';
 
 @Component({
   selector: 'app-guide-library',
   standalone: true,
-  imports: [RouterLink, GuideHeaderComponent],
+  imports: [RouterLink],
   template: `
-    <div class="min-h-screen bg-surface-base text-text-primary">
-      <app-guide-header />
-
+    <div class="min-h-full bg-surface-base text-text-primary">
       <main>
         <section class="border-b border-border-subtle px-5 py-14 md:px-8 md:py-20">
           <div class="mx-auto max-w-7xl">
@@ -19,8 +16,9 @@ import { GUIDE_CATALOG } from './guide-catalog.generated';
               <div>
                 <h1 class="max-w-3xl text-4xl font-bold tracking-tight md:text-6xl">Learn Aethos at your pace.</h1>
                 <p class="mt-5 max-w-2xl text-base leading-7 text-text-muted md:text-lg">
-                  Start with the operating model, borrow a proven Nous prompt, or rehearse a complete client scenario.
-                  These guides are generated from the same maintained documentation used by the product team.
+                  Start with the operating model, borrow a proven Nous prompt, rehearse a client scenario, or open the
+                  Nous runtime and learning operations manual. Generated from the maintained documentation the product
+                  team works from. Visible to tenant owners and admins only.
                 </p>
               </div>
               <label class="block">
@@ -73,7 +71,7 @@ import { GUIDE_CATALOG } from './guide-catalog.generated';
                 <div class="grid gap-4 md:grid-cols-2">
                   @for (guide of filteredGuides(); track guide.slug; let index = $index) {
                     <a
-                      [routerLink]="['/guides', guide.slug]"
+                      [routerLink]="['/app/guides', guide.slug]"
                       class="group flex min-h-56 flex-col rounded-lg border border-border-default bg-surface p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:bg-surface-raised hover:shadow-card-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >
                       <div class="flex items-start justify-between gap-4">
