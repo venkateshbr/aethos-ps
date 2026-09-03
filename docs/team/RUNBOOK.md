@@ -3,95 +3,72 @@
 > **Owner**: Sthira (SRE)
 > **Status**: Skeleton. Filled as infra and ops surface (PLAN §12).
 
-## Production topology
+## Production topology (Hostinger — current)
+
+> Updated 2026-09-03 (#491). The Vercel / Cloud Run sections that used to live
+> here described a topology that was never deployed; the authoritative deploy
+> and rollback procedure is [`docs/infra/HOSTINGER_DEPLOYMENT.md`](../infra/HOSTINGER_DEPLOYMENT.md).
 
 | Surface | Provider | Notes |
 | --- | --- | --- |
-| Frontend | Vercel | Angular 19 SSR-disabled SPA; preview deploys per PR |
-| Backend API | Cloud Run | FastAPI on `:8011` dev / managed port in prod |
-| Workers (Procrastinate) | Cloud Run jobs / always-on container | Document extraction, FX refresh, autonomy promoter, payment reconciliation, collections |
-| Database | Supabase (PostgreSQL 15+) | RLS + Auth + Storage + Realtime + Procrastinate task queue |
-| Cache / queue | None — queue lives in the Supabase Postgres via Procrastinate (no Redis) | — |
-| Email | Resend | — |
-| LLM | Anthropic Claude Sonnet 4.6 | Per-tenant budget enforced in middleware |
-| LLM observability | Langfuse | Datasets + scores + drift |
-| Payments | Stripe (Subs + Connect + Payment Links + Tax) | — |
+| Edge / TLS | Traefik on the Hostinger VPS | Let's Encrypt; routes `aethos.ishirock.tech` (web) and `timesheet.aethos.ishirock.tech` |
+| Frontend | nginx container (`frontend/Dockerfile.prod`) | Angular 20 SPA; `/api` proxied to the private API container |
+| Timesheet portal | nginx container (`frontend/Dockerfile.timesheet.prod`) | Second Angular app; host port 4202 |
+| Backend API | private FastAPI container (`backend/Dockerfile`) | `:8011` inside the compose network only |
+| Workers | private Procrastinate container (same image, worker CMD) | Queues `default,extraction,billing,fx,cron`; see `docs/qa/queue-session-budget-runbook.md` |
+| Nous advanced runtime | optional private Hermes container (`integrations/hermes/`) | Enabled by `ATLAS_AI_RUNTIME=hermes_agent`; falls back to the in-process runtime when down |
+| Database / Auth / Storage | Supabase managed (PostgreSQL 15+) | RLS + Auth + Storage + Procrastinate task queue (no Redis) |
+| Email | Resend | Collections/time reminders today; invoice email delivery is #516 |
+| LLM | OpenRouter model chain (`agent_models` in `app/core/config.py`) | No per-tenant budget middleware yet (#503) |
+| LLM observability | Langfuse | Traces; scores/datasets not yet wired for learning loops |
+| Payments | Stripe (Subs + Connect Standard + Payment Links) | Stripe Tax not integrated |
+
+Compose files: `docker-compose.hostinger.yml` (build from source) and
+`docker-compose.hostinger.registry.yml` (pull `ghcr.io/venkateshbr/aethos-ps-*`).
+Start/stop helpers: `start-prod.sh`, `stop-prod.sh`.
 
 ## Health endpoints
 
 - `GET /health` — liveness, no auth.
-- `GET /health/ready` — readiness (DB, queue, secret store).
-- `GET /admin/health` — admin-only; provider statuses.
+- `GET /health/ready` — readiness (DB, queue when `QUEUE_REQUIRED=true` or `EXTRACTION_MODE=async`).
+- `GET /api/v1/ping` — API smoke.
+- `GET /api/v1/tenants/health` — tenant-scoped operational health (admin); surfaced in Settings → Operational Health.
 
 See [`agent-harness/core/observability-standard.md`](../../agent-harness/core/observability-standard.md).
 
 ## SLOs (to be tuned)
 
-- `/api/v1/copilot/chat/stream` — TTFT < 3s p95, error rate < 1%.
-- `/api/v1/invoices/{id}/send` — < 3s p95.
-- Webhook → invoice paid — < 1s p95.
+- `POST /api/v1/chat/threads/{id}/messages` (SSE) — TTFT < 3s p95, error rate < 1%.
+- `POST /api/v1/invoices/{id}/send` — < 3s p95.
+- Stripe webhook → invoice paid — < 1s p95.
 
 ## Deployment
 
-### Prerequisites
-- GCP project with billing enabled
-- Cloud Run + Container Registry + Secret Manager APIs enabled (run `infra/cloudrun/setup.sh <PROJECT_ID>`)
-- All secret values populated in Secret Manager secret `aethos-ps-secrets` (see setup script output for required keys)
-- GitHub repository secrets set: `GCP_PROJECT_ID`, `GCP_SA_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
-
 ### Normal deploy
-Push to `main` — `.github/workflows/deploy.yml` builds the Docker image, pushes to GCR, deploys to Cloud Run, and deploys the Angular SPA to Vercel in parallel.
-
-### Manual deploy (emergency / hotfix)
-```bash
-# API — build, push, deploy
-cd backend
-docker build -t gcr.io/${PROJECT_ID}/aethos-ps-api:latest .
-docker push gcr.io/${PROJECT_ID}/aethos-ps-api:latest
-gcloud run deploy aethos-ps-api \
-  --image gcr.io/${PROJECT_ID}/aethos-ps-api:latest \
-  --region asia-northeast1 \
-  --platform managed \
-  --allow-unauthenticated
-
-# Frontend — build, deploy
-cd frontend && npm ci && npx ng build --configuration=production
-npx vercel --prod --yes
-```
+Manual `workflow_dispatch` of `.github/workflows/deploy-hostinger.yml` (builds images, pushes to GHCR, SSHes to the VPS, pulls and restarts the compose stack). Record the deployed SHA in the release note; `AETHOS_EXPECTED_DEPLOY_SHA` is asserted by the production Playwright smoke.
 
 ### Rollback
-```bash
-# List revisions
-gcloud run revisions list --service aethos-ps-api --region asia-northeast1
-
-# Route 100% traffic to a previous revision
-gcloud run services update-traffic aethos-ps-api \
-  --to-revisions=<REVISION_NAME>=100 \
-  --region asia-northeast1
-```
+Re-run the deploy workflow with the previous image tag / SHA, or on the VPS: `docker compose -f docker-compose.hostinger.registry.yml pull <service>@<previous tag> && docker compose up -d <service>`. Full procedure in `docs/infra/HOSTINGER_DEPLOYMENT.md`.
 
 ### DB migrations
-`supabase migration up` — manual gate; Sthira runs after backup verification.
+`cd backend && uv run python -m scripts.apply_migrations` (idempotent, see script header) after a verified Supabase backup. Never apply a migration that has not passed the unit contract tests.
 
 ## Common operations
 
-### Deploy
-- Push to `main` after PR merge → Vercel & Cloud Run auto-deploy.
-- DB migrations: `supabase migration up` (manual gate via Sthira).
-
 ### Rotate a secret
-- Update in 1Password / Doppler / Supabase secrets manager.
-- Trigger rolling restart of Cloud Run service.
-- Verify health endpoint returns expected provider statuses.
+- Update the VPS `.env` (or the GitHub environment secret used by the deploy workflow).
+- `docker compose up -d` the affected services; verify `/health/ready` and Settings → Operational Health.
 
 ### Investigate a customer report
-- Get trace ID (in support form or response header).
-- Open Langfuse trace for the request.
-- Pivot to logs by trace ID.
+- Get the request/trace ID (response header or Agent Run Ledger).
+- Open the Langfuse trace; pivot to container logs by trace ID (`docker compose logs api worker`).
 
-### Reconcile missed Stripe webhook
-- Run `payment_reconciliation_worker` for the affected day.
-- Verify `payments` rows created idempotently.
+### Reconcile a missed Stripe webhook
+- `POST /api/v1/payments/reconcile-stripe` as an admin for the tenant (hourly automation is #493).
+- Verify `payments` rows and the DR Bank / CR AR journal were created once.
+
+### Queue backlog / stuck cron jobs
+- Follow `docs/qa/queue-session-budget-runbook.md` (session-pool limits, queue names, safe cancellation).
 
 ## Alert routing
 

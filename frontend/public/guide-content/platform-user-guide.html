@@ -82,6 +82,13 @@ result and the approval boundary.</p>
 </tr>
 </thead>
 <tbody><tr>
+<td>Dashboard (default landing)</td>
+<td><code>/app/dashboard</code></td>
+<td>All users</td>
+<td>Working-capital summary: AR/AP due, WIP, open Inbox work, trial state; <code>/app</code> redirects here</td>
+<td>Launch scenario 10</td>
+</tr>
+<tr>
 <td>Aethos Nous</td>
 <td><code>/app/copilot</code></td>
 <td>All finance users</td>
@@ -96,7 +103,7 @@ result and the approval boundary.</p>
 <td>ENT-CTRL-001, ENT-AUD-001, ENT-AUD-002</td>
 </tr>
 <tr>
-<td>Clients and vendors</td>
+<td>Contacts (clients and vendors; nav label &quot;Contacts&quot;)</td>
 <td><code>/app/clients</code></td>
 <td>Engagement managers, AP/AR leads</td>
 <td>Create and inspect customers/vendors, link AR/AP history, support document intake</td>
@@ -131,14 +138,14 @@ result and the approval boundary.</p>
 <td>Engagement to Cash guide</td>
 </tr>
 <tr>
-<td>Bills and pay bills</td>
+<td>Bills and Pay Bills (nav label &quot;Billing Runs&quot; opens the Pay Bills wizard; a pre-bill billing-run screen is tracked in #515)</td>
 <td><code>/app/bills</code>, <code>/app/billing-runs</code></td>
 <td>AP lead, Controller, Owner/Admin</td>
 <td>Review vendor invoice exceptions, create bills, prepare, approve, export, send, and settle guarded payment batches</td>
 <td>ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-005</td>
 </tr>
 <tr>
-<td>Accounting and close</td>
+<td>Journal Entries, accounting and close (nav label &quot;Journal Entries&quot;)</td>
 <td><code>/app/accounting/journals</code></td>
 <td>Controller, Owner/Admin</td>
 <td>Prepare close, review blockers, record overrides, generate statements</td>
@@ -159,6 +166,41 @@ result and the approval boundary.</p>
 <td>ENT-P2P-001, ENT-AUD-003</td>
 </tr>
 <tr>
+<td>Time</td>
+<td><code>/app/time</code> (alias <code>/app/time-entries</code>)</td>
+<td>Staff, managers</td>
+<td>Log and review time entries; Nous can log time by prompt</td>
+<td>Launch scenarios 1-3</td>
+</tr>
+<tr>
+<td>Expenses</td>
+<td><code>/app/expenses</code></td>
+<td>Staff, AP</td>
+<td>List and create project expenses; receipts extracted by Nous; approval/GL posting is tracked in #518</td>
+<td>ENT-P2P-003</td>
+</tr>
+<tr>
+<td>Approvals</td>
+<td><code>/app/approvals</code></td>
+<td>Managers</td>
+<td>Timesheet approval queue for portal submissions</td>
+<td>Timesheet e2e</td>
+</tr>
+<tr>
+<td>Profile</td>
+<td><code>/app/profile</code></td>
+<td>All users</td>
+<td>Change password, account details</td>
+<td>ENT-RBAC-002</td>
+</tr>
+<tr>
+<td>Guides (public)</td>
+<td><code>/guides</code>, <code>/guides/:slug</code></td>
+<td>Everyone</td>
+<td>Searchable HTML library of this guide, the Nous prompt library and both demo guides</td>
+<td>#478</td>
+</tr>
+<tr>
 <td>Settings</td>
 <td><code>/app/settings</code></td>
 <td>Admins, Owner, operators, auditors where read-only</td>
@@ -167,7 +209,8 @@ result and the approval boundary.</p>
 </tr>
 </tbody></table>
 <p>All authenticated browser modules are under <code>/app/*</code>. The public browser
-routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, and <code>/p/:token</code>. Route fragments such as
+routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, <code>/p/:token</code>, <code>/guides</code>, <code>/guides/:slug</code>,
+and the Stripe Connect return handler <code>/settings/billing/connect/return</code>. Route fragments such as
 <code>/copilot</code>, <code>/reports/ar-aging</code>, <code>/payments</code> for bill-pay batches,
 <code>/engagements/new</code>, and <code>/settings/stripe</code> are not current Angular routes.</p>
 <h3 id="signup-password-and-subscription-lifecycle">Signup, password, and subscription lifecycle</h3>
@@ -198,13 +241,14 @@ tenant users receive a one-time set-password link or temporary password and
 must change it on first login. The <code>/login</code> page has no public self-service
 forgot-password/recovery UI; users who cannot sign in need an administrator
 or support process.</li>
-<li>The backend can create a Stripe Customer Portal session, but no current
-Angular control opens it. Self-service plan change, card replacement,
-cancellation, invoice preview, and subscription management must not be
-described as available UI.</li>
+<li>Plan and billing self-service runs through the Stripe Customer Portal:
+Settings -&gt; Plan &amp; Billing -&gt; &quot;Manage plan &amp; billing&quot; opens the portal and
+returns to Settings (#398). Plan change, card replacement and cancellation
+happen inside Stripe&#39;s portal, not in Aethos screens.</li>
 <li>Stripe Connect status/onboarding is embedded in <code>/app/settings</code> for Tenant
-Owner. Its configured callback browser path is not in the current Angular
-route table, so complete return-path behavior remains a production test item.</li>
+Owner; the OAuth return handler is the top-level route
+<code>/settings/billing/connect/return</code> (#403). Production Connect onboarding
+still requires a real Connect client ID (#95).</li>
 <li>The public <code>/p/:token</code> invoice is the only customer-facing page. A general
 customer document, engagement, or project portal is not implemented.</li>
 </ul>
@@ -514,7 +558,10 @@ response, including mid-stream.</li>
 <li><strong>Number-fidelity guard.</strong> Monetary figures Nous states are checked against the
 source records that produced them. A figure that cannot be verified is shown
 with a caveat asking you to confirm it against Reports, rather than presented as
-fact. Nous does not invent totals.</li>
+fact. Nous does not invent totals. Note that several high-confidence
+operational intents currently answer with guidance text and <strong>no figures</strong> (for
+example trial balance, statement package comparisons, operational health);
+use the Reports tabs for numbers until those responders read live data (#360).</li>
 <li><strong>Measured quality.</strong> A golden-prompt evaluation suite scores Nous on staying
 on-topic, never leaking internals, routing controlled actions to Inbox, and
 number-fidelity. Each answer also records which runtime produced it, alongside
@@ -776,10 +823,10 @@ an invoice merely because its legacy projection is <code>approver</code>.</li>
 <ul>
 <li>Engagement-letter or SOW approval can create a customer, engagement, first
 project, and linked rate card when reviewed rate hints are present.</li>
-<li>Existing rate cards can be selected from the engagement form and a linked
-card name/ID is visible on engagement detail. There is no standalone Settings
-Rate Cards management screen in the current frontend; do not direct users
-there to create or edit cards.</li>
+<li>Rate cards are managed in Settings -&gt; Rate Cards (#397): create a card with
+currency, effective date and per-role rates. Existing cards are selectable
+from the engagement form and the linked card name/ID is visible on
+engagement detail.</li>
 <li>Service catalogue, tax rates, people, linked rate cards, time entries, and expenses
 are source records for billing and project economics.</li>
 <li>Time and billable expenses should be approved or clearly eligible before they
@@ -795,8 +842,9 @@ route.</li>
 <li>When the server has Stripe credentials, invoice send creates a Payment Link.
 An active tenant Connect account adds <code>on_behalf_of</code>/destination routing; lack
 of Connect does not by itself suppress the platform Payment Link. When Stripe
-is not configured, send uses the PDF-only path and operators settle through
-the manual record-payment path.</li>
+is not configured, send only marks the invoice <code>sent</code> and operators settle
+through the manual record-payment path. <strong>Send does not yet email the client
+or render a PDF</strong> — share the public invoice link manually until #516 ships.</li>
 <li>AR payments store transaction amount, currency, tenant-base amount, FX rate
 provenance, and realised FX adjustment when payment-date base value differs
 from invoice-date base value.</li>
@@ -1018,7 +1066,7 @@ locked-year attempts.</li>
 retained-earnings posting preview, readiness blockers, P&amp;L activity, and
 current-vs-prior year statement commentary; approval posts through the same
 year-end close service used by Accounting.</li>
-<li>Reports include operational and accounting views such as AR Aging, AP Aging, Project P&amp;L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.</li>
+<li>Reports include operational and accounting views such as AR Aging, AP Aging, Project P&amp;L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack, plus the services-intelligence tabs Project Health, Capacity, Backlog, Profitability (client, client group, segment), Practice, Recommendations, Scope Advisor and Action Queue.</li>
 <li>The financial-statement control has <strong>From month</strong> and <strong>To month</strong> values.
 Equal values preserve monthly behavior. An inclusive range is sent to Income
 Statement, Cash Flow, and Statutory Pack; Balance Sheet and retained earnings
@@ -1250,7 +1298,11 @@ document rows in the launch runbook coverage matrix.</p>
 </tr>
 <tr>
 <td>Delivery</td>
-<td>Project P&amp;L, utilization, WIP</td>
+<td>Project P&amp;L, utilization, WIP, Project Health, Capacity, Backlog, Scope Advisor</td>
+</tr>
+<tr>
+<td>Profitability</td>
+<td>Client, client-group and segment profitability, Practice dashboards, Recommendations (pricing/staffing)</td>
 </tr>
 <tr>
 <td>Accounting</td>
@@ -1307,6 +1359,17 @@ remain available so billing can be restored.</li>
 <li>Read-only historical FX provenance lookup by currency pair and requested
 date; it shows the matched rate date, row ID, source, and staleness without
 creating or replacing a global rate.</li>
+<li>Integration Roadmap (Settings -&gt; Integrations): a read-only catalogue of
+planned/available connectors (email/calendar, bank feeds, registry/tax
+validation, payroll, CRM, document storage, Stripe Connect, transactional
+email) with status, auth model and risk class. Only Stripe Connect and Resend
+are live today.</li>
+<li>Client groups (Contacts -&gt; client detail -&gt; Group): link related contacts
+(holding company, trusts, SPVs) with member roles; Reports -&gt; Profitability
+rolls revenue and margin up by group.</li>
+<li>Market profiles: the tenant country selected at signup drives base currency,
+locale, timezone, tax labels and seeded tax-rate templates for US, UK, SG, IN
+and AU (<code>/api/v1/localization</code>).</li>
 <li>Agent autonomy configuration.</li>
 <li>Scheduled Finance Ops Manager cadence through Settings and the Agents API.</li>
 <li>AI inference runtime and OpenRouter model routing.</li>

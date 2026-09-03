@@ -20,6 +20,13 @@ For document intake, attach the document first and then send the matching
 business prompt. Aethos Nous should not extract the file or create Inbox work
 until the prompt is submitted.
 
+> **Router scope (2026-09-03).** The deterministic semantic router recognises
+> 39 named finance intents and only the demo client names *Alderton,
+> Brightwater, Forster, Nexus* and *Thornton*. Prompts naming other clients, or
+> intents outside that list, go to the configured model runtime and depend on
+> its tools. Rows marked **(guidance only)** below currently return
+> explanatory text without live figures or record creation; see #360 / #363.
+
 ## Finance Ops Manager
 
 | Goal | Prompt |
@@ -41,15 +48,15 @@ until the prompt is submitted.
 
 | Goal | Prompt |
 | --- | --- |
-| Draft customer invoice | `Draft an invoice for the Northstar Advisory engagement for June 2026. Use approved billable time, billable expenses, and billing terms. Send the draft to Inbox before creating an invoice.` |
+| Draft customer invoice | `Draft an invoice for the Nexus Capital Partners engagement for June 2026. Use approved billable time, billable expenses, and billing terms. Send the draft to Inbox before creating an invoice.` |
 | Review WIP | `Show me billable WIP for active engagements and recommend what should be invoiced this week. Do not create invoices without Inbox approval.` |
-| Engagement structure | `Show me the Nexus Capital Partners engagement structure. List active projects, billing model for each workstream, linked rate card and source document state, and anything missing before billing.` |
+| Engagement structure **(guidance only — no `engagement_structure` intent yet, #360)** | `Show me the Nexus Capital Partners engagement structure. List active projects, billing model for each workstream, linked rate card and source document state, and anything missing before billing.` |
 | Resource delivery readback | `Show me Alice Chen's June delivery data for Nexus. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced.` |
 | Log time | `Log 4.5 billable hours for Sarah Patel on the CFO Advisory project today for month-end close support. Send anything risky to Inbox.` |
-| Capped tax engagement | `Create an engagement for Nexus - Corporation Tax Return FY2025, fixed fee 18,500 GBP, capped at 22,000 GBP if advisory hours overrun. Route the engagement draft to Inbox before creation.` |
+| Capped tax engagement **(guidance only — engagement creation by prompt is #363)** | `Create an engagement for Nexus - Corporation Tax Return FY2025, fixed fee 18,500 GBP, capped at 22,000 GBP if advisory hours overrun. Route the engagement draft to Inbox before creation.` |
 | Update rates | `Update Sarah Patel's advisory billing rate to 425 USD per hour starting July 1, 2026. Route the rate change to Inbox for approval.` |
 | Revenue tie-out | `Tie June 2026 revenue to approved invoices, billing terms, WIP movement, and posted journals. Flag any draft invoice or unposted journal that keeps the report from being final.` |
-| Public invoice check | `Check whether the public invoice link for the latest Northstar invoice is safe to share. Confirm the amount, due date, customer name, and payment status before any external send.` |
+| Public invoice check | `Check whether the public invoice link for the latest Nexus invoice is safe to share. Confirm the amount, due date, customer name, and payment status before any external send.` |
 | Multi-currency payment settlement | `Review the latest GBP customer payment. Confirm the transaction amount, USD base amount, realised FX gain or loss, and whether AR Aging and Cash Flow will update after settlement.` |
 
 ## Collections
@@ -57,9 +64,9 @@ until the prompt is submitted.
 | Goal | Prompt |
 | --- | --- |
 | Draft reminders | `Draft collections reminders for invoices more than 30 days overdue. Create customer-specific reminder copy and route every email to Inbox before sending.` |
-| Customer-specific sweep | `Find overdue invoices for Northstar and draft appropriate reminder emails. Use a firm tone only where the collections policy allows it. Do not send without approval.` |
+| Customer-specific sweep | `Find overdue invoices for Nexus and draft appropriate reminder emails. Use a firm tone only where the collections policy allows it. Do not send without approval.` |
 | Collections follow-up read | `Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.` |
-| Single invoice drilldown | `Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.` |
+| Single invoice drilldown **(guidance only)** | `Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.` |
 | Collections status | `Summarize overdue invoices by customer, aging bucket, last reminder, and recommended next action. Flag any invoices that should not receive another reminder yet.` |
 
 ## Procure To Pay
@@ -97,7 +104,7 @@ until the prompt is submitted.
 
 | Goal | Prompt |
 | --- | --- |
-| Record decision trail | `Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
+| Record decision trail **(guidance only)** | `Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.` |
 | Audit sample | `Prepare an audit sample of AI-assisted finance decisions this week. Separate approvals, approve-with-edits, rejections, and approval denials. Flag records where the reviewed payload changed materially.` |
 | Approval controls read pack | `What am I allowed to approve, what requires Owner approval, and which Inbox items are high risk? Include my finance personas, effective thresholds, pending high-risk tasks, and why each item needs review. Do not show tool names, policy reason codes, raw payloads, traces, logs, or context IDs.` |
 | Review finance access | `Show me which finance personas my current role maps to. Summarize what I can do in Inbox, Bills/AP, Invoices/AR, Reports, Accounting, and Settings, and which actions still need another approver.` |
@@ -128,7 +135,7 @@ until the prompt is submitted.
 
 | Goal | Prompt |
 | --- | --- |
-| Operational health | `Review operational health for this tenant. Summarize runtime status, table checks, rate-limit backend, request failures, background failures, agent/tool/workflow failures, and routed alerts without exposing secrets or tokens.` |
+| Operational health **(guidance only — use Settings -> Operational Health for signals)** | `Review operational health for this tenant. Summarize runtime status, table checks, rate-limit backend, request failures, background failures, agent/tool/workflow failures, and routed alerts without exposing secrets or tokens.` |
 | Alert readiness | `Show which operational alerts would route to the runbook or webhook today. Include degraded health, public endpoint abuse, background failure spikes, and agent/tool/workflow failure spikes.` |
 | Schedule readiness | `Before enabling a scheduled Finance Ops Manager run, show the current cadence, escalation windows, last run, open scheduled plans, and approval boundary for resulting work.` |
 | Persona education | `Explain my finance role persona mapping and the top five actions I can do directly, the top five actions I can review, and the actions that require a higher approver.` |
@@ -143,7 +150,7 @@ launch passes. The exact business names can be replaced with launch test data.
 | Controls/audit/RBAC proof (#309) | Review approval policy; draft high-value bill-pay run; show decision trail; review finance access | Required-role Inbox task, denied under-privileged action, immutable decision event, read-only UI/API denial |
 | Multi-currency AR payment proof (#349/#351) | `Review the latest GBP customer payment. Confirm the transaction amount, USD base amount, realised FX gain or loss, and whether AR Aging and Cash Flow will update after settlement.` | Payment transaction/base amounts, FX rate id provenance, DR Bank/CR AR base amounts, realised FX delta, AR Aging and Cash Flow tie-out |
 | AI finance workflow proof (#310) | `Process this vendor invoice for Aster Cloud Services. Match it to the right vendor and project, flag any duplicate risk, code it to software subscriptions, send exceptions to Inbox for review, and prepare a bill-pay proposal after the bill is reviewed.` `Run month-end close readiness for June 2026. Prepare the close review package, capture any controller override evidence, and generate financial statement commentary for the management pack.` | AP exception evidence, corrected bill, payment batch review, close evidence, statement commentary, agent/tool ledger evidence |
-| AI year-end close proof (#329) | `Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.` | `copilot_prepare_year_end_close` Inbox task, preview blockers, retained-earnings amount/direction, comparative commentary, posted `YE-YYYY` journal after approval |
+| AI year-end close proof (#329) | `Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.` | `copilot_prepare_year_end_close` Inbox task (tool `prepare_year_end_close`), preview blockers, retained-earnings amount/direction, comparative commentary, posted `YE-YYYY` journal after approval |
 | Multi-currency R2R proof (#347/#351) | `Prepare a GBP 1,000 month-end payroll accrual journal for June 2026. Show the USD base-currency impact using the posting-date FX rate, route it to Inbox before posting, and verify the Trial Balance remains balanced after approval.` | GBP transaction amounts, USD base amounts, FX rate id provenance, no silent missing-rate post, balanced Trial Balance, manual-journal audit evidence |
 | Comparative statement proof (#331) | `Generate the financial statement package for Q2 2026 and compare it to Q2 2025. Include Trial Balance, Balance Sheet, Income Statement, Cash Flow, Retained Earnings, close-readiness warnings, and evidence-backed variance commentary.` | Current/comparison periods, deterministic variances, management commentary, no record mutation |
 | R2R management-pack read proof (#357) | `Give me the June 2026 month-end management pack. Explain major variances versus May 2026 and list remaining close blockers. Then drill into revenue, expenses, project margin, utilization, AR/AP movement, journals, and close task blockers with source data. Do not post journals or lock the period.` | Normalized period, comparative statements, variance rows, project/utilization highlights, AR/AP period movement, draft journals, locked-period state, close-task blockers, no record mutation |
@@ -193,9 +200,9 @@ attach the named demo asset first and then submit the prompt.
 | 1-7-collections-read | 1.7 Collections read pack | `Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.` |
 | 1-7-invoice-drilldown | 1.7 Invoice drilldown | `Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.` |
 | 1-7-draft-reminders | 1.7 Collections controlled write | `Draft collections reminders for invoices more than 30 days overdue. Create customer-specific reminder copy and route every email to Inbox before sending.` |
-| 2-1-retainer | 2.1 Monthly retainer billing | `Prepare Brightwater Manufacturing monthly retainer billing for June 2026. Show the draft invoice, any tax, and route it to Inbox before sending.` |
-| 2-2-milestone | 2.2 Annual accounts milestone | `Prepare the Brightwater Annual Accounts FY2025 milestone invoice. Include the milestone basis, tax treatment, and approval path before sending.` |
-| 2-3-payroll | 2.3 Payroll billing | `Prepare Brightwater payroll billing for June 2026 based on active employee count. Show per-employee billing, invoice total, and any approval needed.` |
+| 2-1-retainer | 2.1 Monthly retainer billing (guidance only) | `Prepare Brightwater Manufacturing monthly retainer billing for June 2026. Show the draft invoice, any tax, and route it to Inbox before sending.` |
+| 2-2-milestone | 2.2 Annual accounts milestone (guidance only) | `Prepare the Brightwater Annual Accounts FY2025 milestone invoice. Include the milestone basis, tax treatment, and approval path before sending.` |
+| 2-3-payroll | 2.3 Payroll billing (guidance only) | `Prepare Brightwater payroll billing for June 2026 based on active employee count. Show per-employee billing, invoice total, and any approval needed.` |
 | 2-4-vendor-invoice | 2.4 Vendor invoice intake | `Process this vendor invoice for Brightwater. Match it to the right vendor and project, flag duplicate risk, code it to the right account, compare any PO or service-order evidence, and send exceptions to Inbox.` |
 | 2-4-payment-risk-read | 2.4 P2P read pack | `Which vendor bills are due soon, which are blocked, and what evidence supports payment? Show vendor, bill number, amount, due date, status, coding evidence, source document, duplicate risk, PO/service-order match, payment-batch state, blockers, and next action. Do not create a payment batch yet.` |
 | 2-4-single-bill | 2.4 Single bill drilldown | `Review bill BILL-1001. Show due date, amount, vendor invoice number, coding status, source document, duplicate signals, PO/service-order match, approval state, payment readiness, existing batch status, and recommended next action.` |
@@ -210,7 +217,7 @@ attach the named demo asset first and then submit the prompt.
 | 4-3-cosec-instruction | 4.3 COSEC instruction | `Review this COSEC instruction for Thornton. Identify the company change, create the required filing/project work item, identify billing impact, and route any external filing or invoice action to Inbox.` |
 | 5-1-close-readiness | 5.1 Pre-close checklist | `Run June 2026 pre-close checks. Show AR, AP, WIP, unposted journals, close tasks, missing approvals, and what needs to happen before the period can be locked.` |
 | 5-2-period-lock | 5.2 Period lock | `Can we lock June 2026? Show the period-lock readiness result, blockers, overrides if any, and what a Controller or Owner must review before locking.` |
-| 5-3-trial-balance | 5.3 Trial Balance | `Show the June 2026 Trial Balance. Confirm whether debits equal credits, summarize the largest account movements, and flag suspense or unbalanced items.` |
+| 5-3-trial-balance | 5.3 Trial Balance (guidance only — figures in Reports) | `Show the June 2026 Trial Balance. Confirm whether debits equal credits, summarize the largest account movements, and flag suspense or unbalanced items.` |
 | 5-4-management-reporting | 5.4 Management reporting | `Alice is at 64% utilisation in June. Which clients have unbilled WIP tied to Alice?` |
 | 5-5-management-pack | 5.5 R2R management pack | `Give me the June 2026 month-end management pack. Explain the major variances versus May 2026, show revenue, expenses, project margin, utilization, AR/AP movement, journals, close task blockers, draft journals, and remaining close blockers. Do not post journals or lock the period.` |
 | 5-5-management-drilldown | 5.5 R2R blocker drilldown | `Drill into the draft journals and close task blockers for June 2026. Which ones block close, who owns them, and what should happen next?` |

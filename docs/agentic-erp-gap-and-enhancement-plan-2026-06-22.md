@@ -4,7 +4,13 @@ Review date: 2026-06-22
 Repo: `aethos-ps`  
 Mode: living implementation tracker; update dated implementation status as code and issue state change.
 
-Last implementation revalidation: 2026-06-24.
+Last implementation revalidation: 2026-06-24. **2026-09-03 addendum below.**
+
+## 2026-09-03 Revalidation Addendum
+
+Closed since 2026-06-24 (per `main` history): revenue-recognition schedules (#408, ADR 0004); offline agent-eval gate in CI (#407); ACH export template guard + routing validators (#404); Angular 20 upgrade (#383/#394); PyJWT migration (#384, ADR 0002); atomic journal posting + completeness invariants (#372/#390, ADR 0001); FX remeasurement (#376, ADR 0003); duplicate-bill detection (#377); RLS employee firewall (#378/#466, ADR 0005); close controls (#379); Rate Cards screen (#397), Customer Portal (#398), tax-rate editing (#399), payments write actions (#400), Connect return route (#403), dashboard (#405 partial), guides library (#478).
+
+Still open from this plan: org-chart-driven procurement routing; provider-backed tax/sanctions/bank verification; jurisdiction filing exports; email/calendar/bank-feed integrations; a runnable correction→eval→promotion loop (see #496/#497 — the loop is wired but inert). The 2026-09-03 comprehensive review (#491–#528) supersedes the backlog section below for defects; references to "Angular 19" in this file are historical.
 
 ## 2026-06-24 Implementation Status Update
 

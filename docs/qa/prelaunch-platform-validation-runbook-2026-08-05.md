@@ -118,7 +118,9 @@ checked the resulting Inbox, Documents, and Settings surfaces.
 
 ### Route coverage
 
-All 18 checked surfaces passed without visible load failures:
+All 18 checked surfaces passed without visible load failures (the Dashboard
+`/app/dashboard` default landing and the public `/guides` library, both added
+later, were not part of this run):
 
 1. Nous
 2. Documents

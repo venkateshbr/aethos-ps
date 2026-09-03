@@ -44,14 +44,14 @@ without an active trial; signup is not one atomic card-gated transaction.</li>
 self-service &quot;forgot password&quot; flow. Admin-created users can receive a
 one-time set-password link or temporary password, and signed-in users can
 change their password from Profile.</li>
-<li>The backend exposes a Stripe Customer Portal session endpoint, but the app
-has no self-service billing-management/plan-change UI. Stripe Connect status
-is embedded in <code>/app/settings</code>; its configured callback browser path is not
-in the Angular route table and must be production-tested before a demo.</li>
+<li>Plan and billing self-service opens the Stripe Customer Portal from
+Settings -&gt; Plan &amp; Billing. Stripe Connect status is embedded in
+<code>/app/settings</code>; its OAuth return handler is <code>/settings/billing/connect/return</code>
+(production Connect still needs a real client ID, #95).</li>
 <li>The public invoice page is not a general client portal. There is no client
 document/engagement portal for exchanging engagement letters or other files.</li>
-<li>There is no Settings Rate Cards management screen. Existing rate cards can
-be selected on engagement creation and inspected on engagement detail; an
+<li>Rate cards are managed in Settings -&gt; Rate Cards; existing cards can be
+selected on engagement creation and inspected on engagement detail; an
 approved engagement extraction may materialize a linked card when reviewed
 rate hints exist.</li>
 <li>Reports do not offer an interactive &quot;show in transaction currency&quot; toggle.

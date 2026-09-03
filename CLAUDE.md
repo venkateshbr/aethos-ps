@@ -15,14 +15,14 @@ Standalone product in the Aethos family. Sister product (general ERP) lives at `
 Bring up any conflict with the plan to the Founder before writing code.
 
 ## Tech Stack
-- **Backend**: Python 3.12+, FastAPI 0.115+, PydanticAI, Pydantic Graph, Pydantic v2, Procrastinate workers (Postgres-backed)
-- **Frontend**: Angular 19, Tailwind, Angular Material (dark slate theme), NgRx Signals
+- **Backend**: Python 3.12+, FastAPI, Pydantic v2, Procrastinate workers (Postgres-backed). Agents are hand-rolled tool-calling loops over an OpenAI-compatible client (`openai` SDK → OpenRouter); **PydanticAI / Pydantic Graph are not used** (see `docs/PLAN.md` §0.2).
+- **Frontend**: Angular 20 (standalone components + signals, no NgRx), Tailwind v3, Angular Material (dark slate theme). Second Angular app `frontend/projects/timesheet` (employee timesheet portal, port 4202).
 - **Database**: Supabase (PostgreSQL 15+ with RLS), supabase-py / supabase-js
-- **LLM**: Anthropic Claude Sonnet 4.6 + Langfuse traces (+ Pydantic Logfire)
+- **LLM**: Nous chat runtime = `ATLAS_AI_RUNTIME` (`aethos_basic` in-process loop, or `hermes_agent` external Hermes container with fallback to basic). Model chain via OpenRouter (default `google/gemma-4-31b-it:free` → `openrouter/free` → `anthropic/claude-haiku-4.5`, tenant-overridable in Settings → AI Inference). Langfuse traces. The `anthropic` key in config is legacy/unused.
 - **Payments**: Stripe — SaaS subscriptions + Stripe Connect (Standard) + Payment Links + Stripe Tax
 - **Email**: Resend
 - **Cache / queue**: None — queue lives in Supabase Postgres via Procrastinate
-- **Deploy**: Vercel (frontend) · Cloud Run (api + workers) · Supabase managed
+- **Deploy**: Hostinger VPS · Docker Compose (`docker-compose.hostinger*.yml`) · Traefik TLS edge · nginx web/timesheet proxies · private FastAPI, worker and optional Hermes containers · Supabase managed. Deploy via `.github/workflows/deploy-hostinger.yml` (see `docs/infra/HOSTINGER_DEPLOYMENT.md`). `infra/vercel` and `infra/cloudrun` are unused legacy.
 
 ## Launch Markets (day 1)
 US · UK · Singapore · India · Australia. Multi-currency (USD/GBP/SGD/INR/AUD), per-market tax seed, Stripe Connect available in all 5.
@@ -32,19 +32,24 @@ US · UK · Singapore · India · Australia. Multi-currency (USD/GBP/SGD/INR/AUD
 backend/app/
   api/v1/        FastAPI routers (thin, no business logic)
   services/      Business logic, accounting rules
-  agents/        PydanticAI agents (chat orchestrator + specialists)
-  agents/graphs/ Pydantic Graph FSM workflows
+  agents/        Extraction / drafting / close agents (deterministic + LLM), tool_registry, suggestion_writer
+  agents/copilot/graph.py  Nous chat agent (tool-calling loop; `aethos_basic` runtime)
   models/        Pydantic request/response schemas
   domain/        Money, enums, validation rules, journal patterns
   repositories/  Supabase data access
   events/        Domain event bus + handlers
-  workers/       Procrastinate background workers (extraction, billing-run, collections, fx, autonomy-promoter)
+  workers/       Procrastinate workers: document_extraction, billing_run, collections, fx_refresh, autonomy_promoter, close_scheduler, finance_ops_manager, intelligence, project_health, stripe_reconcile, time_entry_reminder
+  evals/         Offline agent-eval gate (golden prompts + rubric), run in CI via scripts/agent_eval_gate.py
   core/          Config, auth, RBAC, middleware
 frontend/src/app/
-  features/      Lazy-loaded modules (copilot, inbox, engagements, projects, clients, invoices, billing-runs, expenses, time-entries, payments, reports, people, onboarding, settings)
-  shared/        Reusable components
+  features/      Lazy-loaded modules (landing, signup, login, guides, dashboard, copilot [Nous], documents, inbox, engagements, projects, clients [Contacts], invoices, public-invoice, bills, billing-runs [Pay Bills wizard], expenses, time-entries, approvals, payments, people, reports, accounting, settings, profile; onboarding is an empty placeholder — #519)
+  shared/        Reusable components, money pipe, shell (top nav)
   core/          Singleton services, guards, interceptors
+frontend/projects/timesheet/   Employee timesheet portal (separate SPA, shares Supabase auth)
+integrations/hermes/           Hermes (Nous advanced runtime) profile + skills
 ```
+
+Domain instruction files: [`backend/CLAUDE.md`](backend/CLAUDE.md) and [`frontend/CLAUDE.md`](frontend/CLAUDE.md).
 
 ## Critical Rules
 - ALL monetary values use Python `decimal.Decimal`, NEVER `float`. DB type: `NUMERIC(15,2)`.
@@ -107,8 +112,8 @@ cd backend && uv run ruff check .
 
 # Frontend
 cd frontend && ng serve --port 4201
-cd frontend && ng test
-cd frontend && ng lint
+cd frontend && npm run test:ci
+cd frontend && npm run typecheck      # no `ng lint` target exists yet — see #495
 
 # Workers
 cd backend && uv run python -m procrastinate --app=app.workers.procrastinate_app.app worker
@@ -132,9 +137,9 @@ Environment variables for e2e specs:
 
 ## Key Patterns
 - Service layer: Router → Service → Repository. Agents live within Services, never called from Routers.
-- Every sub-ledger event (invoice, payment, bill, project_expense) auto-generates GL journals via **PostgreSQL triggers** — do not duplicate in Python.
-- PydanticAI agents use `deps_type=AgentDeps` for tenant-scoped DB access.
-- Chat orchestrator = Pydantic Graph router → specialist agents.
+- Every sub-ledger journal (invoice, payment, bill, bill payment, FX, close) is posted **in Python** through the single chokepoint `app/domain/journal_helper.post_journal()` → `accounting_guardian.validate_journal()` → atomic `post_journal_entry` RPC (ADR 0001). The DB enforces balance, completeness and immutability via triggers; it does **not** generate journals. Expense approval has no GL posting yet (#518).
+- Agents receive `AgentDeps(tenant_id, user_id, db)` for tenant-scoped DB access and write proposals via `agents/suggestion_writer.py` (→ `agent_suggestions` + `hitl_tasks`).
+- Nous = semantic intent router → deterministic read packs/responders → configured runtime (`aethos_basic` CopilotAgent tool loop or `hermes_agent`). Tools are risk-classed in `agents/tool_registry.py` and gated by `services/agent_tool_policy.py`.
 - HITL pattern: `agent_suggestions` (immutable AI output) + `hitl_tasks` (human work queue).
 
 ## Gotchas

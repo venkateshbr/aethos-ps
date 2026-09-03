@@ -1,6 +1,6 @@
 # PLAN: Aethos for Professional Services — Comprehensive Agent-First PS ERP
 
-> **Status**: DRAFT v4 — pending Founder approval (changelogs in §0.1)
+> **Status**: v4 accepted and executed (2026-05 → 2026-08). Several sections describe the original design rather than what shipped — read **§0.2 Implementation drift (2026-09-03)** before relying on any table count, agent list, worker list, provider or infrastructure claim.
 > **Owner**: Vishwa (CPTO)
 > **Created**: 2026-05-18 · **v2**: 2026-05-18 · **v3**: 2026-05-19 · **v4**: 2026-05-19
 > **Goal**: Build a standalone agent-first PS ERP in a **separate `aethos-ps` repository** (sister product to `aethos`) — branded as **"Aethos"** (Linear-style minimalism; services-specific logo lockup) — in-market within **6 weeks** across **5 launch markets: US · UK · SG · IN · AU**.
@@ -89,6 +89,26 @@ Net impact:
 - **Agents**: 12 → **13** (+ `bill_pay_agent`)
 - **New mechanism**: Autonomy auto-promotion service (background worker + Inbox card flow)
 - **Timeline**: 5 weeks → **6 weeks** to public beta (added: Stripe Connect, multi-currency, bill payments, tax, autonomy worker, outreach pipeline, static landing)
+
+---
+
+## 0.2 Implementation drift (2026-09-03 review, issues #491–#528)
+
+| Plan claim | What shipped | Where |
+|---|---|---|
+| 37 tables (§4) | ≈81 tables across 115 migrations: no `subscriptions`/`payment_methods` (folded into `tenants`), no `extraction_results` (output lives in `agent_suggestions`), no `engagement_documents`/`change_orders`; `bill_payments` became `bill_payment_batches` + `bill_payment_items`; added procurement, client groups, service catalogue, COSEC obligations, security catalogue (22 roles), agent run ledger, financial events, close tasks/overrides, bank reconciliation, retainer ledger, rev-rec schedules, automation/finance-ops schedules. `billing_runs` has no CREATE TABLE migration (#492). | `backend/supabase/migrations/` |
+| 13 PydanticAI agents on Pydantic Graph (§6) | 16 agent modules + `copilot/graph.py`; **no PydanticAI / Pydantic Graph** — agents are hand-rolled tool loops on the `openai` SDK; only engagement_letter, vendor_invoice, expense_extractor, reporting and intelligence call a model; `billing_run_agent` has an eval pack but no module (#515); added accrual, fx_remeasurement, prepaid_amortization, recurring_journal agents. | `backend/app/agents/` |
+| Chat = Pydantic Graph router → specialists (§6.1) | Nous = deterministic semantic intent router → read packs/responders → runtime (`aethos_basic` CopilotAgent loop, or external **Hermes** container via MCP-style tool broker `/api/v1/atlas-tools`). | `app/services/atlas_*.py`, `hermes_client.py`, `integrations/hermes/` |
+| Claude Sonnet 4.6 via Anthropic; no non-Anthropic OCR (§9, §12) | OpenRouter model chain (Gemma-4-31B free → OpenRouter free → Claude Haiku 4.5), tenant-configurable; documents sent as raw binaries to the provider (#498). | `app/core/config.py:100-106` |
+| DB triggers post journals (§4.8, §10) | Journals posted in Python via `journal_helper.post_journal()` → atomic RPC (ADR 0001); DB triggers enforce balance/completeness/immutability only. Expense approval posts nothing (#518). | `app/domain/journal_helper.py` |
+| Workers incl. `payment_link`, `stripe_webhook`, `wip_snapshot` (§5.3) | 11 registered tasks; payment links created inline (#502), webhooks synchronous (#493), no WIP snapshots (#525); added close_scheduler, finance_ops_manager, intelligence, project_health, stripe_reconcile, time_entry_reminder. | `app/workers/procrastinate_app.py` |
+| Vercel + Cloud Run + Upstash Redis + Sentry (§12) | Hostinger VPS, Docker Compose, Traefik; no Redis (#108), no Sentry; Langfuse only. | `docker-compose.hostinger*.yml`, `docs/infra/HOSTINGER_DEPLOYMENT.md` |
+| FX from openexchangerates.org (§8.5) | `open.er-api.com` (#506 fixes a leftover `app_id` param). | `app/workers/fx_refresh.py` |
+| Timesheet deferred to a separate product (§11) | Shipped in-repo: `frontend/projects/timesheet` portal, `/api/v1/timesheet`, `/app/approvals`. | — |
+| Sidebar navigation (§7.2) | Top navigation bar with a "More" menu; Settings reachable from the account menu. | `frontend/src/app/shared/shell/shell.component.ts` |
+| Billing Runs UI (§7.2) | `/app/billing-runs` opens the AP Pay Bills wizard; no pre-bill run UI (#515). | `app.routes.ts` |
+| Role enum only (§4.1) | Dynamics-style catalogue: 22 system roles → duties → privileges, projected onto the legacy role enum (ADR 0005). | migration 0096 |
+| Autonomy auto-promotion (§6.5) | Implemented but inert: demotion filter bug, eval gate never stamped, writers hardcode L2, no auto-apply executor (#496, #497). | `app/workers/autonomy_promoter.py` |
 
 ---
 
@@ -722,16 +742,16 @@ Tenants outside the US who haven't gotten native-format support yet can use Univ
 
 | Component | Where | Notes |
 |---|---|---|
-| Frontend | Vercel (new project `aethos-ps-web`) | `aethos-ps.com` (or chosen domain). Preview deploys on PR. Static landing at `/`, app at `/app`. |
-| Backend | Cloud Run (new service `aethos-ps-api`) | `api.aethos-ps.com`. Min 1 instance to keep chat warm. |
+| Frontend | *(superseded — Hostinger nginx container; see §0.2)* Vercel (new project `aethos-ps-web`) | `aethos-ps.com` (or chosen domain). Preview deploys on PR. Static landing at `/`, app at `/app`. |
+| Backend | *(superseded — Hostinger private FastAPI container; see §0.2)* Cloud Run (new service `aethos-ps-api`) | `api.aethos-ps.com`. Min 1 instance to keep chat warm. |
 | DB / Auth / Storage / Realtime | **New Supabase project** `aethos-ps-prod` (+ `-staging`) | Fresh `auth.users`, fresh storage buckets per tenant. |
 | Procrastinate workers | Cloud Run worker service | Postgres (Supabase) for queue — no Redis needed. Workers: `extract_document`, `billing_run`, `collections`, `stripe_webhook`, `payment_link`, `fx_refresh`, `wip_snapshot`, `autonomy_promoter`. |
-| Cache | Upstash Redis | |
+| Cache | None (Redis removed, #108) | |
 | LLM | Anthropic (Claude Sonnet 4.6) + Langfuse for traces | New Anthropic key for clean per-product billing visibility. |
 | Email | **Resend** | Branded transactional + invoice emails. Per-tenant DKIM/SPF in v1.1. |
 | Payments | Stripe — **separate Stripe account** + **Stripe Connect (Standard)** enabled | Aethos collects SaaS subs; tenants connect their own Stripe to receive customer payments. |
-| FX | openexchangerates.org (free tier in v1) | Daily refresh; swap to a paid provider when usage warrants. |
-| Observability | Sentry (new project) + Langfuse | |
+| FX | open.er-api.com (shipped; plan said openexchangerates.org) | Daily refresh; swap to a paid provider when usage warrants. |
+| Observability | Langfuse (no Sentry) | |
 | CI/CD | GitHub Actions — new workflows `aethos-ps-api.yml`, `aethos-ps-web.yml` | Reuse erpcore's CI templates. |
 
 ---

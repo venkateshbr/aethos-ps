@@ -1,6 +1,18 @@
 # Launch Readiness Audit — 2026-07-11 (updated 2026-07-12)
 
-Status: AUDIT COMPLETE — NOT SIGNED OFF / NO-GO
+Status: AUDIT COMPLETE — NOT SIGNED OFF / NO-GO **(historical; see supersession note)**
+
+> **Supersession note (2026-09-03).** The current release gate is
+> [`prelaunch-platform-validation-runbook-2026-08-05.md`](prelaunch-platform-validation-runbook-2026-08-05.md)
+> (Demo Guide v2 gate passed on `825ed5c`). Since this audit the following
+> blockers landed on `main`: LR-06 (#378 batches, ADR 0005), LR-07 (#371 ACs),
+> LR-08 (#372, migrations 0107/0113/0117, ADR 0001), LR-09 (#376, ADR 0003),
+> LR-10 (#377 AC1/AC4), LR-11 (#379 ACs), LR-13 logging/PII slices (#374/#392),
+> LR-14 (#383 → Angular 20; a new advisory is #477), LR-17 (#381), LR-18 (#384,
+> ADR 0002). Still open: LR-05 Q2 tie-out (#370), LR-19 platform admin (re-filed
+> as #523), LR-25 forced-password server trust (#393 closed — verify), LR-26
+> (#387 closed), plus the 2026-09-03 review issues #491–#528. Do not rewrite
+> the body below; it is the historical record.
 
 Tracking: GitHub issue #368
 

@@ -7,9 +7,9 @@
 
 - **Name**: Aethos — for Professional Services (`aethos-ps`)
 - **Tagline**: "Aethos, for professional services"
-- **Repository**: TBD — `venkateshbr/aethos-ps` (or chosen name); founder to confirm
+- **Repository**: `venkateshbr/aethos-ps` (GitHub Issues are the work tracker)
 - **Sister product (general ERP)**: `~/dev/aethos` (separate repo, copy-then-adapt sharing, no symlinks)
-- **Plan**: [`docs/PLAN.md`](../PLAN.md) — comprehensive product + execution plan; v4 draft pending founder approval
+- **Plan**: [`docs/PLAN.md`](../PLAN.md) — comprehensive product + execution plan (v4, executed; see its §0.2 implementation-drift note before relying on any table/agent/infra claim)
 
 ## Launch markets (day 1)
 
@@ -19,20 +19,21 @@ US · UK · Singapore · India · Australia. English-only support, async-only SL
 
 | Layer | Tech | Version |
 | --- | --- | --- |
-| Backend | Python · FastAPI · PydanticAI · Pydantic Graph · Pydantic v2 · Procrastinate workers (Postgres-backed) | Python 3.12+, FastAPI 0.115+ |
-| Frontend | Angular 19 · Tailwind v3 · Angular Material (dark slate theme) · NgRx Signals | Angular 19 |
+| Backend | Python · FastAPI · Pydantic v2 · hand-rolled OpenAI-compatible agent loops (`openai` SDK → OpenRouter) · Procrastinate workers (Postgres-backed). PydanticAI / Pydantic Graph are **not** dependencies. | Python 3.12+, FastAPI ≥ 0.139 |
+| Frontend | Angular 20 · standalone components + signals (no NgRx) · Tailwind v3 · Angular Material (dark slate theme) · second app `projects/timesheet` | Angular 20.3 |
 | Database | Supabase (PostgreSQL 15+ with RLS, Auth, Storage, Realtime) | PG 15+ |
-| LLM | Anthropic Claude Sonnet 4.6 (default); Opus reserved for reasoning-heavy tasks | — |
+| LLM | Nous runtime `ATLAS_AI_RUNTIME=aethos_basic\|hermes_agent`; OpenRouter model chain (default Gemma-4-31B free → OpenRouter free router → Claude Haiku 4.5), tenant-configurable in Settings → AI Inference Settings | — |
 | LLM observability | Langfuse (traces, scores, prompt versioning) + Pydantic Logfire | — |
 | Payments | Stripe — SaaS subscriptions + Stripe Connect (Standard) + Payment Links + Stripe Tax | — |
 | Email | Resend | — |
 | Cache / queue | None — task queue lives in Supabase Postgres via Procrastinate | — |
-| Deploy | Vercel (frontend) · Cloud Run (api + workers) · Supabase managed | — |
+| Deploy | Hostinger VPS · Docker Compose · Traefik · nginx · private API/worker/Hermes containers · Supabase managed (`docs/infra/HOSTINGER_DEPLOYMENT.md`) | — |
 
 ## Ports (dev, non-colliding with sister product)
 
 - Backend: `8011`
 - Frontend: `4201`
+- Timesheet portal: `4202` (production mapping; `ng serve timesheet` currently defaults to 4200 — #512)
 
 ## Repository Layout
 
@@ -40,8 +41,8 @@ US · UK · Singapore · India · Australia. English-only support, async-only SL
 backend/app/
   api/v1/        FastAPI routers (thin)
   services/      Business logic, accounting rules
-  agents/        PydanticAI agents
-    graphs/      Pydantic Graph FSM workflows
+  agents/        Extraction/drafting/close agents + copilot/graph.py (Nous tool loop)
+  evals/         Offline eval gate (golden prompts, rubric)
   models/        Pydantic request/response schemas
   domain/        Money, enums, validation rules, journal patterns
   repositories/  Supabase data access
@@ -52,11 +53,14 @@ frontend/src/app/
   features/      Lazy-loaded modules (copilot, inbox, engagements, projects, clients, invoices, ...)
   shared/        Reusable components
   core/          Singleton services, guards, interceptors
-shared/schemas/  Cross-stack schemas (OpenAPI artifacts)
+frontend/projects/timesheet/  Employee timesheet portal (second Angular app)
+integrations/hermes/  Hermes runtime profile + skills
+shared/schemas/  (empty — cross-stack schema artifacts not yet produced)
+docker-compose.hostinger*.yml  Production topology (root)
 infra/
-  vercel/        Frontend deploy
-  cloudrun/      Backend + worker deploy
   supabase/      Supabase project config
+  stripe/        Stripe setup notes
+  vercel/, cloudrun/  Unused legacy
 docs/
   PLAN.md
   team/          Team artifacts (this folder)
@@ -122,17 +126,17 @@ Key documents agents must read:
 | Backend API e2e | `pytest` + `httpx` against running API on `:8011` |
 | Frontend unit | Jasmine / Karma (Angular default) |
 | Frontend e2e | **Playwright** (single-session login, role-based locators, `--headed --slow-mo=300` locally, headless in CI) |
-| Agent evals | PydanticAI Evals; eval packs at `docs/test/agent_evals/<agent>.yaml`; results in Langfuse |
+| Agent evals | Custom offline rubric gate (`backend/app/evals/`, `scripts/agent_eval_gate.py`, CI step); eval packs at `docs/test/agent_evals/<agent>.yaml` (only `engagement_letter_agent` has a runner); live evals opt-in via `tests/eval/test_agent_eval_live.py` |
 | LLM observability | Langfuse (primary) + Pydantic Logfire (dev/local) |
-| Contract | JSON Schema diff on `shared/schemas/`; Pact for Copilot ↔ Backend (v1.x, not v1) |
-| Load | Locust |
+| Contract | Not implemented (`shared/schemas/` is empty; no Pact). API contract tests live in `backend/tests/unit/test_*_api_contract.py` |
+| Load | Not implemented (no Locust harness; `docs/test/load_test_results.md` is historical) |
 
 ## LLM Cost & Budget
 
-- Per-tenant token budget enforced by middleware.
-- Default model: Claude Sonnet 4.6 (not Opus) for extraction agents.
-- Cache extraction by document `sha256`.
-- Langfuse alerts on per-tenant spend > $X/day.
+- No per-tenant token budget middleware exists yet (tracked #503); cost is controlled by the free-tier-first OpenRouter chain.
+- Default extraction model comes from the same OpenRouter chain (`agent_models` in `app/core/config.py`).
+- Documents store `sha256` but extraction is not cached on it yet.
+- Langfuse traces exist; spend alerts are not configured.
 
 ## Security-Sensitive Areas
 

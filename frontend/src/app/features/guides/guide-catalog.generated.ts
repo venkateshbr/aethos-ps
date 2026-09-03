@@ -29,7 +29,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "All users",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 48,
+    "readMinutes": 50,
     "headings": [
       {
         "id": "1-operating-model",
