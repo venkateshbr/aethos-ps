@@ -29,7 +29,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "All users",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 48,
+    "readMinutes": 52,
     "headings": [
       {
         "id": "1-operating-model",
@@ -74,6 +74,16 @@ export const GUIDE_CATALOG: GuideEntry[] = [
       {
         "id": "3-1-reliability-and-answer-quality",
         "label": "3.1 Reliability and answer quality",
+        "level": 3
+      },
+      {
+        "id": "3-2-how-nous-runs-runtimes-tools-and-limits",
+        "label": "3.2 How Nous runs: runtimes, tools, and limits",
+        "level": 3
+      },
+      {
+        "id": "3-3-how-nous-improves-and-what-it-does-not-learn-by-itself",
+        "label": "3.3 How Nous improves (and what it does not learn by itself)",
         "level": 3
       },
       {
@@ -530,6 +540,99 @@ export const GUIDE_CATALOG: GuideEntry[] = [
       {
         "id": "appendix-sample-files-for-demo",
         "label": "Appendix: Sample Files for Demo",
+        "level": 2
+      }
+    ]
+  },
+  {
+    "slug": "nous-hermes-operations",
+    "source": "docs/infra/HERMES_RUNTIME_OPERATIONS.md",
+    "title": "Nous on Hermes — runtime and learning operations",
+    "description": "How the Nous runtime is wired, how to enable and verify Hermes, what each path guarantees, and the current state of the self-learning loop.",
+    "category": "Operations",
+    "audience": "Owners and admins",
+    "featured": true,
+    "status": "Maintained",
+    "readMinutes": 12,
+    "headings": [
+      {
+        "id": "1-what-quot-nous-on-hermes-quot-actually-is",
+        "label": "1. What &quot;Nous on Hermes&quot; actually is",
+        "level": 2
+      },
+      {
+        "id": "2-configuration-reference",
+        "label": "2. Configuration reference",
+        "level": 2
+      },
+      {
+        "id": "runtime-selection",
+        "label": "Runtime selection",
+        "level": 3
+      },
+      {
+        "id": "hermes-connection",
+        "label": "Hermes connection",
+        "level": 3
+      },
+      {
+        "id": "hermes-profile-integrations-hermes-aethos-atlas-profile",
+        "label": "Hermes profile (integrations/hermes/aethos-atlas-profile/)",
+        "level": 3
+      },
+      {
+        "id": "3-enabling-hermes-in-production",
+        "label": "3. Enabling Hermes in production",
+        "level": 2
+      },
+      {
+        "id": "secret-rotation",
+        "label": "Secret rotation",
+        "level": 3
+      },
+      {
+        "id": "4-verifying-which-runtime-answered",
+        "label": "4. Verifying which runtime answered",
+        "level": 2
+      },
+      {
+        "id": "5-what-is-guaranteed-on-each-path",
+        "label": "5. What is guaranteed on each path",
+        "level": 2
+      },
+      {
+        "id": "6-data-the-runtime-writes",
+        "label": "6. Data the runtime writes",
+        "level": 2
+      },
+      {
+        "id": "7-the-self-learning-loop-current-state",
+        "label": "7. The self-learning loop — current state",
+        "level": 2
+      },
+      {
+        "id": "the-target-loop-issues-533-534-535",
+        "label": "The target loop (issues #533 → #534 → #535)",
+        "level": 3
+      },
+      {
+        "id": "weekly-operating-rhythm-once-the-loop-exists-dhruva",
+        "label": "Weekly operating rhythm once the loop exists (Dhruva)",
+        "level": 3
+      },
+      {
+        "id": "8-troubleshooting",
+        "label": "8. Troubleshooting",
+        "level": 2
+      },
+      {
+        "id": "9-security-posture-read-before-granting-access",
+        "label": "9. Security posture (read before granting access)",
+        "level": 2
+      },
+      {
+        "id": "10-related-documents",
+        "label": "10. Related documents",
         "level": 2
       }
     ]

@@ -51,6 +51,17 @@ const guides = [
     status: 'Maintained',
   },
   {
+    slug: 'nous-hermes-operations',
+    source: 'docs/infra/HERMES_RUNTIME_OPERATIONS.md',
+    title: 'Nous on Hermes — runtime and learning operations',
+    description:
+      'How the Nous runtime is wired, how to enable and verify Hermes, what each path guarantees, and the current state of the self-learning loop.',
+    category: 'Operations',
+    audience: 'Owners and admins',
+    featured: true,
+    status: 'Maintained',
+  },
+  {
     slug: 'demo-guide',
     source: 'docs/DEMO_GUIDE.md',
     title: 'Aethos demo guide',

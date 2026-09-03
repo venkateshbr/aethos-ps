@@ -7,6 +7,7 @@ update the relevant workflow, control, and testing notes.
 Related docs:
 
 - Aethos Nous prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
+- Nous runtime and learning operations: [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md)
 - Nous/Hermes technical architecture: [`docs/architecture/atlas-hermes-ai-agent-architecture.md`](../architecture/atlas-hermes-ai-agent-architecture.md)
 - Current pre-launch QA runbook: [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](../qa/prelaunch-platform-validation-runbook-2026-08-05.md)
 - Earlier Ishantech launch QA runbook: [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](../qa/ishantech-production-e2e-runbook-2026-07-11.md)
@@ -59,21 +60,30 @@ result and the approval boundary.
 
 | Module | Route | Primary users | How AI should help | Scenario anchors |
 | --- | --- | --- | --- | --- |
+| Dashboard (default landing) | `/app/dashboard` | All users | Working-capital summary: AR/AP due, WIP, open Inbox work, trial state; `/app` redirects here | Launch scenario 10 |
 | Aethos Nous | `/app/copilot` | All finance users | Analyze, draft, upload, prepare, and explain work in business language | ENT-AIOPS-001, ENT-P2P-001, ENT-R2R-001 |
 | Inbox | `/app/inbox` | Managers, AP/AR leads, Controller, Owner/Admin | Review AI proposals, approve with edits, reject, dispatch plan items, inspect decision history | ENT-CTRL-001, ENT-AUD-001, ENT-AUD-002 |
-| Clients and vendors | `/app/clients` | Engagement managers, AP/AR leads | Create and inspect customers/vendors, link AR/AP history, support document intake | Launch scenarios 1-7 |
+| Contacts (clients and vendors; nav label "Contacts") | `/app/clients` | Engagement managers, AP/AR leads | Create and inspect customers/vendors, link AR/AP history, support document intake | Launch scenarios 1-7 |
 | People | `/app/people` | Admins, managers | Maintain staff, rates, targets, and delivery context for billing/reporting | Launch scenarios 1-4, 10 |
 | Engagements and projects | `/app/engagements`, `/app/projects` | Engagement managers, project managers | Set billing terms, organize delivery, connect WIP to invoices and project health | Launch scenarios 1-4 |
 | Invoices and public invoice | `/app/invoices`, `/p/:token` | AR lead, Controller, client recipient | Draft/review invoices, send/collect, inspect public invoice status | Engagement to Cash guide |
 | Payments | `/app/payments` | AR lead, Controller, Owner/Admin | Review AR receipts; admins/owners can run Stripe reconciliation; "Record payment" routes to the invoice-scoped receipt flow | Engagement to Cash guide |
-| Bills and pay bills | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare, approve, export, send, and settle guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-005 |
-| Accounting and close | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
+| Bills and Pay Bills (nav label "Billing Runs" opens the Pay Bills wizard; a pre-bill billing-run screen is tracked in #515) | `/app/bills`, `/app/billing-runs` | AP lead, Controller, Owner/Admin | Review vendor invoice exceptions, create bills, prepare, approve, export, send, and settle guarded payment batches | ENT-P2P-001, ENT-P2P-002, ENT-P2P-003, ENT-P2P-005 |
+| Journal Entries, accounting and close (nav label "Journal Entries") | `/app/accounting/journals` | Controller, Owner/Admin | Prepare close, review blockers, record overrides, generate statements | ENT-R2R-001, ENT-R2R-002, ENT-R2R-003 |
 | Reports | `/app/reports` | Executives, managers, auditors | Explain AR/AP/WIP/revenue/project/accounting results and tie AI recommendations to source reports | Launch scenario 10 |
 | Documents | `/app/documents` | AP, AR, engagement teams, auditors | Track uploaded source documents, extraction status, and resulting decisions | ENT-P2P-001, ENT-AUD-003 |
+| Time | `/app/time` (alias `/app/time-entries`) | Staff, managers | Log and review time entries; Nous can log time by prompt | Launch scenarios 1-3 |
+| Expenses | `/app/expenses` | Staff, AP | List and create project expenses; receipts extracted by Nous; approval/GL posting is tracked in #518 | ENT-P2P-003 |
+| Approvals | `/app/approvals` | Managers | Timesheet approval queue for portal submissions | Timesheet e2e |
+| Profile | `/app/profile` | All users | Change password, account details | ENT-RBAC-002 |
+| Guides | `/app/guides`, `/app/guides/:slug` | Owners and admins | Searchable HTML library of this guide, the Nous prompt library, the Nous-on-Hermes operations manual and both demo guides; each has an Export PDF action | #478 |
 | Settings | `/app/settings` | Admins, Owner, operators, auditors where read-only | Configure services, tax, tenant users, autonomy, approval policy, personas, schedules, and inspect health/run ledgers | ENT-AIOPS-003, ENT-CTRL-003, ENT-RBAC-002, ENT-OPS-003 |
 
 All authenticated browser modules are under `/app/*`. The public browser
-routes are `/`, `/signup`, `/login`, and `/p/:token`. Route fragments such as
+routes are `/`, `/signup`, `/login`, `/p/:token` and the Stripe Connect return
+handler `/settings/billing/connect/return`. The guide library is **not** public:
+`/guides` redirects to `/app/guides`, which requires a signed-in tenant owner or
+admin. Route fragments such as
 `/copilot`, `/reports/ar-aging`, `/payments` for bill-pay batches,
 `/engagements/new`, and `/settings/stripe` are not current Angular routes.
 
@@ -107,13 +117,14 @@ Current account and billing limitations:
   must change it on first login. The `/login` page has no public self-service
   forgot-password/recovery UI; users who cannot sign in need an administrator
   or support process.
-- The backend can create a Stripe Customer Portal session, but no current
-  Angular control opens it. Self-service plan change, card replacement,
-  cancellation, invoice preview, and subscription management must not be
-  described as available UI.
+- Plan and billing self-service runs through the Stripe Customer Portal:
+  Settings -> Plan & Billing -> "Manage plan & billing" opens the portal and
+  returns to Settings (#398). Plan change, card replacement and cancellation
+  happen inside Stripe's portal, not in Aethos screens.
 - Stripe Connect status/onboarding is embedded in `/app/settings` for Tenant
-  Owner. Its configured callback browser path is not in the current Angular
-  route table, so complete return-path behavior remains a production test item.
+  Owner; the OAuth return handler is the top-level route
+  `/settings/billing/connect/return` (#403). Production Connect onboarding
+  still requires a real Connect client ID (#95).
 - The public `/p/:token` invoice is the only customer-facing page. A general
   customer document, engagement, or project portal is not implemented.
 
@@ -303,7 +314,10 @@ Nous is designed so operators can trust its output:
 - **Number-fidelity guard.** Monetary figures Nous states are checked against the
   source records that produced them. A figure that cannot be verified is shown
   with a caveat asking you to confirm it against Reports, rather than presented as
-  fact. Nous does not invent totals.
+  fact. Nous does not invent totals. Note that several high-confidence
+  operational intents currently answer with guidance text and **no figures** (for
+  example trial balance, statement package comparisons, operational health);
+  use the Reports tabs for numbers until those responders read live data (#360).
 - **Measured quality.** A golden-prompt evaluation suite scores Nous on staying
   on-topic, never leaking internals, routing controlled actions to Inbox, and
   number-fidelity. Each answer also records which runtime produced it, alongside
@@ -348,6 +362,71 @@ Nous response-depth expectations:
 Engineering details for runtime selection, Hermes MCP wiring, tool broker
 dispatch, database tables, and UI screen ownership are documented in
 [`Nous And Hermes AI Agent Architecture`](../architecture/atlas-hermes-ai-agent-architecture.md).
+
+### 3.2 How Nous runs: runtimes, tools, and limits
+
+Nous answers a question in up to three stages, and it is useful to know which
+one answered you:
+
+1. **Built-in finance responders.** Common operational questions (AR/AP/WIP
+   summaries, close readiness, collections reads, manual-journal packets) are
+   recognised directly and answered by Aethos code reading your records. These
+   are fast and deterministic. Some of them return guidance and next steps
+   rather than figures — when you need numbers, open the matching Reports tab.
+2. **The AI runtime.** Anything else goes to the configured runtime: either the
+   built-in **Aethos Basic** runtime or the advanced **Hermes** runtime, chosen
+   per tenant in Settings -> Agent Autonomy -> AI Inference Settings. Both work
+   from the same Aethos tools; Hermes adds stronger multi-step reasoning and
+   workflow skills for order-to-cash, procure-to-pay, close, collections,
+   engagement-letter intake and audit evidence.
+3. **Automatic fallback.** If the advanced runtime is unavailable, Nous falls
+   back to the built-in runtime and still answers. A circuit breaker stops
+   repeated waiting during an outage. Fallback is intentionally invisible in the
+   answer; operators can confirm which runtime ran from the Agent Run Ledger.
+
+Whichever runtime answers, the same rules apply: Nous only reads and writes
+through Aethos tools scoped to your tenant, it never posts money, accounting or
+external emails directly, and every controlled action becomes an Inbox task.
+
+Current limits worth knowing:
+
+- The number-fidelity check described above is applied on the built-in runtime.
+  On the advanced runtime, treat stated figures as indicative and confirm them
+  in Reports until that check is extended (tracked in #532).
+- Tool-progress chips appear on the built-in runtime only.
+- Nous keeps conversation context per thread. Retention and clearing of that
+  memory are being defined (#531); do not paste anything into chat that you
+  would not want retained for the life of the thread.
+
+### 3.3 How Nous improves (and what it does not learn by itself)
+
+Nous does **not** train on your data and does not silently change its own
+behaviour. Today it improves in exactly three ways, all human-driven:
+
+| Signal | What happens with it |
+| --- | --- |
+| You approve an Inbox task with edits | The original AI proposal and your corrected version are stored as an immutable correction record and queued as a candidate example for the agent's evaluation set |
+| You reject an Inbox task | The rejection and its reason are stored the same way |
+| Your firm's data changes | Answers change because the underlying records changed — not because the model learned |
+
+What that means in practice:
+
+- Corrections you make in Inbox are the highest-value feedback in the product.
+  Prefer **approve with edits** over reject-and-recreate when the proposal is
+  structurally right but wrong in detail.
+- A chat answer that is simply wrong currently produces **no** feedback signal;
+  answer rating in chat is being added (#533). Until then, if a Nous answer is
+  wrong in a way that matters, correct it in the Inbox task it produced, or
+  raise it with your administrator.
+- Agent autonomy never rises on its own. Promotion from "suggest" to
+  "auto-apply" requires a passing evaluation and an explicit admin approval,
+  and that promotion path is currently disabled pending the evaluation wiring
+  (#496, #534). Every agent stays at suggest level until then.
+- Prompt, skill and routing changes ship as product releases reviewed by the
+  engineering team, not as self-modifications.
+
+Administrators and operators: the full runtime, tooling and learning-loop
+reference is [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md).
 
 ### Current AI approval boundary
 
@@ -485,10 +564,10 @@ Current implementation details to document in demos and tests:
 
 - Engagement-letter or SOW approval can create a customer, engagement, first
   project, and linked rate card when reviewed rate hints are present.
-- Existing rate cards can be selected from the engagement form and a linked
-  card name/ID is visible on engagement detail. There is no standalone Settings
-  Rate Cards management screen in the current frontend; do not direct users
-  there to create or edit cards.
+- Rate cards are managed in Settings -> Rate Cards (#397): create a card with
+  currency, effective date and per-role rates. Existing cards are selectable
+  from the engagement form and the linked card name/ID is visible on
+  engagement detail.
 - Service catalogue, tax rates, people, linked rate cards, time entries, and expenses
   are source records for billing and project economics.
 - Time and billable expenses should be approved or clearly eligible before they
@@ -504,8 +583,9 @@ Current implementation details to document in demos and tests:
 - When the server has Stripe credentials, invoice send creates a Payment Link.
   An active tenant Connect account adds `on_behalf_of`/destination routing; lack
   of Connect does not by itself suppress the platform Payment Link. When Stripe
-  is not configured, send uses the PDF-only path and operators settle through
-  the manual record-payment path.
+  is not configured, send only marks the invoice `sent` and operators settle
+  through the manual record-payment path. **Send does not yet email the client
+  or render a PDF** — share the public invoice link manually until #516 ships.
 - AR payments store transaction amount, currency, tenant-base amount, FX rate
   provenance, and realised FX adjustment when payment-date base value differs
   from invoice-date base value.
@@ -673,7 +753,7 @@ Current workflows:
   retained-earnings posting preview, readiness blockers, P&L activity, and
   current-vs-prior year statement commentary; approval posts through the same
   year-end close service used by Accounting.
-- Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack where supported by the current build.
+- Reports include operational and accounting views such as AR Aging, AP Aging, Project P&L, Utilization, WIP, Revenue, Trial Balance, Balance Sheet, Income Statement, Cash Flow, and Statutory Pack, plus the services-intelligence tabs Project Health, Capacity, Backlog, Profitability (client, client group, segment), Practice, Recommendations, Scope Advisor and Action Queue.
 - The financial-statement control has **From month** and **To month** values.
   Equal values preserve monthly behavior. An inclusive range is sent to Income
   Statement, Cash Flow, and Statutory Pack; Balance Sheet and retained earnings
@@ -845,7 +925,8 @@ Core report families:
 | --- | --- |
 | AR | AR Aging, revenue by engagement, invoices |
 | AP | AP Aging, bills, payment batches |
-| Delivery | Project P&L, utilization, WIP |
+| Delivery | Project P&L, utilization, WIP, Project Health, Capacity, Backlog, Scope Advisor |
+| Profitability | Client, client-group and segment profitability, Practice dashboards, Recommendations (pricing/staffing) |
 | Accounting | Trial Balance, Balance Sheet, Income Statement, Cash Flow, Statutory Pack |
 | Operations | Action Queue, agent run ledger, workflow run visibility |
 
@@ -901,6 +982,17 @@ Settings are used for:
 - Read-only historical FX provenance lookup by currency pair and requested
   date; it shows the matched rate date, row ID, source, and staleness without
   creating or replacing a global rate.
+- Integration Roadmap (Settings -> Integrations): a read-only catalogue of
+  planned/available connectors (email/calendar, bank feeds, registry/tax
+  validation, payroll, CRM, document storage, Stripe Connect, transactional
+  email) with status, auth model and risk class. Only Stripe Connect and Resend
+  are live today.
+- Client groups (Contacts -> client detail -> Group): link related contacts
+  (holding company, trusts, SPVs) with member roles; Reports -> Profitability
+  rolls revenue and margin up by group.
+- Market profiles: the tenant country selected at signup drives base currency,
+  locale, timezone, tax labels and seeded tax-rate templates for US, UK, SG, IN
+  and AU (`/api/v1/localization`).
 - Agent autonomy configuration.
 - Scheduled Finance Ops Manager cadence through Settings and the Agents API.
 - AI inference runtime and OpenRouter model routing.
@@ -921,7 +1013,8 @@ Current guidance:
   next run, failed or skipped workflows, open Inbox work, and redacted
   operational health from one business prompt.
 - Use Settings -> Agent Autonomy -> AI Inference Settings to choose the tenant
-  Nous runtime, semantic response order, and model-routing order. The default
+  Nous runtime (Aethos Basic or the advanced Hermes runtime; operator guide:
+  [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md)), semantic response order, and model-routing order. The default
   Nous response order is `semantic_intent` -> `atlas_runtime`, meaning
   high-confidence operational finance prompts are handled by Aethos read-packs
   and guarded workflow tools before falling back to Hermes or Aethos Basic.

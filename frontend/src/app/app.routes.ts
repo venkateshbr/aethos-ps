@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, authChildGuard } from './core/guards/auth.guard';
+import { adminGuard } from './core/guards/admin.guard';
 
 const loadTimeEntriesComponent = () =>
   import('./features/time-entries/time-entries-list.component').then(
@@ -31,16 +32,13 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/login/login.component').then(m => m.LoginComponent),
   },
-  {
-    path: 'guides',
-    loadComponent: () =>
-      import('./features/guides/guide-library.component').then(m => m.GuideLibraryComponent),
-  },
-  {
-    path: 'guides/:slug',
-    loadComponent: () =>
-      import('./features/guides/guide-reader.component').then(m => m.GuideReaderComponent),
-  },
+  // #491 follow-up — the guide library moved to `/app/guides` behind
+  // authGuard + adminGuard because it now publishes the Nous runtime and
+  // learning-operations manual (secret rotation, open security gaps). These
+  // redirects keep previously shared public links working: an anonymous
+  // visitor is bounced to the landing page by authGuard with a returnUrl.
+  { path: 'guides', redirectTo: '/app/guides', pathMatch: 'full' },
+  { path: 'guides/:slug', redirectTo: '/app/guides/:slug' },
 
   // ── App shell — authenticated routes ────────────────────────────────────────
   // Guarded by authGuard (parent) + authChildGuard (child re-check) per #111.
@@ -130,6 +128,20 @@ export const routes: Routes = [
         path: 'expenses',
         loadComponent: () =>
           import('./features/expenses/expenses-list.component').then(m => m.ExpensesListComponent),
+      },
+      {
+        // Guide library — owner/admin only (adminGuard). Includes the Nous
+        // runtime + learning operations manual, so it is not staff-readable.
+        path: 'guides',
+        canActivate: [adminGuard],
+        loadComponent: () =>
+          import('./features/guides/guide-library.component').then(m => m.GuideLibraryComponent),
+      },
+      {
+        path: 'guides/:slug',
+        canActivate: [adminGuard],
+        loadComponent: () =>
+          import('./features/guides/guide-reader.component').then(m => m.GuideReaderComponent),
       },
       {
         path: 'settings',

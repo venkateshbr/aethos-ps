@@ -1,8 +1,8 @@
 # Aethos PS — Architecture
 
 > **Owner**: Vastu (Chief Architect)
-> **Status**: Skeleton — to be filled by Vastu in Week 1 (PLAN §13).
-> **Source of truth for now**: [`docs/PLAN.md`](../PLAN.md) §3-§12.
+> **Status**: Skeleton (never filled). Fill tracked in #527. Until then use the pointers below.
+> **Source of truth for now**: [`docs/adr/`](../adr/) (ADR 0001–0005), [`docs/PLAN.md`](../PLAN.md) §0.2 drift note + §3–§12, [`docs/architecture/`](../architecture/) (Nous/Hermes), [`docs/infra/HOSTINGER_DEPLOYMENT.md`](../infra/HOSTINGER_DEPLOYMENT.md).
 
 This document is the durable architecture reference. The plan covers it in narrative form; this document is the structured, ADR-indexed view.
 
@@ -20,7 +20,7 @@ This document is the durable architecture reference. The plan covers it in narra
 10. **Stripe integration** — subscriptions, Payment Links, Connect Standard, Tax.
 11. **Document pipeline** — upload → extraction worker → agent → suggestion/HITL.
 12. **Observability** — Langfuse (LLM), Pydantic Logfire (dev), structured logs, trace IDs.
-13. **Deployment topology** — Vercel, Cloud Run, Supabase, Upstash.
+13. **Deployment topology** — Hostinger VPS, Docker Compose, Traefik, Supabase (see `docs/infra/HOSTINGER_DEPLOYMENT.md`).
 
 ## Architecture Decision Records
 
@@ -33,6 +33,12 @@ Process: see [`docs/team/SDLC_PROTOCOL.md`](SDLC_PROTOCOL.md) — RFC / ADR Proc
 - Backend agents read [`docs/PLAN.md`](../PLAN.md) §3, §4, §5, §6, §10.
 - Frontend agents read [`docs/PLAN.md`](../PLAN.md) §7.
 - All agents read [`agent-harness/core/architecture-patterns.md`](../../agent-harness/core/architecture-patterns.md).
+
+## Current pointers (2026-09-03)
+
+- Deployment topology is **Hostinger + Docker Compose + Traefik**, not Vercel/Cloud Run/Upstash (section 13 above is stale).
+- Agents are OpenAI-compatible tool loops, not PydanticAI/Pydantic Graph (section 5 above is stale).
+- ~81 tables across 115 migrations; see `docs/PLAN.md` §0.2 for the deltas from the 37-table plan.
 
 ## Changelog
 

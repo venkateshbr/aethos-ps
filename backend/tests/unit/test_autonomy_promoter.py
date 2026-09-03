@@ -423,3 +423,91 @@ def test_check_promotions_status_filter_is_postgrest_valid() -> None:
     # Must not raise (would raise if the code regressed to .not_.is_('status','pending')).
     result = _check_promotions(_Db(sugg), "tenant-x")
     assert result == 0  # no agent_autonomy_settings row → skipped after the query ran
+
+
+def test_check_demotions_status_filter_is_postgrest_valid() -> None:
+    """#496 regression — the demotion pass had the same PGRST100 bug.
+
+    `_check_promotions` was fixed in #395 but `_check_demotions`, 130 lines
+    below it, still used `.not_.is_('status','pending')`. PostgREST rejects any
+    `is` value outside null/true/false, so the demotion query raised on its
+    first execution every night: an L3 agent whose approval rate collapsed was
+    never demoted. Same PostgREST-accurate stub as the promotion test.
+    """
+    from types import SimpleNamespace
+
+    from app.workers.autonomy_promoter import _check_demotions
+
+    _VALID_IS = (None, "null", "not_null", True, False, "true", "false", "unknown")
+
+    class _Q:
+        def __init__(self, data: list) -> None:
+            self._data = data
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, *a, **k):
+            return self
+
+        def gte(self, *a, **k):
+            return self
+
+        def neq(self, *a, **k):
+            return self
+
+        def insert(self, *a, **k):
+            return self
+
+        def update(self, *a, **k):
+            return self
+
+        @property
+        def not_(self):
+            return self
+
+        def is_(self, _col, val):
+            if val not in _VALID_IS:
+                raise ValueError(f"PGRST100: 'is' filter rejects {val!r}")
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=self._data)
+
+    class _Db:
+        def __init__(self, settings_rows: list, sugg: list) -> None:
+            self._settings = settings_rows
+            self._sugg = sugg
+
+        def table(self, name: str):
+            if name == "agent_autonomy_settings":
+                return _Q(self._settings)
+            if name == "agent_suggestions":
+                return _Q(self._sugg)
+            return _Q([])
+
+    # One agent sitting at L3 so the demotion pass reaches its status query.
+    settings_rows = [
+        {
+            "id": "setting-1",
+            "agent_name": "collections_agent",
+            "action_type": "draft_reminder",
+            "level": 3,
+            "confidence_threshold": "0.9",
+        }
+    ]
+    # Enough decided suggestions to clear the demotion sample floor, mostly
+    # rejected so the approval rate is well under the 0.85 demotion threshold.
+    sugg = [
+        {
+            "agent_name": "collections_agent",
+            "action_type": "draft_reminder",
+            "status": "rejected" if i % 2 == 0 else "approved",
+            "confidence": "0.9",
+        }
+        for i in range(20)
+    ]
+
+    # Must not raise: a regression to `.not_.is_` fails here with PGRST100.
+    result = _check_demotions(_Db(settings_rows, sugg), "tenant-x")
+    assert isinstance(result, int)

@@ -1,16 +1,19 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatButtonModule } from '@angular/material/button';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../core/services/auth.service';
+import { isTenantAdminRole } from '../../core/guards/admin.guard';
 import { SupabaseService } from '../../core/services/supabase.service';
 
 interface NavItem {
   label: string;
   icon: string;
   route: string;
+  /** Rendered only for tenant owners/admins; the route is guarded server-side by adminGuard. */
+  adminOnly?: boolean;
 }
 
 interface SubscriptionStatus {
@@ -60,7 +63,10 @@ interface SubscriptionStatus {
             <span class="text-sm font-bold tracking-wide text-text-primary hidden sm:block">Aethos</span>
           </a>
 
-          <nav aria-label="Main navigation" class="flex items-center gap-1 min-w-0">
+          <!-- overflow-x-auto keeps the icon rail inside the viewport on small
+               screens; without it the nav widened the page and every route
+               scrolled horizontally on a phone (#510). -->
+          <nav aria-label="Main navigation" class="flex items-center gap-1 min-w-0 overflow-x-auto">
             <!-- Primary nav items -->
             @for (item of primaryNav; track item.route) {
               <a
@@ -86,7 +92,7 @@ interface SubscriptionStatus {
           </nav>
 
           <mat-menu #moreMenu="matMenu" class="!bg-surface-raised">
-            @for (item of secondaryNav; track item.route) {
+            @for (item of visibleSecondaryNav(); track item.route) {
               <a
                 mat-menu-item
                 [routerLink]="item.route"
@@ -214,7 +220,16 @@ export class ShellComponent implements OnInit {
     { label: 'People',         icon: 'badge',           route: '/app/people' },
     // ── Accounting section (#208) ──────────────────────────────────────
     { label: 'Journal Entries', icon: 'menu_book',      route: '/app/accounting/journals' },
+    // Owner/admin only — the library includes the Nous runtime and learning
+    // operations manual (secret rotation, open security gaps). Filtered by
+    // visibleSecondaryNav(); adminGuard enforces the route itself.
+    { label: 'Guides',          icon: 'menu_book',      route: '/app/guides', adminOnly: true },
   ];
+
+  /** Secondary nav filtered to what this role may open. */
+  readonly visibleSecondaryNav = computed(() =>
+    this.secondaryNav.filter(item => !item.adminOnly || isTenantAdminRole(this.auth.role())),
+  );
 
   ngOnInit(): void {
     this.http.get<SubscriptionStatus>('/api/v1/billing/subscription-status').subscribe({

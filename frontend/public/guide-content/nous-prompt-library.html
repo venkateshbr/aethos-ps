@@ -15,6 +15,14 @@ and whether the request is read-only or should prepare reviewed work.</p>
 <p>For document intake, attach the document first and then send the matching
 business prompt. Aethos Nous should not extract the file or create Inbox work
 until the prompt is submitted.</p>
+<blockquote>
+<p><strong>Router scope (2026-09-03).</strong> The deterministic semantic router recognises
+39 named finance intents and only the demo client names <em>Alderton,
+Brightwater, Forster, Nexus</em> and <em>Thornton</em>. Prompts naming other clients, or
+intents outside that list, go to the configured model runtime and depend on
+its tools. Rows marked <strong>(guidance only)</strong> below currently return
+explanatory text without live figures or record creation; see #360 / #363.</p>
+</blockquote>
 <h2 id="finance-ops-manager">Finance Ops Manager</h2>
 <table>
 <thead>
@@ -82,14 +90,14 @@ until the prompt is submitted.</p>
 </thead>
 <tbody><tr>
 <td>Draft customer invoice</td>
-<td><code>Draft an invoice for the Northstar Advisory engagement for June 2026. Use approved billable time, billable expenses, and billing terms. Send the draft to Inbox before creating an invoice.</code></td>
+<td><code>Draft an invoice for the Nexus Capital Partners engagement for June 2026. Use approved billable time, billable expenses, and billing terms. Send the draft to Inbox before creating an invoice.</code></td>
 </tr>
 <tr>
 <td>Review WIP</td>
 <td><code>Show me billable WIP for active engagements and recommend what should be invoiced this week. Do not create invoices without Inbox approval.</code></td>
 </tr>
 <tr>
-<td>Engagement structure</td>
+<td>Engagement structure <strong>(guidance only — no <code>engagement_structure</code> intent yet, #360)</strong></td>
 <td><code>Show me the Nexus Capital Partners engagement structure. List active projects, billing model for each workstream, linked rate card and source document state, and anything missing before billing.</code></td>
 </tr>
 <tr>
@@ -101,7 +109,7 @@ until the prompt is submitted.</p>
 <td><code>Log 4.5 billable hours for Sarah Patel on the CFO Advisory project today for month-end close support. Send anything risky to Inbox.</code></td>
 </tr>
 <tr>
-<td>Capped tax engagement</td>
+<td>Capped tax engagement <strong>(guidance only — engagement creation by prompt is #363)</strong></td>
 <td><code>Create an engagement for Nexus - Corporation Tax Return FY2025, fixed fee 18,500 GBP, capped at 22,000 GBP if advisory hours overrun. Route the engagement draft to Inbox before creation.</code></td>
 </tr>
 <tr>
@@ -114,7 +122,7 @@ until the prompt is submitted.</p>
 </tr>
 <tr>
 <td>Public invoice check</td>
-<td><code>Check whether the public invoice link for the latest Northstar invoice is safe to share. Confirm the amount, due date, customer name, and payment status before any external send.</code></td>
+<td><code>Check whether the public invoice link for the latest Nexus invoice is safe to share. Confirm the amount, due date, customer name, and payment status before any external send.</code></td>
 </tr>
 <tr>
 <td>Multi-currency payment settlement</td>
@@ -135,14 +143,14 @@ until the prompt is submitted.</p>
 </tr>
 <tr>
 <td>Customer-specific sweep</td>
-<td><code>Find overdue invoices for Northstar and draft appropriate reminder emails. Use a firm tone only where the collections policy allows it. Do not send without approval.</code></td>
+<td><code>Find overdue invoices for Nexus and draft appropriate reminder emails. Use a firm tone only where the collections policy allows it. Do not send without approval.</code></td>
 </tr>
 <tr>
 <td>Collections follow-up read</td>
 <td><code>Which customers need collections follow-up and what should we send next? Show customer balances, invoice numbers, due dates, aging buckets, payment status, reminder history, collections policy stage, blockers, and next action. Do not draft or send anything yet.</code></td>
 </tr>
 <tr>
-<td>Single invoice drilldown</td>
+<td>Single invoice drilldown <strong>(guidance only)</strong></td>
 <td><code>Review invoice INV-1001. Show due date, aging, balance due, paid or partially paid amount, public invoice and payment-link state, reminder history, collections policy stage, blockers, and recommended next action.</code></td>
 </tr>
 <tr>
@@ -261,7 +269,7 @@ until the prompt is submitted.</p>
 </tr>
 </thead>
 <tbody><tr>
-<td>Record decision trail</td>
+<td>Record decision trail <strong>(guidance only)</strong></td>
 <td><code>Show the decision trail for this bill, invoice, payment batch, journal, or close record. Include the related Inbox task, actor role, decision type, timestamp, and before/after review summary.</code></td>
 </tr>
 <tr>
@@ -352,7 +360,7 @@ until the prompt is submitted.</p>
 </tr>
 </thead>
 <tbody><tr>
-<td>Operational health</td>
+<td>Operational health <strong>(guidance only — use Settings -&gt; Operational Health for signals)</strong></td>
 <td><code>Review operational health for this tenant. Summarize runtime status, table checks, rate-limit backend, request failures, background failures, agent/tool/workflow failures, and routed alerts without exposing secrets or tokens.</code></td>
 </tr>
 <tr>
@@ -397,7 +405,7 @@ launch passes. The exact business names can be replaced with launch test data.</
 <tr>
 <td>AI year-end close proof (#329)</td>
 <td><code>Prepare year-end close for fiscal year 2026. Check retained earnings setup, posted P&amp;L activity, locked periods, duplicate close risk, and current-vs-prior year statement movement. Route the retained-earnings posting to Inbox for approval before any journal is posted.</code></td>
-<td><code>copilot_prepare_year_end_close</code> Inbox task, preview blockers, retained-earnings amount/direction, comparative commentary, posted <code>YE-YYYY</code> journal after approval</td>
+<td><code>copilot_prepare_year_end_close</code> Inbox task (tool <code>prepare_year_end_close</code>), preview blockers, retained-earnings amount/direction, comparative commentary, posted <code>YE-YYYY</code> journal after approval</td>
 </tr>
 <tr>
 <td>Multi-currency R2R proof (#347/#351)</td>
@@ -515,17 +523,17 @@ attach the named demo asset first and then submit the prompt.</p>
 </tr>
 <tr>
 <td>2-1-retainer</td>
-<td>2.1 Monthly retainer billing</td>
+<td>2.1 Monthly retainer billing (guidance only)</td>
 <td><code>Prepare Brightwater Manufacturing monthly retainer billing for June 2026. Show the draft invoice, any tax, and route it to Inbox before sending.</code></td>
 </tr>
 <tr>
 <td>2-2-milestone</td>
-<td>2.2 Annual accounts milestone</td>
+<td>2.2 Annual accounts milestone (guidance only)</td>
 <td><code>Prepare the Brightwater Annual Accounts FY2025 milestone invoice. Include the milestone basis, tax treatment, and approval path before sending.</code></td>
 </tr>
 <tr>
 <td>2-3-payroll</td>
-<td>2.3 Payroll billing</td>
+<td>2.3 Payroll billing (guidance only)</td>
 <td><code>Prepare Brightwater payroll billing for June 2026 based on active employee count. Show per-employee billing, invoice total, and any approval needed.</code></td>
 </tr>
 <tr>
@@ -600,7 +608,7 @@ attach the named demo asset first and then submit the prompt.</p>
 </tr>
 <tr>
 <td>5-3-trial-balance</td>
-<td>5.3 Trial Balance</td>
+<td>5.3 Trial Balance (guidance only — figures in Reports)</td>
 <td><code>Show the June 2026 Trial Balance. Confirm whether debits equal credits, summarize the largest account movements, and flag suspense or unbalanced items.</code></td>
 </tr>
 <tr>

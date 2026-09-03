@@ -1,8 +1,8 @@
 # Aethos PS — Product Requirements Document (PRD)
 
 > **Owner**: Netra (Product Manager)
-> **Status**: Skeleton — full PRD to be drafted in Week 1 (PLAN §13).
-> **Source of truth for now**: [`docs/PLAN.md`](../PLAN.md).
+> **Status**: Skeleton (never filled). Fill tracked in #528.
+> **Source of truth for now**: [`docs/PLAN.md`](../PLAN.md) plus the shipped PRDs in [`docs/prd/`](../prd/): advanced P2P v1.1, R2R financial close v1.1, service catalogue v1, and the three Atlas/Nous AI-enhancement documents (Atlas is the pre-#104 name of Nous).
 
 This document is the user-facing requirements layer above [`PLAN.md`](../PLAN.md). The plan is the comprehensive engineering reference; the PRD here is the curated, requirements-only view that maps to user stories and acceptance criteria.
 
@@ -20,6 +20,7 @@ This document is the user-facing requirements layer above [`PLAN.md`](../PLAN.md
 
 - Agents needing requirements detail read [`docs/PLAN.md`](../PLAN.md) §2 (Goals & Non-Goals), §6 (Agent Layer), §13 (Phasing).
 - Aksha drafts scenario documents from PLAN sections; PRs against this PRD pull the curated story list back.
+
 
 ## Changelog
 

@@ -234,7 +234,12 @@ def _check_demotions(db, tenant_id: str) -> int:
             .eq("agent_name", s["agent_name"])
             .eq("action_type", s["action_type"])
             .gte("created_at", since)
-            .not_.is_("status", "pending")
+            # PostgREST `is` only accepts null/true/false — `.not_.is_(status,
+            # 'pending')` raises PGRST100, which killed this pass every night
+            # exactly as it did in _check_promotions before #395. Demotion is
+            # the safety valve for a misbehaving L3 agent, so it silently never
+            # ran (#496).
+            .neq("status", "pending")
             .execute()
             .data
             or []

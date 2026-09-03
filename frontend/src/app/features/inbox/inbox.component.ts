@@ -94,8 +94,10 @@ const EDIT_FIELD_SCHEMA: Record<string, EditField[]> = {
   standalone: true,
   imports: [CommonModule, FormsModule, MatIconModule, ConfidenceChipComponent, SkeletonRowsComponent, SourceDocumentLinkComponent],
   template: `
+    <!-- Keyboard shortcuts are bound once, via @HostListener on the component
+         host. A (keydown) binding here as well made every keypress run the
+         handler twice (J/K jumped two rows; A/R fired two mutations) — #494. -->
     <div class="h-full flex flex-col bg-surface-base text-text-primary outline-none"
-         (keydown)="onKeydown($event)"
          tabindex="0">
 
       <!-- Header -->
@@ -1071,8 +1073,26 @@ export class InboxComponent implements OnInit {
     return entries.slice(0, 4);
   }
 
+  /**
+   * True when the keystroke came from somewhere a shortcut must never fire:
+   * a text field, a select, or any contenteditable region. Without this the
+   * approve-with-edits drawer turned typing into actions — every `a` in a
+   * duplicate-review reason approved the focused task (#494).
+   */
+  private isTypingTarget(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
+    return !!el?.closest?.('input, textarea, select, [contenteditable="true"]');
+  }
+
   @HostListener('keydown', ['$event'])
   onKeydown(e: KeyboardEvent): void {
+    // Modifier combos belong to the browser/OS, not to the queue.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (this.isTypingTarget(e.target)) return;
+    // The edit drawer is a modal surface: while it is open the queue behind it
+    // must not respond to keystrokes.
+    if (this.editingTask()) return;
+
     const tasks = this.tasks();
     if (!tasks.length) return;
 
@@ -1091,18 +1111,21 @@ export class InboxComponent implements OnInit {
         break;
       case 'a':
       case 'A': {
+        e.preventDefault();
         const task = tasks[this.focusedIdx()];
         if (task) this.approve(task);
         break;
       }
       case 'r':
       case 'R': {
+        e.preventDefault();
         const task = tasks[this.focusedIdx()];
         if (task) this.reject(task);
         break;
       }
       case 'e':
       case 'E': {
+        e.preventDefault();
         const task = tasks[this.focusedIdx()];
         if (task && this.canEditTask(task)) this.startEdit(task);
         break;

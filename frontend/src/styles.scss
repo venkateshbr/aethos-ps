@@ -397,3 +397,103 @@ body {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Guide PDF export (#476 follow-up)
+ *
+ * "Export PDF" calls window.print(); these rules turn the printed page into a
+ * clean document: only the guide article is visible, the dark theme is dropped
+ * for paper, and headings/tables/code blocks paginate sensibly. Real vector
+ * text, so the PDF stays searchable and its links keep working.
+ * ------------------------------------------------------------------------ */
+@media print {
+  /* Paper is white. Without this the dark-slate theme still paints the page
+     when the reader enables "Background graphics", giving dark-on-dark text. */
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  /* Print only the article: hide everything, then re-show the printable tree. */
+  body * {
+    visibility: hidden !important;
+  }
+
+  .guide-printable,
+  .guide-printable * {
+    visibility: visible !important;
+  }
+
+  .guide-printable {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* App chrome and in-page navigation have no meaning on paper. */
+  .guide-print-hidden,
+  app-shell header,
+  mat-menu,
+  .cdk-overlay-container {
+    display: none !important;
+  }
+
+  /* Paper is white; the dark slate theme would waste ink and often prints as
+     an empty box when the browser drops backgrounds. */
+  .guide-printable,
+  .guide-printable * {
+    color: #111 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-color: #d4d4d8 !important;
+  }
+
+  .guide-printable a {
+    color: #111 !important;
+    text-decoration: underline;
+  }
+
+  .guide-printable h1,
+  .guide-printable h2,
+  .guide-printable h3 {
+    break-after: avoid-page;
+    page-break-after: avoid;
+  }
+
+  .guide-printable pre,
+  .guide-printable table,
+  .guide-printable blockquote,
+  .guide-printable li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .guide-printable pre,
+  .guide-printable code {
+    border: 1px solid #d4d4d8 !important;
+    white-space: pre-wrap !important;
+    word-break: break-word;
+  }
+
+  .guide-printable table {
+    width: 100% !important;
+    border-collapse: collapse;
+    font-size: 10pt;
+  }
+
+  .guide-printable th,
+  .guide-printable td {
+    border: 1px solid #d4d4d8 !important;
+    padding: 4pt 6pt;
+  }
+
+  /* Headroom for the printer's own margins. */
+  @page {
+    margin: 16mm 14mm;
+  }
+}

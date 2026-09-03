@@ -85,7 +85,7 @@ To prevent recurrence:
 |---|---|
 | Backend API / service / repo / migration | Real-stack pytest run hitting `:8011` (not unit-only mocks). For RLS / tenant work: cross-tenant probe in both directions. |
 | **UI / frontend / interceptor / route / form** | **EITHER** a passing Playwright spec under `frontend/e2e/` that exercises the actual user flow through the actual interceptor, **OR** a Founder-confirmed browser walkthrough with screenshot attached to the issue. **Direct `curl` / `httpx` of the backend endpoint is NOT sufficient closure evidence for any UI-touching issue** — it bypasses the SPA's auth interceptor, routing, error handling, and UX. |
-| Infra / Cloud Run / Vercel / Supabase config | A deploy artifact (workflow run URL) or a working live endpoint screenshot. |
+| Infra / Hostinger compose / Traefik / Supabase config | A deploy artifact (`deploy-hostinger.yml` run URL) or a working live endpoint screenshot. |
 | Test infra / SDET tooling | A green CI run after the change. |
 
 The rule covers Vishwa (orchestrator) too — when Vishwa closes an issue
@@ -177,14 +177,14 @@ Agents load context per their tool's adapter — see [`agent-harness/adapters/cl
 - Harness: `agent-harness/core/{operating-principles, sdlc-protocol, roles, quality-gates, architecture-patterns, contract-testing}.md`
 - [`docs/team/PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md)
 - Their own artifact (`ARCHITECTURE.md` or `PRD.md`)
-- Vastu also: `backend/CLAUDE.md`, `frontend/CLAUDE.md`, Supabase schema files
+- Vastu also: [`backend/CLAUDE.md`](../../backend/CLAUDE.md), [`frontend/CLAUDE.md`](../../frontend/CLAUDE.md), Supabase schema files
 - Netra also: `docs/team/DESIGN_SYSTEM.md`
 
 ### 🔵 Narrow Context — Executing Agents (Karya, Rupa, Aksha, Chitra, Sthira, Prahari, Dhruva)
 - Harness: `agent-harness/core/{operating-principles, sdlc-protocol, tdd-protocol, testing-standard, quality-gates}.md` + the role-specific one (e.g., Prahari reads `security-review.md`; Aksha reads `e2e-workflow-standard.md` + `agent-eval-standard.md`)
 - Their `.claude/agents/<name>.md`
 - Their `.claude/agents/skills/<name>_skills.md`
-- Their domain instruction file (`backend/CLAUDE.md` or `frontend/CLAUDE.md`)
+- Their domain instruction file ([`backend/CLAUDE.md`](../../backend/CLAUDE.md) or [`frontend/CLAUDE.md`](../../frontend/CLAUDE.md))
 - The relevant scenario document at `docs/test/e2e_<workflow>.md`
 - ❌ Do NOT read files outside your domain unless the issue requires it.
 
@@ -242,9 +242,9 @@ GitHub Project board: **"Aethos PS Roadmap"** (Projects v2). Status column mirro
 This protocol applies identically across:
 
 - **Claude Code** (reads `CLAUDE.md` + `.claude/agents/*.md`)
-- **Codex** (reads `AGENTS.md`)
-- **Gemini** (reads `GEMINI.md`)
-- **OpenCode** (reads `AGENTS.md` or `CLAUDE.md`)
+- **Codex** (reads `agent-harness/adapters/codex/AGENTS.md`)
+- **Gemini** (reads `agent-harness/adapters/gemini/GEMINI.md`)
+- **OpenCode** (reads `agent-harness/adapters/opencode/AGENTS.md` or `CLAUDE.md`)
 - Any other AI coding tool that reads project instruction files
 
 **GitHub Issues in the Aethos PS repo** is the single source of truth regardless of which tool is used.
@@ -278,7 +278,7 @@ Aethos-specific checklist additions:
 - [ ] Loading, error, and empty states all handled.
 - [ ] Monetary values use `| currency` pipe — never `parseFloat()` on API strings.
 - [ ] Keyboard navigable; ARIA labels on interactive elements.
-- [ ] `ng lint` passes.
+- [ ] `npm run typecheck` passes (an `ng lint` target does not exist yet — #495 restores this gate).
 - [ ] Playwright e2e test exists for the scenario; `test.fixme()` removed.
 - [ ] Aksha has signed off.
 
