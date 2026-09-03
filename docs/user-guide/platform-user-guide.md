@@ -7,6 +7,7 @@ update the relevant workflow, control, and testing notes.
 Related docs:
 
 - Aethos Nous prompts: [`docs/copilot/prompt-library.md`](../copilot/prompt-library.md)
+- Nous runtime and learning operations: [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md)
 - Nous/Hermes technical architecture: [`docs/architecture/atlas-hermes-ai-agent-architecture.md`](../architecture/atlas-hermes-ai-agent-architecture.md)
 - Current pre-launch QA runbook: [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](../qa/prelaunch-platform-validation-runbook-2026-08-05.md)
 - Earlier Ishantech launch QA runbook: [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](../qa/ishantech-production-e2e-runbook-2026-07-11.md)
@@ -359,6 +360,71 @@ Nous response-depth expectations:
 Engineering details for runtime selection, Hermes MCP wiring, tool broker
 dispatch, database tables, and UI screen ownership are documented in
 [`Nous And Hermes AI Agent Architecture`](../architecture/atlas-hermes-ai-agent-architecture.md).
+
+### 3.2 How Nous runs: runtimes, tools, and limits
+
+Nous answers a question in up to three stages, and it is useful to know which
+one answered you:
+
+1. **Built-in finance responders.** Common operational questions (AR/AP/WIP
+   summaries, close readiness, collections reads, manual-journal packets) are
+   recognised directly and answered by Aethos code reading your records. These
+   are fast and deterministic. Some of them return guidance and next steps
+   rather than figures — when you need numbers, open the matching Reports tab.
+2. **The AI runtime.** Anything else goes to the configured runtime: either the
+   built-in **Aethos Basic** runtime or the advanced **Hermes** runtime, chosen
+   per tenant in Settings -> Agent Autonomy -> AI Inference Settings. Both work
+   from the same Aethos tools; Hermes adds stronger multi-step reasoning and
+   workflow skills for order-to-cash, procure-to-pay, close, collections,
+   engagement-letter intake and audit evidence.
+3. **Automatic fallback.** If the advanced runtime is unavailable, Nous falls
+   back to the built-in runtime and still answers. A circuit breaker stops
+   repeated waiting during an outage. Fallback is intentionally invisible in the
+   answer; operators can confirm which runtime ran from the Agent Run Ledger.
+
+Whichever runtime answers, the same rules apply: Nous only reads and writes
+through Aethos tools scoped to your tenant, it never posts money, accounting or
+external emails directly, and every controlled action becomes an Inbox task.
+
+Current limits worth knowing:
+
+- The number-fidelity check described above is applied on the built-in runtime.
+  On the advanced runtime, treat stated figures as indicative and confirm them
+  in Reports until that check is extended (tracked in #532).
+- Tool-progress chips appear on the built-in runtime only.
+- Nous keeps conversation context per thread. Retention and clearing of that
+  memory are being defined (#531); do not paste anything into chat that you
+  would not want retained for the life of the thread.
+
+### 3.3 How Nous improves (and what it does not learn by itself)
+
+Nous does **not** train on your data and does not silently change its own
+behaviour. Today it improves in exactly three ways, all human-driven:
+
+| Signal | What happens with it |
+| --- | --- |
+| You approve an Inbox task with edits | The original AI proposal and your corrected version are stored as an immutable correction record and queued as a candidate example for the agent's evaluation set |
+| You reject an Inbox task | The rejection and its reason are stored the same way |
+| Your firm's data changes | Answers change because the underlying records changed — not because the model learned |
+
+What that means in practice:
+
+- Corrections you make in Inbox are the highest-value feedback in the product.
+  Prefer **approve with edits** over reject-and-recreate when the proposal is
+  structurally right but wrong in detail.
+- A chat answer that is simply wrong currently produces **no** feedback signal;
+  answer rating in chat is being added (#533). Until then, if a Nous answer is
+  wrong in a way that matters, correct it in the Inbox task it produced, or
+  raise it with your administrator.
+- Agent autonomy never rises on its own. Promotion from "suggest" to
+  "auto-apply" requires a passing evaluation and an explicit admin approval,
+  and that promotion path is currently disabled pending the evaluation wiring
+  (#496, #534). Every agent stays at suggest level until then.
+- Prompt, skill and routing changes ship as product releases reviewed by the
+  engineering team, not as self-modifications.
+
+Administrators and operators: the full runtime, tooling and learning-loop
+reference is [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md).
 
 ### Current AI approval boundary
 
@@ -945,7 +1011,8 @@ Current guidance:
   next run, failed or skipped workflows, open Inbox work, and redacted
   operational health from one business prompt.
 - Use Settings -> Agent Autonomy -> AI Inference Settings to choose the tenant
-  Nous runtime, semantic response order, and model-routing order. The default
+  Nous runtime (Aethos Basic or the advanced Hermes runtime; operator guide:
+  [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md)), semantic response order, and model-routing order. The default
   Nous response order is `semantic_intent` -> `atlas_runtime`, meaning
   high-confidence operational finance prompts are handled by Aethos read-packs
   and guarded workflow tools before falling back to Hermes or Aethos Basic.

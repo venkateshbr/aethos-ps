@@ -11,6 +11,37 @@ Atlas is the user-facing AI interface. Hermes is an optional advanced agent
 runtime behind Atlas. Aethos remains the system of record for tenants, users,
 finance data, approvals, calculations, audit, and security.
 
+> **Naming (2026-09-03).** This document predates migration `0104`, which
+> renamed the product-facing agent from **Atlas** to **Nous**. Read "Atlas" as
+> "Nous" throughout; privilege codes (`atlas.chat`, `atlas.tools.*`), env vars
+> (`ATLAS_AI_RUNTIME`, `ATLAS_HERMES_*`), the broker path
+> (`/api/v1/atlas-tools/execute`) and table names (`atlas_tool_sessions`)
+> intentionally keep the `atlas` prefix in code.
+>
+> **Corrections to this document** (verified 2026-09-03, tracked in #529–#536):
+> - The tool catalogue below is missing three shipped tools:
+>   `aethos.cosec.reminders_read_pack`, `aethos.configuration_telemetry.read_pack`
+>   and `aethos.r2r.prepare_manual_journal_review` (28 tools are registered in
+>   `_TOOL_DISPATCH`).
+> - The broker contract shows a long signed `context_ref` (`ctx_…`). Migration
+>   `0105` added short server-resolved session tokens (`cts_…`, table
+>   `atlas_tool_sessions`, 15-minute TTL) because weak models mangled the long
+>   string; the signed ref remains only as a fallback.
+> - "Policy evaluates every broker write" is **not** true today:
+>   `aethos.engagements.create_review` and
+>   `aethos.r2r.prepare_manual_journal_review` write suggestions/tasks without
+>   `AgentToolPolicy`, and no broker tool checks the caller's `atlas.tools.*`
+>   privilege (#529).
+> - Hermes turns are not traced in Langfuse, record no `agent_tool_invocations`,
+>   and do not run the number-fidelity guard (#532).
+> - Hermes conversation memory (`store: true`, shared volume) has no documented
+>   scoping, retention or isolation test (#531).
+> - Runtime default in code and compose is `aethos_basic`; Hermes is opt-in
+>   (#530).
+>
+> Operations, configuration, verification and the self-learning-loop state:
+> [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME_OPERATIONS.md).
+
 ## Design Rules
 
 - Users interact with **Aethos Atlas**, not internal tools or Hermes.
@@ -459,3 +490,21 @@ Hermes runtime smoke:
    - operational health
    - decision trail
 5. Verify the user sees business answers only, not tool names or traces.
+
+
+## Learning And Evaluation (2026-09-03)
+
+The agent stack captures human feedback but does not yet close the loop. Stages
+and their owning issues:
+
+| Stage | Mechanism | State |
+| --- | --- | --- |
+| Capture | `agent_corrections` written by `inbox_service.approve_with_edits` / `reject`; full before/after snapshots, append-only | Inbox only — chat answers produce no signal (#533) |
+| Curate | `agent_eval_candidates` auto-created from corrections (hashes only) | No reviewer UI, no promotion into eval packs; `accepted/dismissed/exported` unreachable (#534) |
+| Evaluate | `scripts/agent_eval_gate.py` (CI) scores rubric fixtures; `app/evals/runner.py` scores real answers on the tenant's runtime | CI gate never calls a model; the real scorer is opt-in, writes nothing (#534) |
+| Deploy | Prompts in `graph.py`, `atlas_runtime.py` instructions, and the image-baked Hermes profile | No registry, hardcoded versions, image rebuild required (#535) |
+| Measure | `agent_runs` (+ `agent_tool_invocations` on Basic) | No Langfuse scores; Hermes untraced (#532) |
+| Promote | `autonomy_promoter` gated on `agent_autonomy_settings.eval_passed_at` | Column never written; demotion query broken — L3 unreachable (#496, #534) |
+
+`agent_memory_items` exists in the schema (migration 0034) but has no readers or
+writers; the only live memory is Hermes-side conversation storage (#531).

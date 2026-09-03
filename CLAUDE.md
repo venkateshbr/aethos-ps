@@ -59,7 +59,7 @@ Domain instruction files: [`backend/CLAUDE.md`](backend/CLAUDE.md) and [`fronten
 - All tables have `tenant_id` with RLS; every query is tenant-scoped.
 - Period lock enforced at API layer — reject any transaction in a locked period.
 - Multi-currency: `journal_lines` store both `amount` (foreign) and `base_amount` (tenant base, FX-converted).
-- Agent outputs use PydanticAI typed structured outputs.
+- Agent outputs are typed Pydantic models validated from the model's tool/JSON output (no PydanticAI runtime).
 - Agents **never block** core ERP functions — graceful degradation if AI unavailable.
 - Default agent autonomy is **L2 (suggest)** — auto-promotion to L3 only after confidence + correction-rate thresholds met AND admin approves (see PLAN §6.5).
 - Never send raw PII (bank account numbers, tax IDs, full card numbers) to external LLM APIs — mask first.
@@ -94,10 +94,10 @@ This is a single-context professional-services ERP; use the project context, pla
 | **Vastu** | Chief Architect | System design, ADRs |
 | **Netra** | PM | PRDs, user stories, design-partner outreach |
 | **Chitra** | Frontend Design Lead | UI/UX, brand lockup, component specs |
-| **Rupa** | UI Engineer | Angular components, NgRx, Tailwind |
+| **Rupa** | UI Engineer | Angular components, signals, Tailwind |
 | **Karya** | Backend Engineer | FastAPI, services, agents, migrations |
 | **Aksha** | SDET | Test plans, pytest, Playwright, agent evals |
-| **Sthira** | SRE | Supabase, Cloud Run, Vercel, observability |
+| **Sthira** | SRE | Supabase, Hostinger/Docker/Traefik, observability |
 | **Prahari** | Security | Auth, Stripe, RLS, agent tools, webhooks |
 | **Dhruva** | Data & Analytics | Agent performance, Langfuse, prompt refinement |
 
@@ -147,6 +147,6 @@ Environment variables for e2e specs:
 - Invoice/bill numbers via DB sequences (RPC) — never generate in app code.
 - The `accounting_guardian` agent runs at L3 always and **cannot** be disabled.
 - Angular uses dark slate theme — all components conform.
-- Agent corrections logged for future training; surfaced to Dhruva weekly.
+- Agent corrections are logged (`agent_corrections` → `agent_eval_candidates`) but the curate → evaluate → promote loop is not yet closed (#533-#535); see `docs/infra/HERMES_RUNTIME_OPERATIONS.md`.
 - FX rates may be stale on weekends — `fx_refresh_worker` runs daily; agents warn if rate > 3 days old.
 - Stripe Connect onboarding is OPTIONAL at signup — tenants without it can still use the app, just no payment links on invoices.

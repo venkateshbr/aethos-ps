@@ -29,7 +29,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "All users",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 50,
+    "readMinutes": 52,
     "headings": [
       {
         "id": "1-operating-model",
@@ -74,6 +74,16 @@ export const GUIDE_CATALOG: GuideEntry[] = [
       {
         "id": "3-1-reliability-and-answer-quality",
         "label": "3.1 Reliability and answer quality",
+        "level": 3
+      },
+      {
+        "id": "3-2-how-nous-runs-runtimes-tools-and-limits",
+        "label": "3.2 How Nous runs: runtimes, tools, and limits",
+        "level": 3
+      },
+      {
+        "id": "3-3-how-nous-improves-and-what-it-does-not-learn-by-itself",
+        "label": "3.3 How Nous improves (and what it does not learn by itself)",
         "level": 3
       },
       {
