@@ -69,9 +69,13 @@ def test_ci_runs_commitlint_and_pinned_agentshield() -> None:
 
     assert "@commitlint/cli" in text
     assert "commitlint.config.js" in text
-    assert "affaan-m/agentshield@" in text
-    assert "fail-on-findings: \"true\"" in text
-    assert "min-severity: \"high\"" in text
+    assert "git cat-file -e" in text
+    assert "ecc-agentshield@1.4.0 scan" in text
+    assert "dist.integrity" in text
+    assert "--min-severity high --format json" in text
+    assert 'in {"critical", "high"}' in text
+    assert "known_false_positive" in text
+    assert "accepted_role_risks" in text
 
 
 def test_codeowners_only_references_enforceable_maintainer() -> None:
