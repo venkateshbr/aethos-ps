@@ -17,7 +17,7 @@ dependencies = [
   # Security floors for transitive auth/ASGI dependencies used by Supabase and
   # FastAPI. Keep these explicit so future lock refreshes do not reintroduce the
   # vulnerable versions found during launch audit #368.
-  "cryptography>=49.0.0",
+  "cryptography>=50.0.0",
   # JWT verification uses PyJWT (HS256 + ES256/RS256 via JWKS). We removed
   # python-jose (#384) because it pulled the no-fix python-ecdsa advisory
   # (PYSEC-2026-1325); PyJWT verifies the same Supabase tokens without it.

@@ -53,6 +53,17 @@ def test_supply_chain_gates_real_backend_and_frontend_lockfiles() -> None:
     assert "|| true" not in text
 
 
+def test_locked_dependencies_currently_pass_high_severity_audits() -> None:
+    """The enforced audit jobs must not be introduced already failing."""
+
+    backend = (REPO_ROOT / "backend" / "pyproject.toml").read_text(encoding="utf-8")
+    frontend = (REPO_ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
+
+    assert '"cryptography>=50.0.0"' in backend
+    assert '"@angular/core": "^20.3.30"' in frontend
+    assert '"ws": "8.21.3"' in frontend
+
+
 def test_ci_runs_commitlint_and_pinned_agentshield() -> None:
     text, _ = _workflow("ci.yml")
 

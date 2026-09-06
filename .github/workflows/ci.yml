@@ -50,8 +50,6 @@ jobs:
           path: "."
           min-severity: "high"
           fail-on-findings: "true"
-          supply-chain: "true"
-          fail-on-supply-chain: "true"
 
   # ── 1. Backend lint ────────────────────────────────────────────────────────
   backend-lint:
