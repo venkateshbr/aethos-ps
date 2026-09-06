@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ["**"]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   # ── 1. Backend lint ────────────────────────────────────────────────────────
   backend-lint:
@@ -26,6 +33,38 @@ jobs:
         working-directory: backend
         run: uv run ruff check app/ tests/
 
+  # ── 1b. Backend type check ─────────────────────────────────────────────────
+  backend-typecheck:
+    name: Backend type check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Run mypy
+        working-directory: backend
+        run: uv run mypy app/ || echo "::warning::Type check warnings"
+
+  # ── 1c. Backend dependency audit ──────────────────────────────────────────
+  backend-audit:
+    name: Backend dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: pip-audit
+        working-directory: backend
+        run: |
+          uv export --format requirements-txt --no-hashes --no-emit-project --output-file /tmp/requirements.txt
+          uvx pip-audit --strict -r /tmp/requirements.txt || echo "::warning::Dependency vulnerabilities found"
+
   # ── 2. Backend tests ───────────────────────────────────────────────────────
   backend-test:
     name: Backend tests (unit + property)
@@ -44,7 +83,7 @@ jobs:
       - name: Run pytest (unit + property only — no DB required)
         working-directory: backend
         run: |
-          uv run pytest tests/unit/ tests/property/ -v --tb=short
+          uv run pytest tests/unit/ tests/property/ -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=79
 
       - name: Agent-eval offline gate (#407)
         working-directory: backend
@@ -128,3 +167,16 @@ jobs:
         if: steps.check_pkg.outputs.exists == 'true'
         working-directory: frontend
         run: npm run build:all
+
+  # ── 5. Secret scan ────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
