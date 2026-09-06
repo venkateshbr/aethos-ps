@@ -14,6 +14,45 @@ permissions:
   contents: read
 
 jobs:
+  # Commitlint is intentionally installed ephemerally because this repository
+  # has no root package.json. The config remains the single policy source.
+  commitlint:
+    name: Commit messages (commitlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+      - name: Lint pushed or pull-request commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts @commitlint/cli@19 @commitlint/config-conventional@19
+          if [ "$EVENT_NAME" = "push" ] && [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="$(git rev-list --max-parents=0 "$HEAD_SHA" | tail -1)"
+          fi
+          npx commitlint --config commitlint.config.js --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  agent-security:
+    name: AgentShield configuration scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Scan agent configuration and supply chain
+        uses: affaan-m/agentshield@9bbc007cf5afb562c324bbad4ce6c544420f49f6 # v1.4.0
+        with:
+          path: "."
+          min-severity: "high"
+          fail-on-findings: "true"
+          supply-chain: "true"
+          fail-on-supply-chain: "true"
+
   # ── 1. Backend lint ────────────────────────────────────────────────────────
   backend-lint:
     name: Backend lint (ruff)
