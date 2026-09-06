@@ -1,0 +1,27 @@
+# Aethos CODEOWNERS — team ownership per directory
+
+* @venkateshbr
+
+# Backend
+/backend/app/ @Karya
+/backend/tests/ @Aksha
+
+# Frontend
+/frontend/src/app/ @Rupa
+
+# Architecture / docs
+/docs/team/ @Vastu
+/docs/ @Nether
+
+# Security
+SECURITY.md @Prahari
+
+# CI/CD
+/.github/ @Sthira
+
+# Database
+/supabase/ @Dhruva
+
+# Agent specs
+/agents/ @Vishwa
+/agent-harness/ @Vishwa

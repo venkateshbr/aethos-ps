@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a feature for Aethos
+title: "[Feature] "
+labels: [feature, triage]
+assignees: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Need
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend (API)
+        - Frontend (UI)
+        - Database
+        - Agent/AI
+        - Payments/Stripe
+        - Multi-currency
+        - Infrastructure
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 — Blocker
+        - P1 — High
+        - P2 — Medium
+        - P3 — Low
+    validations:
+      required: true
