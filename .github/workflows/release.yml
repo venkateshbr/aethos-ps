@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify:
+    name: Verify Release Readiness
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require release commit = origin/main
+        run: |
+          git fetch origin main --no-tags
+          RELEASE_COMMIT=$(git rev-parse HEAD)
+          MAIN_COMMIT=$(git rev-parse origin/main)
+          [ "$RELEASE_COMMIT" = "$MAIN_COMMIT" ] || { echo "Release must be on origin/main"; exit 1; }
+
+      - name: Validate tag format
+        run: |
+          [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Invalid tag: ${{ github.ref_name }}"; exit 1; }
+
+      - name: Extract version
+        id: version
+        run: echo "version=${{ github.ref_name }}" | sed 's/^v//' >> "$GITHUB_OUTPUT"
+
+      - name: Verify package version matches tag
+        run: |
+          TAG_VERSION="${{ github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version" 2>/dev/null)
+          if [ "$TAG_VERSION" = "null" ] || [ -z "$PACKAGE_VERSION" ]; then
+            PACKAGE_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('backend/pyproject.toml','rb'))['project']['version'])" 2>/dev/null)
+          fi
+          [ "$TAG_VERSION" = "$PACKAGE_VERSION" ] || { echo "Tag ($TAG_VERSION) != package ($PACKAGE_VERSION)"; exit 1; }
+
+  build-and-push:
+    name: Build and Push Docker Images
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/api:${{ needs.verify.outputs.version }}
+            ghcr.io/${{ github.repository }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/web:${{ needs.verify.outputs.version }}
+            ghcr.io/${{ github.repository }}/web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Hostinger
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          script: |
+            REPO="${{ github.repository }}"
+            DEPLOY_DIR="/docker/${{ github.event.repository.name }}"
+            cd "$DEPLOY_DIR" || { echo "Deploy dir $DEPLOY_DIR not found"; exit 1; }
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull
+            docker compose up -d --no-deps api web
+            docker image prune -f
+
+  announce:
+    name: Announce Release
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ github.ref_name }}',
+              name: '${{ github.ref_name }}',
+              generate_release_notes: true
+            })
