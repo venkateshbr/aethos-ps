@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repository live in GitHub Issues at `venkateshbr/aethos-ps`. Use the `gh` CLI from the repository root so it infers the canonical remote.
+Issues and PRDs for this repository live in GitHub Issues at `venkateshbr/aethos-ps`. Use the `gh` CLI from the repository root so it infers the canonical remote. Do not use local Markdown files, task ledgers, roadmap files, TODO files, Kanban files, or database trackers as the system of record.
 
 ## Conventions
 
