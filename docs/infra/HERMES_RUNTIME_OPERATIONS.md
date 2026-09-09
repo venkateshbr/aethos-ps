@@ -16,7 +16,7 @@ Nous is the product-facing AI interface. A chat turn passes through up to three 
 user prompt (POST /api/v1/chat/threads/{id}/messages, SSE)
   │
   ├─1─ semantic intent router          app/services/atlas_semantic_intent_router.py
-  │     38 static intents, confidence >= 0.72 (tenant-configurable)
+  │     39 static intents, confidence >= 0.72 (tenant-configurable)
   │     hit → deterministic responder / read pack → answer returned, STAGE 2 AND 3 NEVER RUN
   │
   ├─2─ configured runtime              app/services/atlas_runtime.py
@@ -41,7 +41,7 @@ Hermes container ──MCP──> integrations/hermes/aethos_mcp_server.py
 
 **Two consequences operators must internalise:**
 
-1. **The router short-circuits Hermes.** Most demo and prompt-library questions match one of the 38 intents and are answered by deterministic code, not by Hermes. "We migrated to Hermes" is only true for the long tail unless the router is reordered or disabled (#530).
+1. **The router short-circuits Hermes.** Most demo and prompt-library questions match one of the 39 intents and are answered by deterministic code, not by Hermes. "We migrated to Hermes" is only true for the long tail unless the router is reordered or disabled (#530).
 2. **Hermes authenticates as a container, not as a user.** The broker verifies the shared tool token and resolves the tenant from a short-lived session token, but today it does **not** check the calling user's privileges, and two write tools bypass the agent tool policy entirely (#529). Until that lands, treat Hermes access as equivalent to "any authenticated user of the tenant can read anything the read packs expose".
 
 ---

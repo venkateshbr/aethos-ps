@@ -70,7 +70,8 @@ See [`docs/PLAN.md`](docs/PLAN.md) — comprehensive product + execution plan.
 - [`docs/qa/enterprise-e2e-scenario-library.md`](docs/qa/enterprise-e2e-scenario-library.md) — enterprise-readiness E2E scenarios to automate as slices land.
 - [`docs/qa/launch-e2e-scenario-runbook-2026-06-24.md`](docs/qa/launch-e2e-scenario-runbook-2026-06-24.md) — launch workflow evidence and scenario runbook.
 - [`docs/qa/ishantech-production-e2e-runbook-2026-07-11.md`](docs/qa/ishantech-production-e2e-runbook-2026-07-11.md) — current deterministic production E2E script and accounting oracles.
-- [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md) — **current** release gate (Demo Guide v2 gate passed 2026-08-05).
+- [`docs/qa/launch-readiness-review-2026-09-09.md`](docs/qa/launch-readiness-review-2026-09-09.md) — **current** launch verdict (NOT READY for paid launch; READY for controlled pilot demos), guide audit, agentic inventory; companions [`docs/DEMO_GUIDE_v3_END_TO_END.md`](docs/DEMO_GUIDE_v3_END_TO_END.md) and [`docs/team/LAUNCH_GAP_IMPLEMENTATION_PLAN.md`](docs/team/LAUNCH_GAP_IMPLEMENTATION_PLAN.md).
+- [`docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md`](docs/qa/prelaunch-platform-validation-runbook-2026-08-05.md) — last passed release gate (Demo Guide v2 gate, 2026-08-05).
 - [`docs/qa/launch-readiness-audit-2026-07-11.md`](docs/qa/launch-readiness-audit-2026-07-11.md) — historical NO-GO audit; see its 2026-09-03 supersession note for which blockers have since landed.
 
 The library publishes the platform user guide, the Nous prompt library, the
