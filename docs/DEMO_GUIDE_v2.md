@@ -7,6 +7,11 @@
 > **Guide version**: 2.6 · 2026-08-05 · adds the current pre-launch production
 > validation boundary and retained-tenant warning.
 
+> **Superseded as the presenter script (2026-09-09):** use
+> [`DEMO_GUIDE_v3_END_TO_END.md`](DEMO_GUIDE_v3_END_TO_END.md), which was
+> written against the deployed build and marks talk-track-only steps. Keep this
+> guide for narrative, concepts, and objection handlers.
+>
 > **Production warning (2026-08-05):** the only retained production tenant is
 > Sterling Bridge Advisory Group, while this guide requires the Meridian fixture.
 > Do not present the named scenarios verbatim against Sterling. Read the
@@ -1411,7 +1416,7 @@ can move forward.
 
 4. Correct approach: reopen June (owner-only) OR post a July correcting entry with description "Correction re June accrual"
 
-5. Go to **Accounting** → **Period Locks** → show the lock record: locked by Marcus, timestamp, all entries frozen.
+5. Go to **Accounting** → **Journal Entries** → the period lock control and the lock record (locked by Marcus, timestamp) are embedded on that screen; there is no separate Period Locks page.
 
 ---
 
