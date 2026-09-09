@@ -46,5 +46,5 @@ See [`tests/README.md`](tests/README.md). Contract tests for every router live i
 ## Gotchas
 - PostgREST `is` accepts only null/true/false — use `.neq("status", "pending")`, never `.not_.is_(...)` (see #395/#496).
 - `CurrentUser` has `user_id`, not `id` (#501).
-- `billing_runs` has no CREATE TABLE migration yet (#492) — fresh environments must apply it first.
+- `billing_runs` CREATE TABLE lives in migration `0122_billing_runs_table.sql` (#492, applied to production 2026-09-03); `tests/unit/test_migration_chain_contract.py` guards the chain.
 - Queue names published by the app must match the worker's `--queues` list (see `docs/qa/queue-session-budget-runbook.md`).
