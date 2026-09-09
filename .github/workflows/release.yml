@@ -2,123 +2,123 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to validate (for example v0.1.0-rc.1)"
+        required: true
+        default: "v0.1.0-dry-run.1"
+      dry_run:
+        description: "Validate only; do not build, deploy, or publish a release"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   verify:
-    name: Verify Release Readiness
+    name: Verify Aethos release readiness
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      deploy: ${{ steps.mode.outputs.deploy }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require release commit = origin/main
+      - name: Resolve release mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          git fetch origin main --no-tags
-          RELEASE_COMMIT=$(git rev-parse HEAD)
-          MAIN_COMMIT=$(git rev-parse origin/main)
-          [ "$RELEASE_COMMIT" = "$MAIN_COMMIT" ] || { echo "Release must be on origin/main"; exit 1; }
-
-      - name: Validate tag format
-        run: |
-          [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Invalid tag: ${{ github.ref_name }}"; exit 1; }
-
-      - name: Extract version
-        id: version
-        run: echo "version=${{ github.ref_name }}" | sed 's/^v//' >> "$GITHUB_OUTPUT"
-
-      - name: Verify package version matches tag
-        run: |
-          TAG_VERSION="${{ github.ref_name }}"
-          TAG_VERSION="${TAG_VERSION#v}"
-          PACKAGE_VERSION=$(node -p "require('./package.json').version" 2>/dev/null)
-          if [ "$TAG_VERSION" = "null" ] || [ -z "$PACKAGE_VERSION" ]; then
-            PACKAGE_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('backend/pyproject.toml','rb'))['project']['version'])" 2>/dev/null)
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif [ "$DRY_RUN" = "true" ]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Manual release runs are validation-only. Push a reviewed tag on main to deploy."
+            exit 1
           fi
-          [ "$TAG_VERSION" = "$PACKAGE_VERSION" ] || { echo "Tag ($TAG_VERSION) != package ($PACKAGE_VERSION)"; exit 1; }
 
-  build-and-push:
-    name: Build and Push Docker Images
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Require a deployed tag to point at origin/main
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || {
+            echo "::error::Release tags must point at origin/main"
+            exit 1
+          }
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Validate tag and Aethos version policy
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || {
+            echo "::error::Invalid release tag: $RELEASE_TAG"
+            exit 1
+          }
+          TAG_VERSION="${RELEASE_TAG#v}"
+          TAG_CORE="${TAG_VERSION%%-*}"
+          BACKEND_VERSION="$(python3 -c "import tomllib; print(tomllib.load(open('backend/pyproject.toml','rb'))['project']['version'])")"
+          BACKEND_CORE="${BACKEND_VERSION%-pre}"
+          [ "$TAG_CORE" = "$BACKEND_CORE" ] || {
+            echo "::error::Tag release line ($TAG_CORE) does not match backend release line ($BACKEND_CORE)"
+            exit 1
+          }
+          if [[ "$BACKEND_VERSION" == *-pre && "$TAG_VERSION" != *-* ]]; then
+            echo "::error::Stable tags are blocked while the backend version is marked -pre"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Validated $RELEASE_TAG against backend version $BACKEND_VERSION"
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push backend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/api:${{ needs.verify.outputs.version }}
-            ghcr.io/${{ github.repository }}/api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/web:${{ needs.verify.outputs.version }}
-            ghcr.io/${{ github.repository }}/web:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Validate production image definitions
+        run: |
+          set -euo pipefail
+          test -f backend/Dockerfile
+          test -f frontend/Dockerfile.prod
+          test -f frontend/Dockerfile.timesheet.prod
+          test -f integrations/hermes/Dockerfile
+          python scripts/deploy/gen-registry-compose.py
+          git diff --exit-code docker-compose.hostinger.registry.yml
 
   deploy:
-    name: Deploy to Hostinger
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          script: |
-            REPO="${{ github.repository }}"
-            DEPLOY_DIR="/docker/${{ github.event.repository.name }}"
-            cd "$DEPLOY_DIR" || { echo "Deploy dir $DEPLOY_DIR not found"; exit 1; }
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose pull
-            docker compose up -d --no-deps api web
-            docker image prune -f
+    name: Deploy through the established Hostinger workflow
+    needs: verify
+    if: needs.verify.outputs.deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-hostinger.yml
+    with:
+      apply_migrations: ""
+    secrets: inherit
 
   announce:
-    name: Announce Release
-    needs: deploy
+    name: Publish GitHub release
+    needs: [verify, deploy]
+    if: needs.verify.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v8
         with:
           script: |
-            github.rest.repos.createRelease({
+            await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: '${{ github.ref_name }}',
-              name: '${{ github.ref_name }}',
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: context.ref.replace('refs/tags/', ''),
               generate_release_notes: true
             })

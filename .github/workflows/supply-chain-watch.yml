@@ -1,35 +1,48 @@
-name: Supply-chain IOC scan
+name: Supply-chain security
+
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
 
 jobs:
-  scan:
-    name: Supply-chain IOC scan
+  frontend-audit:
+    name: Frontend dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies without lifecycle scripts
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Fail on high or critical npm advisories
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
-      - name: Install dependencies
+  backend-audit:
+    name: Backend dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Audit the backend lockfile dependency set
+        working-directory: backend
         run: |
-          if [ -f package.json ]; then
-            npm ci --ignore-scripts 2>/dev/null || echo "No npm setup"
-          fi
-
-      - name: Check for known IOC patterns
-        run: |
-          echo "::group::IOC Scan"
-          npm audit --audit-level=high 2>/dev/null || true
-          find node_modules -name "postinstall.js" -o -name "preinstall.js" 2>/dev/null | while read f; do
-            if grep -q "curl\|wget\|eval\|exec\|child_process" "$f" 2>/dev/null; then
-              echo "::warning file=$f::Suspicious install script detected"
-            fi
-          done
-          echo "::endgroup::"
+          set -euo pipefail
+          test -f uv.lock # backend/uv.lock is the reviewed dependency source
+          uv export --locked --format requirements-txt --no-hashes --no-emit-project --output-file /tmp/aethos-backend-requirements.txt
+          uvx pip-audit --strict -r /tmp/aethos-backend-requirements.txt

@@ -11,25 +11,41 @@ updates:
         update-types: ["minor", "patch"]
       dev-deps:
         dependency-type: "development"
-    open-pull-requests-limit: 10
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
       day: "monday"
+    ignore:
+      # Angular major upgrades require coordinated framework, Material, CLI,
+      # TypeScript, and migration testing. This workspace supports Angular 20.
+      - dependency-name: "@angular/*"
+        versions: [">=21"]
+      - dependency-name: "@angular-devkit/*"
+        versions: [">=21"]
     groups:
-      angular-deps:
+      angular-20:
         patterns: ["@angular/*", "@angular-devkit/*"]
         update-types: ["minor", "patch"]
       production-deps:
         dependency-type: "production"
+        update-types: ["minor", "patch"]
         exclude-patterns: ["@angular/*", "@angular-devkit/*"]
       dev-deps:
         dependency-type: "development"
-    open-pull-requests-limit: 10
+        update-types: ["minor", "patch"]
+        exclude-patterns: ["@angular/*", "@angular-devkit/*"]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 3

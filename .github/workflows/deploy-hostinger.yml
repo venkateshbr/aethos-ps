@@ -26,6 +26,15 @@ on:
           one-shot `migrate` service against the DB from the VPS.
         required: false
         default: ""
+  workflow_call:
+    inputs:
+      apply_migrations:
+        description: >-
+          Comma-separated idempotent migration filenames to apply on deploy.
+          Release calls leave this blank; migrations remain an explicit action.
+        required: false
+        type: string
+        default: ""
   # Uncomment to auto-deploy on every push to the launch branch:
   # push:
   #   branches: [chore/368-launch-readiness-ishantech]

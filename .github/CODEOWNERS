@@ -1,27 +1,32 @@
-# Aethos CODEOWNERS — team ownership per directory
+# Aethos CODEOWNERS
+#
+# GitHub can enforce only real users or teams with repository access. The role
+# comments below preserve the intended review routing until matching GitHub
+# teams exist; @venkateshbr is the enforceable maintainer for every path.
 
 * @venkateshbr
 
-# Backend
-/backend/app/ @Karya
-/backend/tests/ @Aksha
+# Backend — Karya implementation; Aksha QA; Prahari for security-sensitive code.
+/backend/ @venkateshbr
 
-# Frontend
-/frontend/src/app/ @Rupa
+# Frontend — Rupa implementation; Aksha QA.
+/frontend/ @venkateshbr
 
-# Architecture / docs
-/docs/team/ @Vastu
-/docs/ @Nether
+# Architecture and durable docs — Vastu / Dhruva review.
+/docs/ @venkateshbr
 
-# Security
-SECURITY.md @Prahari
+# CI/CD and deployment — Sthira; Prahari for security gates and secrets handling.
+/.github/ @venkateshbr
+/docker-compose*.yml @venkateshbr
+/scripts/deploy/ @venkateshbr
 
-# CI/CD
-/.github/ @Sthira
+# Database and tenant isolation — Dhruva; Prahari for RLS changes.
+/supabase/ @venkateshbr
 
-# Database
-/supabase/ @Dhruva
+# Agent harness and role definitions — Vishwa; Prahari for tool permissions.
+/agents/ @venkateshbr
+/agent-harness/ @venkateshbr
+/.claude/ @venkateshbr
 
-# Agent specs
-/agents/ @Vishwa
-/agent-harness/ @Vishwa
+# Security policy — Prahari review.
+/SECURITY.md @venkateshbr

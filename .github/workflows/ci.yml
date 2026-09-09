@@ -14,6 +14,96 @@ permissions:
   contents: read
 
 jobs:
+  # Commitlint is intentionally installed ephemerally because this repository
+  # has no root package.json. The config remains the single policy source.
+  commitlint:
+    name: Commit messages (commitlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+      - name: Lint pushed or pull-request commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts @commitlint/cli@19 @commitlint/config-conventional@19
+          if [ "$EVENT_NAME" = "push" ]; then
+            # A force-push can make github.event.before unreachable from the new
+            # history. Lint the pushed range when possible, otherwise lint the
+            # branch against its merge-base with origin/main.
+            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || {
+              git fetch origin main --no-tags
+              BASE_SHA="$(git merge-base "$HEAD_SHA" origin/main)"
+            }
+          fi
+          npx commitlint --config commitlint.config.js --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  agent-security:
+    name: AgentShield configuration scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+      - name: Scan agent configuration
+        run: |
+          set -euo pipefail
+          REPORT="$(mktemp)"
+          # Pin the CLI tarball's integrity, not only its mutable registry version.
+          AGENTSHIELD_INTEGRITY="$(npm view ecc-agentshield@1.4.0 dist.integrity)"
+          [ "$AGENTSHIELD_INTEGRITY" = "sha512-R98OO1Ujyk2lezDLb+iQmMhF6FwTJCHajy3G4FCB6x7wkSTqR9f8+eAelC5KDzYDsGSbc0sOZvjXOOPRBtMpDg==" ] || {
+            echo "::error::Unexpected AgentShield package integrity: $AGENTSHIELD_INTEGRITY"
+            exit 1
+          }
+          npx --yes ecc-agentshield@1.4.0 scan \
+            --path . --min-severity high --format json > "$REPORT"
+          python3 - "$REPORT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          findings = report.get("findings", [])
+          # AgentShield 1.4.0 misparses inline YAML arrays in agent frontmatter
+          # as absent. Only suppress that known false-positive when the file
+          # actually contains an explicit tools declaration.
+          repo = Path(".").resolve()
+          def known_false_positive(finding):
+              if not str(finding.get("id", "")).startswith("agents-no-tools-"):
+                  return False
+              path = repo / str(finding.get("file", ""))
+              return path.is_file() and any(
+                  line.startswith("tools:") for line in path.read_text(encoding="utf-8").splitlines()
+              )
+          # The repository's three implementation roles intentionally require
+          # Bash plus file edits. Keep this audited allowlist exact; all other
+          # critical/high findings remain blocking.
+          accepted_role_risks = {
+              f"agents-{rule}-.claude/agents/{role}.md"
+              for rule in ("bash-access", "escalation-chain")
+              for role in ("rupa", "sthira", "vishwa")
+          }
+          blocking = [
+              finding
+              for finding in findings
+              if str(finding.get("severity", "")).lower() in {"critical", "high"}
+              and not known_false_positive(finding)
+              and str(finding.get("id", "")) not in accepted_role_risks
+          ]
+          if blocking:
+              print(json.dumps(blocking, indent=2))
+              raise SystemExit(f"AgentShield found {len(blocking)} blocking finding(s)")
+          print("AgentShield: no critical/high findings")
+          PY
+
   # ── 1. Backend lint ────────────────────────────────────────────────────────
   backend-lint:
     name: Backend lint (ruff)
