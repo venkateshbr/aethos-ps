@@ -240,7 +240,7 @@ def test_atlas_ai_runtime_defaults_to_hermes_agent() -> None:
         reload(cfg)
         s = cfg.Settings()
         assert s.atlas_ai_runtime == "hermes_agent"
-        assert s.atlas_hermes_api_base_url == "http://hermes:8642"
+        assert s.atlas_hermes_api_base_url == "http://host.docker.internal:8643"
         assert s.atlas_hermes_timeout_seconds == 90.0
         assert s.atlas_hide_tool_events is True
         assert s.atlas_hermes_fallback_to_basic is True

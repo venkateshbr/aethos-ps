@@ -606,7 +606,7 @@ Evidence: Copilot response, Inbox tasks, Agent Run Ledger detail, no console/API
 Persona: Maya Rao, Owner/Admin. AI role: Finance Ops Manager.
 
 Preconditions:
-1. Run with `COMPOSE_PROFILES=worker,hermes`.
+1. Run with `COMPOSE_PROFILES=worker` plus the shared host Hermes `aethos-nous` profile.
 2. Set `ATLAS_AI_RUNTIME=hermes_agent`.
 3. Set `HERMES_API_SERVER_KEY`, `ATLAS_HERMES_API_SERVER_KEY`, and `AETHOS_HERMES_TOOL_TOKEN`.
 4. Keep `ATLAS_HERMES_FALLBACK_TO_BASIC=false` for the first pass, then repeat with `true` for rollback proof.

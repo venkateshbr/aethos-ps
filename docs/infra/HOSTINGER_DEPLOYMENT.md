@@ -225,44 +225,54 @@ ATLAS_AI_RUNTIME=aethos_basic   # default, current built-in Nous AI
 ATLAS_AI_RUNTIME=hermes_agent   # advanced Hermes-powered Nous runtime
 ```
 
-The Hermes container is optional and behind the Compose profile `hermes`. The
-current Hostinger production deployment runs Hermes as the primary Nous runtime
-with the built-in Aethos runtime enabled as a fallback:
+The previous Compose-owned `hermes` service has been removed from the
+production topology. Hostinger now runs Hermes as a dedicated `aethos-nous`
+profile in the shared host Hermes instance, with the built-in Aethos runtime
+enabled as a fallback:
 
 ```text
-COMPOSE_PROFILES=worker,hermes
+COMPOSE_PROFILES=worker
 ATLAS_AI_RUNTIME=hermes_agent
+ATLAS_HERMES_API_BASE_URL=http://host.docker.internal:8643
 ATLAS_HERMES_FALLBACK_TO_BASIC=true
 ```
 
-To start Hermes on Hostinger, also set:
+To start/update the shared host Hermes profile on Hostinger:
+
+```bash
+scripts/deploy/install-aethos-hermes-profile.sh
+$HOME/.hermes/profiles/aethos-nous/run-aethos-nous.sh
+```
+
+Then set runtime secrets on both sides as appropriate:
 
 ```text
-COMPOSE_PROFILES=worker,hermes
-HERMES_API_SERVER_KEY=<long-random-token>
-ATLAS_HERMES_API_SERVER_KEY=<same-token>
-ATLAS_HERMES_API_BASE_URL=http://hermes:8642
+API_SERVER_KEY=<long-random-token in ~/.hermes/profiles/aethos-nous/aethos-nous.env>
+ATLAS_HERMES_API_SERVER_KEY=<same-token in the Aethos api env>
+ATLAS_HERMES_API_BASE_URL=http://host.docker.internal:8643
 ATLAS_HERMES_FALLBACK_TO_BASIC=true
-HERMES_OPENROUTER_API_KEY=<optional-dedicated-hermes-provider-key>
 ATLAS_BASIC_OPENROUTER_API_KEY=<optional-dedicated-basic-fallback-provider-key>
 ATLAS_BASIC_OPENROUTER_BASE_URL=<optional-basic-fallback-openai-compatible-url>
 ATLAS_HIDE_TOOL_EVENTS=true
-AETHOS_HERMES_TOOL_TOKEN=<different-long-random-token>
+AETHOS_HERMES_TOOL_TOKEN=<different-long-random-token, identical in api env and aethos-nous.env>
 ATLAS_CONTEXT_SIGNING_SECRET=<long-random-token-or-empty-to-use-SUPABASE_JWT_SECRET>
-AETHOS_HERMES_REFRESH_PROFILE=true
 AGENT_MODELS=google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5
 ```
 
-Hermes is private on the internal Docker network. Do not add Traefik labels for
-the in-app Nous migration. A public route should only be added later for
-external-channel webhooks, and the Hermes API server/dashboard should remain
-private.
+Hermes must remain private. The profile installer binds the API to Docker's
+host-gateway bridge address, so the Aethos api container can reach it through
+the `host.docker.internal:host-gateway` mapping without a Traefik/public route.
+Do not add Traefik labels or a public route for the in-app Nous migration. A
+public route should only be added later for external-channel webhooks, and the
+Hermes API server/dashboard should remain private.
 
 The Hermes-powered Nous runtime uses a private Aethos Tool Broker:
 
-- Aethos API exposes `/api/v1/atlas-tools/execute` on the internal network.
-- Hermes accesses it only through the bundled `aethos` MCP server in the
-  `aethos-ps-hermes` image.
+- Aethos API exposes `/api/v1/atlas-tools/execute` via the api service; the
+  secondary local Compose file binds it to host loopback `127.0.0.1:8011` for
+  host-profile MCP callbacks.
+- Hermes accesses it only through the versioned `aethos` MCP server installed
+  into the `aethos-nous` profile by `scripts/deploy/install-aethos-hermes-profile.sh`.
 - Aethos signs a short-lived `context_ref` per Nous turn. Hermes passes that
   opaque value to tools; tenant and user scope are derived by Aethos, not by
   model-supplied arguments.
@@ -272,9 +282,8 @@ The Hermes-powered Nous runtime uses a private Aethos Tool Broker:
   bill-pay proposal, month-end/year-end close preparation, and statement
   package generation. Guarded workflows use Aethos policy and Inbox; they do
   not directly approve invoices, payments, journals, statements, or emails.
-- `AETHOS_HERMES_REFRESH_PROFILE=true` keeps the managed Nous profile, skills,
-  and MCP config current across image upgrades without deleting Hermes memory or
-  session data.
+- Re-run `scripts/deploy/install-aethos-hermes-profile.sh` after a reviewed
+  profile/skill change, then restart the `aethos-nous` Hermes profile process.
 - Default OpenRouter routing for Aethos-owned inference is Gemma 4 31B free,
   then OpenRouter's free model router, then Claude Haiku 4.5:
   `google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5`.
@@ -374,7 +383,6 @@ Optional GitHub Actions variables:
 - `TRAEFIK_ENTRYPOINT`
 - `TRAEFIK_CERT_RESOLVER`
 - `COMPOSE_PROFILES=worker`
-- `COMPOSE_PROFILES=worker,hermes` when testing Hermes-powered Nous
 
 ## How the Hostinger deploy actually works (READ THIS FIRST)
 
@@ -462,21 +470,23 @@ deploy **pulls** the prebuilt public GHCR images instead of building on the VPS.
 Regenerate it whenever the base compose changes (strip the `build:` mappings).
 Working procedure:
 
-1. Build+push the 4 images to GHCR (the GH Action `Build and push images` step,
+1. Build+push the app images to GHCR (the GH Action `Build and push images` step,
    or locally) and make the `ghcr.io/venkateshbr/aethos-ps-*` packages **public**
    (or ensure GHCR pull creds on the VPS).
 2. Commit + push `docker-compose.hostinger.registry.yml`; note the SHA.
 3. Ensure the repo is cloneable (public window, or working Docker Manager creds).
 4. POST a deploy with `content` = the **blob URL at that SHA** and `environment`
    = the full prod env (local `.env` deduped + prod overrides, incl.
-   `AETHOS_IMAGE_TAG=<the built image tag>` and `COMPOSE_PROFILES=worker,hermes`):
+   `AETHOS_IMAGE_TAG=<the built image tag>` and `COMPOSE_PROFILES=worker`):
 
    ```
    content: https://github.com/venkateshbr/aethos-ps/blob/<SHA>/docker-compose.hostinger.registry.yml
    ```
 
    The manager clones (→ writes `.env`), reads the registry compose, and pulls
-   the GHCR images. All 5 containers recreate onto the new tag.
+   the GHCR images. All Aethos app containers recreate onto the new tag; the
+   shared host `aethos-nous` Hermes profile is restarted separately only when
+   profile or secret changes require it.
 5. Verify live: `/health/ready` → `status: ready` and `build_sha: <tag>`; the
    `environment` payload must have **no duplicate keys** (the API rejects dupes
    with `422 Duplicate variable`, so dedupe before sending, overrides winning).

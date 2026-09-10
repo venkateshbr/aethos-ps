@@ -16,7 +16,7 @@
 | Timesheet portal | nginx container (`frontend/Dockerfile.timesheet.prod`) | Second Angular app; host port 4202 |
 | Backend API | private FastAPI container (`backend/Dockerfile`) | `:8011` inside the compose network only |
 | Workers | private Procrastinate container (same image, worker CMD) | Queues `default,extraction,billing,fx,cron`; see `docs/qa/queue-session-budget-runbook.md` |
-| Nous advanced runtime | optional private Hermes container (`integrations/hermes/`) | Enabled by `ATLAS_AI_RUNTIME=hermes_agent`; falls back to the in-process runtime when down |
+| Nous advanced runtime | shared host Hermes `aethos-nous` profile (`integrations/hermes/`) | Enabled by `ATLAS_AI_RUNTIME=hermes_agent`; falls back to the in-process runtime when down |
 | Database / Auth / Storage | Supabase managed (PostgreSQL 15+) | RLS + Auth + Storage + Procrastinate task queue (no Redis) |
 | Email | Resend | Collections/time reminders today; invoice email delivery is #516 |
 | LLM | OpenRouter model chain (`agent_models` in `app/core/config.py`) | No per-tenant budget middleware yet (#503) |

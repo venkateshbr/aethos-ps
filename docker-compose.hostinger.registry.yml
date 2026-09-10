@@ -1,7 +1,7 @@
 # GENERATED companion to docker-compose.hostinger.yml — REGISTRY/PULL ONLY.
 # Identical to docker-compose.hostinger.yml but with every `build:` block
 # removed, so the Hostinger Docker Manager PULLS the prebuilt public GHCR
-# images (ghcr.io/venkateshbr/aethos-ps-*:$AETHOS_IMAGE_TAG) instead of
+# app images (ghcr.io/venkateshbr/aethos-ps-*:$AETHOS_IMAGE_TAG) instead of
 # building on the VPS. The clone still supplies the .env for interpolation.
 # Regenerate with: python scripts/deploy/gen-registry-compose.py
 # See docs/infra/HOSTINGER_DEPLOYMENT.md.
@@ -13,6 +13,8 @@
 #
 # The API is not published through Traefik directly. Both nginx web containers
 # proxy /api/* to the private api service on the internal Docker network.
+# Nous/Hermes runs as a dedicated profile in the shared host Hermes instance.
+# The api service reaches that private host listener through host-gateway.
 
 x-api-environment: &api-environment
   PORT: "8080"
@@ -68,7 +70,7 @@ x-api-environment: &api-environment
   AGENT_MODELS: "${AGENT_MODELS:-google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5}"
   ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
   ATLAS_AI_RUNTIME: "${ATLAS_AI_RUNTIME:-hermes_agent}"
-  ATLAS_HERMES_API_BASE_URL: "${ATLAS_HERMES_API_BASE_URL:-http://hermes:8642}"
+  ATLAS_HERMES_API_BASE_URL: "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
   ATLAS_HERMES_API_SERVER_KEY: "${ATLAS_HERMES_API_SERVER_KEY:-}"
   ATLAS_HERMES_TIMEOUT_SECONDS: "${ATLAS_HERMES_TIMEOUT_SECONDS:-90}"
   ATLAS_HIDE_TOOL_EVENTS: "${ATLAS_HIDE_TOOL_EVENTS:-true}"
@@ -109,6 +111,10 @@ services:
     restart: unless-stopped
     expose:
       - "8080"
+    ports:
+      - "127.0.0.1:8011:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment: *api-environment
     healthcheck:
       test:
@@ -193,45 +199,6 @@ services:
     networks:
       - aethos-internal
 
-  hermes:
-    image: "ghcr.io/venkateshbr/aethos-ps-hermes:${AETHOS_IMAGE_TAG:-latest}"
-    restart: unless-stopped
-    profiles:
-      - hermes
-    expose:
-      - "8642"
-    environment:
-      API_SERVER_ENABLED: "true"
-      API_SERVER_HOST: "0.0.0.0"
-      API_SERVER_PORT: "8642"
-      API_SERVER_KEY: "${HERMES_API_SERVER_KEY:-}"
-      API_SERVER_MODEL_NAME: "Aethos Nous"
-      HERMES_DASHBOARD: "${HERMES_DASHBOARD:-0}"
-      AETHOS_HERMES_REFRESH_PROFILE: "${AETHOS_HERMES_REFRESH_PROFILE:-true}"
-      AETHOS_INTERNAL_API_URL: "http://api:8080"
-      AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN:-}"
-      OPENROUTER_API_KEY: "${HERMES_OPENROUTER_API_KEY:-${OPENROUTER_API_KEY:-}}"
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-    volumes:
-      - hermes-data:/opt/data
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import os, urllib.request; req=urllib.request.Request('http://localhost:8642/health', headers={'Authorization':'Bearer '+os.environ.get('API_SERVER_KEY','')}); urllib.request.urlopen(req)",
-        ]
-      interval: 30s
-      timeout: 10s
-      start_period: 30s
-      retries: 3
-    networks:
-      - aethos-internal
-
   timesheet:
     image: "ghcr.io/venkateshbr/aethos-ps-timesheet:${AETHOS_IMAGE_TAG:-latest}"
     restart: unless-stopped
@@ -254,6 +221,3 @@ networks:
   aethos-internal:
     name: "${AETHOS_INTERNAL_NETWORK:-aethos-ps-internal}"
     driver: bridge
-
-volumes:
-  hermes-data:

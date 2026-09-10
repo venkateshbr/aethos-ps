@@ -27,7 +27,7 @@ US · UK · Singapore · India · Australia. English-only support, async-only SL
 | Payments | Stripe — SaaS subscriptions + Stripe Connect (Standard) + Payment Links + Stripe Tax | — |
 | Email | Resend | — |
 | Cache / queue | None — task queue lives in Supabase Postgres via Procrastinate | — |
-| Deploy | Hostinger VPS · Docker Compose · Traefik · nginx · private API/worker/Hermes containers · Supabase managed (`docs/infra/HOSTINGER_DEPLOYMENT.md`) | — |
+| Deploy | Hostinger VPS · Docker Compose · Traefik · nginx · private API/worker containers · shared host Hermes `aethos-nous` profile · Supabase managed (`docs/infra/HOSTINGER_DEPLOYMENT.md`) | — |
 
 ## Ports (dev, non-colliding with sister product)
 

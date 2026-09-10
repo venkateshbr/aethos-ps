@@ -108,7 +108,7 @@ New `features/billing-runs/billing-runs.component.ts` (list, detail, Approve →
 
 ### B11 — Hermes verification (#530 residual) — Sthira + Rupa — S
 
-`/health/ready` gains `checks.hermes` (`required=false` while fallback is on); the chat SSE stream emits a first frame `{runtime, fallback}` and the Nous UI shows "Nous · Hermes" or "Nous · Basic (fallback)" without tool names; `docs/infra/HOSTINGER_DEPLOYMENT.md` profile guidance changed to `COMPOSE_PROFILES=worker,hermes`. Tests: `tests/unit/test_ops_hardening.py::test_health_ready_reports_hermes`, a docs-versus-workflow contract test; Playwright `copilot-runtime-badge.spec.ts`.
+`/health/ready` gains `checks.hermes` (`required=false` while fallback is on); the chat SSE stream emits a first frame `{runtime, fallback}` and the Nous UI shows "Nous · Hermes" or "Nous · Basic (fallback)" without tool names; `docs/infra/HOSTINGER_DEPLOYMENT.md` profile guidance changed to shared host profile + `COMPOSE_PROFILES=worker`. Tests: `tests/unit/test_ops_hardening.py::test_health_ready_reports_hermes`, a docs-versus-workflow contract test; Playwright `copilot-runtime-badge.spec.ts`.
 
 **Minimum for a credible fresh-tenant demo:** B1a → B2 → B4 → B3 (project resolution only) → B10 → B11 → B6. B1b widens breadth.
 
