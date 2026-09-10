@@ -7,8 +7,10 @@ set -euo pipefail
 #
 # Usage on the VPS, from a reviewed Aethos checkout:
 #   scripts/deploy/install-aethos-hermes-profile.sh
-#   source "$HOME/.hermes/profiles/aethos-nous/aethos-nous.env"
-#   hermes -p aethos-nous gateway run
+#   sudo cp "$HOME/.hermes/profiles/aethos-nous/systemd/aethos-nous-hermes.service" /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now aethos-nous-hermes.service
+#   "$HOME/.hermes/profiles/aethos-nous/smoke-aethos-nous.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -18,6 +20,16 @@ SOURCE_MCP_SERVER="$REPO_ROOT/integrations/hermes/aethos_mcp_server.py"
 AETHOS_HERMES_PROFILE=${AETHOS_HERMES_PROFILE:-aethos-nous}
 HERMES_PROFILES_DIR=${HERMES_PROFILES_DIR:-$HOME/.hermes/profiles}
 PROFILE_DIR=${PROFILE_DIR:-$HERMES_PROFILES_DIR/$AETHOS_HERMES_PROFILE}
+EXISTING_PROFILE_ENV="$PROFILE_DIR/aethos-nous.env"
+if [ -f "$EXISTING_PROFILE_ENV" ]; then
+  # Preserve already-installed secrets unless the operator explicitly overrides
+  # them in the current environment. The generated file is chmod 0600 and owned
+  # by the Hermes service user.
+  set -a
+  # shellcheck disable=SC1090
+  source "$EXISTING_PROFILE_ENV"
+  set +a
+fi
 API_SERVER_PORT=${API_SERVER_PORT:-8643}
 AETHOS_HOST_GATEWAY_NETWORK=${AETHOS_HOST_GATEWAY_NETWORK:-bridge}
 DEFAULT_API_SERVER_HOST="127.0.0.1"
@@ -29,6 +41,10 @@ API_SERVER_MODEL_NAME=${API_SERVER_MODEL_NAME:-Aethos Nous}
 AETHOS_INTERNAL_API_URL=${AETHOS_INTERNAL_API_URL:-http://127.0.0.1:8011}
 AETHOS_HERMES_TOOL_TOKEN=${AETHOS_HERMES_TOOL_TOKEN:-}
 API_SERVER_KEY=${API_SERVER_KEY:-${HERMES_API_SERVER_KEY:-}}
+AETHOS_API_CONTAINER=${AETHOS_API_CONTAINER:-aethos-ps-api-1}
+AETHOS_HERMES_SERVICE_NAME=${AETHOS_HERMES_SERVICE_NAME:-aethos-nous-hermes}
+AETHOS_PUBLIC_INTERFACE=${AETHOS_PUBLIC_INTERFACE:-}
+AETHOS_PUBLIC_HOST=${AETHOS_PUBLIC_HOST:-}
 
 if ! command -v hermes >/dev/null 2>&1; then
   echo "ERROR: hermes CLI is not installed on this host" >&2
@@ -50,7 +66,7 @@ if [ ! -f "$SOURCE_MCP_SERVER" ]; then
   exit 1
 fi
 
-mkdir -p "$PROFILE_DIR"
+mkdir -p "$PROFILE_DIR" "$PROFILE_DIR/systemd"
 rsync -a --delete "$SOURCE_PROFILE_DIR/skills/" "$PROFILE_DIR/skills/"
 cp "$SOURCE_PROFILE_DIR/SOUL.md" "$PROFILE_DIR/SOUL.md"
 cp "$SOURCE_PROFILE_DIR/mcp.json" "$PROFILE_DIR/mcp.json"
@@ -86,6 +102,7 @@ export API_SERVER_KEY="$API_SERVER_KEY"
 export HERMES_API_SERVER_KEY="$API_SERVER_KEY"
 export AETHOS_INTERNAL_API_URL="$AETHOS_INTERNAL_API_URL"
 export AETHOS_HERMES_TOOL_TOKEN="$AETHOS_HERMES_TOOL_TOKEN"
+export AETHOS_API_CONTAINER="$AETHOS_API_CONTAINER"
 ENV
 chmod 0600 "$PROFILE_DIR/aethos-nous.env"
 
@@ -97,6 +114,111 @@ exec hermes -p "$AETHOS_HERMES_PROFILE" gateway run
 RUN
 chmod 0750 "$PROFILE_DIR/run-aethos-nous.sh"
 
+cat > "$PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME.service" <<UNIT
+[Unit]
+Description=Aethos Nous Hermes profile API server
+Documentation=https://github.com/venkateshbr/aethos-ps
+After=network-online.target docker.service ${AETHOS_HERMES_SERVICE_NAME}-firewall.service
+Wants=network-online.target ${AETHOS_HERMES_SERVICE_NAME}-firewall.service
+
+[Service]
+Type=simple
+User=$(id -un)
+WorkingDirectory=$REPO_ROOT
+EnvironmentFile=$PROFILE_DIR/aethos-nous.env
+ExecStart=$PROFILE_DIR/run-aethos-nous.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=$PROFILE_DIR $HOME/.hermes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+chmod 0644 "$PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME.service"
+
+cat > "$PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME-firewall.service" <<UNIT
+[Unit]
+Description=Aethos Nous Hermes firewall guardrails
+Documentation=https://github.com/venkateshbr/aethos-ps
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=$PROFILE_DIR/aethos-nous.env
+ExecStart=$PROFILE_DIR/firewall-aethos-nous.sh
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+chmod 0644 "$PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME-firewall.service"
+
+cat > "$PROFILE_DIR/smoke-aethos-nous.sh" <<'SMOKE'
+#!/usr/bin/env bash
+set -euo pipefail
+PROFILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROFILE_DIR/aethos-nous.env"
+AUTH_HEADER=()
+if [ -n "${API_SERVER_KEY:-}" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer $API_SERVER_KEY")
+fi
+
+echo "[1/5] host -> Aethos broker $AETHOS_INTERNAL_API_URL"
+curl -fsS --max-time 10 "$AETHOS_INTERNAL_API_URL/health" >/dev/null || \
+  curl -fsS --max-time 10 "$AETHOS_INTERNAL_API_URL/health/ready" >/dev/null
+
+echo "[2/5] host -> aethos-nous Hermes http://$API_SERVER_HOST:$API_SERVER_PORT/health"
+curl -fsS --max-time 10 "${AUTH_HEADER[@]}" "http://$API_SERVER_HOST:$API_SERVER_PORT/health" >/dev/null
+
+echo "[3/5] api container -> host-gateway Hermes health"
+docker exec "$AETHOS_API_CONTAINER" python -c "import urllib.request; print(urllib.request.urlopen('http://host.docker.internal:$API_SERVER_PORT/health', timeout=10).read().decode())" >/dev/null
+
+echo "[4/5] listener is not public 0.0.0.0:$API_SERVER_PORT"
+if ss -ltnp | grep -E "(^|[[:space:]])0\.0\.0\.0:$API_SERVER_PORT([[:space:]]|$)"; then
+  echo "ERROR: Hermes API is listening on public wildcard 0.0.0.0:$API_SERVER_PORT" >&2
+  exit 1
+fi
+
+echo "[5/5] optional public-IP probe"
+if [ -n "${AETHOS_PUBLIC_HOST:-}" ]; then
+  if curl -fsS --connect-timeout 2 --max-time 5 "http://$AETHOS_PUBLIC_HOST:$API_SERVER_PORT/health" >/dev/null; then
+    echo "ERROR: public host can reach Hermes API on $AETHOS_PUBLIC_HOST:$API_SERVER_PORT" >&2
+    exit 1
+  fi
+fi
+
+echo "aethos-nous smoke check passed"
+SMOKE
+chmod 0750 "$PROFILE_DIR/smoke-aethos-nous.sh"
+
+cat > "$PROFILE_DIR/firewall-aethos-nous.sh" <<FIREWALL
+#!/usr/bin/env bash
+set -euo pipefail
+source "$PROFILE_DIR/aethos-nous.env"
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -qi '^Status: active'; then
+  ufw deny "\$API_SERVER_PORT/tcp" comment "deny public aethos-nous Hermes API" || true
+  ufw allow in on docker0 to any port "\$API_SERVER_PORT" proto tcp comment "allow Docker host-gateway to aethos-nous" || true
+elif command -v iptables >/dev/null 2>&1; then
+  iptables -C INPUT -i br+ -p tcp -d "\$API_SERVER_HOST" --dport "\$API_SERVER_PORT" -j ACCEPT 2>/dev/null || \
+    iptables -I INPUT 1 -i br+ -p tcp -d "\$API_SERVER_HOST" --dport "\$API_SERVER_PORT" -j ACCEPT
+  iptables -C INPUT -i docker0 -p tcp -d "\$API_SERVER_HOST" --dport "\$API_SERVER_PORT" -j ACCEPT 2>/dev/null || \
+    iptables -I INPUT 1 -i docker0 -p tcp -d "\$API_SERVER_HOST" --dport "\$API_SERVER_PORT" -j ACCEPT
+  iptables -C INPUT -i lo -p tcp --dport "\$API_SERVER_PORT" -j ACCEPT 2>/dev/null || \
+    iptables -I INPUT 1 -i lo -p tcp --dport "\$API_SERVER_PORT" -j ACCEPT
+  iptables -C INPUT -p tcp --dport "\$API_SERVER_PORT" -j DROP 2>/dev/null || \
+    iptables -A INPUT -p tcp --dport "\$API_SERVER_PORT" -j DROP
+else
+  echo "ERROR: neither active ufw nor iptables is available; enforce equivalent host firewall policy for \$API_SERVER_PORT/tcp" >&2
+  exit 1
+fi
+FIREWALL
+chmod 0750 "$PROFILE_DIR/firewall-aethos-nous.sh"
+
 cat <<OUT
 Installed Aethos Nous Hermes profile:
   profile: $AETHOS_HERMES_PROFILE
@@ -104,8 +226,16 @@ Installed Aethos Nous Hermes profile:
   api:     http://$API_SERVER_HOST:$API_SERVER_PORT
   broker:  $AETHOS_INTERNAL_API_URL
 
+Generated hardening artifacts:
+  systemd:  $PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME.service
+  firewall systemd: $PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME-firewall.service
+  smoke:    $PROFILE_DIR/smoke-aethos-nous.sh
+  firewall: $PROFILE_DIR/firewall-aethos-nous.sh
+
 Next:
   1. Set API_SERVER_KEY and AETHOS_HERMES_TOOL_TOKEN in $PROFILE_DIR/aethos-nous.env
-  2. Start: $PROFILE_DIR/run-aethos-nous.sh
-  3. Point Aethos API at: http://host.docker.internal:$API_SERVER_PORT
+  2. Install services: sudo cp $PROFILE_DIR/systemd/$AETHOS_HERMES_SERVICE_NAME*.service /etc/systemd/system/
+  3. Start services: sudo systemctl daemon-reload && sudo systemctl enable --now $AETHOS_HERMES_SERVICE_NAME-firewall.service $AETHOS_HERMES_SERVICE_NAME.service
+  4. Validate: $PROFILE_DIR/smoke-aethos-nous.sh
+  5. Point Aethos API at: http://host.docker.internal:$API_SERVER_PORT
 OUT

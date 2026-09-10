@@ -3,7 +3,7 @@ model:
   # Reliable paid model: the free tier's low token quota (16k) fails on this
   # tool-heavy agent. Hermes does not env-substitute this field, so it is set
   # explicitly; change it here per deployment.
-  default: anthropic/claude-haiku-4.5
+  default: openai/gpt-5.5
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
