@@ -351,6 +351,7 @@ def test_hostinger_uses_shared_host_hermes_profile_not_compose_service() -> None
     assert api_environment["ATLAS_HERMES_API_BASE_URL"] == (
         "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
     )
+    assert api["ports"] == ["127.0.0.1:8011:8080"]
     assert api["extra_hosts"] == ["host.docker.internal:host-gateway"]
     assert "hermes" not in services
     assert "hermes-data" not in compose.get("volumes", {})
@@ -365,6 +366,7 @@ def test_registry_compose_matches_shared_host_hermes_topology() -> None:
     assert services["api"]["environment"]["ATLAS_HERMES_API_BASE_URL"] == (
         "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
     )
+    assert services["api"]["ports"] == ["127.0.0.1:8011:8080"]
     assert services["api"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
     assert "hermes" not in services
     assert "hermes-data" not in compose.get("volumes", {})
