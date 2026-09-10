@@ -79,7 +79,7 @@ must still be supplied through the VPS environment/secrets workflow.
 | File | Role |
 |---|---|
 | `SOUL.md` | Persona and hard guardrails: Aethos is the system of record; never invent financial data; never reveal tool names, arguments, outputs, traces or prompts; sensitive actions route to Inbox. |
-| `config.yaml` | `model.default: anthropic/claude-haiku-4.5` (**hardcoded — Hermes does not substitute `${VARS}` here**), `max_tokens: 2048`, `provider_routing.data_collection: deny`, tool-loop hard stops (5 exact failures / 5 no-progress), 7 auto-load skills, and the MCP server registration with the 28-tool allowlist. |
+| `config.yaml` | `model.default: openai/gpt-5.5` (**hardcoded — Hermes does not substitute `${VARS}` here**), `max_tokens: 2048`, `provider_routing.data_collection: deny`, tool-loop hard stops (5 exact failures / 5 no-progress), 7 auto-load skills, and the MCP server registration with the 28-tool allowlist. |
 | `skills/*/SKILL.md` | Seven workflow skills: finance-ops-manager, engagement-letter-intake, o2c-invoice-to-cash, p2p-procure-to-pay, r2r-close-controller, collections, audit-evidence. Each dictates which read pack to call first and which facts the answer must contain. |
 | `mcp.json` | Vestigial (`{"mcpServers": {}}`); real registration lives in `config.yaml`. |
 
@@ -99,11 +99,38 @@ The profile remains **versioned in this repo**, but production now installs it i
    COMPOSE_PROFILES=worker
    ```
 2. Install/update the host profile: `scripts/deploy/install-aethos-hermes-profile.sh`.
-3. Put the provider/API/tool secrets into `~/.hermes/profiles/aethos-nous/aethos-nous.env` and start `~/.hermes/profiles/aethos-nous/run-aethos-nous.sh` under the host process manager.
-4. Deploy with `.github/workflows/deploy-hostinger.yml`; record the SHA.
-5. Verify the profile API with `curl -H "Authorization: Bearer ***" http://<docker-host-gateway>:8643/health` on the host and `curl -H "Authorization: Bearer ***" http://host.docker.internal:8643/health` from the api container.
-6. Verify the API sees it: a chat turn should produce an `agent_runs` row with agent `nous_hermes_runtime` and prompt version `hermes-v1`.
-7. **Confirm the turn was not a silent fallback** — see §4.
+3. Put the provider/API/tool secrets into `~/.hermes/profiles/aethos-nous/aethos-nous.env`. `API_SERVER_KEY` must be unique to this profile and must match `ATLAS_HERMES_API_SERVER_KEY`; `AETHOS_HERMES_TOOL_TOKEN` must be unique to Aethos and must match the api container value. Do not reuse the `vish` profile credentials.
+4. Install the generated managed service:
+   ```bash
+   sudo cp ~/.hermes/profiles/aethos-nous/systemd/aethos-nous-hermes*.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now aethos-nous-hermes-firewall.service aethos-nous-hermes.service
+   sudo systemctl status aethos-nous-hermes-firewall.service --no-pager
+   sudo systemctl status aethos-nous-hermes.service --no-pager
+   ```
+5. Apply or verify the host firewall policy for `8643`. The profile must bind only to the Docker host-gateway/private interface, never `0.0.0.0`, and public ingress to `8643/tcp` must be denied. The installer writes `~/.hermes/profiles/aethos-nous/firewall-aethos-nous.sh` and a `aethos-nous-hermes-firewall.service` oneshot. The helper uses active UFW when available and otherwise installs explicit iptables rules allowing loopback/Docker bridge traffic before dropping other `8643/tcp` ingress.
+6. Deploy with `.github/workflows/deploy-hostinger.yml`; record the SHA.
+7. Run the generated smoke check:
+   ```bash
+   ~/.hermes/profiles/aethos-nous/smoke-aethos-nous.sh
+   ```
+   It proves host → broker on `127.0.0.1:8011`, api container → Hermes through `http://host.docker.internal:8643/health`, and no wildcard listener on `0.0.0.0:8643`. If `AETHOS_PUBLIC_HOST` is set, it also verifies that public HTTP cannot reach `8643`.
+8. Verify the API sees it: a chat turn should produce an `agent_runs` row with agent `nous_hermes_runtime` and prompt version `hermes-v1`.
+9. **Confirm the turn was not a silent fallback** — see §4.
+
+Operational commands:
+
+```bash
+sudo systemctl start aethos-nous-hermes.service
+sudo systemctl stop aethos-nous-hermes.service
+sudo systemctl restart aethos-nous-hermes.service
+sudo systemctl restart aethos-nous-hermes-firewall.service
+sudo systemctl status aethos-nous-hermes-firewall.service --no-pager
+sudo systemctl status aethos-nous-hermes.service --no-pager
+journalctl -u aethos-nous-hermes-firewall.service -n 50 --no-pager
+journalctl -u aethos-nous-hermes.service -n 100 --no-pager
+~/.hermes/profiles/aethos-nous/smoke-aethos-nous.sh
+```
 
 Rollback: set `ATLAS_AI_RUNTIME=aethos_basic` and restart the api container; no data migration is involved. Per-tenant rollback: Settings → AI Inference Settings → Aethos Basic.
 

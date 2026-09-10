@@ -388,3 +388,62 @@ def test_shared_hermes_profile_installer_keeps_api_gateway_private() -> None:
     )
     assert "aethos_mcp_server.py" in script
     assert "/opt/aethos/aethos_mcp_server.py" in script
+    assert "API_SERVER_HOST=${API_SERVER_HOST:-0.0.0.0}" not in script
+    assert "DEFAULT_API_SERVER_HOST=\"0.0.0.0\"" not in script
+
+
+def test_shared_hermes_profile_uses_gpt_55() -> None:
+    profile_config = (
+        _REPO_ROOT / "integrations" / "hermes" / "aethos-atlas-profile" / "config.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert "default: openai/gpt-5.5" in profile_config
+    assert "default: anthropic/claude-haiku-4.5" not in profile_config
+
+
+def test_shared_hermes_profile_installer_generates_managed_service() -> None:
+    script = (
+        _REPO_ROOT / "scripts" / "deploy" / "install-aethos-hermes-profile.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "systemd/$AETHOS_HERMES_SERVICE_NAME.service" in script
+    assert "systemd/$AETHOS_HERMES_SERVICE_NAME-firewall.service" in script
+    assert "Description=Aethos Nous Hermes profile API server" in script
+    assert "Description=Aethos Nous Hermes firewall guardrails" in script
+    assert "EnvironmentFile=$PROFILE_DIR/aethos-nous.env" in script
+    assert "ExecStart=$PROFILE_DIR/run-aethos-nous.sh" in script
+    assert "ExecStart=$PROFILE_DIR/firewall-aethos-nous.sh" in script
+    assert "Restart=on-failure" in script
+    assert "NoNewPrivileges=true" in script
+    assert "ProtectSystem=full" in script
+    assert "ProtectHome=read-only" in script
+
+
+def test_shared_hermes_profile_installer_generates_firewall_and_smoke_checks() -> None:
+    script = (
+        _REPO_ROOT / "scripts" / "deploy" / "install-aethos-hermes-profile.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "smoke-aethos-nous.sh" in script
+    assert "firewall-aethos-nous.sh" in script
+    assert "host.docker.internal:$API_SERVER_PORT/health" in script
+    assert "ss -ltnp" in script
+    assert "0\\.0\\.0\\.0:$API_SERVER_PORT" in script
+    assert "ufw deny" in script
+    assert "ufw allow in on docker0" in script
+    assert "AETHOS_PUBLIC_HOST" in script
+    assert "iptables -C INPUT -i br+" in script
+    assert "iptables -A INPUT -p tcp --dport" in script
+
+
+def test_shared_hermes_profile_installer_uses_distinct_aethos_secrets() -> None:
+    script = (
+        _REPO_ROOT / "scripts" / "deploy" / "install-aethos-hermes-profile.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "AETHOS_HERMES_TOOL_TOKEN" in script
+    assert "API_SERVER_KEY" in script
+    assert "HERMES_API_SERVER_KEY" in script
+    assert "EXISTING_PROFILE_ENV=\"$PROFILE_DIR/aethos-nous.env\"" in script
+    assert "source \"$EXISTING_PROFILE_ENV\"" in script
+    assert "Fill secrets in the host process manager; do not commit this file." in script

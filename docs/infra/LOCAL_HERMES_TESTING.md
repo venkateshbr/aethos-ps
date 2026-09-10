@@ -92,8 +92,8 @@ Confirm the answer is real (matches Reports) and that the API log shows **no**
 
 - **Model matters.** The free `google/gemma-4-31b-it:free` has a 16k-token quota
   that this tool-heavy agent exhausts (HTTP 429), causing constant fallback.
-  `config.yaml` `model.default` is set to a reliable paid model
-  (`anthropic/claude-haiku-4.5`).
+  `config.yaml` `model.default` is set to the production paid model
+  (`openai/gpt-5.5`).
 - **Hermes does not env-substitute `${VAR}` in `model.default`** — set it
   literally. It does resolve MCP-server env from the container environment.
 - **MCP registration** comes from `config.yaml` `mcp_servers` (imported into the
