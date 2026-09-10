@@ -340,3 +340,47 @@ def test_hostinger_api_healthcheck_requires_ready_json_status() -> None:
     assert "/health/ready" in healthcheck_command
     assert "json.load" in healthcheck_command
     assert "data.get('status') == 'ready'" in healthcheck_command
+
+
+def test_hostinger_uses_shared_host_hermes_profile_not_compose_service() -> None:
+    compose = yaml.safe_load(_HOSTINGER_COMPOSE.read_text(encoding="utf-8"))
+    services = compose["services"]
+    api = services["api"]
+    api_environment = api["environment"]
+
+    assert api_environment["ATLAS_HERMES_API_BASE_URL"] == (
+        "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
+    )
+    assert api["extra_hosts"] == ["host.docker.internal:host-gateway"]
+    assert "hermes" not in services
+    assert "hermes-data" not in compose.get("volumes", {})
+
+
+def test_registry_compose_matches_shared_host_hermes_topology() -> None:
+    compose = yaml.safe_load(
+        (_REPO_ROOT / "docker-compose.hostinger.registry.yml").read_text(encoding="utf-8")
+    )
+    services = compose["services"]
+
+    assert services["api"]["environment"]["ATLAS_HERMES_API_BASE_URL"] == (
+        "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
+    )
+    assert services["api"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
+    assert "hermes" not in services
+    assert "hermes-data" not in compose.get("volumes", {})
+
+
+def test_shared_hermes_profile_installer_keeps_api_gateway_private() -> None:
+    script = (
+        _REPO_ROOT / "scripts" / "deploy" / "install-aethos-hermes-profile.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "AETHOS_HERMES_PROFILE=${AETHOS_HERMES_PROFILE:-aethos-nous}" in script
+    assert "API_SERVER_PORT=${API_SERVER_PORT:-8643}" in script
+    assert "API_SERVER_HOST=${API_SERVER_HOST:-127.0.0.1}" in script
+    assert (
+        "AETHOS_INTERNAL_API_URL=${AETHOS_INTERNAL_API_URL:-http://127.0.0.1:8011}"
+        in script
+    )
+    assert "aethos_mcp_server.py" in script
+    assert "/opt/aethos/aethos_mcp_server.py" in script

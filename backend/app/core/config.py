@@ -112,12 +112,15 @@ class Settings(BaseSettings):
     # reaches Aethos only through the tool broker (/api/v1/atlas-tools).
     # aethos_basic is the built-in in-process Copilot tool loop.
     #
-    # Hermes is the default (#530). It degrades safely: when the container is
-    # unreachable or its key is unset, `atlas_hermes_fallback_to_basic` routes
-    # the turn to the built-in runtime and a circuit breaker stops repeated
-    # waiting. Per-tenant overrides live in Settings -> AI Inference Settings.
+    # Hermes is the default (#530). Production uses a dedicated Hermes profile
+    # in the shared host Hermes instance, not an Aethos-owned Hermes container.
+    # Docker services reach it through Docker's host-gateway alias. It degrades
+    # safely: when Hermes is unreachable or its key is unset,
+    # `atlas_hermes_fallback_to_basic` routes the turn to the built-in runtime
+    # and a circuit breaker stops repeated waiting. Per-tenant overrides live in
+    # Settings -> AI Inference Settings.
     atlas_ai_runtime: str = "hermes_agent"
-    atlas_hermes_api_base_url: str = "http://hermes:8642"
+    atlas_hermes_api_base_url: str = "http://host.docker.internal:8643"
     atlas_hermes_api_server_key: str = ""
     atlas_hermes_timeout_seconds: float = 90.0
     atlas_hide_tool_events: bool = True

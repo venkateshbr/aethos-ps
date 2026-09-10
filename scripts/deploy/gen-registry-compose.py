@@ -21,7 +21,7 @@ HEADER = (
     "# GENERATED companion to docker-compose.hostinger.yml — REGISTRY/PULL ONLY.\n"
     "# Identical to docker-compose.hostinger.yml but with every `build:` block\n"
     "# removed, so the Hostinger Docker Manager PULLS the prebuilt public GHCR\n"
-    "# images (ghcr.io/venkateshbr/aethos-ps-*:$AETHOS_IMAGE_TAG) instead of\n"
+    "# app images (ghcr.io/venkateshbr/aethos-ps-*:$AETHOS_IMAGE_TAG) instead of\n"
     "# building on the VPS. The clone still supplies the .env for interpolation.\n"
     "# Regenerate with: python scripts/deploy/gen-registry-compose.py\n"
     "# See docs/infra/HOSTINGER_DEPLOYMENT.md.\n"
