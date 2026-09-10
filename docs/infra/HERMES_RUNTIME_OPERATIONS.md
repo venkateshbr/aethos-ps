@@ -101,7 +101,7 @@ The profile remains **versioned in this repo**, but production now installs it i
 2. Install/update the host profile: `scripts/deploy/install-aethos-hermes-profile.sh`.
 3. Put the provider/API/tool secrets into `~/.hermes/profiles/aethos-nous/aethos-nous.env` and start `~/.hermes/profiles/aethos-nous/run-aethos-nous.sh` under the host process manager.
 4. Deploy with `.github/workflows/deploy-hostinger.yml`; record the SHA.
-5. Verify the profile API with `curl -H "Authorization: Bearer ***" http://127.0.0.1:8643/health` on the host and `curl -H "Authorization: Bearer ***" http://host.docker.internal:8643/health` from the api container.
+5. Verify the profile API with `curl -H "Authorization: Bearer ***" http://<aethos-ps-internal-gateway>:8643/health` on the host and `curl -H "Authorization: Bearer ***" http://host.docker.internal:8643/health` from the api container.
 6. Verify the API sees it: a chat turn should produce an `agent_runs` row with agent `nous_hermes_runtime` and prompt version `hermes-v1`.
 7. **Confirm the turn was not a silent fallback** — see §4.
 
@@ -206,7 +206,7 @@ answer ──👎/edit──> correction (+intent, runtime, trace)
 | Symptom | Likely cause | Check |
 |---|---|---|
 | Answers look canned, no Hermes logs | Router answered (stage 1) | API log `atlas_semantic_response_used`; raise `atlas_semantic_threshold` or reorder |
-| Every turn is Basic although runtime is `hermes_agent` | Hermes unreachable or key mismatch → silent fallback | Host: `curl -H "Authorization: Bearer ***" http://127.0.0.1:8643/health`; api container: `curl -H "Authorization: Bearer ***" http://host.docker.internal:8643/health` |
+| Every turn is Basic although runtime is `hermes_agent` | Hermes unreachable or key mismatch → silent fallback | Host: `curl -H "Authorization: Bearer ***" http://<aethos-ps-internal-gateway>:8643/health`; api container: `curl -H "Authorization: Bearer ***" http://host.docker.internal:8643/health` |
 | Hermes answers then stops mid-sentence | Output-safety tail leak truncation | `atlas_runtime` safety patterns; #532 replaces silent truncation with a visible notice |
 | Tool calls 401 | `AETHOS_HERMES_TOOL_TOKEN` differs between api and the `aethos-nous` profile | Compare both env values; restart both |
 | Tool calls 400 "invalid context" | Session token expired (15 min) or mangled by a weak model | `atlas_tool_sessions` row; consider a stronger `model.default` |

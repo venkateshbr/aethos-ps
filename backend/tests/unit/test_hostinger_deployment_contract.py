@@ -379,7 +379,9 @@ def test_shared_hermes_profile_installer_keeps_api_gateway_private() -> None:
 
     assert "AETHOS_HERMES_PROFILE=${AETHOS_HERMES_PROFILE:-aethos-nous}" in script
     assert "API_SERVER_PORT=${API_SERVER_PORT:-8643}" in script
-    assert "API_SERVER_HOST=${API_SERVER_HOST:-127.0.0.1}" in script
+    assert "AETHOS_INTERNAL_NETWORK=${AETHOS_INTERNAL_NETWORK:-aethos-ps-internal}" in script
+    assert "docker network inspect \"$AETHOS_INTERNAL_NETWORK\"" in script
+    assert "API_SERVER_HOST=${API_SERVER_HOST:-$DEFAULT_API_SERVER_HOST}" in script
     assert (
         "AETHOS_INTERNAL_API_URL=${AETHOS_INTERNAL_API_URL:-http://127.0.0.1:8011}"
         in script

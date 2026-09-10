@@ -259,12 +259,13 @@ ATLAS_CONTEXT_SIGNING_SECRET=<long-random-token-or-empty-to-use-SUPABASE_JWT_SEC
 AGENT_MODELS=google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5
 ```
 
-Hermes must remain private. The profile API should bind to `127.0.0.1:8643` on
-the host; the Aethos api container reaches it through Docker's
-`host.docker.internal:host-gateway` mapping. Do not add Traefik labels or a
-public route for the in-app Nous migration. A public route should only be added
-later for external-channel webhooks, and the Hermes API server/dashboard should
-remain private.
+Hermes must remain private. The profile installer binds the API to the
+`aethos-ps-internal` Docker bridge gateway when that network exists, so the
+Aethos api container can reach it through Docker's
+`host.docker.internal:host-gateway` mapping without a Traefik/public route. Do
+not add Traefik labels or a public route for the in-app Nous migration. A public
+route should only be added later for external-channel webhooks, and the Hermes
+API server/dashboard should remain private.
 
 The Hermes-powered Nous runtime uses a private Aethos Tool Broker:
 
