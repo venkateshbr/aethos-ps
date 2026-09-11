@@ -21,16 +21,30 @@ test.describe('Landing page (C35)', () => {
     // Loose page-title assertion — branding may evolve
     await expect(page).toHaveTitle(/aethos|professional services|erp/i);
 
-    // CTA — match either a link or a button labelled with the usual copy
-    const cta = page.getByRole('link', { name: /get started|sign up|start free trial/i }).or(
-      page.getByRole('button', { name: /get started|sign up|start free trial/i }),
-    );
-    await expect(cta.first()).toBeVisible({ timeout: 10_000 });
+    // CTA — use the first visible signup CTA and verify it routes to signup.
+    const cta = page.getByRole('link', { name: /get started|sign up|start (?:a 14-day )?(?:free )?trial/i }).first();
+    await expect(cta).toBeVisible({ timeout: 10_000 });
+    await cta.click();
+    await expect(page).toHaveURL(/\/signup(?:[/?#].*)?$/);
 
     // No console errors of severity error
     expect(
       consoleErrors.filter((e) => !/Failed to load resource|favicon/i.test(e)),
     ).toEqual([]);
+  });
+
+  test('positions Aethos as a broad agentic ERP platform', async ({ page }) => {
+    await page.goto('/');
+    const bodyText = await page.locator('body').innerText();
+
+    await expect(page.getByRole('heading', { name: /agentic ERP for professional services/i })).toBeVisible();
+    await expect(page.getByText(/Procure-to-pay/i).first()).toBeVisible();
+    await expect(page.getByText(/Record-to-report/i).first()).toBeVisible();
+    await expect(page.getByText(/Opportunity to cash/i).first()).toBeVisible();
+
+    for (const proofPoint of ['Meridian Advisory Group', 'Northstar Digital Studio', 'Cedar Ledger Partners']) {
+      expect(bodyText).toContain(proofPoint);
+    }
   });
 
   test('mentions launch markets (US, UK, SG, IN, AU)', async ({ page }) => {
