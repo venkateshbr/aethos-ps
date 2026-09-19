@@ -13,7 +13,7 @@
  *      AND the X-Tenant-ID attached by the interceptor (#128 regression guard).
  *   4. Pick the recommended (Growth) tier monthly → advance to step 3 (Card).
  *   5. Stripe Elements iframe mounts. Fill the test card.
- *   6. Start-trial → land on /app/copilot.
+ *   6. Start-trial → show the Done success step, with an explicit Open Nous CTA.
  *   7. localStorage MUST contain `aethos_token` AND `aethos_tenant_id`.
  *
  * If step 2 explodes with 403 "Tenant context missing", that's #128 regressing.
@@ -65,7 +65,7 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
     role: null,
   };
 
-  test('completes the 3-page wizard and lands on /app/copilot with both storage keys', async ({ page, context }) => {
+  test('completes signup, shows success step, and preserves both storage keys', async ({ page, context }) => {
     test.setTimeout(180_000);
 
     // Capture every network failure for evidence + diagnosis.
@@ -172,13 +172,11 @@ test.describe('R-Real-5 · Signup wizard (tunnel)', () => {
     await expect(startTrialBtn).toBeEnabled({ timeout: 30_000 });
     await startTrialBtn.click();
 
-    // -------- Land on /app/copilot --------
-    await page.waitForURL(/\/app\/copilot(\?.*)?$/, { timeout: 60_000 });
+    // -------- Step 4: Done --------
+    await expect(page.getByRole('heading', { name: /you're in/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(/your 14-day trial has started/i)).toBeVisible();
+    await expect(page.getByRole('link', { name: /open nous/i })).toBeVisible();
     artifacts.landedUrl = page.url();
-
-    // The copilot shell must mount — look for the "New chat" CTA which lives in
-    // every shell render.
-    await expect(page.getByRole('button', { name: /new chat/i })).toBeVisible({ timeout: 15_000 });
 
     // -------- #128 regression guard: both keys present --------
     const ls = await readLocalStorage(page);

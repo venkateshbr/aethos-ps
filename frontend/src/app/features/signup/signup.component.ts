@@ -84,7 +84,7 @@ import {
                 {{ step() > s.idx ? '✓' : s.idx }}
               </span>
               <span [class.text-text-primary]="step() === s.idx">{{ s.label }}</span>
-              @if (s.idx < 3) {
+              @if (s.idx < 4) {
                 <span class="w-8 h-px bg-border-default"></span>
               }
             </li>
@@ -411,7 +411,7 @@ import {
           ></div>
           @if (cardError()) {
             <p role="alert" class="text-xs text-confidence-low mt-1.5">{{ cardError() }}</p>
-          } @else {
+          } @else if (isStripeTestMode()) {
             <p class="text-xs text-text-muted mt-1.5">
               Test mode — use 4242 4242 4242 4242 with any future date + any CVC.
             </p>
@@ -506,14 +506,14 @@ import {
         </div>
 
         <p class="text-sm text-text-muted max-w-xs mx-auto">
-          We've set up your account. Sign in to start extracting, proposing and posting.
+          We've set up your account. Open Nous to start extracting, proposing and posting.
         </p>
 
         <a
-          routerLink="/login"
+          routerLink="/app/copilot"
           class="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-on font-medium px-8 py-3 rounded-lg transition-colors text-sm"
         >
-          Sign in to Aethos
+          Open Nous
           <mat-icon style="font-size:1rem;width:1rem;height:1rem;">arrow_forward</mat-icon>
         </a>
 
@@ -637,6 +637,10 @@ export class SignupComponent implements AfterViewInit {
   });
 
   protected canAdvanceFromPlan = computed(() => this.selectedPriceId() !== null);
+
+  protected readonly isStripeTestMode = computed(() =>
+    environment.stripePublishableKey.startsWith('pk_test_'),
+  );
 
   // ── Step 3 state ────────────────────────────────────────────────────────
   protected cardReady = signal(false);
@@ -899,10 +903,10 @@ export class SignupComponent implements AfterViewInit {
 
       // 3. The signup flow already minted a Supabase session in step 1 so the
       // plan and trial calls could run with tenant context. Keep that session
-      // and land in the app.
+      // and show the completion step instead of skipping over the success UI.
       this.confirmedTier.set(this.selectedTier());
       this.confirmedInterval.set(this.interval());
-      await this.router.navigate(['/app/copilot']);
+      this.step.set(4);
     } catch (err: unknown) {
       this.serverError.set(this.friendlyError(err));
     } finally {

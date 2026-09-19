@@ -27,7 +27,11 @@ from app.models.auth import (
 )
 from app.repositories.tenant_repo import TenantRepository
 from app.services.billing.access_policy import evaluate_billing_access
-from app.services.billing.price_catalogue import currency_for_country, get_prices_for_currency
+from app.services.billing.price_catalogue import (
+    currency_for_country,
+    get_prices_for_currency,
+    tier_for_price_id,
+)
 from app.services.billing.stripe_service import StripeService
 from supabase import Client
 
@@ -118,6 +122,14 @@ async def start_trial(
     # ------------------------------------------------------------------
     # 4. Create subscription with trial
     # ------------------------------------------------------------------
+    tenant_currency = currency_for_country(str(tenant.get("country", "US")))
+    plan_tier = tier_for_price_id(payload.price_id, currency=tenant_currency)
+    if plan_tier is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected plan price is not available for this tenant.",
+        )
+
     try:
         sub_data = await stripe_svc.create_subscription(
             customer_id=stripe_customer_id,
@@ -140,6 +152,7 @@ async def start_trial(
     update_data: dict = {
         "stripe_subscription_id": sub_data["subscription_id"],
         "stripe_subscription_status": sub_data["status"],
+        "plan_tier": plan_tier,
         "status": "active",
     }
     if sub_data.get("trial_end"):

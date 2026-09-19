@@ -64,4 +64,14 @@ test.describe('Landing page (C35)', () => {
     });
     // No hard assertion — gives Founder visibility without blocking pilot.
   });
+
+  test('does not promise no-credit-card signup', async ({ page }) => {
+    await page.goto('/');
+    const bodyText = await page.locator('body').innerText();
+
+    expect(bodyText.toLowerCase()).not.toContain('no credit card required');
+    await expect(
+      page.getByRole('link', { name: /start (?:a 14-day )?(?:free )?trial|start trial/i }).first(),
+    ).toBeVisible();
+  });
 });
