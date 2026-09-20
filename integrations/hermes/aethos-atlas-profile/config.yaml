@@ -1,10 +1,8 @@
 model:
-  provider: copilot
-  # Shared-host production fallback uses the authenticated GitHub Copilot lane
-  # because the OpenRouter key can hit workspace spend limits independently of
-  # Aethos availability. Change this here per deployment when paid OpenRouter
-  # quota is restored.
-  default: gpt-4.1
+  provider: openrouter
+  # Venk-requested production model for Aethos Nous.
+  # Requires active OpenRouter quota for the profile's OPENROUTER_API_KEY.
+  default: gpt-5.4-mini
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
