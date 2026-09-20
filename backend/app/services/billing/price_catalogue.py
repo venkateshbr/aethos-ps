@@ -98,6 +98,28 @@ def get_price_id(tier: str, interval: str, currency: str) -> str | None:
     return PRICE_IDS.get(tier, {}).get(interval, {}).get(currency.upper())
 
 
+def tier_for_price_id(price_id: str, currency: str | None = None) -> str | None:
+    """Return the configured signup plan tier for a Stripe Price ID.
+
+    The signup wizard sends only Stripe's ``price_id`` to ``/billing/start-trial``
+    because Stripe owns amounts and recurrence. Persisting the selected plan on
+    the tenant therefore needs a reverse lookup against the configured catalogue;
+    unknown IDs return ``None`` so callers can reject cross-environment or stale
+    prices rather than silently falling back to starter. When ``currency`` is
+    supplied, the match must also belong to that tenant currency.
+    """
+    if not price_id:
+        return None
+    allowed_currency = currency.upper() if currency else None
+    for tier, intervals in PRICE_IDS.items():
+        for currency_prices in intervals.values():
+            if allowed_currency is not None and currency_prices.get(allowed_currency) != price_id:
+                continue
+            if price_id in currency_prices.values():
+                return tier
+    return None
+
+
 def get_prices_for_currency(currency: str) -> list[dict]:
     """Return all plans' price IDs for a given currency.
 

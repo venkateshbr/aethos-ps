@@ -392,6 +392,131 @@ def test_get_price_id_unknown_combination_returns_none() -> None:
     assert get_price_id("starter", "monthly", "EUR") is None
 
 
+def test_price_catalogue_resolves_tier_from_configured_price_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Selected Stripe Price ID maps back to the plan tier for tenant persistence."""
+    from app.services.billing import price_catalogue
+
+    monkeypatch.setitem(
+        price_catalogue.PRICE_IDS,
+        "growth",
+        {
+            **price_catalogue.PRICE_IDS["growth"],
+            "monthly": {
+                **price_catalogue.PRICE_IDS["growth"]["monthly"],
+                "USD": "price_growth_usd_test",
+            },
+        },
+    )
+
+    assert price_catalogue.tier_for_price_id("price_growth_usd_test") == "growth"
+
+
+def test_price_catalogue_returns_none_for_unknown_price_id() -> None:
+    """Unknown or cross-environment Price IDs must not silently select starter."""
+    from app.services.billing.price_catalogue import tier_for_price_id
+
+    assert tier_for_price_id("price_not_in_catalogue") is None
+
+
+def test_price_catalogue_rejects_price_id_from_wrong_currency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid price from another currency must not match this tenant's currency."""
+    from app.services.billing import price_catalogue
+
+    monkeypatch.setitem(
+        price_catalogue.PRICE_IDS,
+        "growth",
+        {
+            **price_catalogue.PRICE_IDS["growth"],
+            "monthly": {
+                **price_catalogue.PRICE_IDS["growth"]["monthly"],
+                "USD": "price_growth_usd_test",
+                "GBP": "price_growth_gbp_test",
+            },
+        },
+    )
+
+    assert price_catalogue.tier_for_price_id("price_growth_gbp_test", currency="USD") is None
+    assert price_catalogue.tier_for_price_id("price_growth_gbp_test", currency="GBP") == "growth"
+
+
+def test_start_trial_persists_plan_tier_from_price_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The start-trial endpoint persists the actual selected tier, not starter."""
+    from app.api.v1.endpoints import billing
+    from app.core.auth import CurrentUser
+    from app.models.auth import StartTrialRequest
+    from app.services.billing import price_catalogue
+
+    monkeypatch.setitem(
+        price_catalogue.PRICE_IDS,
+        "pro",
+        {
+            **price_catalogue.PRICE_IDS["pro"],
+            "annual": {
+                **price_catalogue.PRICE_IDS["pro"]["annual"],
+                "USD": "price_pro_annual_test",
+            },
+        },
+    )
+
+    updates: list[dict] = []
+
+    class _Repo:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        async def get_by_id(self, tenant_id: str) -> dict:
+            assert tenant_id == "tenant-123"
+            return {"id": tenant_id, "country": "US", "stripe_customer_id": "cus_test_123"}
+
+        async def update_tenant(self, tenant_id: str, data: dict) -> dict:
+            updates.append(data)
+            return {"id": tenant_id, **data}
+
+    class _Stripe:
+        async def retrieve_setup_intent(self, setup_intent_id: str) -> dict:
+            assert setup_intent_id == "seti_test_123"
+            return {"status": "succeeded", "payment_method": "pm_test_123"}
+
+        async def attach_payment_method(self, payment_method_id: str, customer_id: str) -> None:
+            assert payment_method_id == "pm_test_123"
+            assert customer_id == "cus_test_123"
+
+        async def create_subscription(
+            self,
+            customer_id: str,
+            price_id: str,
+            trial_period_days: int = 14,
+        ) -> dict:
+            assert customer_id == "cus_test_123"
+            assert price_id == "price_pro_annual_test"
+            assert trial_period_days == 14
+            return {"subscription_id": "sub_test_123", "status": "trialing", "trial_end": 1_800_000_000}
+
+    monkeypatch.setattr(billing, "TenantRepository", _Repo)
+
+    response = asyncio.run(
+        billing.start_trial(
+            payload=StartTrialRequest(
+                setup_intent_id="seti_test_123",
+                price_id="price_pro_annual_test",
+            ),
+            current_user=CurrentUser(user_id="user-123", email="owner@example.com", role="authenticated"),
+            tenant_id="tenant-123",
+            db=MagicMock(),
+            stripe_svc=_Stripe(),  # type: ignore[arg-type]
+        )
+    )
+
+    assert response.subscription_id == "sub_test_123"
+    assert updates[-1]["plan_tier"] == "pro"
+
+
 def test_get_prices_for_currency_returns_all_tiers() -> None:
     """get_prices_for_currency returns one entry per plan tier."""
     from app.services.billing.price_catalogue import get_prices_for_currency
