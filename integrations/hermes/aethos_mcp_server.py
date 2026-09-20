@@ -8,10 +8,15 @@ allowlisted Aethos API/service path.
 from __future__ import annotations
 
 import os
+from importlib import import_module
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+
+try:
+    FastMCP = import_module("mcp.server.fastmcp").FastMCP
+except ModuleNotFoundError:  # Hermes shared-host runtime ships modern FastMCP separately.
+    FastMCP = import_module("fastmcp").FastMCP
 
 mcp = FastMCP("aethos")
 

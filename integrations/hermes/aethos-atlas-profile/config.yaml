@@ -1,9 +1,10 @@
 model:
-  provider: openrouter
-  # Reliable paid model: the free tier's low token quota (16k) fails on this
-  # tool-heavy agent. Hermes does not env-substitute this field, so it is set
-  # explicitly; change it here per deployment.
-  default: openai/gpt-5.5
+  provider: copilot
+  # Shared-host production fallback uses the authenticated GitHub Copilot lane
+  # because the OpenRouter key can hit workspace spend limits independently of
+  # Aethos availability. Change this here per deployment when paid OpenRouter
+  # quota is restored.
+  default: gpt-4.1
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
@@ -21,6 +22,7 @@ tool_loop_guardrails:
 
 skills:
   auto_load:
+    - aethos-erp-role-subprofiles
     - aethos-finance-ops-manager
     - aethos-engagement-letter-intake
     - aethos-o2c-invoice-to-cash
@@ -31,7 +33,7 @@ skills:
 
 mcp_servers:
   aethos:
-    command: "python"
+    command: "python3"
     args: ["/opt/aethos/aethos_mcp_server.py"]
     env:
       AETHOS_INTERNAL_API_URL: "${AETHOS_INTERNAL_API_URL}"
