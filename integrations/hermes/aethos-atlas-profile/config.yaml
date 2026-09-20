@@ -1,8 +1,7 @@
 model:
-  provider: openrouter
-  # Venk-requested production model for Aethos Nous.
-  # Requires active OpenRouter quota for the profile's OPENROUTER_API_KEY.
-  default: gpt-5.4-mini
+  provider: openai-codex
+  # Align Aethos Nous with the rest of the Hermes team profiles.
+  default: gpt-5.5
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
