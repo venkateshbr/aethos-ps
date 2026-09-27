@@ -1,7 +1,7 @@
 model:
   provider: openai-codex
   # Align Aethos Nous with the rest of the Hermes team profiles.
-  default: gpt-5.5
+  default: openai/gpt-5.5
   base_url: ''
   api_mode: chat_completions
   max_tokens: 2048
