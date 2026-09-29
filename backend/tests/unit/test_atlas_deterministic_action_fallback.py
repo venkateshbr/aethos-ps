@@ -12,6 +12,7 @@ from app.services.atlas_deterministic_responses import (
     _time_log_arguments,
     render_semantic_atlas_response,
 )
+from app.services.collections_response_format import format_collections_reminder_result
 
 pytestmark = pytest.mark.unit
 
@@ -34,6 +35,67 @@ async def test_semantic_responder_falls_through_for_unmaterialized_actions() -> 
     )
 
     assert response is None
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_capped_tax_engagement_is_handled_deterministically() -> None:
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Create an engagement for Nexus - Corporation Tax Return FY2025, "
+            "fixed fee £18,500, capped at £22,000 if advisory hours overrun"
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "capped_tax_engagement"
+    assert "Nexus" in response.text
+    assert "Corporation Tax Return FY2025" in response.text
+    assert "18,500" in response.text
+    assert "22,000" in response.text
+    assert "Inbox" in response.text
+    assert "approval" in response.text
+    assert "I do not have" not in response.text
+
+
+def test_collections_cooldown_message_preserves_customer_and_inbox_approval_signals() -> None:
+    result = format_collections_reminder_result(
+        {
+            "created_review_tasks": 0,
+            "eligible_invoice_count": 0,
+            "drafts": [],
+            "skipped": [
+                {
+                    "invoice_number": "INV-1001",
+                    "client_name": "Nexus Capital Partners LP",
+                    "reason": "cooldown_duplicate_suppressed",
+                    "days_overdue": 102,
+                },
+                {
+                    "invoice_number": "INV-1002",
+                    "client_name": "Brightwater Manufacturing Ltd",
+                    "reason": "cooldown_duplicate_suppressed",
+                    "days_overdue": 75,
+                },
+            ],
+        }
+    )
+
+    assert "customer" in result.lower()
+    assert "Inbox approval" in result
+    assert "reminder" in result
+    assert "invoice" in result
+    assert "overdue" in result
+    assert "draft" in result.lower()
+    assert "Nexus Capital Partners LP" in result
+    assert "Brightwater Manufacturing Ltd" in result
 
 
 @pytest.mark.asyncio

@@ -49,11 +49,11 @@ _MONTHS = {
 # the review artifact. Finance Ops action plans and manual journals are the
 # action routes in this module that call materializing tools directly.
 _DETERMINISTICALLY_MATERIALIZED_ACTIONS = {
+    "capped_tax_engagement",
     "finance_ops_action_plan",
     "manual_journal",
     "time_log",
 }
-
 
 @dataclass(frozen=True)
 class SemanticAtlasResponse:
