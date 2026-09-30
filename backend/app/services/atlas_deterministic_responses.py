@@ -49,6 +49,7 @@ _MONTHS = {
 # the review artifact. Finance Ops action plans and manual journals are the
 # action routes in this module that call materializing tools directly.
 _DETERMINISTICALLY_MATERIALIZED_ACTIONS = {
+    "billing_run",
     "capped_tax_engagement",
     "finance_ops_action_plan",
     "manual_journal",
@@ -1145,7 +1146,7 @@ class _DeterministicAtlasResponder:
                 "- CFO Advisory: T&M advisory hours, 12.5 hours x GBP 350 = GBP 4,375.00.",
                 "- Approved expenses: Travel & Subsistence, GBP 843.20.",
                 "- Journal impact after approval: DR Accounts Receivable for the gross invoice; CR Revenue for fixed fee, retainer, T&M, and expenses; CR VAT/tax payable where applicable.",
-                "No invoice was sent directly. Review the Inbox invoice draft before customer delivery.",
+                "No invoice was sent directly. Review the Inbox invoice draft and approval task before customer delivery.",
             ]
         )
 

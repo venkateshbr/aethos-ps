@@ -165,6 +165,120 @@ async def test_demo_guide_draft_collections_prompt_routes_to_collections_readout
 
 
 @pytest.mark.asyncio
+async def test_demo_guide_alice_delivery_prompt_routes_to_delivery_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _AtlasReadPackService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def resource_delivery_read_pack(
+            self,
+            *,
+            employee_name: str | None,
+            period: str,
+            limit: int,
+        ) -> dict[str, object]:
+            assert employee_name == "Alice"
+            assert period == "2026-06"
+            assert limit == 100
+            return {
+                "summary": {
+                    "approved_hours": "32.0",
+                    "pending_hours": "4.5",
+                    "utilization_pct": "64",
+                    "wip_value": "11200.00",
+                    "billable_expense_total": "843.20",
+                },
+                "invoice_ready": {
+                    "time_entries": [
+                        {
+                            "project_name": "Nexus CFO Advisory",
+                            "client_name": "Nexus Capital Partners",
+                            "employee_name": "Alice Chen",
+                            "hours": "12.5",
+                            "approval_status": "approved",
+                        }
+                    ],
+                    "expenses": [
+                        {
+                            "description": "Travel & Subsistence",
+                            "amount": "843.20",
+                            "approval_status": "approved",
+                        }
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "AtlasReadPackService",
+        _AtlasReadPackService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Show me Alice Chen's June delivery data. Summarize approved time, "
+            "pending time, billable expenses, utilization, WIP, and which entries "
+            "can be invoiced for Nexus."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "delivery_context"
+    assert "Alice" in response.text
+    assert "June" in response.text
+    assert "approved" in response.text.lower()
+    assert "pending" in response.text.lower()
+    assert "utilization" in response.text.lower() or "utilisation" in response.text.lower()
+    assert "WIP" in response.text
+    assert "expense" in response.text.lower()
+    assert "invoice" in response.text.lower()
+    assert "Nexus" in response.text
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_nexus_billing_run_prompt_uses_deterministic_inbox_draft() -> None:
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Prepare the June 2026 Nexus billing run across fixed fee, monthly "
+            "retainer, T&M advisory hours, and approved expenses. Show the draft "
+            "invoice lines and route the invoice to Inbox before sending."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "billing_run"
+    assert "Nexus" in response.text
+    assert "June" in response.text
+    assert "fixed fee" in response.text.lower()
+    assert "retainer" in response.text.lower()
+    assert "T&M" in response.text or "time and materials" in response.text.lower()
+    assert "expense" in response.text.lower()
+    assert "draft invoice" in response.text.lower() or "invoice line" in response.text.lower()
+    assert "Inbox" in response.text
+    assert "approval" in response.text.lower()
+    assert "policy" not in response.text.lower()
+    assert "denied" not in response.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_semantic_responder_materializes_finance_ops_action_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

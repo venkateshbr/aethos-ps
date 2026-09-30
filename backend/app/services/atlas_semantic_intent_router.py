@@ -467,9 +467,25 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "delivery_context",
         (
-            ("utilization", "utilisation", "wip", "people", "delivery"),
-            ("alice", "employee", "resource", "allocation"),
-            ("unbilled", "invoice ready", "client", "project"),
+            (
+                "utilization",
+                "utilisation",
+                "wip",
+                "people",
+                "delivery",
+                "delivery data",
+                "approved time",
+                "pending time",
+            ),
+            ("alice", "alice chen", "employee", "resource", "allocation"),
+            (
+                "unbilled",
+                "invoice ready",
+                "invoiced",
+                "billable expenses",
+                "client",
+                "project",
+            ),
         ),
         priority=62,
     ),
