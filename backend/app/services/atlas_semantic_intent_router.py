@@ -494,11 +494,20 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "collections",
         (
-            ("collections", "customer reminders", "overdue invoices"),
-            ("reminders", "customers", "aging", "ageing"),
-            ("cooldown", "dispute", "blocker", "next action"),
+            ("collections", "collections reminders", "customer reminders", "overdue invoices"),
+            ("reminders", "customers", "customer-specific", "aging", "ageing"),
+            (
+                "cooldown",
+                "dispute",
+                "blocker",
+                "next action",
+                "30 days overdue",
+                "more than 30 days overdue",
+                "route every email to inbox",
+                "inbox before sending",
+            ),
         ),
-        priority=59,
+        priority=81,
     ),
     _IntentDefinition(
         "revenue_recognition",

@@ -1089,7 +1089,7 @@ class _DeterministicAtlasResponder:
             due_for_action += 1 if invoice.get("collections_policy_stage") else 0
             lines.append(
                 "- "
-                f"{invoice.get('client_name') or 'Customer'} invoice {invoice.get('invoice_number')}: "
+                f"Customer: {invoice.get('client_name') or 'Customer'}; invoice {invoice.get('invoice_number')}: "
                 f"due {invoice.get('due_date')}; aging {invoice.get('aging_bucket')}; balance "
                 f"{invoice.get('currency')} {invoice.get('balance_due')}; payment status "
                 f"{invoice.get('payment_status')}; reminder count "
