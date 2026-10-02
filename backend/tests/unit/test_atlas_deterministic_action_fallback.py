@@ -12,6 +12,7 @@ from app.services.atlas_deterministic_responses import (
     _time_log_arguments,
     render_semantic_atlas_response,
 )
+from app.services.collections_response_format import format_collections_reminder_result
 
 pytestmark = pytest.mark.unit
 
@@ -34,6 +35,247 @@ async def test_semantic_responder_falls_through_for_unmaterialized_actions() -> 
     )
 
     assert response is None
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_capped_tax_engagement_is_handled_deterministically() -> None:
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Create an engagement for Nexus - Corporation Tax Return FY2025, "
+            "fixed fee £18,500, capped at £22,000 if advisory hours overrun"
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "capped_tax_engagement"
+    assert "Nexus" in response.text
+    assert "Corporation Tax Return FY2025" in response.text
+    assert "18,500" in response.text
+    assert "22,000" in response.text
+    assert "Inbox" in response.text
+    assert "approval" in response.text
+    assert "I do not have" not in response.text
+
+
+def test_collections_cooldown_message_preserves_customer_and_inbox_approval_signals() -> None:
+    result = format_collections_reminder_result(
+        {
+            "created_review_tasks": 0,
+            "eligible_invoice_count": 0,
+            "drafts": [],
+            "skipped": [
+                {
+                    "invoice_number": "INV-1001",
+                    "client_name": "Nexus Capital Partners LP",
+                    "reason": "cooldown_duplicate_suppressed",
+                    "days_overdue": 102,
+                },
+                {
+                    "invoice_number": "INV-1002",
+                    "client_name": "Brightwater Manufacturing Ltd",
+                    "reason": "cooldown_duplicate_suppressed",
+                    "days_overdue": 75,
+                },
+            ],
+        }
+    )
+
+    assert "customer" in result.lower()
+    assert "Inbox approval" in result
+    assert "reminder" in result
+    assert "invoice" in result
+    assert "overdue" in result
+    assert "draft" in result.lower()
+    assert "Nexus Capital Partners LP" in result
+    assert "Brightwater Manufacturing Ltd" in result
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_draft_collections_prompt_routes_to_collections_readout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _O2CReadService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def collections_read_pack(self, *, limit: int) -> dict[str, object]:
+            assert limit == 25
+            return {
+                "totals": {
+                    "open_invoice_count": 1,
+                    "overdue_invoice_count": 1,
+                    "balances_by_currency": {"GBP": "9000.00"},
+                },
+                "invoices": [
+                    {
+                        "client_name": "Nexus Capital Partners LP",
+                        "invoice_number": "INV-1001",
+                        "due_date": "2026-06-19",
+                        "aging_bucket": "over_90",
+                        "currency": "GBP",
+                        "balance_due": "9000.00",
+                        "payment_status": "unpaid",
+                        "reminder_history": {"count": 1},
+                        "collections_policy_stage": "final",
+                        "reminder_blockers": ["cooldown_active"],
+                        "recommended_next_action": "Wait for cooldown before drafting another reminder.",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "O2CReadService",
+        _O2CReadService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Draft collections reminders for invoices more than 30 days overdue. "
+            "Create customer-specific reminder copy and route every email to "
+            "Inbox before sending."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "collections"
+    assert "Customer" in response.text
+    assert "reminder" in response.text
+    assert "invoice" in response.text
+    assert "overdue" in response.text
+    assert "draft" in response.text.lower()
+    assert "Inbox" in response.text
+    assert "approved" in response.text or "approval" in response.text
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_alice_delivery_prompt_routes_to_delivery_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _AtlasReadPackService:
+        def __init__(self, db: object, tenant_id: str) -> None:
+            del db, tenant_id
+
+        def resource_delivery_read_pack(
+            self,
+            *,
+            employee_name: str | None,
+            period: str,
+            limit: int,
+        ) -> dict[str, object]:
+            assert employee_name == "Alice"
+            assert period == "2026-06"
+            assert limit == 100
+            return {
+                "summary": {
+                    "approved_hours": "32.0",
+                    "pending_hours": "4.5",
+                    "utilization_pct": "64",
+                    "wip_value": "11200.00",
+                    "billable_expense_total": "843.20",
+                },
+                "invoice_ready": {
+                    "time_entries": [
+                        {
+                            "project_name": "Nexus CFO Advisory",
+                            "client_name": "Nexus Capital Partners",
+                            "employee_name": "Alice Chen",
+                            "hours": "12.5",
+                            "approval_status": "approved",
+                        }
+                    ],
+                    "expenses": [
+                        {
+                            "description": "Travel & Subsistence",
+                            "amount": "843.20",
+                            "approval_status": "approved",
+                        }
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        atlas_deterministic_responses,
+        "AtlasReadPackService",
+        _AtlasReadPackService,
+    )
+
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Show me Alice Chen's June delivery data. Summarize approved time, "
+            "pending time, billable expenses, utilization, WIP, and which entries "
+            "can be invoiced for Nexus."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "delivery_context"
+    assert "Alice" in response.text
+    assert "June" in response.text
+    assert "approved" in response.text.lower()
+    assert "pending" in response.text.lower()
+    assert "utilization" in response.text.lower() or "utilisation" in response.text.lower()
+    assert "WIP" in response.text
+    assert "expense" in response.text.lower()
+    assert "invoice" in response.text.lower()
+    assert "Nexus" in response.text
+
+
+@pytest.mark.asyncio
+async def test_demo_guide_nexus_billing_run_prompt_uses_deterministic_inbox_draft() -> None:
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            "Prepare the June 2026 Nexus billing run across fixed fee, monthly "
+            "retainer, T&M advisory hours, and approved expenses. Show the draft "
+            "invoice lines and route the invoice to Inbox before sending."
+        ),
+    )
+
+    assert response is not None
+    assert response.route.intent == "billing_run"
+    assert "Nexus" in response.text
+    assert "June" in response.text
+    assert "fixed fee" in response.text.lower()
+    assert "retainer" in response.text.lower()
+    assert "T&M" in response.text or "time and materials" in response.text.lower()
+    assert "expense" in response.text.lower()
+    assert "draft invoice" in response.text.lower() or "invoice line" in response.text.lower()
+    assert "Inbox" in response.text
+    assert "approval" in response.text.lower()
+    assert "policy" not in response.text.lower()
+    assert "denied" not in response.text.lower()
 
 
 @pytest.mark.asyncio

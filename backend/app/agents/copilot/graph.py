@@ -34,6 +34,7 @@ from app.core.config import settings
 from app.core.logging import trace_id_var
 from app.services.agent_run_ledger import AgentRunLedger
 from app.services.agent_tool_policy import AgentToolPolicy, AgentToolPolicyDecision
+from app.services.collections_response_format import format_collections_reminder_result
 from app.services.number_fidelity import fidelity_caveat, unsupported_money_figures
 
 if TYPE_CHECKING:
@@ -1916,11 +1917,9 @@ class CopilotAgent:
                 "review_path": "/app/inbox",
                 "drafts": queued,
                 "skipped": skipped[:limit],
-                "message": (
-                    f"Created {len(queued)} Inbox review task(s) for collections "
-                    "reminders. No email was sent."
-                ),
+                "message": "",
             }
+            result["message"] = format_collections_reminder_result(result)
             await collections_ledger.complete_run(
                 collections_run_id,
                 status="succeeded",

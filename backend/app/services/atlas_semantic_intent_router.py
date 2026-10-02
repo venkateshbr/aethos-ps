@@ -467,9 +467,25 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "delivery_context",
         (
-            ("utilization", "utilisation", "wip", "people", "delivery"),
-            ("alice", "employee", "resource", "allocation"),
-            ("unbilled", "invoice ready", "client", "project"),
+            (
+                "utilization",
+                "utilisation",
+                "wip",
+                "people",
+                "delivery",
+                "delivery data",
+                "approved time",
+                "pending time",
+            ),
+            ("alice", "alice chen", "employee", "resource", "allocation"),
+            (
+                "unbilled",
+                "invoice ready",
+                "invoiced",
+                "billable expenses",
+                "client",
+                "project",
+            ),
         ),
         priority=62,
     ),
@@ -494,11 +510,20 @@ _DEFINITIONS: tuple[_IntentDefinition, ...] = (
     _IntentDefinition(
         "collections",
         (
-            ("collections", "customer reminders", "overdue invoices"),
-            ("reminders", "customers", "aging", "ageing"),
-            ("cooldown", "dispute", "blocker", "next action"),
+            ("collections", "collections reminders", "customer reminders", "overdue invoices"),
+            ("reminders", "customers", "customer-specific", "aging", "ageing"),
+            (
+                "cooldown",
+                "dispute",
+                "blocker",
+                "next action",
+                "30 days overdue",
+                "more than 30 days overdue",
+                "route every email to inbox",
+                "inbox before sending",
+            ),
         ),
-        priority=59,
+        priority=81,
     ),
     _IntentDefinition(
         "revenue_recognition",

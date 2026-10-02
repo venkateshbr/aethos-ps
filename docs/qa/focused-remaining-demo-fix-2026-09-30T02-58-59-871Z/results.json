@@ -1,0 +1,62 @@
+{
+  "runId": "2026-09-30T02-58-59-871Z",
+  "web": "https://aethos.ishirock.tech",
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "build_sha": "ea385cc1118777b3c7b1c0c379b073e327578467"
+  },
+  "evidence": [
+    {
+      "id": "1-3a-delivery-data",
+      "section": "1.3A People and WIP",
+      "status": "PASS",
+      "prompt": "Show me Alice Chen's June delivery data. Summarize approved time, pending time, billable expenses, utilization, WIP, and which entries can be invoiced for Nexus.",
+      "response": " Delivery and utilization context for Alice in June 2026:\n- Approved hours 0; pending hours 24.0; utilization 0.00%; WIP 0.00; billable expenses 185.50.\n- Invoice-ready billable expenses: 1 item(s), total 185.50.\nUse the WIP and Project P&L reports for invoice-ready detail; I did not create an invoice.",
+      "screenshot": "docs/qa/focused-remaining-demo-fix-2026-09-30T02-58-59-871Z/screenshots/1-3a-delivery-data-response.png",
+      "notes": [
+        "Business-valid answer: matched 7/7 required signals."
+      ],
+      "validation": {
+        "matched": [
+          "/Alice Chen|Alice/i",
+          "/June/i",
+          "/approved time|pending time|hours/i",
+          "/utili[sz]ation/i",
+          "/WIP/i",
+          "/expense/i",
+          "/invoice|invoiced/i"
+        ],
+        "missing": [],
+        "forbiddenHits": []
+      }
+    },
+    {
+      "id": "1-4-billing-run",
+      "section": "1.4 Mixed model invoice",
+      "status": "PASS",
+      "prompt": "Prepare the June 2026 Nexus billing run across fixed fee, monthly retainer, T&M advisory hours, and approved expenses. Show the draft invoice lines and route the invoice to Inbox before sending.",
+      "response": " Prepared the Nexus 2026-06 billing run draft and routed the invoice to Inbox before sending.\nDraft invoice lines:\n- Group Statutory Accounts: fixed fee milestone 1/2, GBP 21,000.00.\n- Monthly Management Accounts: June retainer, GBP 8,500.00.\n- CFO Advisory: T&M advisory hours, 12.5 hours x GBP 350 = GBP 4,375.00.\n- Approved expenses: Travel & Subsistence, GBP 843.20.\n- Journal impact after approval: DR Accounts Receivable for the gross invoice; CR Revenue for fixed fee, retainer, T&M, and expenses; CR VAT/tax payable where applicable.\nNo invoice was sent directly. Review the Inbox invoice draft and approval task before customer delivery.",
+      "screenshot": "docs/qa/focused-remaining-demo-fix-2026-09-30T02-58-59-871Z/screenshots/1-4-billing-run-response.png",
+      "notes": [
+        "Business-valid answer: matched 8/8 required signals."
+      ],
+      "validation": {
+        "matched": [
+          "/Nexus/i",
+          "/June 2026|June/i",
+          "/fixed fee/i",
+          "/retainer/i",
+          "/T&M|time and materials|hour/i",
+          "/expense/i",
+          "/invoice line|draft invoice/i",
+          "/Inbox|approval/i"
+        ],
+        "missing": [],
+        "forbiddenHits": []
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "networkFailures": []
+}

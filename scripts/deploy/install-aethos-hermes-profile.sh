@@ -30,6 +30,16 @@ if [ -f "$EXISTING_PROFILE_ENV" ]; then
   source "$EXISTING_PROFILE_ENV"
   set +a
 fi
+ROOT_HERMES_ENV="$HOME/.hermes/.env"
+if [ -f "$ROOT_HERMES_ENV" ]; then
+  # Reuse host-level provider credentials for the dedicated profile unless the
+  # operator has already supplied profile-specific values. Do not commit secrets;
+  # they are materialized only into the generated profile env file on the host.
+  set -a
+  # shellcheck disable=SC1090
+  source "$ROOT_HERMES_ENV"
+  set +a
+fi
 API_SERVER_PORT=${API_SERVER_PORT:-8643}
 AETHOS_HOST_GATEWAY_NETWORK=${AETHOS_HOST_GATEWAY_NETWORK:-bridge}
 DEFAULT_API_SERVER_HOST="127.0.0.1"
@@ -41,6 +51,7 @@ API_SERVER_MODEL_NAME=${API_SERVER_MODEL_NAME:-Aethos Nous}
 AETHOS_INTERNAL_API_URL=${AETHOS_INTERNAL_API_URL:-http://127.0.0.1:8011}
 AETHOS_HERMES_TOOL_TOKEN=${AETHOS_HERMES_TOOL_TOKEN:-}
 API_SERVER_KEY=${API_SERVER_KEY:-${HERMES_API_SERVER_KEY:-}}
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
 AETHOS_API_CONTAINER=${AETHOS_API_CONTAINER:-aethos-ps-api-1}
 AETHOS_HERMES_SERVICE_NAME=${AETHOS_HERMES_SERVICE_NAME:-aethos-nous-hermes}
 AETHOS_PUBLIC_INTERFACE=${AETHOS_PUBLIC_INTERFACE:-}
@@ -102,6 +113,7 @@ export API_SERVER_KEY="$API_SERVER_KEY"
 export HERMES_API_SERVER_KEY="$API_SERVER_KEY"
 export AETHOS_INTERNAL_API_URL="$AETHOS_INTERNAL_API_URL"
 export AETHOS_HERMES_TOOL_TOKEN="$AETHOS_HERMES_TOOL_TOKEN"
+export OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
 export AETHOS_API_CONTAINER="$AETHOS_API_CONTAINER"
 ENV
 chmod 0600 "$PROFILE_DIR/aethos-nous.env"
