@@ -19,7 +19,7 @@ jobs:
     name: Backend lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -38,7 +38,7 @@ jobs:
     name: Backend type check (mypy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -53,7 +53,7 @@ jobs:
     name: Backend dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -70,7 +70,7 @@ jobs:
     name: Backend tests (unit + property)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -97,7 +97,7 @@ jobs:
     name: Frontend typecheck + unit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node 20.19
         uses: actions/setup-node@v7
@@ -140,7 +140,7 @@ jobs:
     name: Frontend build (production)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node 20.19
         uses: actions/setup-node@v7
@@ -173,7 +173,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Run gitleaks
