@@ -21,11 +21,12 @@ import { test, expect, Page, BrowserContext, APIRequestContext } from '@playwrig
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { apiOrigin } from './support/api-url';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const MAIN_URL    = process.env.AETHOS_PS_WEB_URL    ?? 'http://localhost:4201';
 const PORTAL_URL  = process.env.AETHOS_TS_WEB_URL    ?? 'http://localhost:4202';
-const API_URL     = process.env.AETHOS_PS_API_URL    ?? 'http://localhost:8011';
+const API_URL     = apiOrigin(process.env['AETHOS_PS_API_URL'] ?? 'http://localhost:8011');
 const SEED_PATH   = path.join(__dirname, '.auth', 'timesheet-e2e-seed.json');
 const O2C_META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const O2C_STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');

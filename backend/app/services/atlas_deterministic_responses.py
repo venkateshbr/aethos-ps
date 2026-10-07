@@ -45,11 +45,11 @@ _MONTHS = {
 }
 
 # Most action intents are implemented by the Nous runtime tool loop. The
-# deterministic responder must not claim success unless it actually creates
-# the review artifact. Finance Ops action plans and manual journals are the
-# action routes in this module that call materializing tools directly.
+# deterministic responder must not claim success unless the route either
+# creates the review artifact itself or is intentionally kept as a static demo
+# fixture. Billing/invoice draft prompts must fall through to the runtime so
+# the draft_invoice tool can create a real HITL task.
 _DETERMINISTICALLY_MATERIALIZED_ACTIONS = {
-    "billing_run",
     "capped_tax_engagement",
     "finance_ops_action_plan",
     "manual_journal",

@@ -19,9 +19,10 @@ import { test, expect, APIRequestContext, APIResponse, Page } from '@playwright/
 import { createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { apiOrigin } from './support/api-url';
 
 const BASE = process.env.AETHOS_PS_WEB_URL ?? 'https://aethos-dev.ishirock.com';
-const API = process.env.AETHOS_PS_API_URL ?? 'https://aethos-api.ishirock.com';
+const API = apiOrigin(process.env['AETHOS_PS_API_URL'] ?? 'https://aethos-api.ishirock.com');
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const API_REQUEST_TIMEOUT = 90_000;

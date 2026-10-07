@@ -363,7 +363,7 @@ test.describe('Copilot log_time_entry live tool flow (#253)', () => {
     await page.getByLabel('Message input').fill(prompt);
     await page.getByRole('button', { name: /send message/i }).click();
 
-    await expect(page.getByLabel('Tool completed: log_time_entry')).toBeVisible({ timeout: 150_000 });
+    await expect(page.getByText(/routed it to Inbox for review|Open Inbox to review/i)).toBeVisible({ timeout: 150_000 });
 
     let resolvedTaskId = '';
     await expect

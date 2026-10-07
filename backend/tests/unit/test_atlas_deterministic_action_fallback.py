@@ -246,7 +246,7 @@ async def test_demo_guide_alice_delivery_prompt_routes_to_delivery_context(
 
 
 @pytest.mark.asyncio
-async def test_demo_guide_nexus_billing_run_prompt_uses_deterministic_inbox_draft() -> None:
+async def test_semantic_responder_falls_through_for_billing_run_action() -> None:
     response = await render_semantic_atlas_response(
         db=object(),  # type: ignore[arg-type]
         tenant_id="11111111-1111-1111-1111-111111111111",
@@ -263,19 +263,29 @@ async def test_demo_guide_nexus_billing_run_prompt_uses_deterministic_inbox_draf
         ),
     )
 
-    assert response is not None
-    assert response.route.intent == "billing_run"
-    assert "Nexus" in response.text
-    assert "June" in response.text
-    assert "fixed fee" in response.text.lower()
-    assert "retainer" in response.text.lower()
-    assert "T&M" in response.text or "time and materials" in response.text.lower()
-    assert "expense" in response.text.lower()
-    assert "draft invoice" in response.text.lower() or "invoice line" in response.text.lower()
-    assert "Inbox" in response.text
-    assert "approval" in response.text.lower()
-    assert "policy" not in response.text.lower()
-    assert "denied" not in response.text.lower()
+    assert response is None
+
+
+@pytest.mark.asyncio
+async def test_semantic_responder_falls_through_for_explicit_invoice_draft_action() -> None:
+    response = await render_semantic_atlas_response(
+        db=object(),  # type: ignore[arg-type]
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        current_user=CurrentUser(
+            user_id="22222222-2222-2222-2222-222222222222",
+            email="owner@example.com",
+            role="owner",
+        ),
+        thread_id="thread-1",
+        message=(
+            'Draft a customer invoice for engagement "Copilot Invoice Draft abc123 [E2E]" '
+            "for period ending 2026-06-30. Use the draft_invoice tool. "
+            "Create the Inbox review task without asking a follow-up question. "
+            "Do not approve, send, or collect payment."
+        ),
+    )
+
+    assert response is None
 
 
 @pytest.mark.asyncio

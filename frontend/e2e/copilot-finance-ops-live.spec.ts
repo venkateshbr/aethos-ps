@@ -17,9 +17,10 @@ import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { apiOrigin } from './support/api-url';
 
 const BASE = process.env.AETHOS_PS_WEB_URL ?? 'http://localhost:4201';
-const API = process.env.AETHOS_PS_API_URL ?? 'http://localhost:8011';
+const API = apiOrigin(process.env['AETHOS_PS_API_URL'] ?? 'http://localhost:8011');
 const STORAGE_PATH = path.join(__dirname, '.auth', 'o2c-tenant.json');
 const META_PATH = path.join(__dirname, '.auth', 'o2c-tenant.meta.json');
 const API_REQUEST_TIMEOUT = 90_000;
