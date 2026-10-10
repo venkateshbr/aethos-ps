@@ -2102,6 +2102,10 @@ class CopilotAgent:
                 ap_aging = reports.ap_aging() or {}
                 wip = reports.wip() or []
                 action_queue = reports.action_queue(role="all", limit=limit) or []
+                operational_overdue_invoices = self._collection_invoice_candidates(
+                    today=datetime.date.today(),
+                    limit=limit,
+                )
                 agent_runs = (agents.list_agent_runs(limit=limit) or {}).get("runs") or []
                 workflow_runs = (
                     (agents.list_agent_workflow_runs(limit=limit) or {}).get(
@@ -2117,6 +2121,7 @@ class CopilotAgent:
                     wip=wip,
                     close_status=close_status,
                     action_queue=action_queue,
+                    operational_overdue_invoices=operational_overdue_invoices,
                     agent_runs=agent_runs,
                     workflow_runs=workflow_runs,
                 )
@@ -2218,6 +2223,7 @@ class CopilotAgent:
         wip: list[dict],
         close_status: dict,
         action_queue: list[dict],
+        operational_overdue_invoices: list[dict] | None,
         agent_runs: list[dict],
         workflow_runs: list[dict],
     ) -> dict:
@@ -2232,6 +2238,7 @@ class CopilotAgent:
         failed_workflow_count = sum(
             1 for row in workflow_runs if row.get("status") == "failed"
         )
+        operational_overdue_invoice_count = len(operational_overdue_invoices or [])
         active_workflow_count = sum(
             1
             for row in workflow_runs
@@ -2241,10 +2248,15 @@ class CopilotAgent:
         read_only_findings = {
             "ar": {
                 "source": "reports.ar_aging",
-                "status": "empty" if ar_total == 0 else "attention",
+                "status": (
+                    "attention"
+                    if ar_total > 0 or operational_overdue_invoice_count > 0
+                    else "empty"
+                ),
                 "total": str(ar_aging.get("total", "0")),
                 "over_90": str(ar_aging.get("over_90", "0")),
                 "buckets": self._money_buckets(ar_aging),
+                "operational_overdue_invoice_count": operational_overdue_invoice_count,
                 "review_path": "/app/reports",
             },
             "ap": {
@@ -2321,6 +2333,7 @@ class CopilotAgent:
             "read_only_findings": read_only_findings,
             "recommended_actions": self._finance_ops_recommended_actions(
                 ar_total=ar_total,
+                operational_overdue_invoice_count=operational_overdue_invoice_count,
                 ap_total=ap_total,
                 wip_total=wip_total,
                 close_status=close_status,
@@ -2363,9 +2376,18 @@ class CopilotAgent:
         if not isinstance(finding, dict):
             return "Recommended by the live finance ops command-center check."
         if domain == "ar":
+            operational_count = int(
+                finding.get("operational_overdue_invoice_count") or 0
+            )
+            operational_clause = (
+                f"; {operational_count} operational overdue invoice(s) need follow-up"
+                if operational_count > 0
+                else ""
+            )
             return (
                 f"AR aging total is {finding.get('total', '0')} with "
-                f"{finding.get('over_90', '0')} over 90 days."
+                f"{finding.get('over_90', '0')} over 90 days"
+                f"{operational_clause}."
             )
         if domain == "ap":
             return (
@@ -2674,12 +2696,13 @@ class CopilotAgent:
     def _finance_ops_recommended_actions(
         *,
         ar_total: Decimal,
+        operational_overdue_invoice_count: int,
         ap_total: Decimal,
         wip_total: Decimal,
         close_status: dict,
     ) -> list[dict]:
         actions: list[dict] = []
-        if ar_total > 0:
+        if ar_total > 0 or operational_overdue_invoice_count > 0:
             actions.append(
                 {
                     "domain": "ar",

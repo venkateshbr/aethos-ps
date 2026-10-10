@@ -136,6 +136,11 @@ class _DeterministicAtlasResponder:
         route = AtlasSemanticIntentRouter().classify(message)
         if route is None or route.confidence < min_confidence:
             return None
+        if route.intent == "collections" and route.action_mode in {
+            "prepare",
+            "controlled_action",
+        }:
+            return None
         if (
             route.action_required
             and route.intent not in _DETERMINISTICALLY_MATERIALIZED_ACTIONS

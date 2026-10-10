@@ -99,44 +99,7 @@ def test_collections_cooldown_message_preserves_customer_and_inbox_approval_sign
 
 
 @pytest.mark.asyncio
-async def test_demo_guide_draft_collections_prompt_routes_to_collections_readout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _O2CReadService:
-        def __init__(self, db: object, tenant_id: str) -> None:
-            del db, tenant_id
-
-        def collections_read_pack(self, *, limit: int) -> dict[str, object]:
-            assert limit == 25
-            return {
-                "totals": {
-                    "open_invoice_count": 1,
-                    "overdue_invoice_count": 1,
-                    "balances_by_currency": {"GBP": "9000.00"},
-                },
-                "invoices": [
-                    {
-                        "client_name": "Nexus Capital Partners LP",
-                        "invoice_number": "INV-1001",
-                        "due_date": "2026-06-19",
-                        "aging_bucket": "over_90",
-                        "currency": "GBP",
-                        "balance_due": "9000.00",
-                        "payment_status": "unpaid",
-                        "reminder_history": {"count": 1},
-                        "collections_policy_stage": "final",
-                        "reminder_blockers": ["cooldown_active"],
-                        "recommended_next_action": "Wait for cooldown before drafting another reminder.",
-                    }
-                ],
-            }
-
-    monkeypatch.setattr(
-        atlas_deterministic_responses,
-        "O2CReadService",
-        _O2CReadService,
-    )
-
+async def test_demo_guide_draft_collections_prompt_falls_through_to_tool_runtime() -> None:
     response = await render_semantic_atlas_response(
         db=object(),  # type: ignore[arg-type]
         tenant_id="11111111-1111-1111-1111-111111111111",
@@ -153,15 +116,7 @@ async def test_demo_guide_draft_collections_prompt_routes_to_collections_readout
         ),
     )
 
-    assert response is not None
-    assert response.route.intent == "collections"
-    assert "Customer" in response.text
-    assert "reminder" in response.text
-    assert "invoice" in response.text
-    assert "overdue" in response.text
-    assert "draft" in response.text.lower()
-    assert "Inbox" in response.text
-    assert "approved" in response.text or "approval" in response.text
+    assert response is None
 
 
 @pytest.mark.asyncio
