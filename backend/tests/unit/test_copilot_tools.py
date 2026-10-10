@@ -768,6 +768,92 @@ async def test_finance_ops_check_execute_builds_command_center(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_finance_ops_check_recommends_collections_for_operational_overdue_invoice(
+    monkeypatch,
+):
+    """Action plans must include AR work before sent invoices post AR journals."""
+    agent, _db = _make_agent(
+        {
+            "invoices": [
+                {
+                    "id": "inv-overdue-operational",
+                    "tenant_id": "tenant-abc",
+                    "invoice_number": "INV-OPS-1",
+                    "total": "1250.00",
+                    "currency": "USD",
+                    "due_date": (date.today() - timedelta(days=45)).isoformat(),
+                    "client_id": "client-ops",
+                    "stripe_payment_link_url": "",
+                    "status": "sent",
+                    "deleted_at": None,
+                }
+            ]
+        }
+    )
+
+    class _ReportsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def ar_aging(self):
+            return {"0_30": "0", "31_60": "0", "61_90": "0", "over_90": "0", "total": "0"}
+
+        def ap_aging(self):
+            return {"0_30": "0", "31_60": "0", "61_90": "0", "over_90": "0", "total": "0"}
+
+        def wip(self):
+            return []
+
+        def action_queue(self, **_kwargs):
+            return []
+
+    class _CloseStatus:
+        def as_dict(self):
+            return {"period": "2026-06", "status": "ready", "pending_reviews": []}
+
+    class _CloseStatusService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def get_status(self, _period):
+            return _CloseStatus()
+
+    class _AgentsService:
+        def __init__(self, _db, _tenant_id):
+            pass
+
+        def list_agent_runs(self, **_kwargs):
+            return {"runs": [], "total": 0}
+
+        def list_agent_workflow_runs(self, **_kwargs):
+            return {"workflow_runs": [], "total": 0}
+
+    monkeypatch.setattr("app.services.reports_service.ReportsService", _ReportsService)
+    monkeypatch.setattr(
+        "app.services.close_status_service.CloseStatusService",
+        _CloseStatusService,
+    )
+    monkeypatch.setattr("app.services.agents_service.AgentsService", _AgentsService)
+
+    result = await agent._execute_tool(
+        "run_finance_ops_check",
+        {"period": "2026-06", "limit": 5},
+    )
+
+    ar_finding = result["read_only_findings"]["ar"]
+    assert ar_finding["status"] == "attention"
+    assert ar_finding["operational_overdue_invoice_count"] == 1
+    assert any(
+        action["domain"] == "ar" and action["suggested_tool"] == "send_email"
+        for action in result["recommended_actions"]
+    )
+    assert "1 operational overdue invoice" in agent._finance_ops_action_rationale(
+        "ar",
+        result["read_only_findings"],
+    )
+
+
+@pytest.mark.asyncio
 async def test_finance_ops_check_reports_explicit_empty_states(monkeypatch):
     """Empty domains are returned as empty states instead of invented values."""
     agent, _db = _make_agent({})
