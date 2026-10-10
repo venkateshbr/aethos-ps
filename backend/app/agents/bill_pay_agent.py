@@ -106,6 +106,8 @@ def propose_payment_batch(
             or []
         )
 
+    bills = _exclude_bills_in_active_payment_batches(db, deps.tenant_id, bills)
+
     # Bill-payment batches must be single-currency — the Pay Bills service
     # rejects mixed-currency batches, so a proposal that spans currencies
     # produces an un-approvable Inbox task. Scope the proposal to one currency,
@@ -186,6 +188,41 @@ def _scope_to_single_currency(bills: list[dict]) -> list[dict]:
 
     best_currency = sorted(groups.items(), key=_sort_key)[0][0]
     return groups[best_currency]
+
+
+def _exclude_bills_in_active_payment_batches(
+    db,
+    tenant_id: str,
+    bills: list[dict],
+) -> list[dict]:
+    """Drop bills that are already attached to an active payment batch.
+
+    ``BillPaymentsService.create_batch`` rejects any bill with an active
+    ``bill_payment_items`` row. Filtering at proposal time prevents Copilot from
+    creating an Inbox task that looks reviewable but deterministically fails on
+    approval with HTTP 409 when unrelated approved bills are already batched.
+    """
+    bill_ids = [str(bill.get("id")) for bill in bills if bill.get("id")]
+    if not bill_ids:
+        return bills
+
+    rows = (
+        db.table("bill_payment_items")
+        .select("bill_id, status")
+        .eq("tenant_id", tenant_id)
+        .in_("bill_id", bill_ids)
+        .execute()
+        .data
+        or []
+    )
+    active_bill_ids = {
+        str(row.get("bill_id"))
+        for row in rows
+        if row.get("bill_id") and (row.get("status") or "") != "cancelled"
+    }
+    if not active_bill_ids:
+        return bills
+    return [bill for bill in bills if str(bill.get("id")) not in active_bill_ids]
 
 
 def _normalise_bill_ids(values: list[object]) -> tuple[str, ...]:

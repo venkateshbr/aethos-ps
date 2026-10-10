@@ -675,6 +675,101 @@ def test_bill_pay_agent_prioritizes_overdue_high_value_bills() -> None:
     assert proposal.flagged_for_review[0]["bill_id"] == "bill-urgent"
 
 
+def test_bill_pay_agent_excludes_bills_already_in_active_payment_batches() -> None:
+    """Copilot bill-pay proposals must not create approval tasks that fail with 409.
+
+    ``BillPaymentsService.create_batch`` rejects bills already attached to an
+    active payment batch, so the proposal should omit those bills before writing
+    the HITL task.
+    """
+    from app.agents.base import AgentDeps
+    from app.agents.bill_pay_agent import propose_payment_batch
+
+    mock_db = MagicMock()
+    bills = [
+        {
+            "id": "bill-already-batched",
+            "bill_number": "BILL-OLD",
+            "total": "1000.00",
+            "currency": "USD",
+            "due_date": "2026-01-01",
+            "vendor_invoice_number": "OLD",
+            "client_id": "clt-1",
+        },
+        {
+            "id": "bill-new",
+            "bill_number": "BILL-NEW",
+            "total": "2500.00",
+            "currency": "USD",
+            "due_date": "2026-01-02",
+            "vendor_invoice_number": "NEW",
+            "client_id": "clt-2",
+        },
+        {
+            "id": "bill-cancelled-item",
+            "bill_number": "BILL-CANCELLED",
+            "total": "750.00",
+            "currency": "USD",
+            "due_date": "2026-01-03",
+            "vendor_invoice_number": "CAN",
+            "client_id": "clt-3",
+        },
+    ]
+
+    def side(name: str) -> MagicMock:
+        if name == "bills":
+            return _chain(bills)
+        if name == "bill_payment_items":
+            return _chain([
+                {"bill_id": "bill-already-batched", "status": "pending"},
+                {"bill_id": "bill-cancelled-item", "status": "cancelled"},
+            ])
+        raise AssertionError(name)
+
+    mock_db.table.side_effect = side
+
+    deps = AgentDeps(tenant_id=TENANT_ID, user_id=USER_ID, db=mock_db)
+    proposal = propose_payment_batch(deps, due_within_days=7)
+
+    assert "bill-already-batched" not in proposal.proposed_bill_ids
+    assert proposal.proposed_bill_ids == ["bill-new", "bill-cancelled-item"]
+
+
+def test_bill_pay_agent_returns_empty_proposal_when_all_bills_are_already_batched() -> None:
+    """If every eligible bill is already batched, Copilot should not create reviewable bill ids."""
+    from app.agents.base import AgentDeps
+    from app.agents.bill_pay_agent import propose_payment_batch
+
+    mock_db = MagicMock()
+    bills = [
+        {
+            "id": "bill-already-batched",
+            "bill_number": "BILL-OLD",
+            "total": "1000.00",
+            "currency": "USD",
+            "due_date": "2026-01-01",
+            "vendor_invoice_number": "OLD",
+            "client_id": "clt-1",
+        }
+    ]
+
+    def side(name: str) -> MagicMock:
+        if name == "bills":
+            return _chain(bills)
+        if name == "bill_payment_items":
+            return _chain([{"bill_id": "bill-already-batched", "status": "pending"}])
+        raise AssertionError(name)
+
+    mock_db.table.side_effect = side
+
+    deps = AgentDeps(tenant_id=TENANT_ID, user_id=USER_ID, db=mock_db)
+    proposal = propose_payment_batch(deps, due_within_days=7)
+
+    assert proposal.proposed_bill_ids == []
+    assert proposal.total_amount == Decimal("0")
+    assert proposal.optimization_summary["bill_count"] == 0
+
+
 def test_bill_pay_proposal_scopes_to_single_currency() -> None:
     """Mixed-currency approved bills must not be bundled into one proposal.
 
