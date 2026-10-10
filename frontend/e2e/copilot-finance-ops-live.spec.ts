@@ -1160,7 +1160,8 @@ test.describe('Copilot finance-ops live flows (#260 #261 #262 #264 #265 #266 #26
     await page.getByRole('tab', { name: /balance sheet/i }).click();
     await expect(page.getByText(/Balance sheet balances|Balance sheet does not balance/i)).toBeVisible({ timeout: 30_000 });
     await page.getByRole('tab', { name: /income statement/i }).click();
-    await expect(page.getByText('Net Income')).toBeVisible({ timeout: 30_000 });
+    const activeReportPanel = page.locator('mat-tab-body.mat-mdc-tab-body-active');
+    await expect(activeReportPanel.getByText('Net Income', { exact: true })).toBeVisible({ timeout: 30_000 });
     await page.getByRole('tab', { name: /statutory pack/i }).click();
     await expect(page.getByText(/Tax Payable|Statutory/i)).toBeVisible({ timeout: 30_000 });
   });
