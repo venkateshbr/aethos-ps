@@ -698,7 +698,7 @@ Vendor invoice received (email forward, drag-drop, chat upload)
   → bill enters "Bills to Pay" list
   
 Periodic (manual or daily-suggest):
-  → bill_pay_agent proposes a batch (which bills, payment date, source bank account, discount-capture logic)
+  → bill_pay_agent proposes a batch (which bills, payment date, source bank account, discount-capture logic; excludes bills already attached to non-cancelled payment batches)
   → batch in draft state, admin reviews in Inbox
   → admin approves
   → system generates NACHA file (or CSV per bank template) and presents download
@@ -729,7 +729,7 @@ Tenants outside the US who haven't gotten native-format support yet can use Univ
 
 ### 11.5.4 Required agents
 - `vendor_invoice_agent` — already in catalog (§6.2)
-- `bill_pay_agent` — new in v2, listed in §6.2; proposes batches, never executes settlement (humans approve every batch)
+- `bill_pay_agent` — new in v2, listed in §6.2; proposes batches, never executes settlement (humans approve every batch), and filters out bills already present in active/non-cancelled payment batches before creating an Inbox proposal
 
 ### 11.5.5 UI
 - **Bills** page: list with status, vendor, due-in, amount, GL code; filter "to pay"; AI Suggestions bar on top ("3 bills due in 7 days totalling $12,400 — propose batch?")

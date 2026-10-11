@@ -398,6 +398,7 @@ As Marcus (AP clerk), I want the bill_pay_agent to factor in early-pay discount 
 Acceptance criteria:
 - Given 5 approved bills ready for payment and one of them has a discount_deadline 2 days from now, when the bill_pay_agent proposes a payment batch, then it groups the discount-eligible bill first, flagged with: "Include today to capture $72 early-pay discount (2% on $3,600)."
 - Given the agent's batch proposal in the Inbox, when Marcus reviews it, then he can see the total savings from discount capture in the batch summary line.
+- Given an approved bill is already linked to a non-cancelled payment-batch item, when the bill_pay_agent prepares a new batch proposal, then that bill is excluded from the proposed bill IDs so approval cannot duplicate money-out work; cancelled prior payment items do not block re-proposal.
 - Given Marcus removes the discount-eligible bill from the batch, when the batch is saved, then the agent logs the decision and does not re-add it automatically (human override respected).
 
 ### 6.3 Functional Requirements
@@ -409,7 +410,7 @@ Acceptance criteria:
 | R-F3-03 | Auto-populate discount fields from vendor contact when bill is created (extraction or manual) | Must |
 | R-F3-04 | `discount_alert_worker` (new Procrastinate task): daily check for bills with discount_deadline within 3 days | Must |
 | R-F3-05 | Inbox card for discount alert with save amount and deadline | Must |
-| R-F3-06 | `bill_pay_agent` updated: prioritize discount-eligible bills in batch proposals | Must |
+| R-F3-06 | `bill_pay_agent` updated: prioritize discount-eligible bills in batch proposals and exclude bills already attached to non-cancelled payment batches | Must |
 | R-F3-07 | Discount GL posting: create `purchase_discounts` account (GL code 5900) if not present; post discount amount as a credit on bill payment | Must |
 | R-F3-08 | Payment terms selector on vendor contact page (Settings → Vendors) | Must |
 | R-F3-09 | Display discount deadline and savings on bill detail page | Should |

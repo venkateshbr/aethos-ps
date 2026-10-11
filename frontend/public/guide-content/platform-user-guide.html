@@ -86,7 +86,7 @@ result and the approval boundary.</p>
 <td>Dashboard (default landing)</td>
 <td><code>/app/dashboard</code></td>
 <td>All users</td>
-<td>Working-capital summary: AR/AP due, WIP, open Inbox work, trial state; <code>/app</code> redirects here</td>
+<td>Working-capital summary: receivables, payables, net position and AR-aging bars; <code>/app</code> redirects here. WIP, open Inbox count and trial state are not on the dashboard yet (the trial badge is in the top bar)</td>
 <td>Launch scenario 10</td>
 </tr>
 <tr>
@@ -211,9 +211,12 @@ result and the approval boundary.</p>
 </tbody></table>
 <p>All authenticated browser modules are under <code>/app/*</code>. The public browser
 routes are <code>/</code>, <code>/signup</code>, <code>/login</code>, <code>/p/:token</code> and the Stripe Connect return
-handler <code>/settings/billing/connect/return</code>. The guide library is <strong>not</strong> public:
+handler <code>/settings/billing/connect/return</code>. The guide library route
 <code>/guides</code> redirects to <code>/app/guides</code>, which requires a signed-in tenant owner or
-admin. Route fragments such as
+admin. <strong>Known gap (2026-09-09 review, plan item A1):</strong> the guide HTML itself is
+currently served as a static asset and is reachable without signing in, so the
+admin gate is a UI affordance only until the authenticated guide endpoint lands.
+Do not put sensitive operational detail in guides before then. Route fragments such as
 <code>/copilot</code>, <code>/reports/ar-aging</code>, <code>/payments</code> for bill-pay batches,
 <code>/engagements/new</code>, and <code>/settings/stripe</code> are not current Angular routes.</p>
 <h3 id="signup-password-and-subscription-lifecycle">Signup, password, and subscription lifecycle</h3>
@@ -558,13 +561,16 @@ per-request waits during an outage. The provider signal is visible in
 <li><strong>No internal leakage.</strong> Nous only shows business language. Tool names, system
 prompts, provider errors, and internal identifiers are filtered out of the
 response, including mid-stream.</li>
-<li><strong>Number-fidelity guard.</strong> Monetary figures Nous states are checked against the
-source records that produced them. A figure that cannot be verified is shown
-with a caveat asking you to confirm it against Reports, rather than presented as
-fact. Nous does not invent totals. Note that several high-confidence
-operational intents currently answer with guidance text and <strong>no figures</strong> (for
-example trial balance, statement package comparisons, operational health);
-use the Reports tabs for numbers until those responders read live data (#360).</li>
+<li><strong>Number-fidelity guard (Aethos Basic runtime only).</strong> When the built-in
+runtime&#39;s tool loop states a monetary figure it is checked against the source
+records that produced it; a figure that cannot be verified is shown with a
+caveat asking you to confirm it against Reports. The guard does <strong>not</strong> run on
+the Hermes runtime (#532) or on answers produced by the semantic intent router.
+As of 2026-09-09, 26 of the 39 router intents answer with guidance text and no
+live figures (for example trial balance, statement package comparisons,
+operational health, close readiness, approval controls); use the Reports tabs
+and Settings panels for numbers until those responders read live data
+(#360; plan item B1).</li>
 <li><strong>Measured quality.</strong> A golden-prompt evaluation suite scores Nous on staying
 on-topic, never leaking internals, routing controlled actions to Inbox, and
 number-fidelity. Each answer also records which runtime produced it, alongside
@@ -694,7 +700,7 @@ reference is <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RU
 </tr>
 <tr>
 <td>Draft invoice</td>
-<td>Routes to Inbox, then materializes as draft invoice after approval</td>
+<td>Routes to Inbox, then materializes as draft invoice after approval (via the model runtime&#39;s <code>draft_invoice</code> tool; the semantic router hands billing-run prompts to the runtime rather than answering them)</td>
 </tr>
 <tr>
 <td>Collections reminders</td>
@@ -702,7 +708,7 @@ reference is <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RU
 </tr>
 <tr>
 <td>Bill-pay proposal</td>
-<td>Routes to Inbox, then creates a draft payment batch after approval</td>
+<td>Routes to Inbox, then creates a draft payment batch after approval (via the model runtime&#39;s <code>propose_bill_payment_batch</code> tool). The proposal excludes bills already attached to non-cancelled payment batches so Inbox approval does not create duplicate money-out items; bills whose prior payment item is cancelled can be proposed again.</td>
 </tr>
 <tr>
 <td>Month-end close preparation</td>
@@ -734,11 +740,11 @@ reference is <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RU
 </tr>
 <tr>
 <td>Engagement creation by prompt</td>
-<td>Resolves client names and routes engagement drafts to Inbox rather than asking users for internal IDs</td>
+<td>Not yet a router intent (#363, plan item B2). Today the reliable path is an engagement-letter or SOW upload; a prompt-only request goes to the model runtime, which may prepare a review through the Hermes <code>create_review</code> tool or answer with guidance</td>
 </tr>
 <tr>
 <td>Operational health</td>
-<td>Returns safe health, rate-limit, background failure, agent/tool/workflow failure, and observability status without logs or secrets</td>
+<td>Guidance text only from Nous today; live figures are in Settings -&gt; Operational Health (<code>GET /tenants/health</code>). The same applies to the Finance Ops control-room, configuration-telemetry and approval-controls prompts, whose HTTP read packs exist but are not yet wired to the chat responders (plan item B1)</td>
 </tr>
 </tbody></table>
 <h3 id="scheduled-finance-ops-manager">Scheduled Finance Ops Manager</h3>
@@ -815,7 +821,7 @@ internal context references to business users.</p>
 <p>Inbox is the control center for human review.</p>
 <p>Users should use Inbox when:</p>
 <ul>
-<li>AI proposes a draft invoice, bill, journal, payment batch, email, or action plan.</li>
+<li>AI proposes a draft invoice, bill, journal, payment batch, email, or action plan. Bill-pay proposals are pre-filtered for active payment-batch membership before the task reaches Inbox, but the approval/materialization service still enforces the duplicate-payment guard.</li>
 <li>A document extraction has enough structure to review but should not directly create records.</li>
 <li>A workflow needs approval, rejection, or correction.</li>
 <li>A finance-ops Plan Item should be dispatched to its specialist workflow.</li>
@@ -951,7 +957,7 @@ is not sent before approval.</li>
 </tr>
 <tr>
 <td>Read-only user attempts mutation</td>
-<td>Viewer/auditor can inspect permitted records but cannot approve, send, void, or record payment</td>
+<td>Viewer/auditor can inspect permitted records but cannot approve, send, or record payment (invoice void and credit notes are not implemented yet, #517)</td>
 </tr>
 <tr>
 <td>Public invoice abuse</td>
@@ -1044,8 +1050,11 @@ submission. CSV/NACHA output can contain placeholder/blank bank fields and must
 not be uploaded without an external validation control. Browser specs under
 #310/#323/#325 are mocked/contract evidence, not production persistence or bank
 execution proof.</p>
-<p>Aethos Nous can answer read-only P2P payment-risk prompts before creating a
-payment proposal: vendor balances, bill status, due dates, coding status,
+<p>Aethos Nous is intended to answer read-only P2P payment-risk prompts before
+creating a payment proposal. As of 2026-09-09 the vendor-wide prompt returns
+guidance text; the single-bill drilldown reads live data, and the live
+vendor-wide read pack is exposed at <code>GET /agents/p2p/payment-risk/read-pack</code> and
+is being wired to the chat responder (plan item B1). Target coverage: vendor balances, bill status, due dates, coding status,
 source-document availability, duplicate signals, PO/service-order match state,
 payment readiness, existing safe batch state, blockers, and recommended next
 action. The read pack does not expose raw bank details, export hashes, raw
@@ -1463,9 +1472,10 @@ defined.</li>
 <li>Promote autonomy only after enough successful reviewed outcomes.</li>
 <li>Use Settings -&gt; Agent Autonomy -&gt; Finance Ops Manager Schedule to enable,
 pause, or tune scheduled action-plan cadence and stale-approval escalation.</li>
-<li>Ask Aethos Nous for the Finance Ops Manager control room to inspect schedule,
-next run, failed or skipped workflows, open Inbox work, and redacted
-operational health from one business prompt.</li>
+<li>Use the Finance Ops Manager Schedule and Workflow Runs panels to inspect
+schedule, next run, failed or skipped workflows and open Inbox work. The Nous
+control-room prompt currently returns guidance text; the live read pack is
+<code>GET /agents/finance-ops/control-room</code> (plan item B1).</li>
 <li>Use Settings -&gt; Agent Autonomy -&gt; AI Inference Settings to choose the tenant
 Nous runtime (Aethos Basic or the advanced Hermes runtime; operator guide:
 <a href="/guides/nous-hermes-operations"><code>docs/infra/HERMES_RUNTIME_OPERATIONS.md</code></a>), semantic response order, and model-routing order. The default
@@ -1593,9 +1603,11 @@ classes, plus browser proof for Settings -&gt; Operational Health redaction.</li
 and <code>cd frontend &amp;&amp; npx playwright test e2e/enterprise-ops-health.spec.ts --project=chromium</code>.</li>
 <li>Health output is intended for internal operators and admins; it must not
 expose secrets, raw credentials, tokens, or customer document payloads.</li>
-<li>Nous configuration telemetry combines approval controls, scheduled Finance
-Ops Manager settings, Nous runtime, Langfuse observability state, routed
-operational alerts, and public abuse-path controls into one safe read pack.</li>
+<li>Configuration telemetry (approval controls, scheduled Finance Ops Manager
+settings, Nous runtime, Langfuse observability state, routed operational
+alerts, public abuse-path controls) is available through the Settings panels
+and the operational-health read pack; the Nous prompt for it currently returns
+guidance text (plan item B1).</li>
 </ul>
 <p>Ops and abuse-path checks:</p>
 <table>

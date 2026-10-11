@@ -953,11 +953,13 @@ Automation target:
 
 Persona: Controller and AP Lead.
 
-Status: Implemented in #325. Pay Bills now consumes the approved-bills API
+Status: Implemented in #325 and hardened in #589. Pay Bills now consumes the approved-bills API
 response reliably, creates a draft batch, requires explicit approval before
 export, records CSV/NACHA export state before mark-sent, and exposes settlement
 confirmation with settled-count and journal evidence from the existing
-bill-payment settlement endpoint.
+bill-payment settlement endpoint. Copilot bill-pay proposals exclude bills
+already attached to non-cancelled payment-batch items before creating an Inbox
+task, while the service still rejects direct duplicate creation with HTTP 409.
 
 Steps:
 
@@ -974,10 +976,12 @@ Expected result:
 - A batch cannot be marked sent until an export has completed.
 - Settlement remains a separate explicit confirmation after sent-to-bank.
 - Settlement displays count and returned journal IDs.
+- Copilot-created payment-batch proposals do not include bills that are already in active/non-cancelled batches; cancelled prior payment items remain eligible for a new proposal.
 
 Automation target:
 
 - Browser: `cd frontend && npx playwright test e2e/enterprise-bill-pay-lifecycle.spec.ts --project=chromium`
+- Production-focused proof for the #589 finance-ops path: `cd frontend && CI=1 AETHOS_PS_WEB_URL=https://aethos.ishirock.tech AETHOS_PS_API_URL=https://aethos.ishirock.tech/api npx playwright test e2e/copilot-finance-ops-live.spec.ts --project=chromium`
 
 ## ENT-R2R-001 - Close Evidence Package
 

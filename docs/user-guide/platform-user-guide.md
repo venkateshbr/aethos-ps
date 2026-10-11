@@ -441,7 +441,7 @@ reference is [`docs/infra/HERMES_RUNTIME_OPERATIONS.md`](../infra/HERMES_RUNTIME
 | Read-only analysis | Can run directly and records tool activity |
 | Draft invoice | Routes to Inbox, then materializes as draft invoice after approval (via the model runtime's `draft_invoice` tool; the semantic router hands billing-run prompts to the runtime rather than answering them) |
 | Collections reminders | Creates Inbox email-review tasks; approval is required before send path |
-| Bill-pay proposal | Routes to Inbox, then creates a draft payment batch after approval (via the model runtime's `propose_bill_payment_batch` tool) |
+| Bill-pay proposal | Routes to Inbox, then creates a draft payment batch after approval (via the model runtime's `propose_bill_payment_batch` tool). The proposal excludes bills already attached to non-cancelled payment batches so Inbox approval does not create duplicate money-out items; bills whose prior payment item is cancelled can be proposed again. |
 | Month-end close preparation | Routes to Inbox, then creates close tasks after approval |
 | Finance ops action plan | Routes manager plan to Inbox; approval creates Plan Items; Plan Item approval dispatches specialist workflows |
 | Scheduled Finance Ops Manager | Runs on configured tenant cadence, creates a reviewed action-plan Inbox task, and creates separate escalation notices for stale/high-risk Inbox work |
@@ -502,7 +502,7 @@ Inbox is the control center for human review.
 
 Users should use Inbox when:
 
-- AI proposes a draft invoice, bill, journal, payment batch, email, or action plan.
+- AI proposes a draft invoice, bill, journal, payment batch, email, or action plan. Bill-pay proposals are pre-filtered for active payment-batch membership before the task reaches Inbox, but the approval/materialization service still enforces the duplicate-payment guard.
 - A document extraction has enough structure to review but should not directly create records.
 - A workflow needs approval, rejection, or correction.
 - A finance-ops Plan Item should be dispatched to its specialist workflow.

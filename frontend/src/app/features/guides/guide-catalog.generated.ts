@@ -29,7 +29,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "All users",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 52,
+    "readMinutes": 54,
     "headings": [
       {
         "id": "1-operating-model",
@@ -235,7 +235,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "Demo teams",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 75,
+    "readMinutes": 76,
     "headings": [
       {
         "id": "current-product-boundaries",
@@ -553,7 +553,7 @@ export const GUIDE_CATALOG: GuideEntry[] = [
     "audience": "Owners and admins",
     "featured": true,
     "status": "Maintained",
-    "readMinutes": 12,
+    "readMinutes": 13,
     "headings": [
       {
         "id": "1-what-quot-nous-on-hermes-quot-actually-is",

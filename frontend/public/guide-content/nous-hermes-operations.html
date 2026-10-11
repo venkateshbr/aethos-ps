@@ -12,18 +12,18 @@
 <pre><code>user prompt (POST /api/v1/chat/threads/{id}/messages, SSE)
   │
   ├─1─ semantic intent router          app/services/atlas_semantic_intent_router.py
-  │     38 static intents, confidence &gt;= 0.72 (tenant-configurable)
+  │     39 static intents, confidence &gt;= 0.72 (tenant-configurable)
   │     hit → deterministic responder / read pack → answer returned, STAGE 2 AND 3 NEVER RUN
   │
   ├─2─ configured runtime              app/services/atlas_runtime.py
   │     aethos_basic  → CopilotAgent tool loop      app/agents/copilot/graph.py
-  │     hermes_agent  → Hermes container            app/services/hermes_client.py
+  │     hermes_agent  → shared Hermes aethos-nous profile app/services/hermes_client.py
   │
   └─3─ fallback                        hermes_agent → aethos_basic when Hermes errors,
         circuit breaker opens, or the answer fails the output-safety filter
 </code></pre>
 <p>Hermes never touches the database. It calls back into Aethos through the <strong>tool broker</strong>:</p>
-<pre><code>Hermes container ──MCP──&gt; integrations/hermes/aethos_mcp_server.py
+<pre><code>Shared Hermes profile ──MCP──&gt; integrations/hermes/aethos_mcp_server.py
                            (28 @mcp.tool wrappers, each takes a context token)
                               │  Bearer AETHOS_HERMES_TOOL_TOKEN
                               ▼
@@ -33,8 +33,8 @@
 </code></pre>
 <p><strong>Two consequences operators must internalise:</strong></p>
 <ol>
-<li><strong>The router short-circuits Hermes.</strong> Most demo and prompt-library questions match one of the 38 intents and are answered by deterministic code, not by Hermes. &quot;We migrated to Hermes&quot; is only true for the long tail unless the router is reordered or disabled (#530).</li>
-<li><strong>Hermes authenticates as a container, not as a user.</strong> The broker verifies the shared tool token and resolves the tenant from a short-lived session token, but today it does <strong>not</strong> check the calling user&#39;s privileges, and two write tools bypass the agent tool policy entirely (#529). Until that lands, treat Hermes access as equivalent to &quot;any authenticated user of the tenant can read anything the read packs expose&quot;.</li>
+<li><strong>The router short-circuits Hermes.</strong> Most demo and prompt-library questions match one of the 39 intents and are answered by deterministic code, not by Hermes. &quot;We migrated to Hermes&quot; is only true for the long tail unless the router is reordered or disabled (#530).</li>
+<li><strong>Hermes authenticates as a host profile, not as a user.</strong> The broker verifies the shared tool token and resolves the tenant from a short-lived session token, but today it does <strong>not</strong> check the calling user&#39;s privileges, and two write tools bypass the agent tool policy entirely (#529). Until that lands, treat Hermes access as equivalent to &quot;any authenticated user of the tenant can read anything the read packs expose&quot;.</li>
 </ol>
 <hr>
 <h2 id="2-configuration-reference">2. Configuration reference</h2>
@@ -91,12 +91,12 @@
 <tbody><tr>
 <td><code>ATLAS_HERMES_API_BASE_URL</code></td>
 <td>api</td>
-<td>Default <code>http://hermes:8642</code> (internal network only).</td>
+<td>Default <code>http://host.docker.internal:8643</code>, the host-gateway route to the shared <code>aethos-nous</code> Hermes profile.</td>
 </tr>
 <tr>
 <td><code>ATLAS_HERMES_API_SERVER_KEY</code></td>
 <td>api</td>
-<td>Must equal <code>HERMES_API_SERVER_KEY</code> on the hermes container. <strong>If empty the client sends no auth header instead of failing</strong> (#536).</td>
+<td>Must equal <code>API_SERVER_KEY</code>/<code>HERMES_API_SERVER_KEY</code> for the <code>aethos-nous</code> Hermes profile. <strong>If empty the client sends no auth header instead of failing</strong> (#536).</td>
 </tr>
 <tr>
 <td><code>ATLAS_HERMES_TIMEOUT_SECONDS</code></td>
@@ -105,7 +105,7 @@
 </tr>
 <tr>
 <td><code>AETHOS_HERMES_TOOL_TOKEN</code></td>
-<td>api <strong>and</strong> hermes</td>
+<td>api <strong>and</strong> <code>aethos-nous</code> profile</td>
 <td>Shared secret for the tool broker. Both must match or every tool call 401s.</td>
 </tr>
 <tr>
@@ -119,17 +119,18 @@
 <td><code>true</code> hides tool chips from users (#480). Hermes emits none today anyway (#532).</td>
 </tr>
 <tr>
-<td><code>OPENROUTER_API_KEY</code> / <code>HERMES_OPENROUTER_API_KEY</code></td>
-<td>hermes</td>
+<td><code>OPENROUTER_API_KEY</code> / dedicated profile provider key</td>
+<td><code>aethos-nous</code> profile process</td>
 <td>Hermes calls the model itself; this key is <strong>not</strong> the API&#39;s key path, so Hermes traffic never passes through Langfuse (#532).</td>
 </tr>
 <tr>
 <td><code>COMPOSE_PROFILES</code></td>
 <td>deploy workflow</td>
-<td>Must include <code>hermes</code> for the container to run (<code>deploy-hostinger.yml</code>).</td>
+<td>Use <code>worker</code>; there is no longer a <code>hermes</code> Compose profile in production.</td>
 </tr>
 </tbody></table>
-<p>These are <strong>not</strong> in <code>backend/.env.example</code> yet (#530 adds them).</p>
+<p>These variables are represented in <code>backend/.env.example</code>; production secrets
+must still be supplied through the VPS environment/secrets workflow.</p>
 <h3 id="hermes-profile-integrations-hermes-aethos-atlas-profile">Hermes profile (<code>integrations/hermes/aethos-atlas-profile/</code>)</h3>
 <table>
 <thead>
@@ -144,7 +145,7 @@
 </tr>
 <tr>
 <td><code>config.yaml</code></td>
-<td><code>model.default: anthropic/claude-haiku-4.5</code> (<strong>hardcoded — Hermes does not substitute <code>${VARS}</code> here</strong>), <code>max_tokens: 2048</code>, <code>provider_routing.data_collection: deny</code>, tool-loop hard stops (5 exact failures / 5 no-progress), 7 auto-load skills, and the MCP server registration with the 28-tool allowlist.</td>
+<td><code>model.default: openai/gpt-5.5</code> (<strong>hardcoded — Hermes does not substitute <code>${VARS}</code> here</strong>), <code>max_tokens: 2048</code>, <code>provider_routing.data_collection: deny</code>, tool-loop hard stops (5 exact failures / 5 no-progress), 7 auto-load skills, and the MCP server registration with the 28-tool allowlist.</td>
 </tr>
 <tr>
 <td><code>skills/*/SKILL.md</code></td>
@@ -155,25 +156,46 @@
 <td>Vestigial (<code>{&quot;mcpServers&quot;: {}}</code>); real registration lives in <code>config.yaml</code>.</td>
 </tr>
 </tbody></table>
-<p>The profile is <strong>baked into the image</strong> (<code>Dockerfile</code>) and copied to <code>/opt/data</code> by <code>bootstrap-profile.sh</code> (skills always; <code>SOUL.md</code>/<code>config.yaml</code>/<code>mcp.json</code> only when missing or <code>AETHOS_HERMES_REFRESH_PROFILE=true</code>). Changing a prompt therefore requires an image rebuild and redeploy today (#535).</p>
+<p>The profile remains <strong>versioned in this repo</strong>, but production now installs it into the shared host Hermes instance with <code>scripts/deploy/install-aethos-hermes-profile.sh</code>. Changing a prompt requires a reviewed repo change and profile install/restart, not a new Aethos Hermes image rebuild (#535).</p>
 <hr>
 <h2 id="3-enabling-hermes-in-production">3. Enabling Hermes in production</h2>
 <ol>
 <li>Set on the VPS <code>.env</code> (or the deploy environment):<pre><code>ATLAS_AI_RUNTIME=hermes_agent
-ATLAS_HERMES_API_SERVER_KEY=&lt;same value as HERMES_API_SERVER_KEY&gt;
-HERMES_API_SERVER_KEY=&lt;random 32+ chars&gt;
-AETHOS_HERMES_TOOL_TOKEN=&lt;random 32+ chars, identical on api and hermes&gt;
+ATLAS_HERMES_API_BASE_URL=http://host.docker.internal:8643
+ATLAS_HERMES_API_SERVER_KEY=&lt;same value as aethos-nous API_SERVER_KEY&gt;
+AETHOS_HERMES_TOOL_TOKEN=&lt;random 32+ chars, identical on api and aethos-nous&gt;
 ATLAS_CONTEXT_SIGNING_SECRET=&lt;random 32+ chars&gt;
-HERMES_OPENROUTER_API_KEY=&lt;key with paid-model access&gt;
-COMPOSE_PROFILES=worker,hermes
-AETHOS_HERMES_REFRESH_PROFILE=true
+COMPOSE_PROFILES=worker
 </code></pre>
 </li>
+<li>Install/update the host profile: <code>scripts/deploy/install-aethos-hermes-profile.sh</code>.</li>
+<li>Put the provider/API/tool secrets into <code>~/.hermes/profiles/aethos-nous/aethos-nous.env</code>. <code>API_SERVER_KEY</code> must be unique to this profile and must match <code>ATLAS_HERMES_API_SERVER_KEY</code>; <code>AETHOS_HERMES_TOOL_TOKEN</code> must be unique to Aethos and must match the api container value. Do not reuse the <code>vish</code> profile credentials.</li>
+<li>Install the generated managed service:<pre><code class="language-bash">sudo cp ~/.hermes/profiles/aethos-nous/systemd/aethos-nous-hermes*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now aethos-nous-hermes-firewall.service aethos-nous-hermes.service
+sudo systemctl status aethos-nous-hermes-firewall.service --no-pager
+sudo systemctl status aethos-nous-hermes.service --no-pager
+</code></pre>
+</li>
+<li>Apply or verify the host firewall policy for <code>8643</code>. The profile must bind only to the Docker host-gateway/private interface, never <code>0.0.0.0</code>, and public ingress to <code>8643/tcp</code> must be denied. The installer writes <code>~/.hermes/profiles/aethos-nous/firewall-aethos-nous.sh</code> and a <code>aethos-nous-hermes-firewall.service</code> oneshot. The helper uses active UFW when available and otherwise installs explicit iptables rules allowing loopback/Docker bridge traffic before dropping other <code>8643/tcp</code> ingress.</li>
 <li>Deploy with <code>.github/workflows/deploy-hostinger.yml</code>; record the SHA.</li>
-<li>Verify the container: <code>docker compose ps hermes</code> and its healthcheck (curls <code>/health</code> with the bearer key every 30 s).</li>
+<li>Run the generated smoke check:<pre><code class="language-bash">~/.hermes/profiles/aethos-nous/smoke-aethos-nous.sh
+</code></pre>
+It proves host → broker on <code>127.0.0.1:8011</code>, api container → Hermes through <code>http://host.docker.internal:8643/health</code>, and no wildcard listener on <code>0.0.0.0:8643</code>. If <code>AETHOS_PUBLIC_HOST</code> is set, it also verifies that public HTTP cannot reach <code>8643</code>.</li>
 <li>Verify the API sees it: a chat turn should produce an <code>agent_runs</code> row with agent <code>nous_hermes_runtime</code> and prompt version <code>hermes-v1</code>.</li>
 <li><strong>Confirm the turn was not a silent fallback</strong> — see §4.</li>
 </ol>
+<p>Operational commands:</p>
+<pre><code class="language-bash">sudo systemctl start aethos-nous-hermes.service
+sudo systemctl stop aethos-nous-hermes.service
+sudo systemctl restart aethos-nous-hermes.service
+sudo systemctl restart aethos-nous-hermes-firewall.service
+sudo systemctl status aethos-nous-hermes-firewall.service --no-pager
+sudo systemctl status aethos-nous-hermes.service --no-pager
+journalctl -u aethos-nous-hermes-firewall.service -n 50 --no-pager
+journalctl -u aethos-nous-hermes.service -n 100 --no-pager
+~/.hermes/profiles/aethos-nous/smoke-aethos-nous.sh
+</code></pre>
 <p>Rollback: set <code>ATLAS_AI_RUNTIME=aethos_basic</code> and restart the api container; no data migration is involved. Per-tenant rollback: Settings → AI Inference Settings → Aethos Basic.</p>
 <h3 id="secret-rotation">Secret rotation</h3>
 <table>
@@ -186,11 +208,11 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 </thead>
 <tbody><tr>
 <td><code>AETHOS_HERMES_TOOL_TOKEN</code></td>
-<td>All Hermes tool calls 401 until both containers hold the new value</td>
-<td>Update <code>.env</code>, restart <code>api</code> and <code>hermes</code> together</td>
+<td>All Hermes tool calls 401 until both runtimes hold the new value</td>
+<td>Update <code>.env</code> and <code>aethos-nous.env</code>, restart <code>api</code> and <code>aethos-nous</code> together</td>
 </tr>
 <tr>
-<td><code>HERMES_API_SERVER_KEY</code> / <code>ATLAS_HERMES_API_SERVER_KEY</code></td>
+<td><code>API_SERVER_KEY</code> / <code>ATLAS_HERMES_API_SERVER_KEY</code></td>
 <td>API cannot reach Hermes; every turn falls back to Basic</td>
 <td>Same, restart both</td>
 </tr>
@@ -200,9 +222,9 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 <td>Rotate any time; brief tool errors possible</td>
 </tr>
 <tr>
-<td><code>HERMES_OPENROUTER_API_KEY</code></td>
+<td>Hermes provider key</td>
 <td>Hermes answers fail → fallback to Basic</td>
-<td>Rotate at the provider, restart <code>hermes</code></td>
+<td>Rotate at the provider, restart <code>aethos-nous</code></td>
 </tr>
 </tbody></table>
 <hr>
@@ -211,7 +233,7 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 <ul>
 <li><strong>Per turn</strong>: <code>agent_runs</code> row for the thread — agent name <code>nous_hermes_runtime</code> means the Hermes adapter ran; <code>copilot_agent</code> means Basic. A Hermes turn that fell back produces a Basic row.</li>
 <li><strong>Router short-circuit</strong>: the API logs <code>atlas_semantic_response_used</code> when the deterministic path answered; no runtime row means no model was called at all.</li>
-<li><strong>Container</strong>: <code>docker compose logs hermes --since 10m</code> should show the MCP tool calls for the turn.</li>
+<li><strong>Profile process</strong>: the host process-manager logs for <code>aethos-nous</code> should show the MCP tool calls for the turn.</li>
 <li><strong>Broker</strong>: <code>atlas_tool_sessions</code> gains one row per Hermes turn (see §6 — these are never pruned today, #536).</li>
 <li><strong>Deliberate test</strong>: temporarily set the tenant&#39;s response order to <code>atlas_runtime</code> only and ask a long-tail question (see <code>docs/infra/LOCAL_HERMES_TESTING.md</code>).</li>
 </ul>
@@ -320,7 +342,7 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 <tr>
 <td>Hermes conversation memory</td>
 <td>Hermes itself (<code>store: true</code>, key <code>aethos:{tenant}:{user}:{thread}</code>)</td>
-<td>Lives in the shared <code>hermes-data</code> volume. No retention, no clearing path, no isolation proof (#531). Not covered by tenant export/erasure.</td>
+<td>Lives in the <code>aethos-nous</code> host Hermes profile. No retention, no clearing path, no isolation proof (#531). Not covered by tenant export/erasure.</td>
 </tr>
 </tbody></table>
 <hr>
@@ -409,7 +431,7 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 <tr>
 <td>Every turn is Basic although runtime is <code>hermes_agent</code></td>
 <td>Hermes unreachable or key mismatch → silent fallback</td>
-<td><code>docker compose ps hermes</code>; <code>curl -H &quot;Authorization: Bearer $KEY&quot; http://hermes:8642/health</code> from the api container</td>
+<td>Host: <code>curl -H &quot;Authorization: Bearer ***&quot; http://&lt;docker-host-gateway&gt;:8643/health</code>; api container: <code>curl -H &quot;Authorization: Bearer ***&quot; http://host.docker.internal:8643/health</code></td>
 </tr>
 <tr>
 <td>Hermes answers then stops mid-sentence</td>
@@ -418,7 +440,7 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 </tr>
 <tr>
 <td>Tool calls 401</td>
-<td><code>AETHOS_HERMES_TOOL_TOKEN</code> differs between containers</td>
+<td><code>AETHOS_HERMES_TOOL_TOKEN</code> differs between api and the <code>aethos-nous</code> profile</td>
 <td>Compare both env values; restart both</td>
 </tr>
 <tr>
@@ -445,7 +467,7 @@ AETHOS_HERMES_REFRESH_PROFILE=true
 <hr>
 <h2 id="9-security-posture-read-before-granting-access">9. Security posture (read before granting access)</h2>
 <ul>
-<li>The tool token is a <strong>container</strong> credential. Anyone who can reach the api container&#39;s broker endpoint with that token can execute any of the 28 tools for any tenant whose session token they hold. Keep the broker on the internal network only (it is today), rate-limit it (#536), and rotate the token on any container compromise.</li>
+<li>The tool token is a <strong>service/profile</strong> credential. Anyone who can reach the api container&#39;s broker endpoint with that token can execute any of the 28 tools for any tenant whose session token they hold. Keep the broker on host loopback/internal network only, rate-limit it (#536), and rotate the token on any api container or host profile compromise.</li>
 <li>Session tokens are replayable within their 15-minute TTL (nonce minted but unchecked, not single-use) — #536.</li>
 <li>Read packs run with the service-role client and no per-user privilege check (#529): a viewer can obtain data the UI hides from them.</li>
 <li>Two write tools bypass the agent tool policy (#529): a viewer can cause an accounting review packet to be created.</li>
