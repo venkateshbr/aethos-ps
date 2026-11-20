@@ -78,6 +78,7 @@ def test_probe_over_http(
         worker.start()
         try:
             monkeypatch.setattr(hermes_preflight, "GATEWAY_HOST", "127.0.0.1")
+            monkeypatch.setattr(hermes_preflight, "GATEWAY_ADDRESS", "127.0.0.1")
             monkeypatch.setattr(hermes_preflight, "GATEWAY_PORT", server.server_port)
             monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
             monkeypatch.setenv("NO_PROXY", "")
@@ -97,7 +98,11 @@ def test_probe_over_http(
     assert "PASS" in out if result == 0 else "FAIL" in err
 
 
-@pytest.mark.parametrize("key", ["", "\n", "prefix\nsuffix", "bearer key", "x" * 4097])
+@pytest.mark.parametrize(
+    "key",
+    ["", "\n", "prefix\nsuffix", "bearer key", "x" * 4097],
+    ids=["empty", "blank", "multiline", "space", "too-long"],
+)
 def test_invalid_key_fails_before_network(
     key: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -110,3 +115,18 @@ def test_invalid_key_fails_before_network(
     monkeypatch.setattr(hermes_preflight, "_post", unexpected_request)
     assert hermes_preflight.main() == 1
     assert "FAIL" in capsys.readouterr().err
+
+
+def test_probe_refuses_gateway_alias_drift(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts import hermes_preflight
+
+    def unexpected_request(*args: object, **kwargs: object) -> None:
+        pytest.fail("gateway drift must prevent sending the key")
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(_TEST_KEY))
+    monkeypatch.setattr(hermes_preflight, "GATEWAY_HOST", "127.0.0.1")
+    monkeypatch.setattr(hermes_preflight, "_post", unexpected_request)
+    assert hermes_preflight.main() == 1
+    assert "gateway alias does not match" in capsys.readouterr().err

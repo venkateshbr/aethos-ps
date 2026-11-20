@@ -89,6 +89,8 @@ The profile remains **versioned in this repo**, but production now installs it i
 
 ## 3. Enabling Hermes in production
 
+> The staged #530 Hostinger topology requires the [dedicated Docker preflight](HERMES_DOCKER_PREFLIGHT.md). Do not use the legacy shared-bridge installer and smoke steps below to establish the new API-only boundary.
+
 1. Set on the VPS `.env` (or the deploy environment):
    ```
    ATLAS_AI_RUNTIME=hermes_agent

@@ -354,6 +354,8 @@ def test_hostinger_pins_hermes_route_to_dedicated_api_identity(compose_path: Pat
     api_environment = api["environment"]
 
     assert api_environment["ATLAS_HERMES_API_BASE_URL"] == "http://host.docker.internal:8643"
+    assert api_environment["NO_PROXY"].startswith("host.docker.internal,")
+    assert api_environment["no_proxy"].startswith("host.docker.internal,")
     assert api["ports"] == ["127.0.0.1:8011:8080"]
     assert api["extra_hosts"] == ["host.docker.internal:172.31.254.1"]
     assert set(api["networks"]) == {"aethos-internal", "hermes-api"}
