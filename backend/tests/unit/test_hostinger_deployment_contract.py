@@ -342,34 +342,62 @@ def test_hostinger_api_healthcheck_requires_ready_json_status() -> None:
     assert "data.get('status') == 'ready'" in healthcheck_command
 
 
-def test_hostinger_uses_shared_host_hermes_profile_not_compose_service() -> None:
-    compose = yaml.safe_load(_HOSTINGER_COMPOSE.read_text(encoding="utf-8"))
+@pytest.mark.parametrize(
+    "compose_path",
+    [_HOSTINGER_COMPOSE, _REPO_ROOT / "docker-compose.hostinger.registry.yml"],
+    ids=["build", "registry"],
+)
+def test_hostinger_pins_hermes_route_to_dedicated_api_identity(compose_path: Path) -> None:
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
     services = compose["services"]
     api = services["api"]
     api_environment = api["environment"]
 
-    assert api_environment["ATLAS_HERMES_API_BASE_URL"] == (
-        "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
-    )
+    assert api_environment["ATLAS_HERMES_API_BASE_URL"] == "http://host.docker.internal:8643"
     assert api["ports"] == ["127.0.0.1:8011:8080"]
-    assert api["extra_hosts"] == ["host.docker.internal:host-gateway"]
+    assert api["extra_hosts"] == ["host.docker.internal:172.31.254.1"]
+    assert set(api["networks"]) == {"aethos-internal", "hermes-api"}
+    assert api["networks"]["hermes-api"]["ipv4_address"] == "172.31.254.2"
+    assert compose["networks"]["hermes-api"] == {
+        "external": True,
+        "name": "aethos-ps-hermes-api",
+    }
+    for name, service in services.items():
+        if name != "api":
+            assert "hermes-api" not in service.get("networks", {})
+            assert not any(
+                host.startswith("host.docker.internal:") for host in service.get("extra_hosts", [])
+            )
     assert "hermes" not in services
     assert "hermes-data" not in compose.get("volumes", {})
 
 
-def test_registry_compose_matches_shared_host_hermes_topology() -> None:
-    compose = yaml.safe_load(
-        (_REPO_ROOT / "docker-compose.hostinger.registry.yml").read_text(encoding="utf-8")
-    )
-    services = compose["services"]
+@pytest.mark.parametrize(
+    "compose_path",
+    [_HOSTINGER_COMPOSE, _REPO_ROOT / "docker-compose.hostinger.registry.yml"],
+    ids=["build", "registry"],
+)
+def test_hostinger_hermes_configuration_is_api_only(compose_path: Path) -> None:
+    services = yaml.safe_load(compose_path.read_text(encoding="utf-8"))["services"]
+    secret_keys = {
+        "ATLAS_HERMES_API_SERVER_KEY",
+        "AETHOS_HERMES_TOOL_TOKEN",
+        "ATLAS_CONTEXT_SIGNING_SECRET",
+    }
+    for name in secret_keys:
+        assert services["api"]["environment"][name] == "${" + name + ":-}"
 
-    assert services["api"]["environment"]["ATLAS_HERMES_API_BASE_URL"] == (
-        "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
-    )
-    assert services["api"]["ports"] == ["127.0.0.1:8011:8080"]
-    assert services["api"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
-    assert "hermes" not in services
-    assert "hermes-data" not in compose.get("volumes", {})
+    api_only = secret_keys | {
+        "ATLAS_AI_RUNTIME",
+        "ATLAS_HERMES_API_BASE_URL",
+        "ATLAS_HERMES_FALLBACK_TO_BASIC",
+        "ATLAS_HERMES_TIMEOUT_SECONDS",
+        "ATLAS_HIDE_TOOL_EVENTS",
+    }
+    for name, service in services.items():
+        if name != "api":
+            assert api_only.isdisjoint(service.get("environment", {}))
+            assert "host.docker.internal:host-gateway" not in service.get("extra_hosts", [])
 
 
 def test_shared_hermes_profile_installer_keeps_api_gateway_private() -> None:
