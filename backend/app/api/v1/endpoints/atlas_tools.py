@@ -11,7 +11,6 @@ import calendar
 import datetime
 import hmac
 import re
-from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -30,6 +29,7 @@ from app.models.engagements import EngagementResponse
 from app.services.agents_service import AgentsService
 from app.services.approval_policy import ApprovalPolicyMatrix
 from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
+from app.services.atlas_broker import BrokerTool, dispatch_broker_tool
 from app.services.atlas_context import (
     AtlasContextError,
     AtlasToolContext,
@@ -130,14 +130,9 @@ async def execute_atlas_tool(
             detail="Invalid Nous tool context",
         ) from exc
 
-    tool = _TOOL_DISPATCH.get(payload.tool_name)
-    if tool is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nous tool is not available",
-        )
-
-    result = await tool(db, context, payload.arguments)
+    result = await dispatch_broker_tool(
+        db, context, payload.tool_name, _TOOL_DISPATCH.get(payload.tool_name), payload.arguments
+    )
     return AtlasToolExecuteResponse(tool_name=payload.tool_name, result=result)
 
 
@@ -1328,34 +1323,125 @@ def _engagement_to_tool_result(row: EngagementResponse) -> dict[str, Any]:
     return row.model_dump(mode="json")
 
 
-_ToolHandler = Callable[[Client, AtlasToolContext, dict[str, Any]], Awaitable[Any]]
-_TOOL_DISPATCH: dict[str, _ToolHandler] = {
-    "aethos.documents.intake_read_pack": _document_intake_read_pack,
-    "aethos.documents.audit_read_pack": _documents_audit_read_pack,
-    "aethos.cosec.reminders_read_pack": _cosec_reminders_read_pack,
-    "aethos.engagements.list": _list_engagements,
-    "aethos.engagements.structure_read_pack": _engagement_structure_read_pack,
-    "aethos.engagements.create_review": _create_engagement_review,
-    "aethos.finance.ar_aging": _ar_aging,
-    "aethos.finance.ap_aging": _ap_aging,
-    "aethos.finance.wip": _wip,
-    "aethos.delivery.resource_read_pack": _resource_delivery_read_pack,
-    "aethos.time.log_entry": _log_time_entry,
-    "aethos.finance_ops.snapshot": _finance_ops_snapshot,
-    "aethos.finance_ops.control_room": _finance_ops_control_room,
-    "aethos.operational_health.read_pack": _operational_health_read_pack,
-    "aethos.configuration_telemetry.read_pack": _configuration_telemetry_read_pack,
-    "aethos.approval_controls.read_pack": _approval_controls_read_pack,
-    "aethos.finance_ops.create_action_plan": _create_finance_ops_action_plan,
-    "aethos.o2c.draft_invoice": _draft_invoice,
-    "aethos.o2c.collections_read_pack": _o2c_collections_read_pack,
-    "aethos.collections.draft_reminders": _draft_collection_reminders,
-    "aethos.p2p.payment_risk_read_pack": _p2p_payment_risk_read_pack,
-    "aethos.p2p.propose_bill_payment_batch": _propose_bill_payment_batch,
-    "aethos.r2r.prepare_month_end_close": _prepare_month_end_close,
-    "aethos.r2r.prepare_year_end_close": _prepare_year_end_close,
-    "aethos.r2r.generate_financial_statement_package": _generate_financial_statement_package,
-    "aethos.r2r.management_pack_read_pack": _r2r_management_pack_read_pack,
-    "aethos.r2r.accounting_decision_trail_read_pack": _accounting_decision_trail_read_pack,
-    "aethos.r2r.prepare_manual_journal_review": _prepare_manual_journal_review,
+_FINANCE_READ = ("reports.read", "invoices.read", "bills.read", "accounting.read")
+_CONTROL_ROOM_READ = (*_FINANCE_READ, "inbox.read", "agent.autonomy.read")
+_TOOL_DISPATCH: dict[str, BrokerTool] = {
+    "aethos.documents.intake_read_pack": BrokerTool(
+        _document_intake_read_pack, "read_only", ("documents.read", "inbox.read")
+    ),
+    "aethos.documents.audit_read_pack": BrokerTool(
+        _documents_audit_read_pack, "read_only", ("documents.read", "inbox.read")
+    ),
+    "aethos.cosec.reminders_read_pack": BrokerTool(
+        _cosec_reminders_read_pack, "read_only", ("engagements.read", "clients.read")
+    ),
+    "aethos.engagements.list": BrokerTool(_list_engagements, "read_only", ("engagements.read",)),
+    "aethos.engagements.structure_read_pack": BrokerTool(
+        _engagement_structure_read_pack,
+        "read_only",
+        ("engagements.read", "projects.read", "reports.read"),
+    ),
+    "aethos.engagements.create_review": BrokerTool(
+        _create_engagement_review,
+        "draft",
+        ("engagements.manage", "clients.read"),
+        "aethos.engagements.create_review",
+        "engagement_letter_agent",
+    ),
+    "aethos.finance.ar_aging": BrokerTool(
+        _ar_aging, "read_only", ("reports.read", "invoices.read")
+    ),
+    "aethos.finance.ap_aging": BrokerTool(_ap_aging, "read_only", ("reports.read", "bills.read")),
+    "aethos.finance.wip": BrokerTool(
+        _wip, "read_only", ("reports.read", "engagements.read", "time_entries.read")
+    ),
+    "aethos.delivery.resource_read_pack": BrokerTool(
+        _resource_delivery_read_pack,
+        "read_only",
+        ("projects.read", "time_entries.read", "employees.manage"),
+    ),
+    "aethos.time.log_entry": BrokerTool(
+        _log_time_entry, "write_low_risk", ("time_entries.create",), "log_time_entry"
+    ),
+    "aethos.finance_ops.snapshot": BrokerTool(_finance_ops_snapshot, "read_only", _FINANCE_READ),
+    "aethos.finance_ops.control_room": BrokerTool(
+        _finance_ops_control_room, "read_only", _CONTROL_ROOM_READ
+    ),
+    "aethos.operational_health.read_pack": BrokerTool(
+        _operational_health_read_pack, "read_only", ("settings.manage", "agent.autonomy.read")
+    ),
+    "aethos.configuration_telemetry.read_pack": BrokerTool(
+        _configuration_telemetry_read_pack,
+        "read_only",
+        (*_CONTROL_ROOM_READ, "settings.manage", "ai.settings.read"),
+    ),
+    "aethos.approval_controls.read_pack": BrokerTool(
+        _approval_controls_read_pack, "read_only", ("inbox.read", "agent.autonomy.read")
+    ),
+    "aethos.finance_ops.create_action_plan": BrokerTool(
+        _create_finance_ops_action_plan,
+        "draft",
+        _CONTROL_ROOM_READ,
+        "create_finance_ops_action_plan",
+    ),
+    "aethos.o2c.draft_invoice": BrokerTool(
+        _draft_invoice, "write_money_in", ("invoices.draft",), "draft_invoice"
+    ),
+    "aethos.o2c.collections_read_pack": BrokerTool(
+        _o2c_collections_read_pack,
+        "read_only",
+        ("clients.read", "invoices.read", "collections.read"),
+    ),
+    "aethos.collections.draft_reminders": BrokerTool(
+        _draft_collection_reminders,
+        "write_money_in",
+        ("collections.manage", "invoices.read"),
+        "draft_collection_reminders",
+    ),
+    "aethos.p2p.payment_risk_read_pack": BrokerTool(
+        _p2p_payment_risk_read_pack,
+        "read_only",
+        ("clients.read", "bills.read", "bill_payments.read"),
+    ),
+    "aethos.p2p.propose_bill_payment_batch": BrokerTool(
+        _propose_bill_payment_batch,
+        "write_money_out",
+        ("bill_payments.prepare", "bills.read"),
+        "propose_bill_payment_batch",
+    ),
+    "aethos.r2r.prepare_month_end_close": BrokerTool(
+        _prepare_month_end_close,
+        "accounting",
+        ("accounting.close_manage",),
+        "prepare_month_end_close",
+    ),
+    "aethos.r2r.prepare_year_end_close": BrokerTool(
+        _prepare_year_end_close,
+        "accounting",
+        ("accounting.close_manage",),
+        "prepare_year_end_close",
+    ),
+    "aethos.r2r.generate_financial_statement_package": BrokerTool(
+        _generate_financial_statement_package,
+        "read_only",
+        ("accounting.read", "reports.read"),
+        "generate_financial_statement_package",
+    ),
+    "aethos.r2r.management_pack_read_pack": BrokerTool(
+        _r2r_management_pack_read_pack,
+        "read_only",
+        (*_FINANCE_READ, "projects.read", "employees.read", "time_entries.read"),
+    ),
+    "aethos.r2r.accounting_decision_trail_read_pack": BrokerTool(
+        _accounting_decision_trail_read_pack,
+        "read_only",
+        ("accounting.read", "inbox.read", "agent.autonomy.read"),
+    ),
+    "aethos.r2r.prepare_manual_journal_review": BrokerTool(
+        _prepare_manual_journal_review,
+        "accounting",
+        ("accounting.journal_prepare",),
+        "aethos.r2r.prepare_manual_journal_review",
+        "accounting_guardian",
+    ),
 }

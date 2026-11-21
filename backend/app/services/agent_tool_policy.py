@@ -61,12 +61,43 @@ class AgentToolPolicy:
         tool_name: str,
         risk_class: ToolRiskClass,
         user_id: str,
+        required_privileges: tuple[str, ...] | None = None,
     ) -> AgentToolPolicyDecision:
-        user_role = await self._fetch_user_role(user_id)
         privilege_code = _PRIVILEGE_BY_RISK[risk_class]
-        has_privilege = await self._has_tool_privilege(user_id, privilege_code)
         minimum_role = _MINIMUM_ROLE_BY_RISK[risk_class]
-        autonomy_rows = await self._fetch_autonomy_rows(agent_name, action_type)
+        strict = required_privileges is not None
+        if strict:
+            permissions = await SecurityService(self.db, self.tenant_id).effective_permissions(
+                user_id
+            )
+            user_role = UserRole(permissions.legacy_role)
+            # Broker accounting operations prepare drafts. The catalog also
+            # supplies the domain grant for the exact accounting operation.
+            if risk_class == "accounting":
+                privilege_code = _PRIVILEGE_BY_RISK["draft"]
+            has_privilege = (
+                user_role != UserRole.employee
+                and not permissions.must_change_password
+                and {privilege_code, *(required_privileges or ())}.issubset(
+                    permissions.privilege_codes
+                )
+            )
+        else:
+            user_role = await self._fetch_user_role(user_id)
+            has_privilege = await self._has_tool_privilege(user_id, privilege_code)
+
+        if strict and not has_privilege:
+            return AgentToolPolicyDecision(
+                allowed=False,
+                execute_now=False,
+                route_to_hitl=False,
+                reason="missing_explicit_permission",
+                user_role=user_role,
+                minimum_role=minimum_role,
+                autonomy_level=0,
+            )
+
+        autonomy_rows = await self._fetch_autonomy_rows(agent_name, action_type, fail_closed=strict)
         autonomy_level = self._select_autonomy_level(autonomy_rows, action_type)
 
         control_reason = self._blocked_by_control(
@@ -74,6 +105,8 @@ class AgentToolPolicy:
             action_type=action_type,
             tool_name=tool_name,
         )
+        if strict and risk_class != "read_only" and autonomy_level < 2:
+            control_reason = control_reason or "notify_only"
         if control_reason:
             return AgentToolPolicyDecision(
                 allowed=False,
@@ -134,13 +167,15 @@ class AgentToolPolicy:
     async def _fetch_user_role(self, user_id: str) -> UserRole:
         try:
             result = await asyncio.to_thread(
-                lambda: self.db.table("tenant_users")
-                .select("role")
-                .eq("tenant_id", self.tenant_id)
-                .eq("user_id", user_id)
-                .is_("deleted_at", "null")
-                .limit(1)
-                .execute()
+                lambda: (
+                    self.db.table("tenant_users")
+                    .select("role")
+                    .eq("tenant_id", self.tenant_id)
+                    .eq("user_id", user_id)
+                    .is_("deleted_at", "null")
+                    .limit(1)
+                    .execute()
+                )
             )
             rows = getattr(result, "data", None) or []
             if rows:
@@ -176,20 +211,24 @@ class AgentToolPolicy:
         except (TypeError, ValueError):
             return 2
 
-    async def _fetch_autonomy_rows(self, agent_name: str, action_type: str) -> list[dict]:
+    async def _fetch_autonomy_rows(
+        self, agent_name: str, action_type: str, *, fail_closed: bool = False
+    ) -> list[dict]:
         try:
             result = await asyncio.to_thread(
-                lambda: self.db.table("agent_autonomy_settings")
-                .select(
-                    "action_type,level,is_enabled,circuit_open_until,circuit_open_reason"
+                lambda: (
+                    self.db.table("agent_autonomy_settings")
+                    .select("action_type,level,is_enabled,circuit_open_until,circuit_open_reason")
+                    .eq("tenant_id", self.tenant_id)
+                    .eq("agent_name", agent_name)
+                    .in_("action_type", [action_type, _DEFAULT_ACTION_TYPE])
+                    .execute()
                 )
-                .eq("tenant_id", self.tenant_id)
-                .eq("agent_name", agent_name)
-                .in_("action_type", [action_type, _DEFAULT_ACTION_TYPE])
-                .execute()
             )
             return getattr(result, "data", None) or []
         except Exception:
+            if fail_closed:
+                raise
             return []
 
     @staticmethod
@@ -228,9 +267,7 @@ def _circuit_is_open(value: object) -> bool:
         if isinstance(value, datetime.datetime):
             opened_until = value
         else:
-            opened_until = datetime.datetime.fromisoformat(
-                str(value).replace("Z", "+00:00")
-            )
+            opened_until = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if opened_until.tzinfo is None:
             opened_until = opened_until.replace(tzinfo=datetime.UTC)
     except (TypeError, ValueError):
