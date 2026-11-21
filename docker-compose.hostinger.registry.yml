@@ -13,10 +13,10 @@
 #
 # The API is not published through Traefik directly. Both nginx web containers
 # proxy /api/* to the private api service on the internal Docker network.
-# Nous/Hermes runs as a dedicated profile in the shared host Hermes instance.
-# The api service reaches that private host listener through host-gateway.
+# The API reaches the dedicated host Hermes listener over an API-only bridge.
+# See docs/infra/HERMES_DOCKER_PREFLIGHT.md before applying this topology.
 
-x-api-environment: &api-environment
+x-backend-environment: &backend-environment
   PORT: "8080"
   BUILD_SHA: "${AETHOS_IMAGE_TAG:-unknown}"
   ENVIRONMENT: "${ENVIRONMENT:-production}"
@@ -69,14 +69,7 @@ x-api-environment: &api-environment
   ATLAS_BASIC_OPENROUTER_BASE_URL: "${ATLAS_BASIC_OPENROUTER_BASE_URL:-}"
   AGENT_MODELS: "${AGENT_MODELS:-google/gemma-4-31b-it:free,openrouter/free,anthropic/claude-haiku-4.5}"
   ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-  ATLAS_AI_RUNTIME: "${ATLAS_AI_RUNTIME:-hermes_agent}"
-  ATLAS_HERMES_API_BASE_URL: "${ATLAS_HERMES_API_BASE_URL:-http://host.docker.internal:8643}"
-  ATLAS_HERMES_API_SERVER_KEY: "${ATLAS_HERMES_API_SERVER_KEY:-}"
-  ATLAS_HERMES_TIMEOUT_SECONDS: "${ATLAS_HERMES_TIMEOUT_SECONDS:-90}"
-  ATLAS_HIDE_TOOL_EVENTS: "${ATLAS_HIDE_TOOL_EVENTS:-true}"
-  ATLAS_HERMES_FALLBACK_TO_BASIC: "${ATLAS_HERMES_FALLBACK_TO_BASIC:-true}"
-  AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN:-}"
-  ATLAS_CONTEXT_SIGNING_SECRET: "${ATLAS_CONTEXT_SIGNING_SECRET:-}"
+
   LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
   LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
   LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
@@ -114,8 +107,19 @@ services:
     ports:
       - "127.0.0.1:8011:8080"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment: *api-environment
+      - "host.docker.internal:172.31.254.1"
+    environment:
+      <<: *backend-environment
+      ATLAS_AI_RUNTIME: "${ATLAS_AI_RUNTIME:-hermes_agent}"
+      ATLAS_HERMES_API_BASE_URL: "http://host.docker.internal:8643"
+      ATLAS_HERMES_API_SERVER_KEY: "${ATLAS_HERMES_API_SERVER_KEY:-}"
+      ATLAS_HERMES_TIMEOUT_SECONDS: "${ATLAS_HERMES_TIMEOUT_SECONDS:-90}"
+      ATLAS_HIDE_TOOL_EVENTS: "${ATLAS_HIDE_TOOL_EVENTS:-true}"
+      ATLAS_HERMES_FALLBACK_TO_BASIC: "${ATLAS_HERMES_FALLBACK_TO_BASIC:-true}"
+      AETHOS_HERMES_TOOL_TOKEN: "${AETHOS_HERMES_TOOL_TOKEN:-}"
+      ATLAS_CONTEXT_SIGNING_SECRET: "${ATLAS_CONTEXT_SIGNING_SECRET:-}"
+      NO_PROXY: "host.docker.internal,${NO_PROXY:-localhost,127.0.0.1}"
+      no_proxy: "host.docker.internal,${no_proxy:-${NO_PROXY:-localhost,127.0.0.1}}"
     healthcheck:
       test:
         [
@@ -129,7 +133,9 @@ services:
       start_period: 30s
       retries: 3
     networks:
-      - aethos-internal
+      aethos-internal: {}
+      hermes-api:
+        ipv4_address: 172.31.254.2
 
   frontend:
     image: "ghcr.io/venkateshbr/aethos-ps-frontend:${AETHOS_IMAGE_TAG:-latest}"
@@ -161,7 +167,7 @@ services:
       --queues=default,extraction,cron,billing,fx
       --concurrency=4
     environment:
-      <<: *api-environment
+      <<: *backend-environment
       QUEUE_DB_POOL_MIN_SIZE: "${QUEUE_WORKER_DB_POOL_MIN_SIZE:-1}"
       QUEUE_DB_POOL_MAX_SIZE: "${QUEUE_WORKER_DB_POOL_MAX_SIZE:-2}"
       QUEUE_DB_APPLICATION_NAME: "${QUEUE_WORKER_DB_APPLICATION_NAME:-aethos-ps-worker}"
@@ -194,7 +200,7 @@ services:
       - migrate
     command: ["python", "scripts/apply_migrations.py"]
     environment:
-      <<: *api-environment
+      <<: *backend-environment
       APPLY_MIGRATIONS: "${APPLY_MIGRATIONS:-}"
     networks:
       - aethos-internal
@@ -221,3 +227,6 @@ networks:
   aethos-internal:
     name: "${AETHOS_INTERNAL_NETWORK:-aethos-ps-internal}"
     driver: bridge
+  hermes-api:
+    external: true
+    name: aethos-ps-hermes-api
