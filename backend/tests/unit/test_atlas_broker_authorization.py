@@ -1,6 +1,8 @@
 """Offline contract checks for broker authorization; no ERP handlers run."""
 
+import re
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -142,4 +144,101 @@ async def test_membership_lookup_failure_never_dispatches(
     with pytest.raises(HTTPException) as exc:
         await _execute(broker, tool_name)
     assert exc.value.status_code == expected
+    handler.assert_not_awaited()
+
+
+# Independent contract: AR, AP, WIP and active engagements are all-or-nothing.
+_SNAPSHOT_GRANTS = {
+    "atlas.tools.read",
+    "reports.read",
+    "invoices.read",
+    "bills.read",
+    "accounting.read",
+    "engagements.read",
+    "time_entries.read",
+}
+
+
+@pytest.mark.parametrize("missing", sorted(_SNAPSHOT_GRANTS))
+async def test_snapshot_requires_each_component_grant(
+    monkeypatch: pytest.MonkeyPatch, broker: SimpleNamespace, missing: str
+) -> None:
+    name = "aethos.finance_ops.snapshot"
+    handler = _mock_handler(monkeypatch, name)
+    broker.lookup.return_value = _permissions("manager", sorted(_SNAPSHOT_GRANTS - {missing}))
+    with pytest.raises(HTTPException) as exc:
+        await _execute(broker, name)
+    assert exc.value.status_code == 403
+    handler.assert_not_awaited()
+
+
+@pytest.fixture
+def finance_seed() -> dict[str, set[str]]:
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "supabase/migrations/0096_dynamics_style_security_catalog.sql"
+    )
+    pairs = set(re.findall(r"\('([a-z_]+)', '([a-z._]+)'\)", migration.read_text()))
+    return {
+        role: {
+            privilege
+            for key, duty in pairs
+            if key == role
+            for duty_key, privilege in pairs
+            if duty_key == duty and "." in privilege
+        }
+        for role in ("executive_viewer", "finance_approver", "finance_ops_manager")
+    }
+
+
+@pytest.mark.parametrize(
+    ("seed_role", "membership_role", "manager_access"),
+    [
+        ("executive_viewer", "viewer", False),
+        ("finance_approver", "approver", False),
+        ("finance_ops_manager", "manager", True),
+    ],
+)
+async def test_seeded_finance_roles_keep_snapshot_but_control_room_is_manager_only(
+    monkeypatch: pytest.MonkeyPatch,
+    broker: SimpleNamespace,
+    finance_seed: dict[str, set[str]],
+    seed_role: str,
+    membership_role: str,
+    manager_access: bool,
+) -> None:
+    grants = finance_seed[seed_role]
+    assert _SNAPSHOT_GRANTS | {"inbox.read", "agent.autonomy.read"} <= grants
+    broker.lookup.return_value = _permissions(membership_role, sorted(grants))
+    snapshot = "aethos.finance_ops.snapshot"
+    _mock_handler(monkeypatch, snapshot)
+    assert (await _execute(broker, snapshot)).result == {"mock": True}
+
+    control_room = "aethos.finance_ops.control_room"
+    handler = _mock_handler(monkeypatch, control_room)
+    if manager_access:
+        assert (await _execute(broker, control_room)).result == {"mock": True}
+        handler.assert_awaited_once()
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await _execute(broker, control_room)
+        assert exc.value.status_code == 403
+        handler.assert_not_awaited()
+
+
+async def test_configuration_telemetry_preserves_nested_control_room_role_gate(
+    monkeypatch: pytest.MonkeyPatch, broker: SimpleNamespace
+) -> None:
+    name = "aethos.configuration_telemetry.read_pack"
+    handler = _mock_handler(monkeypatch, name)
+    grants = _SNAPSHOT_GRANTS | {
+        "inbox.read",
+        "agent.autonomy.read",
+        "settings.manage",
+        "ai.settings.read",
+    }
+    broker.lookup.return_value = _permissions("viewer", sorted(grants))
+    with pytest.raises(HTTPException) as exc:
+        await _execute(broker, name)
+    assert exc.value.status_code == 403
     handler.assert_not_awaited()

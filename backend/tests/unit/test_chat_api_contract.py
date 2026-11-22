@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -444,10 +445,55 @@ def test_chat_message_stream_hides_semantic_tool_frames_by_default(
 
     messages = write_db.tables["chat_messages"]
     assert messages[1]["role"] == "assistant"
-    assert messages[1]["content"] == (
-        "Prepared the time entry and routed it to Inbox for review."
-    )
+    assert messages[1]["content"] == ("Prepared the time entry and routed it to Inbox for review.")
     assert messages[1]["model"] == "aethos-semantic-intent"
+
+
+@pytest.mark.parametrize(
+    "grants", [["atlas.tools.execute_draft"], ["accounting.journal_prepare"], None]
+)
+def test_manual_journal_permission_failure_finishes_chat_without_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    grants: list[str] | None,
+) -> None:
+    from app.api.v1.endpoints import chat
+    from app.services.agent_run_ledger import AgentRunLedger
+    from app.services.atlas_deterministic_responses import atlas_tools
+    from app.services.security_service import SecurityService
+
+    handler = AsyncMock(return_value={})
+    monkeypatch.setattr(atlas_tools, "_prepare_manual_journal_review", handler)
+    lookup = AsyncMock(
+        return_value=SimpleNamespace(
+            legacy_role="manager", privilege_codes=grants, must_change_password=False
+        ),
+        side_effect=RuntimeError("synthetic lookup failure") if grants is None else None,
+    )
+    monkeypatch.setattr(SecurityService, "effective_permissions", lookup)
+    monkeypatch.setattr(AgentRunLedger, "start_run", AsyncMock(return_value=None))
+    runtime = AsyncMock(side_effect=AssertionError("runtime must not be invoked"))
+    monkeypatch.setattr(chat, "build_atlas_runtime", runtime)
+    write_db = _ChatWriteDb()
+    _install_common_overrides()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={
+                    "content": "Prepare an SGD 20 dividend income journal for Sample Trust "
+                    "for June 2026 and route it to Inbox before posting."
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert "was not prepared" in response.text
+    assert '"done": true' in response.text
+    assert "tool_result" not in response.text
+    handler.assert_not_awaited()
+    runtime.assert_not_awaited()
+    lookup.assert_awaited_once_with(USER_ID)
 
 
 @pytest.mark.asyncio
