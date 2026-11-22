@@ -44,6 +44,7 @@ from app.api.v1.endpoints import (
     service_catalogue,
     stripe_connect,
     tax_rates,
+    telegram,
     tenant_users,
     tenants,
     time_entries,
@@ -60,6 +61,7 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
+api_router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router.include_router(collections_policy.router, prefix="/collections", tags=["collections"])
 api_router.include_router(approval_policy.router, prefix="/approval-policy", tags=["approval-policy"])

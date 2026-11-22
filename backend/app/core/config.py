@@ -127,6 +127,8 @@ class Settings(BaseSettings):
     atlas_hermes_fallback_to_basic: bool = True  # graceful degradation: Hermes outage -> Basic runtime (#409)
     aethos_hermes_tool_token: str = ""
     atlas_context_signing_secret: str = ""
+    telegram_erp_enabled: bool = False
+    telegram_erp_webhook_secret: str = ""
 
     @field_validator("agent_models", "cors_origins", mode="before")
     @classmethod

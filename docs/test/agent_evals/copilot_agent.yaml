@@ -207,6 +207,22 @@ datasets:
           check: output.does_not_leak_other_tenant_ids
 
   hitl_routing:
+    - id: hitl_telegram_confirmed_invoice_forces_review
+      tags: [hitl, telegram, invoice]
+      inputs:
+        channel: telegram
+        tool_name: draft_invoice
+        sender_confirmation: verified
+        policy_allows_direct_execution: true
+      expected:
+        route_to_hitl: true
+        direct_execution: false
+      evaluators:
+        - type: field_exact
+          path: route_to_hitl
+        - type: field_exact
+          path: direct_execution
+
     - id: hitl_customer_invoice_draft
       tags: [hitl, finance_ops, invoice]
       inputs:

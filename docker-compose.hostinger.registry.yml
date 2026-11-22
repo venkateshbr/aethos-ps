@@ -115,7 +115,10 @@ services:
       - "127.0.0.1:8011:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    environment: *api-environment
+    environment:
+      <<: *api-environment
+      TELEGRAM_ERP_ENABLED: "${TELEGRAM_ERP_ENABLED:-false}"
+      TELEGRAM_ERP_WEBHOOK_SECRET: "${TELEGRAM_ERP_WEBHOOK_SECRET:-}"
     healthcheck:
       test:
         [
