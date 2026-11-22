@@ -124,6 +124,9 @@ IPTABLES = "/usr/sbin/iptables-nft"
 SS = "/usr/bin/ss"
 SYSTEMCTL = "/usr/bin/systemctl"
 DOCKER = ("/usr/bin/docker", "--host=unix:///run/docker.sock")
+NSENTER = "/usr/bin/nsenter"
+API_PROJECT = "aethos-ps"
+API_IMAGE = "ghcr.io/venkateshbr/aethos-ps-api"
 LEGACY = "aethos-nous-hermes.service"
 ALLOW = LISTENER_POLICY[0][0]
 COMPAT = (
@@ -144,13 +147,28 @@ def run(*args: str, data: str | None = None) -> str:
     return result.stdout
 
 
-def nft_rules(index: int | None = None, *, readback: bool = False) -> list[str]:
+@dataclass(frozen=True)
+class ApprovedAPI:
+    release: str
+    image_id: str
+    container_id: str
+    network_id: str
+    endpoint_id: str
+
+
+@dataclass(frozen=True)
+class Ingress:
+    bridge_index: int
+    veth_index: int
+    veth_name: str
+    mac: str
+
+
+def nft_rules(ingress: Ingress | None = None, *, readback: bool = False) -> list[str]:
     rules = []
-    if index is not None:
-        if type(index) is not int or index <= 0:
-            raise GuardBlocked("invalid bridge ifindex")
+    if ingress is not None:
         interface = f'"{_BRIDGE.interface}"'
-        iif = interface if readback else str(index)
+        iif = interface if readback else str(ingress.bridge_index)
         rules.append(
             f"iif {iif} iifname {interface} ip saddr {ALLOW.source} ip daddr {ALLOW.destination} "
             f"tcp dport {_BIND[1]} ct original ip daddr {ALLOW.destination} "
@@ -160,27 +178,52 @@ def nft_rules(index: int | None = None, *, readback: bool = False) -> list[str]:
 
 
 CHAIN = "type filter hook input priority -10; policy accept;"
+BRIDGE_CHAIN = "type filter hook input priority -300; policy accept;"
 
 
-def require_table(index: int | None = None) -> None:
-    observed = run(NFT, "-s", "-nn", "list", "table", "inet", TABLE)
-    expected = [
-        f"table inet {TABLE} {{", "chain input {", CHAIN,
-        *nft_rules(index, readback=True), "}", "}",
+def bridge_rules(ingress: Ingress | None, *, readback: bool = False) -> list[str]:
+    if ingress is None:
+        return []  # The inet chain denies both families unconditionally.
+    if (not valid_index(ingress.bridge_index) or not valid_index(ingress.veth_index)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,15}", ingress.veth_name) is None
+            or re.fullmatch(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", ingress.mac) is None):
+        raise GuardBlocked("invalid ingress port evidence")
+    veth = f'"{ingress.veth_name}"'
+    iif = veth if readback else str(ingress.veth_index)
+    target = f'meta ibrname "{_BRIDGE.interface}" ip daddr {ALLOW.destination} tcp dport {_BIND[1]}'
+    # Bridge INPUT sees the physical port; inet INPUT sees only its bridge master.
+    return [
+        f"iif {iif} iifname {veth} ether saddr {ingress.mac} ip saddr {ALLOW.source} {target} counter accept",
+        f"{target} counter drop",
     ]
-    if [line.strip() for line in observed.splitlines()] != expected:
-        raise GuardBlocked("dedicated nft INPUT policy missing or drifted")
 
 
-def replace_table(index: int | None = None) -> None:
-    prefix = f"inet {TABLE}"
-    batch = [
-        f"add table {prefix}", f"delete table {prefix}", f"add table {prefix}",
-        f"add chain {prefix} input {{ {CHAIN} }}",
-        *(f"add rule {prefix} input {rule}" for rule in nft_rules(index)),
-    ]
+def tables(ingress: Ingress | None, *, readback: bool = False) -> tuple[tuple[str, str, list[str]], ...]:
+    return (
+        ("inet", CHAIN, nft_rules(ingress, readback=readback)),
+        ("bridge", BRIDGE_CHAIN, bridge_rules(ingress, readback=readback)),
+    )
+
+
+def require_table(ingress: Ingress | None = None) -> None:
+    for family, chain, rules in tables(ingress, readback=True):
+        observed = run(NFT, "-s", "-nn", "-y", "list", "table", family, TABLE)
+        expected = [f"table {family} {TABLE} {{", "chain input {", chain, *rules, "}", "}"]
+        if [line.strip() for line in observed.splitlines()] != expected:
+            raise GuardBlocked("dedicated nft INPUT policy missing or drifted")
+
+
+def replace_table(ingress: Ingress | None = None) -> None:
+    batch = []
+    for family, chain, rules in tables(ingress):
+        prefix = f"{family} {TABLE}"
+        batch.extend((
+            f"add table {prefix}", f"delete table {prefix}", f"add table {prefix}",
+            f"add chain {prefix} input {{ {chain} }}",
+            *(f"add rule {prefix} input {rule}" for rule in rules),
+        ))
     run(NFT, "-f", "-", data="\n".join(batch) + "\n")
-    require_table(index)
+    require_table(ingress)
 
 
 def compat_rules() -> list[str]:
@@ -218,7 +261,7 @@ def close_guard() -> None:
             raise GuardBlocked("unexpected tagged IPv4 INPUT rule; deny retained, inspect manually")
 
 
-def require_approval() -> None:
+def require_approval() -> ApprovedAPI:
     # The directory and file are provisioned by root only after live signoff.
     parent = APPROVAL.parent.lstat()
     if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022:
@@ -227,9 +270,15 @@ def require_approval() -> None:
         status = os.fstat(gate.fileno())
         if not stat.S_ISREG(status.st_mode) or status.st_uid != 0 or stat.S_IMODE(status.st_mode) != 0o600:
             raise GuardBlocked("live approval file must be root-owned 0600")
-        expected = hashlib.sha256(Path(__file__).read_bytes()).hexdigest().encode() + b"\n"
-        if gate.read(len(expected) + 1) != expected:
-            raise GuardBlocked("live approval does not match the installed guard")
+        expected = hashlib.sha256(Path(__file__).read_bytes()).hexdigest().encode()
+        match = re.fullmatch(
+            rb"([0-9a-f]{64})\n([0-9a-f]{40})\n(sha256:[0-9a-f]{64})\n"
+            rb"([0-9a-f]{64})\n([0-9a-f]{64})\n([0-9a-f]{64})\n",
+            gate.read(512),
+        )
+        if match is None or match[1] != expected:
+            raise GuardBlocked("live approval does not match the guard and exact API release contract")
+        return ApprovedAPI(*(field.decode("ascii") for field in match.groups()[1:]))
 
 
 def require_legacy_off() -> None:
@@ -238,12 +287,13 @@ def require_legacy_off() -> None:
         raise GuardBlocked("legacy listener must be inactive and disabled")
 
 
-def docker_bridge() -> None:
+def docker_endpoint(approved: ApprovedAPI) -> tuple[int, str, str]:
     (network,) = json.loads(run(*DOCKER, "network", "inspect", _BRIDGE.name))
     ipam = network["IPAM"]
     options = network["Options"]
     if not (
-        network["Name"] == _BRIDGE.name and network["Driver"] == _BRIDGE.driver
+        network["Id"] == approved.network_id
+        and network["Name"] == _BRIDGE.name and network["Driver"] == _BRIDGE.driver
         and network["Scope"] == "local" and network["Internal"] is True
         and network["EnableIPv6"] is False and network.get("EnableIPv4", True) is True
         and ipam["Driver"] == "default"
@@ -253,16 +303,88 @@ def docker_bridge() -> None:
         and options.get("com.docker.network.bridge.inhibit_ipv4", "false") == "false"
     ):
         raise GuardBlocked("Docker bridge identity or IPAM mismatch")
-    members = list(network["Containers"].values())
-    if len(members) > 1 or any(
-        member["IPv4Address"] != f"{ALLOW.source}/29" or member["IPv6Address"] != ""
-        for member in members
-    ):
+    members = network["Containers"]
+    if set(members) != {approved.container_id}:
         raise GuardBlocked("unexpected dedicated bridge membership")
+    member = members[approved.container_id]
+    mac = member["MacAddress"]
+    if (member["EndpointID"] != approved.endpoint_id
+            or member["IPv4Address"] != f"{ALLOW.source}/29" or member["IPv6Address"] != ""
+            or re.fullmatch(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", mac) is None):
+        raise GuardBlocked("dedicated Docker endpoint mismatch")
+
+    # Filter inspect output at the CLI: never read the container environment.
+    (cid, image, reference, project, service, oneoff, state, settings) = [
+        json.loads(line) for line in run(
+            *DOCKER, "container", "inspect", "--format", API_INSPECT, approved.container_id,
+        ).splitlines()
+    ]
+    endpoint = settings["Networks"][_BRIDGE.name]
+    if not (
+        cid == approved.container_id and image == approved.image_id
+        and reference == f"{API_IMAGE}:{approved.release}"
+        and (project, service, oneoff) == (API_PROJECT, "api", "False")
+        and state["Status"] == "running" and state["Running"] is True
+        and state["Paused"] is False and state["Restarting"] is False
+        and valid_index(state["Pid"])
+        and endpoint["NetworkID"] == approved.network_id
+        and endpoint["EndpointID"] == approved.endpoint_id
+        and endpoint["IPAddress"] == ALLOW.source and endpoint["IPPrefixLen"] == 29
+        and endpoint["GlobalIPv6Address"] == "" and endpoint["MacAddress"] == mac
+        and endpoint["IPAMConfig"]["IPv4Address"] == ALLOW.source
+    ):
+        raise GuardBlocked("running Compose API release or endpoint not verified")
+    return state["Pid"], settings["SandboxKey"], mac
+
+
+API_INSPECT = "\n".join((
+    "{{json .Id}}", "{{json .Image}}", "{{json .Config.Image}}",
+    '{{json (index .Config.Labels "com.docker.compose.project")}}',
+    '{{json (index .Config.Labels "com.docker.compose.service")}}',
+    '{{json (index .Config.Labels "com.docker.compose.oneoff")}}',
+    '{"Status":{{json .State.Status}},"Running":{{json .State.Running}},'
+    '"Paused":{{json .State.Paused}},"Restarting":{{json .State.Restarting}},"Pid":{{json .State.Pid}}}',
+    '{{json .NetworkSettings}}',
+))
+
+
+def valid_index(value: object) -> bool:
+    return type(value) is int and 0 < value <= 2**31 - 1
+
+
+def endpoint_ingress(approved: ApprovedAPI) -> Ingress:
+    pid, sandbox, mac = docker_endpoint(approved)
+    index = bridge_index()
+    if re.fullmatch(r"/(?:var/)?run/docker/netns/[0-9a-f]{12,64}", sandbox) is None:
+        raise GuardBlocked("Docker network namespace unavailable")
+    with open(sandbox, "rb") as netns:
+        # Pin the nsfs object against PID reuse, including while executing ip.
+        if not os.path.samestat(os.fstat(netns.fileno()), os.stat(f"/proc/{pid}/ns/net")):
+            raise GuardBlocked("API PID is not in the Docker network namespace")
+        enter = (NSENTER, f"--net=/proc/{os.getpid()}/fd/{netns.fileno()}", "--", IP, "-j")
+        (route,) = json.loads(run(*enter, "-4", "route", "get", _BIND[0]))
+        if route["dst"] != _BIND[0] or route["prefsrc"] != ALLOW.source or "gateway" in route:
+            raise GuardBlocked("API route must be directly connected from the reserved source")
+        dev = route["dev"]
+        if re.fullmatch(r"[A-Za-z0-9_-]{1,15}", dev) is None:
+            raise GuardBlocked("invalid API link name")
+        (peer,) = json.loads(run(*enter, "-d", "address", "show", "dev", dev))
+        (host,) = json.loads(run(IP, "-j", "-d", "link", "show", "master", _BRIDGE.interface))
+        if not (
+            peer["ifname"] == dev and peer["address"] == mac
+            and any(a["family"] == "inet" and a["local"] == ALLOW.source and a["prefixlen"] == 29
+                    for a in peer["addr_info"])
+            and peer["linkinfo"]["info_kind"] == host["linkinfo"]["info_kind"] == "veth"
+            and "UP" in peer["flags"] and "UP" in host["flags"]
+            and host["master"] == _BRIDGE.interface
+            and valid_index(peer["ifindex"]) and valid_index(host["ifindex"])
+            and host["ifindex"] == peer["link_index"] and host["link_index"] == peer["ifindex"]
+        ):
+            raise GuardBlocked("API endpoint does not match the sole dedicated bridge veth")
+    return Ingress(index, host["ifindex"], host["ifname"], mac)
 
 
 def bridge_index() -> int:
-    docker_bridge()
     (link,) = json.loads(run(IP, "-j", "-d", "link", "show", "dev", _BRIDGE.interface))
     if link["ifname"] != _BRIDGE.interface or link["linkinfo"]["info_kind"] != "bridge" or "UP" not in link["flags"]:
         raise GuardBlocked("expected Linux bridge is not up")
@@ -282,7 +404,7 @@ def bridge_index() -> int:
         if ip_network(destination).overlaps(subnet) and route.get("dev") != _BRIDGE.interface:
             raise GuardBlocked("overlapping host route for dedicated subnet")
     index = link["ifindex"]
-    if type(index) is not int or index <= 0:
+    if not valid_index(index):
         raise GuardBlocked("Linux bridge ifindex unavailable")
     return index
 
@@ -305,11 +427,11 @@ def require_listener(pid: str) -> None:
         raise GuardBlocked("listener bind or owning process mismatch")
 
 
-def start_check() -> int:
+def start_check() -> Ingress:
     require_table()
-    require_approval()
+    approved = require_approval()
     require_legacy_off()
-    return bridge_index()
+    return endpoint_ingress(approved)
 
 
 def prepare() -> None:
@@ -321,12 +443,13 @@ def prepare() -> None:
 def activate(pid: str) -> None:
     require_table()
     require_listener(pid)
-    index = start_check()
+    ingress = start_check()
     install_compat()
-    if bridge_index() != index:
-        raise GuardBlocked("bridge changed during guard activation")
-    require_table()
-    replace_table(index)
+    if start_check() != ingress:
+        raise GuardBlocked("API ingress changed during guard activation")
+    replace_table(ingress)
+    if endpoint_ingress(require_approval()) != ingress:
+        raise GuardBlocked("API ingress changed during nft transaction")
 
 
 def main(args: list[str]) -> int:

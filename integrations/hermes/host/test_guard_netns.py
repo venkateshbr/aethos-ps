@@ -89,20 +89,36 @@ def verify(parent_namespace):
         # Simulate a post-bind transition without actually listening. The exact ss/PID
         # and Docker decisions are tested separately against command-output fixtures.
         index = json.loads(cmd("ip", "-j", "link", "show", "dev", "br-aethos-nous"))[0]["ifindex"]
+        port = json.loads(cmd("ip", "-j", "link", "show", "dev", "api-bridge"))[0]
+        mac = json.loads(enter(api, "ip", "-j", "link", "show", "dev", "api-peer"))[0]["address"]
+        ingress = guard.Ingress(index, port["ifindex"], "api-bridge", mac)
         guard.install_compat()
         guard.install_compat()  # idempotent
-        guard.replace_table(index)
+        guard.replace_table(ingress)
         assert connect(api, "172.31.254.1") == "refused"
         assert connect(other, "192.0.2.1") == "dropped"
         assert connect(other, "2001:db8::1") == "dropped"
         assert connect(other, "192.0.2.1", 18643) == "refused"
         cmd("iptables-nft", "-t", "nat", "-A", "PREROUTING", "-d", "172.31.254.1", "-p", "tcp", "--dport", "18643", "-j", "REDIRECT", "--to-ports", "8643")
         assert connect(api, "172.31.254.1", 18643) == "dropped"
-        guard.require_table(index)
+        guard.require_table(ingress)
         enter(api, "ip", "addr", "del", "172.31.254.2/29", "dev", "api-peer")
         enter(api, "ip", "addr", "add", "172.31.254.3/29", "dev", "api-peer")
         assert connect(api, "172.31.254.1") == "dropped"
         print("PASS open: only exact source/bridge/gateway reaches the socket lookup; DNAT and unrelated port checked")
+
+        # Same bridge, same approved network tuple, different physical port.
+        cmd("ip", "link", "delete", "api-bridge")
+        cmd("ip", "link", "add", "api-bridge", "type", "veth", "peer", "name", "api-peer")
+        cmd("ip", "link", "set", "api-bridge", "master", "br-aethos-nous")
+        cmd("ip", "link", "set", "api-bridge", "up")
+        cmd("ip", "link", "set", "api-peer", "netns", str(api.pid))
+        enter(api, "ip", "link", "set", "api-peer", "address", mac)
+        enter(api, "ip", "addr", "add", "172.31.254.2/29", "dev", "api-peer")
+        enter(api, "ip", "link", "set", "api-peer", "up")
+        assert connect(api, "172.31.254.1") == "dropped"
+        assert connect(api, "172.31.254.1", 18644) == "refused"
+        print("PASS same-bridge replacement stays denied without a userspace watcher")
 
         assert guard.main(["prepare"]) == 1  # unexpected open state must close and refuse
         guard.require_table()
