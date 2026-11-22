@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -334,6 +336,63 @@ def test_github_deploy_requires_the_confirmed_hostinger_project_name() -> None:
     assert "project-name: aethos-ps-production" not in workflow
 
 
+@pytest.mark.parametrize(
+    ("configured_profiles", "migrations", "expected_profiles"),
+    [
+        ("", "", "worker"),
+        ("worker,hermes", "0105_example.sql", "worker,migrate"),
+        ("hermes", "", "worker"),
+        ("worker,migrate,hermes", "0105_example.sql", "worker,migrate"),
+    ],
+)
+def test_hostinger_release_payload_drops_legacy_hermes_settings(
+    tmp_path: Path,
+    configured_profiles: str,
+    migrations: str,
+    expected_profiles: str,
+) -> None:
+    workflow = yaml.safe_load(_HOSTINGER_DEPLOY_WORKFLOW.read_text(encoding="utf-8"))
+    steps = {step.get("name"): step for step in workflow["jobs"]["deploy"]["steps"]}
+    deploy = steps["Deploy to Hostinger via repo clone (registry compose, no VPS build)"]
+    # Execute just the payload preparation, never the Hostinger call.
+    prepare, separator, _ = deploy["run"].partition('\nCONTENT=')
+    assert separator
+    assert deploy["env"]["PRODUCTION_ENV"] == "${{ secrets.AETHOS_PRODUCTION_ENV }}"
+    assert deploy["env"]["CONFIGURED_PROFILES"] == "${{ vars.COMPOSE_PROFILES }}"
+    result = subprocess.run(
+        ["bash", "-s"],
+        input=prepare + '\ncat "$ENVFILE"\n',
+        env={
+            "PATH": os.environ["PATH"],
+            "TMPDIR": str(tmp_path),
+            "TAG": "1" * 40,
+            "APPLY_MIGRATIONS": migrations,
+            "CONFIGURED_PROFILES": configured_profiles,
+            "TRAEFIK_ENTRYPOINT": "websecure",
+            "TRAEFIK_CERT_RESOLVER": "letsencrypt",
+            "PRODUCTION_ENV": (
+                "COMPOSE_PROFILES=worker,hermes\n"
+                "ATLAS_HERMES_API_BASE_URL=http://hermes:8642\n"
+                "ATLAS_HERMES_API_SERVER_KEY=synthetic-key\n"
+                "ATLAS_AI_RUNTIME=hermes_agent\n"
+            ),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    fields = dict(line.split("=", 1) for line in result.stdout.splitlines())
+    assert "ATLAS_HERMES_API_BASE_URL" not in fields
+    assert fields["ATLAS_HERMES_API_SERVER_KEY"] == "synthetic-key"
+    assert fields["ATLAS_AI_RUNTIME"] == "hermes_agent"
+    assert fields["COMPOSE_PROFILES"] == expected_profiles
+    assert fields["APPLY_MIGRATIONS"] == migrations
+    assert re.findall(r"^bp\s+(\S+)", steps["Build and push images"]["run"], re.MULTILINE) == [
+        "aethos-ps-api", "aethos-ps-frontend", "aethos-ps-timesheet",
+    ]
+
+
 def test_hostinger_api_healthcheck_requires_ready_json_status() -> None:
     healthcheck_command = _hostinger_services()["api"]["healthcheck"]["test"][-1]
 
@@ -372,6 +431,32 @@ def test_hostinger_pins_hermes_route_to_dedicated_api_identity(compose_path: Pat
             )
     assert "hermes" not in services
     assert "hermes-data" not in compose.get("volumes", {})
+
+
+@pytest.mark.parametrize(
+    "compose_path",
+    [_HOSTINGER_COMPOSE, _REPO_ROOT / "docker-compose.hostinger.registry.yml"],
+    ids=["build", "registry"],
+)
+def test_compose_env_file_cannot_override_dedicated_hermes_route(
+    compose_path: Path, tmp_path: Path,
+) -> None:
+    if shutil.which("docker") is None or subprocess.run(
+        ["docker", "compose", "version"], capture_output=True, check=False,
+    ).returncode != 0:
+        pytest.skip("Docker Compose CLI is not installed")
+    env_file = tmp_path / "fixture.env"
+    env_file.write_text("ATLAS_HERMES_API_BASE_URL=http://hermes:8642\n", encoding="utf-8")
+    result = subprocess.run(
+        ["docker", "compose", "--env-file", str(env_file), "-f", str(compose_path),
+         "config", "--format", "json"],
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    api = json.loads(result.stdout)["services"]["api"]
+    assert api["environment"]["ATLAS_HERMES_API_BASE_URL"] == "http://host.docker.internal:8643"
 
 
 @pytest.mark.parametrize(

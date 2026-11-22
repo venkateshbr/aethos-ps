@@ -384,6 +384,14 @@ Optional GitHub Actions variables:
 - `TRAEFIK_CERT_RESOLVER`
 - `COMPOSE_PROFILES=worker`
 
+The workflow defaults to `worker`, strips a stale `hermes` profile from that
+variable, and adds `migrate` when migrations are requested. It omits
+`ATLAS_HERMES_API_BASE_URL` from the Docker Manager payload: the Hostinger
+Compose manifest pins the dedicated API route. Remove the stale URL from the
+production env source during a separately approved rollout; do not edit the
+live deployment to validate this behavior. See the
+[dedicated Hermes preflight](HERMES_DOCKER_PREFLIGHT.md) for rollout gates.
+
 ## How the Hostinger deploy actually works (READ THIS FIRST)
 
 Hard-won detail — do not rediscover it. The `hostinger/deploy-on-vps@v2` action
@@ -422,7 +430,7 @@ The Hostinger deploy API rejects `content` longer than **8192 chars**
 ~10 KB (~9.9 KB even with comments stripped), so you **cannot** pass the compose
 as raw YAML to skip the clone — you must pass a short **URL**, which is what makes
 the Docker Manager clone (and hit the private-repo problem above). A validated
-GHCR build works (`.github/workflows/deploy-hostinger.yml` builds the 4 images in
+GHCR build works (`.github/workflows/deploy-hostinger.yml` builds the 3 app images in
 Actions and pushes them to `ghcr.io/venkateshbr/aethos-ps-*`), but delivering the
 registry compose to the VPS still requires either a cloneable URL (git creds) or
 a public URL (e.g. a public gist) plus GHCR pull auth on the VPS. There is no

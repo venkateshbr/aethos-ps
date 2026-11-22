@@ -7,7 +7,7 @@ name: Deploy Hostinger Production
 # ${VAR} interpolation when it CLONES a git repo (it writes a .env the compose
 # reads). The raw-URL/gist path does NOT — the api then comes up with an empty
 # env. So this workflow:
-#   1. builds + pushes the 4 images to GHCR (public packages),
+#   1. builds + pushes the 3 application images to GHCR (Hermes runs on the host),
 #   2. deploys by pointing the Docker Manager at docker-compose.hostinger.registry.yml
 #      (a no-build companion that PULLS those images) via a repo blob URL at the
 #      deployed SHA, so the manager clones, writes .env, and pulls — no VPS build.
@@ -52,12 +52,14 @@ jobs:
           fetch-depth: 1
 
       - name: Verify config
+        env:
+          PRODUCTION_ENV: ${{ secrets.AETHOS_PRODUCTION_ENV }}
         run: |
           set -euo pipefail
           [ -n "${{ vars.HOSTINGER_PROJECT_NAME }}" ] || { echo "set var HOSTINGER_PROJECT_NAME (aethos-ps)"; exit 1; }
           [ -n "${{ vars.HOSTINGER_VM_ID }}" ] || { echo "set var HOSTINGER_VM_ID (1695814)"; exit 1; }
           [ -n "${{ secrets.HOSTINGER_API_KEY }}" ] || { echo "set secret HOSTINGER_API_KEY"; exit 1; }
-          [ -n "${{ secrets.AETHOS_PRODUCTION_ENV }}" ] || { echo "set secret AETHOS_PRODUCTION_ENV"; exit 1; }
+          [ -n "$PRODUCTION_ENV" ] || { echo "set secret AETHOS_PRODUCTION_ENV"; exit 1; }
 
       - name: Registry compose is in sync with the base compose
         run: |
@@ -79,7 +81,6 @@ jobs:
           bp() { docker build -t "$REG/$1:$TAG" -f "$2/$3" "$2"; docker push "$REG/$1:$TAG"; }
           bp aethos-ps-api       backend             Dockerfile
           bp aethos-ps-frontend  frontend            Dockerfile.prod
-          bp aethos-ps-hermes    integrations/hermes Dockerfile
           bp aethos-ps-timesheet frontend            Dockerfile.timesheet.prod
 
       - name: Deploy to Hostinger via repo clone (registry compose, no VPS build)
@@ -87,36 +88,51 @@ jobs:
           KEY: ${{ secrets.HOSTINGER_API_KEY }}
           VM: ${{ vars.HOSTINGER_VM_ID }}
           PROJECT: ${{ vars.HOSTINGER_PROJECT_NAME }}
+          CONFIGURED_PROFILES: ${{ vars.COMPOSE_PROFILES }}
+          PRODUCTION_ENV: ${{ secrets.AETHOS_PRODUCTION_ENV }}
+          TRAEFIK_ENTRYPOINT: ${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}
+          TRAEFIK_CERT_RESOLVER: ${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}
           APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
         run: |
           set -euo pipefail
-          # When migrations are requested, add the one-shot `migrate` profile so
-          # the applier runs against the DB from the VPS.
-          PROFILES="${{ vars.COMPOSE_PROFILES || 'worker,hermes' }}"
-          if [ -n "${APPLY_MIGRATIONS:-}" ]; then PROFILES="$PROFILES,migrate"; fi
+          # The host runtime replaced the Hermes Compose service. Drop the old
+          # profile even if the repository variable still contains it.
+          IFS=, read -r -a REQUESTED_PROFILES <<< "${CONFIGURED_PROFILES:-worker}"
+          PROFILES=""
+          for profile in "${REQUESTED_PROFILES[@]}"; do
+            case "$profile" in ''|hermes) continue ;; esac
+            PROFILES="${PROFILES:+$PROFILES,}$profile"
+          done
+          PROFILES="${PROFILES:-worker}"
+          if [[ -n "${APPLY_MIGRATIONS:-}" && ",$PROFILES," != *,migrate,* ]]; then
+            PROFILES="$PROFILES,migrate"
+          fi
           # Assemble the container env: the prod secret + deploy overrides. The
           # Hostinger API rejects DUPLICATE keys (422), so dedupe with the later
           # (override) value winning while preserving first-seen order.
           RAWENV="$(mktemp)"; ENVFILE="$(mktemp)"
+          trap 'rm -f "$RAWENV" "$ENVFILE"' EXIT
           {
-            printf '%s\n' "${{ secrets.AETHOS_PRODUCTION_ENV }}"
+            printf '%s\n' "$PRODUCTION_ENV"
             echo "DEBUG=false"
             echo "ENVIRONMENT=production"
             echo "FRONTEND_BASE_URL=https://aethos.ishirock.tech"
             echo "CORS_ORIGINS=https://aethos.ishirock.tech,https://timesheet.aethos.ishirock.tech"
             echo "HOSTINGER_APP_DOMAIN=aethos.ishirock.tech"
             echo "HOSTINGER_TIMESHEET_DOMAIN=timesheet.aethos.ishirock.tech"
-            echo "TRAEFIK_ENTRYPOINT=${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}"
-            echo "TRAEFIK_CERT_RESOLVER=${{ vars.TRAEFIK_CERT_RESOLVER || 'letsencrypt' }}"
+            printf 'TRAEFIK_ENTRYPOINT=%s\n' "$TRAEFIK_ENTRYPOINT"
+            printf 'TRAEFIK_CERT_RESOLVER=%s\n' "$TRAEFIK_CERT_RESOLVER"
             echo "COMPOSE_PROFILES=$PROFILES"
             echo "APPLY_MIGRATIONS=${APPLY_MIGRATIONS:-}"
             echo "AETHOS_IMAGE_TAG=$TAG"
           } > "$RAWENV"
           # Dedupe: last (override) value wins, first-seen order preserved.
+          # The Hermes URL is owned by the immutable Compose manifest, not env.
           awk '{
                  line=$0; eq=index(line,"=")
                  if (line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/ || eq==0) next
                  key=substr(line,1,eq-1); val=substr(line,eq+1)
+                 if (key ~ /^[[:space:]]*(export[[:space:]]+)?ATLAS_HERMES_API_BASE_URL[[:space:]]*$/) next
                  if (!(key in seen)) order[++n]=key
                  seen[key]=val
                }
