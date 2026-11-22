@@ -245,20 +245,56 @@ async def test_seeded_finance_roles_keep_snapshot_but_control_room_is_manager_on
         handler.assert_not_awaited()
 
 
-async def test_configuration_telemetry_preserves_nested_control_room_role_gate(
-    monkeypatch: pytest.MonkeyPatch, broker: SimpleNamespace
+# Full tenant health requires the active tenant role AND the explicit grant.
+# Specify the grants independently of the broker catalog so omissions can't
+# silently weaken both the implementation and the test fixture.
+_HEALTH_GRANTS = {"atlas.tools.read", "settings.manage", "agent.autonomy.read"}
+_TELEMETRY_GRANTS = _HEALTH_GRANTS | _SNAPSHOT_GRANTS | {"inbox.read", "ai.settings.read"}
+
+
+@pytest.mark.parametrize(
+    ("name", "other_grants"),
+    [
+        ("aethos.operational_health.read_pack", _HEALTH_GRANTS),
+        ("aethos.configuration_telemetry.read_pack", _TELEMETRY_GRANTS),
+    ],
+    ids=["standalone", "nested"],
+)
+@pytest.mark.parametrize(
+    ("active_role", "has_health_grant", "allowed"),
+    [
+        ("viewer", True, False),
+        ("manager", True, False),
+        (None, True, False),
+        ("admin", False, False),
+        ("admin", True, True),
+        ("owner", True, True),
+    ],
+    ids=["viewer", "manager", "inactive", "admin-no-grant", "admin", "owner"],
+)
+async def test_full_health_requires_active_admin_and_health_grant(
+    monkeypatch: pytest.MonkeyPatch,
+    broker: SimpleNamespace,
+    name: str,
+    other_grants: set[str],
+    active_role: str | None,
+    has_health_grant: bool,
+    allowed: bool,
 ) -> None:
-    name = "aethos.configuration_telemetry.read_pack"
     handler = _mock_handler(monkeypatch, name)
-    grants = _SNAPSHOT_GRANTS | {
-        "inbox.read",
-        "agent.autonomy.read",
-        "settings.manage",
-        "ai.settings.read",
-    }
+    grants = other_grants | ({"operational_health.read"} if has_health_grant else set())
+    # Catalog roles are not authoritative for the membership floor.
     broker.lookup.return_value = _permissions("admin", sorted(grants))
-    broker.membership.return_value = {"role": "viewer"}
-    with pytest.raises(HTTPException) as exc:
-        await _execute(broker, name)
-    assert exc.value.status_code == 403
-    handler.assert_not_awaited()
+    broker.membership.return_value = {"role": active_role} if active_role else None
+
+    if allowed:
+        assert (await _execute(broker, name)).result == {"mock": True}
+        handler.assert_awaited_once_with(broker.db, broker.context, {})
+        assert broker.record.await_args.kwargs["status"] == "succeeded"
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await _execute(broker, name)
+        assert exc.value.status_code == 403
+        handler.assert_not_awaited()
+        assert broker.record.await_args.kwargs["status"] == "skipped"
+        assert broker.record.await_args.kwargs["output_payload"] is None
