@@ -130,15 +130,22 @@ async def execute_atlas_tool(
             detail="Invalid Nous tool context",
         ) from exc
 
-    tool = _TOOL_DISPATCH.get(payload.tool_name)
+    result = await dispatch_atlas_tool(db, context, payload.tool_name, payload.arguments)
+    return AtlasToolExecuteResponse(tool_name=payload.tool_name, result=result)
+
+
+async def dispatch_atlas_tool(
+    db: Client, context: AtlasToolContext, tool_name: str, arguments: dict[str, Any]
+) -> Any:
+    """Shared allowlist dispatch; callers must establish a trusted context first."""
+    tool = _TOOL_DISPATCH.get(tool_name)
     if tool is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nous tool is not available",
         )
 
-    result = await tool(db, context, payload.arguments)
-    return AtlasToolExecuteResponse(tool_name=payload.tool_name, result=result)
+    return await tool(db, context, arguments)
 
 
 async def _list_engagements(
@@ -416,6 +423,10 @@ async def _draft_invoice(
             "period_end": _optional_date(arguments.get("period_end"), "period_end"),
         }
     )
+    if context.scope == "telegram:confirmed_invoice_review":
+        return await _run_copilot_policy_tool(
+            db, context, "draft_invoice", tool_input, require_review=True
+        )
     return await _run_copilot_policy_tool(db, context, "draft_invoice", tool_input)
 
 
@@ -949,6 +960,8 @@ async def _run_copilot_policy_tool(
     context: AtlasToolContext,
     tool_name: str,
     tool_input: dict[str, Any],
+    *,
+    require_review: bool = False,
 ) -> dict[str, Any]:
     agent = CopilotAgent(
         deps=CopilotDeps(
@@ -957,6 +970,8 @@ async def _run_copilot_policy_tool(
             db_client=db,
         )
     )
+    if require_review:
+        return await agent._execute_tool_with_policy(tool_name, tool_input, require_review=True)
     return await agent._execute_tool_with_policy(tool_name, tool_input)
 
 

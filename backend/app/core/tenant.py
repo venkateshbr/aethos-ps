@@ -142,6 +142,11 @@ def _billing_path_is_allowed(request: Request) -> bool:
 def _enforce_billing_access(db: Client, *, tenant_id: str, request: Request) -> None:
     if _billing_path_is_allowed(request):
         return
+    assert_tenant_write_access(db, tenant_id=tenant_id)
+
+
+def assert_tenant_write_access(db: Client, *, tenant_id: str) -> None:
+    """Apply the ERP billing write gate to HTTP and linked-channel writes."""
 
     try:
         result = (

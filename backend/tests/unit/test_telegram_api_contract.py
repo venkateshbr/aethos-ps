@@ -1,14 +1,15 @@
 """Synthetic Telegram transport contract, without external network access."""
+
 import time
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.db import get_service_role_client
-from fastapi import FastAPI
 
 pytestmark = pytest.mark.unit
 BASE = "/api/v1/telegram"
@@ -27,30 +28,47 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def update(text: str = "/id", **fields: Any) -> dict:
-    return {"update_id": 31, "message": {
-        "chat": {"id": 2001, "type": "private"}, "from": {"id": 2001, "is_bot": False},
-        "text": text, "date": int(time.time()), **fields,
-    }}
+    return {
+        "update_id": 31,
+        "message": {
+            "chat": {"id": 2001, "type": "private"},
+            "from": {"id": 2001, "is_bot": False},
+            "text": text,
+            "date": int(time.time()),
+            **fields,
+        },
+    }
 
 
-def test_disabled_then_authenticated_private_id(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_disabled_then_authenticated_private_id(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     assert client.post(f"{BASE}/webhook", headers=HEADERS, json=update()).status_code == 404
     monkeypatch.setitem(settings.__dict__, "telegram_erp_enabled", True)
     assert client.post(f"{BASE}/webhook", json=update()).status_code == 401
     response = client.post(f"{BASE}/webhook", headers=HEADERS, json=update())
     assert response.status_code == 200
-    assert response.json() == {"method": "sendMessage", "chat_id": 2001,
-                               "text": "Your Telegram sender ID is 2001.", "protect_content": True}
+    assert response.json() == {
+        "method": "sendMessage",
+        "chat_id": 2001,
+        "text": "Your Telegram sender ID is 2001.",
+        "protect_content": True,
+    }
 
 
-@pytest.mark.parametrize("body", [
-    {"update_id": 31, "channel_post": {"text": "/id"}},
-    update(chat={"id": -2001, "type": "supergroup"}),
-    update(chat={"id": 2002, "type": "private"}),
-    update(date=1),
-    update(forward_origin={"type": "hidden_user"}),
-])
-def test_ignored_update_never_replies(client: TestClient, monkeypatch: pytest.MonkeyPatch, body: dict) -> None:
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"update_id": 31, "channel_post": {"text": "/id"}},
+        update(chat={"id": -2001, "type": "supergroup"}),
+        update(chat={"id": 2002, "type": "private"}),
+        update(date=1),
+        update(forward_origin={"type": "hidden_user"}),
+    ],
+)
+def test_ignored_update_never_replies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, body: dict
+) -> None:
     monkeypatch.setitem(settings.__dict__, "telegram_erp_enabled", True)
     response = client.post(f"{BASE}/webhook", headers=HEADERS, json=body)
     assert response.status_code == 200

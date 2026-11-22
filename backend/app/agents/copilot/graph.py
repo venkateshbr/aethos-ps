@@ -936,9 +936,13 @@ class CopilotAgent:
         )
         return {"error": f"Unknown tool: {tool_name}"}
 
-    async def _execute_tool_with_policy(self, tool_name: str, tool_input: dict) -> dict:
+    async def _execute_tool_with_policy(
+        self, tool_name: str, tool_input: dict, *, require_review: bool = False
+    ) -> dict:
         """Apply tool policy before dispatching a Copilot tool call."""
         if tool_name not in {tool["name"] for tool in self.TOOLS}:
+            if require_review:
+                return {"error": "Tool is not available for review."}
             return await self._execute_tool(tool_name, tool_input)
 
         risk_class = risk_class_for_tool("copilot_agent", tool_name)
@@ -959,7 +963,7 @@ class CopilotAgent:
                 "minimum_role": decision.minimum_role.value,
                 "user_role": decision.user_role.value,
             }
-        if decision.route_to_hitl:
+        if decision.route_to_hitl or require_review:
             return await self._route_tool_to_hitl(
                 tool_name=tool_name,
                 tool_input=tool_input,
