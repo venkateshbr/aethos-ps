@@ -1,0 +1,16 @@
+[Unit]
+Description=Aethos Hermes port 8643 deny-by-default host guard (#530)
+After=nftables.service netfilter-persistent.service
+Before=docker.service aethos-hermes-runtime.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 -I -B /opt/aethos-hermes-runtime/hermes_listener_guard.py close
+# Stopping the guard must not remove the default deny.
+ExecStop=/usr/bin/python3 -I -B /opt/aethos-hermes-runtime/hermes_listener_guard.py close
+TimeoutStartSec=45s
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=multi-user.target
