@@ -40,6 +40,7 @@ from app.services.atlas_context import (
 from app.services.atlas_read_packs import AtlasReadPackService
 from app.services.engagements_service import EngagementService
 from app.services.o2c_read_service import O2CReadService
+from app.services.operational_telemetry import TENANT_HEALTH_MIN_ROLE
 from app.services.p2p_read_service import P2PReadService
 from app.services.r2r_read_service import R2RReadService
 from app.services.reports_service import ReportsService
@@ -1327,6 +1328,7 @@ _FINANCE_READ = ("reports.read", "invoices.read", "bills.read", "accounting.read
 _WIP_READ = ("reports.read", "engagements.read", "time_entries.read")
 _SNAPSHOT_READ = tuple(dict.fromkeys((*_FINANCE_READ, *_WIP_READ)))
 _CONTROL_ROOM_READ = (*_FINANCE_READ, "inbox.read", "agent.autonomy.read")
+_HEALTH_READ = ("settings.manage", "operational_health.read")
 MANUAL_JOURNAL_REVIEW_TOOL = "aethos.r2r.prepare_manual_journal_review"
 _TOOL_DISPATCH: dict[str, BrokerTool] = {
     "aethos.documents.intake_read_pack": BrokerTool(
@@ -1372,13 +1374,16 @@ _TOOL_DISPATCH: dict[str, BrokerTool] = {
         minimum_role=FINANCE_OPS_CONTROL_ROOM_MIN_ROLE,
     ),
     "aethos.operational_health.read_pack": BrokerTool(
-        _operational_health_read_pack, "read_only", ("settings.manage", "agent.autonomy.read")
+        _operational_health_read_pack,
+        "read_only",
+        (*_HEALTH_READ, "agent.autonomy.read"),
+        minimum_role=TENANT_HEALTH_MIN_ROLE,
     ),
     "aethos.configuration_telemetry.read_pack": BrokerTool(
         _configuration_telemetry_read_pack,
         "read_only",
-        (*_CONTROL_ROOM_READ, "settings.manage", "ai.settings.read"),
-        minimum_role=FINANCE_OPS_CONTROL_ROOM_MIN_ROLE,
+        (*_CONTROL_ROOM_READ, *_HEALTH_READ, "ai.settings.read"),
+        minimum_role=TENANT_HEALTH_MIN_ROLE,
     ),
     "aethos.approval_controls.read_pack": BrokerTool(
         _approval_controls_read_pack, "read_only", ("inbox.read", "agent.autonomy.read")

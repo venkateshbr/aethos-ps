@@ -19,7 +19,7 @@ from app.core.finance_personas import finance_persona_catalog
 from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.domain.currency import normalise_currency_code
-from app.services.operational_telemetry import TenantHealthService
+from app.services.operational_telemetry import TENANT_HEALTH_MIN_ROLE, TenantHealthService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ async def tenant_accounting_context(
 
 @router.get("/health")
 async def tenant_health(
-    _current_user: CurrentUser = require_role(UserRole.admin),  # noqa: B008
+    _current_user: CurrentUser = require_role(TENANT_HEALTH_MIN_ROLE),  # noqa: B008
     tenant_id: str = Depends(get_tenant_id),
     db: Client = Depends(get_service_role_client),  # noqa: B008
 ) -> dict:

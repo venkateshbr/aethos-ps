@@ -249,7 +249,14 @@ async def test_seeded_finance_roles_keep_snapshot_but_control_room_is_manager_on
 # Specify the grants independently of the broker catalog so omissions can't
 # silently weaken both the implementation and the test fixture.
 _HEALTH_GRANTS = {"atlas.tools.read", "settings.manage", "agent.autonomy.read"}
-_TELEMETRY_GRANTS = _HEALTH_GRANTS | _SNAPSHOT_GRANTS | {"inbox.read", "ai.settings.read"}
+_TELEMETRY_GRANTS = _HEALTH_GRANTS | {
+    "accounting.read",
+    "ai.settings.read",
+    "bills.read",
+    "inbox.read",
+    "invoices.read",
+    "reports.read",
+}
 
 
 @pytest.mark.parametrize(
