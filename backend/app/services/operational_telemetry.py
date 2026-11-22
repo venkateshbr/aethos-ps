@@ -9,7 +9,11 @@ from threading import Lock
 from typing import Any
 
 from app.core.config import settings
+from app.core.rbac import UserRole
 from supabase import Client
+
+# The full tenant health summary has the same role floor on every surface.
+TENANT_HEALTH_MIN_ROLE = UserRole.admin
 
 
 @dataclass(frozen=True)

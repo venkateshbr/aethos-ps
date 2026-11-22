@@ -210,6 +210,7 @@ _FINANCE_OPS_SCHEDULE_DEFAULTS: dict[str, Any] = {
     "high_risk_stale_after_hours": 4,
     "escalation_enabled": True,
 }
+FINANCE_OPS_CONTROL_ROOM_MIN_ROLE = UserRole.manager
 _FINANCE_OPS_WORKFLOW_NAME = "scheduled_finance_ops_manager"
 _FINANCE_OPS_ACTION_PLAN_KIND = "copilot_create_finance_ops_action_plan"
 _FINANCE_OPS_ACTION_ITEM_KIND = "finance_ops_action_item"

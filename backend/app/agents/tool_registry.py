@@ -100,6 +100,18 @@ _TOOL_DEFINITIONS: tuple[AgentToolDefinition, ...] = (
     _persisted_action("revenue_recognition_agent", "draft_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_journal", "accounting"),
     _persisted_action("accounting_guardian", "create_manual_journal", "accounting"),
+    AgentToolDefinition(
+        "engagement_letter_agent",
+        "aethos.engagements.create_review",
+        "draft",
+        action_type="create_engagement_draft",
+    ),
+    AgentToolDefinition(
+        "accounting_guardian",
+        "aethos.r2r.prepare_manual_journal_review",
+        "accounting",
+        action_type="draft_journal",
+    ),
     _persisted_action("project_health_agent", "BUDGET_BURN_WARNING", "draft"),
     _persisted_action("project_health_agent", "CAPPED_TM_APPROACHING", "draft"),
     _persisted_action("project_health_agent", "RETAINER_FLOOR_WARNING", "draft"),

@@ -549,6 +549,11 @@ async def _execute(
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 403:
+            return {
+                "policy_denied": True,
+                "error": "You do not have permission to perform this ERP operation, or it has been disabled.",
+            }
         raise RuntimeError(
             f"Aethos tool broker rejected {tool_name} with HTTP {exc.response.status_code}"
         ) from exc

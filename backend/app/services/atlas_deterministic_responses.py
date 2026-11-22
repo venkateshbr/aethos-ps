@@ -16,6 +16,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from fastapi import HTTPException
+
 from app.api.v1.endpoints import atlas_tools
 from app.core.auth import CurrentUser
 from app.services.agent_run_ledger import AgentRunLedger
@@ -871,21 +873,36 @@ class _DeterministicAtlasResponder:
     async def _format_manual_journal(self, message: str, *, period: str | None) -> str:
         amount, currency = _amount_and_currency(message)
         requested_base_currency = _requested_base_currency(message)
-        result = await atlas_tools._prepare_manual_journal_review(
-            self.db,
-            self._context(),
-            {
-                "period": period or "2026-06",
-                "entry_date": _date_from_text(message),
-                "amount": str(amount or Decimal("18000")),
-                "currency": currency or "SGD",
-                "base_currency": requested_base_currency,
-                "client_name": _client_name_from_text(_norm(message)) or "Alderton Trust",
-                "description": "Alderton Trust dividend income journal",
-                "business_reason": "Record foreign dividend income for trust accounts before month-end close.",
-                "supporting_evidence": "Dividend notice or bank/source document must be attached in Inbox before approval.",
-            },
-        )
+        arguments = {
+            "period": period or "2026-06",
+            "entry_date": _date_from_text(message),
+            "amount": str(amount or Decimal("18000")),
+            "currency": currency or "SGD",
+            "base_currency": requested_base_currency,
+            "client_name": _client_name_from_text(_norm(message)) or "Alderton Trust",
+            "description": "Alderton Trust dividend income journal",
+            "business_reason": "Record foreign dividend income for trust accounts before month-end close.",
+            "supporting_evidence": "Dividend notice or bank/source document must be attached in Inbox before approval.",
+        }
+        try:
+            result = await atlas_tools.prepare_semantic_manual_journal_review(
+                self.db, self._context(), arguments
+            )
+        except HTTPException as exc:
+            # End the semantic stage without falling through to another runtime.
+            if exc.status_code == 403:
+                return (
+                    "The manual journal was not prepared. You do not have permission "
+                    "to prepare it, or journal preparation is disabled."
+                )
+            if exc.status_code == 503:
+                return (
+                    "The manual journal was not prepared because permissions could not "
+                    "be verified. Please try again later."
+                )
+            if exc.status_code == 422:
+                return f"The manual journal was not prepared. {exc.detail}"
+            raise
         tx = result.get("requested_transaction") or {}
         checks = result.get("control_checks") or {}
         lines = [

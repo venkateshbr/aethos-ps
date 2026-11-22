@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -32,6 +34,7 @@ class _Query:
         self.db = db
         self.table = table
         self._eq_filters: list[tuple[str, Any]] = []
+        self._in_filters: list[tuple[str, list[str]]] = []
         self._null_filters: list[str] = []
         self._order_key: str | None = None
         self._order_desc = False
@@ -49,6 +52,10 @@ class _Query:
     def is_(self, key: str, value: Any) -> _Query:
         if value == "null":
             self._null_filters.append(key)
+        return self
+
+    def in_(self, key: str, values: list[str]) -> _Query:
+        self._in_filters.append((key, values))
         return self
 
     def order(self, key: str, desc: bool = False) -> _Query:
@@ -100,6 +107,8 @@ class _Query:
         return _Result(deepcopy(rows))
 
     def _matches(self, row: dict[str, Any]) -> bool:
+        if any(row.get(key) not in values for key, values in self._in_filters):
+            return False
         for key, value in self._eq_filters:
             if row.get(key) != value:
                 return False
@@ -444,10 +453,136 @@ def test_chat_message_stream_hides_semantic_tool_frames_by_default(
 
     messages = write_db.tables["chat_messages"]
     assert messages[1]["role"] == "assistant"
-    assert messages[1]["content"] == (
-        "Prepared the time entry and routed it to Inbox for review."
-    )
+    assert messages[1]["content"] == ("Prepared the time entry and routed it to Inbox for review.")
     assert messages[1]["model"] == "aethos-semantic-intent"
+
+
+@pytest.mark.parametrize(
+    "grants", [["atlas.tools.execute_draft"], ["accounting.journal_prepare"], None]
+)
+def test_manual_journal_permission_failure_finishes_chat_without_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    grants: list[str] | None,
+) -> None:
+    from app.api.v1.endpoints import chat
+    from app.services.agent_run_ledger import AgentRunLedger
+    from app.services.atlas_deterministic_responses import atlas_tools
+    from app.services.security_service import SecurityService
+
+    handler = AsyncMock(return_value={})
+    name = atlas_tools.MANUAL_JOURNAL_REVIEW_TOOL
+    monkeypatch.setitem(
+        atlas_tools._TOOL_DISPATCH, name, replace(atlas_tools._TOOL_DISPATCH[name], handler=handler)
+    )
+    lookup = AsyncMock(
+        return_value=SimpleNamespace(
+            legacy_role="manager", privilege_codes=grants, must_change_password=False
+        ),
+        side_effect=RuntimeError("synthetic lookup failure") if grants is None else None,
+    )
+    monkeypatch.setattr(SecurityService, "effective_permissions", lookup)
+    monkeypatch.setattr(AgentRunLedger, "start_run", AsyncMock(return_value=None))
+    runtime = AsyncMock(side_effect=AssertionError("runtime must not be invoked"))
+    monkeypatch.setattr(chat, "build_atlas_runtime", runtime)
+    write_db = _ChatWriteDb()
+    write_db.tables["tenant_ai_settings"] = []
+    _install_common_overrides()
+    app.dependency_overrides[get_service_role_client] = lambda: write_db
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/chat/threads/thread-1/messages",
+                json={
+                    "content": "Prepare an SGD 20 dividend income journal for Sample Trust "
+                    "for June 2026 and route it to Inbox before posting."
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert "was not prepared" in response.text
+    assert '"done": true' in response.text
+    assert "tool_result" not in response.text
+    handler.assert_not_awaited()
+    runtime.assert_not_awaited()
+    lookup.assert_awaited_once_with(USER_ID)
+
+
+@pytest.mark.parametrize("entrypoint", ["semantic", "broker"])
+async def test_authorized_manual_journal_only_writes_pending_inbox_records(
+    monkeypatch: pytest.MonkeyPatch, entrypoint: str
+) -> None:
+    from app.api.v1.endpoints import atlas_tools
+    from app.services import atlas_context, atlas_deterministic_responses
+    from app.services.agent_run_ledger import AgentRunLedger
+
+    monkeypatch.setattr(AgentRunLedger, "start_run", AsyncMock(return_value=None))
+    identity = {"tenant_id": TENANT_ID, "user_id": USER_ID}
+    db = _DbBase(
+        {
+            "tenant_users": [{**identity, "id": "synthetic-member", "role": "admin"}],
+            "tenant_user_effective_privileges": [
+                {**identity, "legacy_role": "admin", "privilege_code": grant}
+                for grant in ("atlas.tools.execute_draft", "accounting.journal_prepare")
+            ],
+            "agent_autonomy_settings": [
+                {
+                    "tenant_id": TENANT_ID,
+                    "agent_name": "accounting_guardian",
+                    "action_type": "draft_journal",
+                    "level": 3,
+                    "is_enabled": True,
+                },
+            ],
+            "tenants": [{"id": TENANT_ID, "base_currency": "SGD"}],
+            "accounts": [
+                {"tenant_id": TENANT_ID, "id": key, "code": code}
+                for key, code in (("synthetic-debit", "1100"), ("synthetic-credit", "4000"))
+            ],
+            "period_locks": [],
+            "tenant_approval_policies": [],
+            "agent_suggestions": [],
+            "hitl_tasks": [],
+        }
+    )
+
+    if entrypoint == "semantic":
+        reply = await atlas_deterministic_responses.render_semantic_atlas_response(
+            db=db,
+            tenant_id=TENANT_ID,
+            current_user=CurrentUser(user_id=USER_ID, email="tester@example.com", role="admin"),
+            thread_id="thread-1",
+            message="Prepare an SGD 20 dividend income journal for Sample Trust "
+            "for June 2026 and route it to Inbox before posting.",
+        )
+        assert reply is not None and "Do not post without Inbox approval." in reply.text
+    else:
+        monkeypatch.setattr(
+            atlas_context.settings, "atlas_context_signing_secret", "synthetic-only"
+        )
+        ref = atlas_context.create_atlas_context_ref(
+            tenant_id=TENANT_ID, user_id=USER_ID, thread_id="thread-1"
+        )
+        response = await atlas_tools.execute_atlas_tool(
+            atlas_tools.AtlasToolExecuteRequest(
+                context_ref=ref,
+                tool_name=atlas_tools.MANUAL_JOURNAL_REVIEW_TOOL,
+                arguments={"period": "2026-06", "amount": "20", "currency": "SGD"},
+            ),
+            _auth=None,
+            db=db,
+        )
+        assert response.result["requires_review"] is True
+        assert response.result["review_path"] == "/app/inbox"
+
+    (suggestion,) = db.tables["agent_suggestions"]
+    (task,) = db.tables["hitl_tasks"]
+    assert suggestion["tenant_id"] == task["tenant_id"] == TENANT_ID
+    assert suggestion["status"] == "pending" and suggestion["hitl_required"] is True
+    assert task["status"] == "open" and task["kind"] == "draft_journal"
+    assert task["agent_suggestion_id"] == suggestion["id"]
+    assert task["payload"]["manual_journal_approval"]["submitted_by"] == USER_ID
+    # The fake DB accepts only the tables above and has no posting RPC.
 
 
 @pytest.mark.asyncio
@@ -510,7 +645,7 @@ async def test_deterministic_manual_journal_honors_explicit_gbp_base_currency(
 
     monkeypatch.setattr(
         deterministic.atlas_tools,
-        "_prepare_manual_journal_review",
+        "prepare_semantic_manual_journal_review",
         _prepare_manual_journal_review,
     )
 

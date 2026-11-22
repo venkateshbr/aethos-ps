@@ -441,12 +441,19 @@ existing Aethos policy and Inbox review paths.
 | --- | --- |
 | Model tries to pass a tenant id | Broker ignores model-supplied tenant/user values and uses verified `context_ref` |
 | Tool token leaks to browser | Tool broker token is server-to-server only and never emitted to UI |
+| A broker credential is mistaken for user authorization | After verifying the context, the broker resolves current tenant membership and explicit privileges. Legacy role alone does not grant a broker operation. The operation's risk-class grant and domain grants are both required before any ERP handler runs. |
 | Hermes exposes tool internals | Atlas runtime forwards only safe assistant text and user-facing artifacts |
-| Write action bypasses review | Write-capable broker tools call Aethos policy and Inbox paths |
+| Write action bypasses review | The broker checks autonomy and kill/circuit controls before dispatch; write handlers can only prepare work for Inbox review, not approve or post it. |
 | Extraction prompt injection | Extraction agents mark suspected injection and force HITL |
 | Raw traces/logs exposed | Operational health read pack returns counters/status only |
 | Cross-tenant reads | Service role calls are explicitly tenant-scoped by verified context |
 | Posted journal mutation | Database trigger prevents editing posted journals; reversals create new entries |
+
+For a verified tenant/user context, `nous_hermes_broker` records a standalone ledger run and a metadata-only invocation (including refusals). The audit does not copy ERP arguments, results, tool credentials or context references into the ledger. Requests rejected before identity is verified cannot be attributed to a tenant ledger. Ledger writes follow the existing best-effort contract.
+
+Manual journal preparation uses the same registered operation for Hermes and deterministic chat. Both require `atlas.tools.execute_draft` and `accounting.journal_prepare`, apply the `accounting_guardian` controls for `draft_journal`, and allow only preparation for Inbox review. A permission refusal or unavailable check ends the semantic turn without retrying through a different runtime.
+
+The Finance Ops snapshot is all-or-nothing: in addition to the existing finance grants it requires `engagements.read` and `time_entries.read` for active engagements and WIP. The broker control room and the configuration/telemetry pack that embeds it also require an active manager-or-higher tenant membership, matching the ordinary control-room endpoint. A seeded executive viewer retains the snapshot through its finance-read grants but not the control room. No seeded grants change.
 
 ## Testing Strategy
 

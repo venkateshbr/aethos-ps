@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import atlas_tools
 from app.core.db import get_service_role_client
+from app.core.rbac import UserRole
 from app.main import app
 from app.services import atlas_context
+from app.services.agent_run_ledger import AgentRunLedger
+from app.services.agent_tool_policy import AgentToolPolicyDecision
+from app.services.atlas_broker import AgentToolPolicy
+from app.services.security_service import SecurityService
 
 pytestmark = pytest.mark.unit
 
@@ -47,6 +54,18 @@ def _context_ref(monkeypatch: pytest.MonkeyPatch) -> str:
 def _install_broker_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(atlas_tools.settings, "aethos_hermes_tool_token", BROKER_TOKEN)
     app.dependency_overrides[get_service_role_client] = lambda: _ForbiddenDb()
+
+    async def allow(self, *, risk_class, **kwargs):
+        read_only = risk_class == "read_only"
+        return AgentToolPolicyDecision(
+            True, read_only, not read_only, "allowed", UserRole.admin, UserRole.viewer, 2
+        )
+
+    monkeypatch.setattr(AgentToolPolicy, "decide", allow)
+    monkeypatch.setattr(
+        SecurityService, "tenant_user_membership", AsyncMock(return_value={"role": "admin"})
+    )
+    monkeypatch.setattr(AgentRunLedger, "start_run", AsyncMock(return_value=None))
 
 
 def test_atlas_tool_broker_requires_configured_token(
@@ -602,7 +621,9 @@ def test_atlas_tool_broker_manual_journal_review_tool_preserves_context(
     monkeypatch.setitem(
         atlas_tools._TOOL_DISPATCH,
         "aethos.r2r.prepare_manual_journal_review",
-        _handler,
+        replace(
+            atlas_tools._TOOL_DISPATCH["aethos.r2r.prepare_manual_journal_review"], handler=_handler
+        ),
     )
     _install_broker_overrides(monkeypatch)
 
