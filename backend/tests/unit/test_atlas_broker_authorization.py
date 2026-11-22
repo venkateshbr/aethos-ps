@@ -34,6 +34,8 @@ def broker(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(atlas_tools, "verify_atlas_context_ref", lambda *args, **kwargs: context)
     lookup = AsyncMock()
     monkeypatch.setattr(SecurityService, "effective_permissions", lookup)
+    membership = AsyncMock(return_value={"role": "admin"})
+    monkeypatch.setattr(SecurityService, "tenant_user_membership", membership)
     start = AsyncMock(return_value="run-unit")
     record = AsyncMock()
     monkeypatch.setattr(AgentRunLedger, "start_run", start)
@@ -43,7 +45,13 @@ def broker(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     controls = db.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute
     controls.return_value.data = []
     return SimpleNamespace(
-        context=context, db=db, lookup=lookup, record=record, start=start, controls=controls
+        context=context,
+        db=db,
+        lookup=lookup,
+        membership=membership,
+        record=record,
+        start=start,
+        controls=controls,
     )
 
 
@@ -113,8 +121,12 @@ async def test_catalog_dispatches_only_with_domain_and_risk_grants(
         {"is_enabled": True, "level": 1},
     ],
 )
+@pytest.mark.parametrize("entrypoint", ["broker", "semantic"])
 async def test_manual_journal_review_respects_action_controls(
-    monkeypatch: pytest.MonkeyPatch, broker: SimpleNamespace, row: dict
+    monkeypatch: pytest.MonkeyPatch,
+    broker: SimpleNamespace,
+    row: dict,
+    entrypoint: str,
 ) -> None:
     tool_name = "aethos.r2r.prepare_manual_journal_review"
     handler = _mock_handler(monkeypatch, tool_name)
@@ -123,9 +135,15 @@ async def test_manual_journal_review_respects_action_controls(
     )
     broker.controls.return_value.data = [{"action_type": "draft_journal", **row}]
     with pytest.raises(HTTPException) as exc:
-        await _execute(broker, tool_name)
+        if entrypoint == "semantic":
+            await atlas_tools.prepare_semantic_manual_journal_review(broker.db, broker.context, {})
+        else:
+            await _execute(broker, tool_name)
     assert exc.value.status_code == 403
     handler.assert_not_awaited()
+    assert broker.record.await_args.kwargs["status"] == "skipped"
+    assert broker.record.await_args.kwargs["input_payload"] is None
+    assert broker.record.await_args.kwargs["output_payload"] is None
 
 
 @pytest.mark.parametrize(
@@ -210,6 +228,7 @@ async def test_seeded_finance_roles_keep_snapshot_but_control_room_is_manager_on
     grants = finance_seed[seed_role]
     assert _SNAPSHOT_GRANTS | {"inbox.read", "agent.autonomy.read"} <= grants
     broker.lookup.return_value = _permissions(membership_role, sorted(grants))
+    broker.membership.return_value = {"role": membership_role}
     snapshot = "aethos.finance_ops.snapshot"
     _mock_handler(monkeypatch, snapshot)
     assert (await _execute(broker, snapshot)).result == {"mock": True}
@@ -237,7 +256,8 @@ async def test_configuration_telemetry_preserves_nested_control_room_role_gate(
         "settings.manage",
         "ai.settings.read",
     }
-    broker.lookup.return_value = _permissions("viewer", sorted(grants))
+    broker.lookup.return_value = _permissions("admin", sorted(grants))
+    broker.membership.return_value = {"role": "viewer"}
     with pytest.raises(HTTPException) as exc:
         await _execute(broker, name)
     assert exc.value.status_code == 403

@@ -5,14 +5,16 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 
 from app.agents.tool_registry import ToolRiskClass, action_type_for_tool
+from app.core.rbac import UserRole, role_meets_minimum
 from app.services.agent_run_ledger import AgentRunLedger, ToolInvocationStatus
 from app.services.agent_tool_policy import AgentToolPolicy
 from app.services.atlas_context import AtlasToolContext
+from app.services.security_service import SecurityService
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ class BrokerTool:
     privileges: tuple[str, ...]
     policy_tool: str | None = None
     agent_name: str = "copilot_agent"
+    minimum_role: UserRole | None = None
 
 
 def _denied() -> HTTPException:
@@ -38,10 +41,14 @@ async def dispatch_broker_tool(
     tool_name: str,
     tool: BrokerTool | None,
     arguments: dict[str, Any],
+    *,
+    source: Literal["tool_broker", "semantic_intent"] = "tool_broker",
 ) -> Any:
     ledger = AgentRunLedger(db, context.tenant_id)
     run_id = await ledger.start_run(
-        agent_name="nous_hermes_broker", trigger_type="tool_broker", user_id=context.user_id
+        agent_name="nous_hermes_broker" if source == "tool_broker" else "copilot_agent",
+        trigger_type=source,
+        user_id=context.user_id,
     )
     outcome: ToolInvocationStatus = "failed"
     reason: str | None = None
@@ -60,6 +67,16 @@ async def dispatch_broker_tool(
                 user_id=context.user_id,
                 required_privileges=tool.privileges,
             )
+            role_allowed = True
+            if decision.allowed and tool.minimum_role is not None:
+                # Match require_role: the active membership row is authoritative,
+                # not a legacy role projected from assigned catalog duties.
+                membership = await SecurityService(db, context.tenant_id).tenant_user_membership(
+                    context.user_id
+                )
+                role_allowed = membership is not None and role_meets_minimum(
+                    UserRole(membership["role"]), tool.minimum_role
+                )
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
@@ -78,6 +95,9 @@ async def dispatch_broker_tool(
         )
         if not (decision.allowed and can_dispatch):
             outcome, reason = "skipped", decision.reason
+            raise _denied()
+        if not role_allowed:
+            outcome, reason = "skipped", "insufficient_membership_role"
             raise _denied()
 
         try:

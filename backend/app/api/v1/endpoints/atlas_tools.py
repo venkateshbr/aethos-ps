@@ -26,7 +26,7 @@ from app.core.db import get_service_role_client
 from app.domain.fx import FxRateNotFoundError, get_fx_rate_record
 from app.domain.money import serialise_money
 from app.models.engagements import EngagementResponse
-from app.services.agents_service import AgentsService
+from app.services.agents_service import FINANCE_OPS_CONTROL_ROOM_MIN_ROLE, AgentsService
 from app.services.approval_policy import ApprovalPolicyMatrix
 from app.services.approval_policy_settings_service import ApprovalPolicySettingsService
 from app.services.atlas_broker import BrokerTool, dispatch_broker_tool
@@ -1324,7 +1324,10 @@ def _engagement_to_tool_result(row: EngagementResponse) -> dict[str, Any]:
 
 
 _FINANCE_READ = ("reports.read", "invoices.read", "bills.read", "accounting.read")
+_WIP_READ = ("reports.read", "engagements.read", "time_entries.read")
+_SNAPSHOT_READ = tuple(dict.fromkeys((*_FINANCE_READ, *_WIP_READ)))
 _CONTROL_ROOM_READ = (*_FINANCE_READ, "inbox.read", "agent.autonomy.read")
+MANUAL_JOURNAL_REVIEW_TOOL = "aethos.r2r.prepare_manual_journal_review"
 _TOOL_DISPATCH: dict[str, BrokerTool] = {
     "aethos.documents.intake_read_pack": BrokerTool(
         _document_intake_read_pack, "read_only", ("documents.read", "inbox.read")
@@ -1352,9 +1355,7 @@ _TOOL_DISPATCH: dict[str, BrokerTool] = {
         _ar_aging, "read_only", ("reports.read", "invoices.read")
     ),
     "aethos.finance.ap_aging": BrokerTool(_ap_aging, "read_only", ("reports.read", "bills.read")),
-    "aethos.finance.wip": BrokerTool(
-        _wip, "read_only", ("reports.read", "engagements.read", "time_entries.read")
-    ),
+    "aethos.finance.wip": BrokerTool(_wip, "read_only", _WIP_READ),
     "aethos.delivery.resource_read_pack": BrokerTool(
         _resource_delivery_read_pack,
         "read_only",
@@ -1363,9 +1364,12 @@ _TOOL_DISPATCH: dict[str, BrokerTool] = {
     "aethos.time.log_entry": BrokerTool(
         _log_time_entry, "write_low_risk", ("time_entries.create",), "log_time_entry"
     ),
-    "aethos.finance_ops.snapshot": BrokerTool(_finance_ops_snapshot, "read_only", _FINANCE_READ),
+    "aethos.finance_ops.snapshot": BrokerTool(_finance_ops_snapshot, "read_only", _SNAPSHOT_READ),
     "aethos.finance_ops.control_room": BrokerTool(
-        _finance_ops_control_room, "read_only", _CONTROL_ROOM_READ
+        _finance_ops_control_room,
+        "read_only",
+        _CONTROL_ROOM_READ,
+        minimum_role=FINANCE_OPS_CONTROL_ROOM_MIN_ROLE,
     ),
     "aethos.operational_health.read_pack": BrokerTool(
         _operational_health_read_pack, "read_only", ("settings.manage", "agent.autonomy.read")
@@ -1374,6 +1378,7 @@ _TOOL_DISPATCH: dict[str, BrokerTool] = {
         _configuration_telemetry_read_pack,
         "read_only",
         (*_CONTROL_ROOM_READ, "settings.manage", "ai.settings.read"),
+        minimum_role=FINANCE_OPS_CONTROL_ROOM_MIN_ROLE,
     ),
     "aethos.approval_controls.read_pack": BrokerTool(
         _approval_controls_read_pack, "read_only", ("inbox.read", "agent.autonomy.read")
@@ -1437,11 +1442,24 @@ _TOOL_DISPATCH: dict[str, BrokerTool] = {
         "read_only",
         ("accounting.read", "inbox.read", "agent.autonomy.read"),
     ),
-    "aethos.r2r.prepare_manual_journal_review": BrokerTool(
+    MANUAL_JOURNAL_REVIEW_TOOL: BrokerTool(
         _prepare_manual_journal_review,
         "accounting",
         ("accounting.journal_prepare",),
-        "aethos.r2r.prepare_manual_journal_review",
-        "accounting_guardian",
+        agent_name="accounting_guardian",
     ),
 }
+
+
+async def prepare_semantic_manual_journal_review(
+    db: Client, context: AtlasToolContext, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Use the same strict, audited operation as the verified Hermes broker."""
+    return await dispatch_broker_tool(
+        db,
+        context,
+        MANUAL_JOURNAL_REVIEW_TOOL,
+        _TOOL_DISPATCH[MANUAL_JOURNAL_REVIEW_TOOL],
+        arguments,
+        source="semantic_intent",
+    )

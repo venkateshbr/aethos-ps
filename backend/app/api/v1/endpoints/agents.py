@@ -42,7 +42,11 @@ from app.models.agents import (
     SetAgentLevelResponse,
     SetFinanceOpsScheduleRequest,
 )
-from app.services.agents_service import AgentAutonomyError, AgentsService
+from app.services.agents_service import (
+    FINANCE_OPS_CONTROL_ROOM_MIN_ROLE,
+    AgentAutonomyError,
+    AgentsService,
+)
 from app.services.o2c_read_service import O2CReadService
 from app.services.p2p_read_service import P2PReadService
 from app.services.r2r_read_service import R2RReadService
@@ -132,7 +136,7 @@ def get_finance_ops_control_room(
     workflow_limit: int = Query(default=10, ge=1, le=25),
     task_limit: int = Query(default=10, ge=1, le=25),
     svc: AgentsService = Depends(_ops_service),  # noqa: B008
-    _current_user: CurrentUser = require_role(UserRole.manager),  # noqa: B008
+    _current_user: CurrentUser = require_role(FINANCE_OPS_CONTROL_ROOM_MIN_ROLE),  # noqa: B008
 ) -> FinanceOpsControlRoomResponse:
     """Return scheduled run, pending work, workflow, and health signals."""
     return FinanceOpsControlRoomResponse(

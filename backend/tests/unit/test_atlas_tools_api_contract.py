@@ -17,6 +17,7 @@ from app.services import atlas_context
 from app.services.agent_run_ledger import AgentRunLedger
 from app.services.agent_tool_policy import AgentToolPolicyDecision
 from app.services.atlas_broker import AgentToolPolicy
+from app.services.security_service import SecurityService
 
 pytestmark = pytest.mark.unit
 
@@ -61,6 +62,9 @@ def _install_broker_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(AgentToolPolicy, "decide", allow)
+    monkeypatch.setattr(
+        SecurityService, "tenant_user_membership", AsyncMock(return_value={"role": "admin"})
+    )
     monkeypatch.setattr(AgentRunLedger, "start_run", AsyncMock(return_value=None))
 
 

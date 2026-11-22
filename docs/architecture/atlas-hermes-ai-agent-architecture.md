@@ -451,6 +451,10 @@ existing Aethos policy and Inbox review paths.
 
 For a verified tenant/user context, `nous_hermes_broker` records a standalone ledger run and a metadata-only invocation (including refusals). The audit does not copy ERP arguments, results, tool credentials or context references into the ledger. Requests rejected before identity is verified cannot be attributed to a tenant ledger. Ledger writes follow the existing best-effort contract.
 
+Manual journal preparation uses the same registered operation for Hermes and deterministic chat. Both require `atlas.tools.execute_draft` and `accounting.journal_prepare`, apply the `accounting_guardian` controls for `draft_journal`, and allow only preparation for Inbox review. A permission refusal or unavailable check ends the semantic turn without retrying through a different runtime.
+
+The Finance Ops snapshot is all-or-nothing: in addition to the existing finance grants it requires `engagements.read` and `time_entries.read` for active engagements and WIP. The broker control room and the configuration/telemetry pack that embeds it also require an active manager-or-higher tenant membership, matching the ordinary control-room endpoint. A seeded executive viewer retains the snapshot through its finance-read grants but not the control room. No seeded grants change.
+
 ## Testing Strategy
 
 | Layer | Tests |
