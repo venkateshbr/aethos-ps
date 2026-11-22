@@ -197,6 +197,8 @@ def test_real_precheck_reads_kernel_and_docker_contract(host_commands):
     {"Options": {"com.docker.network.bridge.name": "br-aethos-nous",
                  "com.docker.network.bridge.gateway_mode_ipv4": "isolated"}},
     {"Containers": {"worker": {"IPv4Address": "172.31.254.3/29", "IPv6Address": ""}}},
+    {"Containers": {}},
+    {"Containers": {"worker": {"IPv4Address": "172.31.254.2/29", "IPv6Address": ""}}},
 ])
 def test_precheck_blocks_docker_drift(host_commands, change):
     _, docker = host_commands
