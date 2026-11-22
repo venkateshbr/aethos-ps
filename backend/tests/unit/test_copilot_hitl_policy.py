@@ -143,8 +143,10 @@ async def test_write_policy_routes_to_hitl_without_executing_tool(monkeypatch: p
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("force_review", [False, True])
 async def test_draft_invoice_policy_routes_to_hitl_with_review_payload(
     monkeypatch: pytest.MonkeyPatch,
+    force_review: bool,
 ) -> None:
     from app.agents.copilot import graph
 
@@ -152,8 +154,8 @@ async def test_draft_invoice_policy_routes_to_hitl_with_review_payload(
     agent.tool_policy = _StaticPolicy(
         AgentToolPolicyDecision(
             allowed=True,
-            execute_now=False,
-            route_to_hitl=True,
+            execute_now=force_review,
+            route_to_hitl=not force_review,
             reason="write_money_in_requires_human_review",
             user_role=UserRole.manager,
             minimum_role=UserRole.manager,
@@ -190,6 +192,7 @@ async def test_draft_invoice_policy_routes_to_hitl_with_review_payload(
     result = await agent._execute_tool_with_policy(
         "draft_invoice",
         {"engagement_name": "Northstar", "period_end": "2026-06-30"},
+        require_review=force_review,
     )
 
     assert result["requires_review"] is True

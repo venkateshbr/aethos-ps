@@ -17,6 +17,7 @@ from app.api.v1.endpoints.atlas_tools import dispatch_atlas_tool
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import settings
 from app.core.db import get_service_role_client
+from app.core.rbac import UserRole, require_role
 from app.core.tenant import get_tenant_id
 from app.services.telegram_erp_service import TelegramErpService
 from supabase import Client
@@ -106,14 +107,17 @@ def _private_update(raw: object) -> _Update | None:
 
 
 @router.post(
-    "/link", response_model=LinkChallenge, status_code=201, dependencies=[Depends(_enabled)]
+    "/link",
+    response_model=LinkChallenge,
+    status_code=201,
+    dependencies=[Depends(_enabled)],
 )
 def create_link_challenge(
     payload: LinkRequest,
-    user: Annotated[CurrentUser, Depends(get_current_user)],
     tenant_id: Annotated[str, Depends(get_tenant_id)],
     db: Annotated[Client, Depends(get_service_role_client)],
     response: Response,
+    user: CurrentUser = require_role(UserRole.viewer),  # noqa: B008
 ) -> LinkChallenge:
     response.headers["Cache-Control"] = "no-store"
     service = TelegramErpService(db, dispatch_atlas_tool)
